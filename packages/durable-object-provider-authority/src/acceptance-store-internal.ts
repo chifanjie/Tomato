@@ -10,11 +10,15 @@ import { resolveProviderAcceptanceAuthorityProductionLayoutInternalV1 } from "./
 import {
   assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
   assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1,
+  bindNativeSafeGitEmptyHooksDirectoryV1,
+  closeNativeSafeGitDescriptorBootstrapV1,
   deriveNativeSafeGitPathIdentityV1,
   type NativeSafeGitDescriptorBindingV1,
+  type NativeSafeGitEmptyHooksDirectoryBindingV1,
   type NativeSafeGitPathIdentityV1,
 } from "@understand-code/native-kernel-bridge";
 import { openOrInitializeProviderAcceptanceInstallationIdentityInternalV1 } from "./key-custody-internal.js";
+import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
 
 export type {
   ProviderAcceptanceAuthorityAdmissionInputInternalV1,
@@ -54,4 +58,57 @@ export async function deriveProviderAcceptanceSafeGitPathIdentityInternalV1(
   return identity.withKey(async (key) =>
     deriveNativeSafeGitPathIdentityV1(binding, key)
   );
+}
+
+/**
+ * Installation-owner empty-hooks custody facade. The native authority and key
+ * remain callback-scoped, and the native binding must exactly reproduce the
+ * authenticated identity-state pin.
+ */
+export async function bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+): Promise<NativeSafeGitEmptyHooksDirectoryBindingV1> {
+  try {
+    assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1(binding);
+    const identity =
+      await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+        resolveProviderAcceptanceAuthorityProductionLayoutInternalV1(),
+        {
+          authorizeNativeAuthority(opened) {
+            assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+              opened.authority,
+              binding,
+            );
+          },
+        },
+      );
+    return await identity.withKey(async (key, authority, expected) => {
+      if (expected === undefined) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      const actual = bindNativeSafeGitEmptyHooksDirectoryV1(
+        binding,
+        authority,
+        key,
+      );
+      if (
+        actual.profile !== "native_safe_git_empty_hooks_binding_v1" ||
+        actual.directoryIdentity.platform !==
+          expected.directoryIdentity.platform ||
+        actual.directoryIdentity.device !== expected.directoryIdentity.device ||
+        actual.directoryIdentity.inode !== expected.directoryIdentity.inode ||
+        actual.emptyHooksDirectoryToken !== expected.emptyHooksDirectoryToken
+      ) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      return actual;
+    });
+  } catch {
+    try {
+      closeNativeSafeGitDescriptorBootstrapV1(binding);
+    } catch {
+      // The redacted custody failure remains authoritative.
+    }
+    throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+  }
 }

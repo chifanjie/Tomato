@@ -34,6 +34,10 @@ export interface CheckedFileInternalV1 {
   readonly nlink: number;
 }
 
+export interface CheckedLockFileInternalV1 extends CheckedFileInternalV1 {
+  readonly linkState: "stable" | "authenticated_same_inode_turnover";
+}
+
 function isErrnoV1(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error &&
     (error as { readonly code?: unknown }).code === code;
@@ -263,6 +267,129 @@ export async function readCheckedAuthorityFileInternalV1(input: Readonly<{
       dev: opened.dev,
       ino: opened.ino,
       nlink: opened.nlink,
+    });
+  } catch (error) {
+    if (isMissingFileInternalV1(error)) throw error;
+    if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
+    throw new ProviderAcceptanceAuthorityErrorV1(
+      "namespace_integrity_failed",
+      { cause: error },
+    );
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function lockLinkCountTurnsOverV1(before: number, after: number): boolean {
+  return before === after ||
+    (before === 2 && (after === 1 || after === 0)) ||
+    (before === 1 && (after === 2 || after === 0));
+}
+
+/**
+ * Lock-only observation boundary for publish/release turnover. Unlike the
+ * generic reader, this retains an authenticated pinned descriptor long enough
+ * to distinguish a same-inode 1 <-> 2 -> 0 publication/release turnover from
+ * malformed or replaced namespace state. Callers must authenticate `bytes`
+ * before treating `authenticated_same_inode_turnover` as contention.
+ */
+export async function readCheckedAuthorityLockFileInternalV1(input: Readonly<{
+  path: string;
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1;
+  maximumBytes: number;
+  allowedLinkCounts: readonly number[];
+  testOnlyAfterPinnedRead?: () => void | Promise<void>;
+}>): Promise<CheckedLockFileInternalV1> {
+  let handle: FileHandle | undefined;
+  try {
+    const allowed = input.allowedLinkCounts;
+    if (
+      allowed.length === 0 ||
+      allowed.some((value) => value !== 1 && value !== 2)
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+    const before = await lstat(input.path);
+    if (
+      before.isSymbolicLink() ||
+      !before.isFile() ||
+      before.uid !== input.layout.authorityUid ||
+      before.gid !== input.layout.authorityGid ||
+      exactModeV1(before.mode) !== FILE_MODE_V1 ||
+      !allowed.includes(before.nlink) ||
+      before.size < 0 ||
+      before.size > input.maximumBytes
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+    handle = await open(
+      input.path,
+      constants.O_RDONLY | NOFOLLOW_V1 | CLOEXEC_V1,
+    );
+    const opened = await handle.stat();
+    if (
+      !opened.isFile() ||
+      opened.uid !== input.layout.authorityUid ||
+      opened.gid !== input.layout.authorityGid ||
+      exactModeV1(opened.mode) !== FILE_MODE_V1 ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.size !== before.size ||
+      !lockLinkCountTurnsOverV1(before.nlink, opened.nlink)
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+    const bytes = await handle.readFile();
+    if (bytes.byteLength !== opened.size || bytes.byteLength > input.maximumBytes) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+    await input.testOnlyAfterPinnedRead?.();
+    let after;
+    try {
+      after = await lstat(input.path);
+    } catch (error) {
+      if (!isMissingFileInternalV1(error)) throw error;
+      return Object.freeze({
+        bytes,
+        dev: opened.dev,
+        ino: opened.ino,
+        nlink: opened.nlink,
+        linkState: "authenticated_same_inode_turnover" as const,
+      });
+    }
+    if (
+      after.isSymbolicLink() ||
+      !after.isFile() ||
+      after.uid !== opened.uid ||
+      after.gid !== opened.gid ||
+      exactModeV1(after.mode) !== FILE_MODE_V1 ||
+      after.dev !== opened.dev ||
+      after.ino !== opened.ino ||
+      after.size !== opened.size ||
+      !lockLinkCountTurnsOverV1(opened.nlink, after.nlink)
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+    const linkState = before.nlink === opened.nlink &&
+        opened.nlink === after.nlink
+      ? "stable" as const
+      : "authenticated_same_inode_turnover" as const;
+    return Object.freeze({
+      bytes,
+      dev: opened.dev,
+      ino: opened.ino,
+      nlink: after.nlink,
+      linkState,
     });
   } catch (error) {
     if (isMissingFileInternalV1(error)) throw error;

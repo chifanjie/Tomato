@@ -25,6 +25,9 @@ payloads defined by `@understand-code/contracts`.
   retains native handle custody, and never launches Git.
 - Promotes that opaque binding only after descriptor-relative repository config,
   local-object-database, and files-ref-backend admission succeeds.
+- Derives installation-keyed repository/worktree/root identities and separately
+  promotes an installation-pinned, descriptor-retained exactly-empty hooks
+  directory without exposing either the key or host filesystem identities.
 
 ## Snapshot
 
@@ -117,9 +120,20 @@ object identifier crosses the API. Later `revalidate()` calls recheck the
 current promotion stage, including the installation-keyed identity once bound,
 and fail closed on drift.
 
+After repository identity is bound, call `capability.bindEmptyHooksDirectory()`
+to request the separately versioned
+`descriptor_bound_safe_git_empty_hooks_v1` proof. A newly created installation
+root receives one fixed native-owned empty directory whose POSIX identity and
+empty-entry set are HMAC-pinned into the Installation Identity state. Native
+retains and revalidates its complete descriptor chain. Existing or legacy
+installation roots are never supplemented or adopted; if the authenticated pin
+is absent, promotion fails closed with zero writes. The public projection says
+only `emptyHooksDirectory: "verified"` and never exposes the directory path,
+device, inode, or token.
+
 This is still not the complete SafeGit adapter. Handle-bound execution, the
-fixed invocation environment, hooks proof, OS sandbox/resource containment,
-and strong writes remain explicitly `locked`. It is not connected to the
+fixed invocation environment, OS sandbox/resource containment, and strong
+writes remain explicitly `locked`. It is not connected to the
 legacy Snapshot producer and does not authorize Git execution, Provider I/O,
 or any public strong capability.
 

@@ -29,8 +29,9 @@ afterEach(async () => {
 });
 
 async function fixtureV1(committed: boolean) {
-  const root = await mkdtemp(join(tmpdir(), "provider-authority-identity-"));
-  fixtureRoots.add(root);
+  const parent = await mkdtemp(join(tmpdir(), "provider-authority-identity-"));
+  const root = join(parent, "authority");
+  fixtureRoots.add(parent);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {

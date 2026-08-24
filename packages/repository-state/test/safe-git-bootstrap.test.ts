@@ -15,6 +15,7 @@ import type {
 } from "@understand-code/native-kernel-bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  SAFE_GIT_EMPTY_HOOKS_PROFILE_V1,
   SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
   SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
   SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
@@ -32,8 +33,11 @@ import {
 
 const identityAuthorityTestStateV1 = vi.hoisted(() => ({
   derivations: 0,
+  emptyHooksBindings: 0,
   keyByte: 0x41,
   unavailable: false,
+  emptyHooksUnavailable: false,
+  emptyHooksTokenByte: 0x51,
 }));
 
 vi.mock(
@@ -43,6 +47,24 @@ vi.mock(
       typeof import("@understand-code/native-kernel-bridge")
     >("@understand-code/native-kernel-bridge");
     return {
+      bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1: async () => {
+        identityAuthorityTestStateV1.emptyHooksBindings += 1;
+        if (identityAuthorityTestStateV1.emptyHooksUnavailable) {
+          throw new Error("test empty-hooks authority unavailable");
+        }
+        return Object.freeze({
+          profile: "native_safe_git_empty_hooks_binding_v1" as const,
+          directoryIdentity: Object.freeze({
+            platform: "posix" as const,
+            device: "1",
+            inode: "2",
+          }),
+          emptyHooksDirectoryToken: `hmac-sha256:${identityAuthorityTestStateV1.emptyHooksTokenByte
+            .toString(16)
+            .padStart(2, "0")
+            .repeat(32)}` as const,
+        });
+      },
       deriveProviderAcceptanceSafeGitPathIdentityInternalV1: async (
         binding: NativeSafeGitDescriptorBindingV1,
       ) => {
@@ -63,8 +85,11 @@ vi.mock(
 
 afterEach(() => {
   identityAuthorityTestStateV1.derivations = 0;
+  identityAuthorityTestStateV1.emptyHooksBindings = 0;
   identityAuthorityTestStateV1.keyByte = 0x41;
   identityAuthorityTestStateV1.unavailable = false;
+  identityAuthorityTestStateV1.emptyHooksUnavailable = false;
+  identityAuthorityTestStateV1.emptyHooksTokenByte = 0x51;
   cleanupTemporaryDirectories();
 });
 
@@ -304,6 +329,71 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
       "binding_changed",
       root,
     );
+  });
+
+  it("promotes repository identity to a path-redacted empty-hooks authority", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    const identity = await result.capability.bindRepositoryIdentity();
+
+    const emptyHooks = await result.capability.bindEmptyHooksDirectory();
+    expect(emptyHooks).toEqual({
+      ...identity,
+      profile: SAFE_GIT_EMPTY_HOOKS_PROFILE_V1,
+      emptyHooksDirectory: "verified",
+      requiredNext: [
+        "handle_bound_execution",
+        "os_sandbox",
+        "strong_writer",
+      ],
+    });
+    expect(identityAuthorityTestStateV1.emptyHooksBindings).toBe(1);
+    expect(JSON.stringify(emptyHooks)).not.toContain(root);
+    expect(JSON.stringify(emptyHooks)).not.toContain("hmac-sha256:");
+    await expect(result.capability.revalidate()).resolves.toEqual(emptyHooks);
+    expect(identityAuthorityTestStateV1.emptyHooksBindings).toBe(2);
+    await result.capability.close();
+  });
+
+  it("does not request empty-hooks authority before repository identity is bound", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+
+    await expectBootstrapFailure(
+      result.capability.bindEmptyHooksDirectory(),
+      "empty_hooks_directory_invalid",
+      root,
+    );
+    expect(identityAuthorityTestStateV1.emptyHooksBindings).toBe(0);
+    expect(result.capability.closed).toBe(false);
+    await result.capability.close();
+  });
+
+  it("poisons empty-hooks authority on token drift or custody failure", async () => {
+    for (const failure of ["token_drift", "custody_failure"] as const) {
+      const root = initializeRepository();
+      const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+      await result.capability.bindRepositoryControl();
+      await result.capability.bindRepositoryIdentity();
+      await result.capability.bindEmptyHooksDirectory();
+      if (failure === "token_drift") {
+        identityAuthorityTestStateV1.emptyHooksTokenByte = 0x52;
+      } else {
+        identityAuthorityTestStateV1.emptyHooksUnavailable = true;
+      }
+
+      await expectBootstrapFailure(
+        result.capability.revalidate(),
+        "binding_changed",
+        root,
+      );
+      expect(result.capability.closed).toBe(true);
+      expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
+      identityAuthorityTestStateV1.emptyHooksUnavailable = false;
+      identityAuthorityTestStateV1.emptyHooksTokenByte = 0x51;
+    }
   });
 
   it("does not open installation identity before repository control is bound", async () => {

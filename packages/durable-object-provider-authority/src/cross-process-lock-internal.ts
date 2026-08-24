@@ -20,6 +20,7 @@ import {
   isMissingFileInternalV1,
   parseCanonicalAuthorityBytesInternalV1,
   readCheckedAuthorityFileInternalV1,
+  readCheckedAuthorityLockFileInternalV1,
   removeCheckedAuthorityFileInternalV1,
   syncParentDirectoryInternalV1,
   type ProviderAcceptanceAuthorityDurabilityHooksInternalV1,
@@ -41,6 +42,7 @@ const NOFOLLOW_V1 = typeof constants.O_NOFOLLOW === "number"
   : 0;
 const CLOEXEC_V1 = 0;
 const LOCK_WAIT_MILLISECONDS_V1 = 30_000;
+const LOCK_REOBSERVE_MILLISECONDS_V1 = 25;
 const LOCK_PREPARATION_PREFIX_V1 =
   ".provider-acceptance-authority-v1.lock.prepare-";
 const RECOVERY_PREPARATION_PREFIX_V1 =
@@ -296,25 +298,45 @@ async function observeLockV1(
   key: Uint8Array,
   path: string,
   allowedLinkCounts: readonly number[] = [1],
+  classifyAuthenticatedTurnoverAsContended = false,
+  testOnlyAfterPinnedRead?: () => void | Promise<void>,
 ): Promise<ObservedLockInternalV1 | undefined> {
   try {
-    const checked = await readCheckedAuthorityFileInternalV1({
-      path,
-      layout,
-      maximumBytes: MAX_LOCK_BYTES_V1,
-      allowedLinkCounts,
-    });
+    const checked = classifyAuthenticatedTurnoverAsContended
+      ? await readCheckedAuthorityLockFileInternalV1({
+        path,
+        layout,
+        maximumBytes: MAX_LOCK_BYTES_V1,
+        allowedLinkCounts,
+        testOnlyAfterPinnedRead,
+      })
+      : Object.freeze({
+        ...await readCheckedAuthorityFileInternalV1({
+          path,
+          layout,
+          maximumBytes: MAX_LOCK_BYTES_V1,
+          allowedLinkCounts,
+        }),
+        linkState: "stable" as const,
+      });
+    const envelope = parseLockV1(
+      parseCanonicalAuthorityBytesInternalV1(checked.bytes),
+      key,
+    );
+    if (checked.linkState === "authenticated_same_inode_turnover") {
+      throw new ProviderAcceptanceAuthorityContendedInternalV1();
+    }
     return Object.freeze({
-      envelope: parseLockV1(
-        parseCanonicalAuthorityBytesInternalV1(checked.bytes),
-        key,
-      ),
+      envelope,
       dev: checked.dev,
       ino: checked.ino,
       nlink: checked.nlink,
     });
   } catch (error) {
     if (isMissingFileInternalV1(error)) return undefined;
+    if (error instanceof ProviderAcceptanceAuthorityContendedInternalV1) {
+      throw error;
+    }
     throw new ProviderAcceptanceAuthorityErrorV1("authority_busy", {
       cause: error,
     });
@@ -337,6 +359,7 @@ async function recoverLockPublishStageV1(
     key,
     layout.transactionLockStagePath,
     [1, 2],
+    true,
   );
   if (staged === undefined) return;
   const canonical = await observeLockV1(
@@ -344,6 +367,7 @@ async function recoverLockPublishStageV1(
     key,
     layout.transactionLockPath,
     [1, 2],
+    true,
   );
   if (!processDefinitelyExitedV1(staged.envelope.pid)) {
     throw new ProviderAcceptanceAuthorityContendedInternalV1();
@@ -361,6 +385,7 @@ async function recoverLockPublishStageV1(
       key,
       preparationPath,
       [2],
+      true,
     );
     if (preparation === undefined || !sameLockV1(staged, preparation)) {
       throw new ProviderAcceptanceAuthorityErrorV1("authority_busy");
@@ -378,6 +403,7 @@ async function recoverLockPublishStageV1(
     key,
     layout.transactionLockStagePath,
     [1, 2],
+    true,
   );
   if (latest === undefined || !sameLockV1(latest, staged)) {
     throw new ProviderAcceptanceAuthorityErrorV1("authority_busy");
@@ -987,6 +1013,7 @@ async function acquireLockV1(
       key,
       layout.transactionLockPath,
       [1, 2],
+      true,
     );
     if (observed?.nlink === 2) {
       await afterLockDurablePhaseV1(
@@ -1001,6 +1028,7 @@ async function acquireLockV1(
         // the still-authenticated inode at nlink=1. The exact same-lock join
         // below distinguishes that legal convergence from every other file.
         [1, 2],
+        true,
       );
       if (staged === undefined) {
         // The live owner may legally unlink the publication stage between
@@ -1014,6 +1042,7 @@ async function acquireLockV1(
           key,
           layout.transactionLockPath,
           [1, 2],
+          true,
         );
         if (converged === undefined) {
           // The owner may also have completed and released canonical in the
@@ -1149,26 +1178,69 @@ export async function withProviderAcceptanceAuthorityCrossProcessLockInternalV1<
 function waitForAuthorityLockChangeV1(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
   maximumWaitMilliseconds: number,
+  suppressWatchForTest = false,
+  testOnlyAfterPresentReobserve?: () => void,
 ): Promise<void> {
   return new Promise<void>((resolvePromise, rejectPromise) => {
     let settled = false;
     let watcher: ReturnType<typeof watch> | undefined;
     let timeout: NodeJS.Timeout | undefined;
+    let reobserveTimeout: NodeJS.Timeout | undefined;
+    let reobserveInFlight = false;
+    let reportedPresentForTest = false;
     const settle = (error?: unknown): void => {
       if (settled) return;
       settled = true;
       if (timeout !== undefined) clearTimeout(timeout);
+      if (reobserveTimeout !== undefined) clearTimeout(reobserveTimeout);
       watcher?.close();
       if (error === undefined) resolvePromise();
       else rejectPromise(new ProviderAcceptanceAuthorityErrorV1("authority_busy"));
     };
-    try {
-      watcher = watch(
-        dirname(layout.transactionLockPath),
-        { persistent: true },
-        () => settle(),
+    const reobserve = (): void => {
+      if (settled || reobserveInFlight) return;
+      reobserveInFlight = true;
+      void lstat(layout.transactionLockPath).then(
+        () => {
+          reobserveInFlight = false;
+          if (
+            !reportedPresentForTest &&
+            testOnlyAfterPresentReobserve !== undefined
+          ) {
+            reportedPresentForTest = true;
+            try {
+              testOnlyAfterPresentReobserve();
+            } catch (error) {
+              settle(error);
+              return;
+            }
+          }
+          if (!settled) {
+            reobserveTimeout = setTimeout(
+              reobserve,
+              Math.min(
+                LOCK_REOBSERVE_MILLISECONDS_V1,
+                Math.max(1, maximumWaitMilliseconds),
+              ),
+            );
+          }
+        },
+        (error) => {
+          reobserveInFlight = false;
+          if (isMissingFileInternalV1(error)) settle();
+          else settle(error);
+        },
       );
-      watcher.once("error", (error) => settle(error));
+    };
+    try {
+      if (!suppressWatchForTest) {
+        watcher = watch(
+          dirname(layout.transactionLockPath),
+          { persistent: true },
+          () => settle(),
+        );
+        watcher.once("error", (error) => settle(error));
+      }
       timeout = setTimeout(
         () => settle(new Error("authority lock wait deadline elapsed")),
         Math.max(1, maximumWaitMilliseconds),
@@ -1177,11 +1249,44 @@ function waitForAuthorityLockChangeV1(
       settle(new ProviderAcceptanceAuthorityErrorV1("authority_busy"));
       return;
     }
-    // Close the observe→watch race: if the canonical lock already vanished,
-    // retry immediately instead of waiting for an event that already fired.
-    void lstat(layout.transactionLockPath)
-      .catch((error) => {
-        if (isMissingFileInternalV1(error)) settle();
-      });
+    // Close the observe→watch race immediately, then retain a bounded read-only
+    // re-observation in case the platform watcher coalesces or drops release.
+    // Only canonical ENOENT wakes the contender; every other error fails closed.
+    reobserve();
   });
+}
+
+export async function observeProviderAcceptanceAuthorityLockTurnoverForTestInternalV1(
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  key: Uint8Array,
+  testOnlyAfterPinnedRead: () => void | Promise<void>,
+): Promise<"absent" | "contended" | "stable"> {
+  try {
+    const observed = await observeLockV1(
+      layout,
+      key,
+      layout.transactionLockPath,
+      [1, 2],
+      true,
+      testOnlyAfterPinnedRead,
+    );
+    return observed === undefined ? "absent" : "stable";
+  } catch (error) {
+    if (error instanceof ProviderAcceptanceAuthorityContendedInternalV1) {
+      return "contended";
+    }
+    throw error;
+  }
+}
+
+export function waitForProviderAcceptanceAuthorityLockReleasePollForTestInternalV1(
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  testOnlyAfterPresentReobserve: () => void,
+): Promise<void> {
+  return waitForAuthorityLockChangeV1(
+    layout,
+    1_000,
+    true,
+    testOnlyAfterPresentReobserve,
+  );
 }

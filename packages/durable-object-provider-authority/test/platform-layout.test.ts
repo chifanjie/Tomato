@@ -85,6 +85,7 @@ describe("provider Acceptance production OS locator", () => {
       left.installationIdentityKeyPath,
       left.installationIdentityInitializationMarkerPath,
       left.installationIdentityStatePath,
+      left.safeGitEmptyHooksDirectoryPath,
       left.canonicalSnapshotPath,
       left.deterministicSnapshotStagePath,
       left.canonicalPublicationPinPath,

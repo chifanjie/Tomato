@@ -26,6 +26,14 @@ Production layout is derived from trusted OS account information; arbitrary
 filesystem roots and test provisioning are available only through the explicit
 internal test seam while `NODE_ENV=test`.
 
+Fresh Installation Identity initialization also pins one native-owned,
+descriptor-retained exactly-empty SafeGit hooks directory. Its POSIX identity
+and empty-entry set are authenticated by the installation key, while the
+Provider facade keeps the key, native authority, path, device, inode, and HMAC
+token private. Legacy or pre-existing roots without that authenticated pin stay
+readable for their historical identity semantics but cannot be promoted to
+empty-hooks authority, and are never supplemented or adopted.
+
 The package also contains a source-internal, locked strong-mutation broker
 transaction candidate. It is intentionally absent from the package root,
 export map, and executable. While holding the same cross-process lock as

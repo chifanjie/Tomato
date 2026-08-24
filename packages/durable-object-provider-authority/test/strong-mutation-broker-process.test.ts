@@ -143,8 +143,9 @@ afterEach(async () => {
 });
 
 async function fixtureV1() {
-  const root = await mkdtemp(join(tmpdir(), "broker-process-"));
-  fixtureRoots.add(root);
+  const parent = await mkdtemp(join(tmpdir(), "broker-process-"));
+  const root = join(parent, "authority");
+  fixtureRoots.add(parent);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
   brokerVerifierByLayoutV1.set(
@@ -419,6 +420,10 @@ async function isolateAndExpectIdentityResidueFailureV1(input: Readonly<{
     ".provider-acceptance-authority-v1.lock.recovery",
     ".provider-acceptance-authority-v1.lock.stale",
   ].map((name) => rm(join(privateRoot, name), { force: true })));
+  await rm(join(privateRoot, "safe-git-empty-hooks-v1"), {
+    recursive: true,
+    force: true,
+  });
   expect((await readdir(privateRoot)).sort()).toEqual(residues.sort());
 
   await expect(

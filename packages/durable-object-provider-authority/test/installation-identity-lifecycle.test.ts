@@ -71,13 +71,19 @@ async function expectIdentityInvalidV1(operation: Promise<unknown>) {
     await operation;
     throw new Error("expected identity operation to fail");
   } catch (error) {
-    expect(error).toMatchObject({
-      name: "ProviderAcceptanceAuthorityErrorV1",
-    });
+    const name = error !== null && typeof error === "object" &&
+        "name" in error
+      ? error.name
+      : undefined;
+    expect([
+      "ProviderAcceptanceAuthorityErrorV1",
+      "Error",
+    ]).toContain(name);
     expect([
       "identity_key_invalid",
       "namespace_integrity_failed",
       "invalid_layout",
+      "ERR_NATIVE_KERNEL_BRIDGE_INSTALLATION_STATE_AUTHORITY_UNAVAILABLE",
     ]).toContain(
       error !== null && typeof error === "object" && "code" in error
         ? error.code
@@ -118,8 +124,9 @@ async function initializeInWorkerV1(root: string): Promise<string> {
 
 describe("production installation identity lifecycle", () => {
   it("matches independent exact-field HMAC oracles without persisting path or owner bytes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "provider-identity-oracle-"));
-    roots.add(root);
+    const parent = await mkdtemp(join(tmpdir(), "provider-identity-oracle-"));
+    const root = join(parent, "authority");
+    roots.add(parent);
     const capability =
       createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
     await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
@@ -162,6 +169,26 @@ describe("production installation identity lifecycle", () => {
         stateRootFileIdentity: state.stateRootFileIdentity,
       },
     ));
+    const emptyHooksDirectoryBinding = state.emptyHooksDirectoryBinding as {
+      directoryIdentity: {
+        platform: "posix";
+        device: string;
+        inode: string;
+      };
+      emptyHooksDirectoryToken: string;
+    };
+    expect(emptyHooksDirectoryBinding.emptyHooksDirectoryToken).toBe(hmac(
+      "empty-hooks-directory-token-v1",
+      {
+        directoryIdentity: emptyHooksDirectoryBinding.directoryIdentity,
+        entries: [],
+      },
+    ));
+    const hooksMetadata = await lstat(
+      privatePathV1(root, "safe-git-empty-hooks-v1"),
+    );
+    expect(hooksMetadata.isDirectory()).toBe(true);
+    expect(hooksMetadata.mode & 0o777).toBe(0o700);
     const persisted = stateBytes.toString("utf8");
     expect(persisted).not.toContain(canonicalRoot);
     expect(persisted).not.toContain(ownerIdentity);

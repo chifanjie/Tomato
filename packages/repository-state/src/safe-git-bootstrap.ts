@@ -32,6 +32,7 @@ import {
   type PathSafeWorktreeIdV1,
 } from "@understand-code/contracts";
 import {
+  bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1,
   deriveProviderAcceptanceSafeGitPathIdentityInternalV1,
 } from "@understand-code/durable-object-provider-authority/internal/acceptance-store";
 
@@ -80,6 +81,13 @@ export const SAFE_GIT_REPOSITORY_IDENTITY_REQUIRED_NEXT_V1 = Object.freeze([
   "os_sandbox",
   "strong_writer",
 ] as const);
+export const SAFE_GIT_EMPTY_HOOKS_PROFILE_V1 =
+  "descriptor_bound_safe_git_empty_hooks_v1" as const;
+export const SAFE_GIT_EMPTY_HOOKS_REQUIRED_NEXT_V1 = Object.freeze([
+  "handle_bound_execution",
+  "os_sandbox",
+  "strong_writer",
+] as const);
 
 export type SafeGitBootstrapErrorCodeV1 =
   | "unsupported_platform"
@@ -95,6 +103,7 @@ export type SafeGitBootstrapErrorCodeV1 =
   | "backpointer_mismatch"
   | "repository_control_invalid"
   | "repository_identity_invalid"
+  | "empty_hooks_directory_invalid"
   | "binding_changed";
 
 const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
@@ -118,6 +127,8 @@ const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
       "repository control metadata is unsupported or could not be verified",
     repository_identity_invalid:
       "repository identity authority is unavailable or could not be verified",
+    empty_hooks_directory_invalid:
+      "SafeGit empty-hooks authority is unavailable or could not be verified",
     binding_changed: "filesystem bootstrap binding changed during validation",
   });
 
@@ -210,16 +221,33 @@ export interface SafeGitRepositoryIdentityInspectionV1
   ];
 }
 
+/** Repository identity promoted with an installation-pinned, exactly empty hooks authority. */
+export interface SafeGitEmptyHooksInspectionV1
+  extends Omit<
+    SafeGitRepositoryIdentityInspectionV1,
+    "profile" | "emptyHooksDirectory" | "requiredNext"
+  > {
+  readonly profile: typeof SAFE_GIT_EMPTY_HOOKS_PROFILE_V1;
+  readonly emptyHooksDirectory: "verified";
+  readonly requiredNext: readonly [
+    "handle_bound_execution",
+    "os_sandbox",
+    "strong_writer",
+  ];
+}
+
 export type SafeGitDescriptorBoundInspectionV1 =
   | SafeGitDescriptorBootstrapInspectionV1
   | SafeGitRepositoryControlInspectionV1
-  | SafeGitRepositoryIdentityInspectionV1;
+  | SafeGitRepositoryIdentityInspectionV1
+  | SafeGitEmptyHooksInspectionV1;
 
 export interface SafeGitDescriptorBoundCapabilityV1 {
   readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   readonly closed: boolean;
   bindRepositoryControl(): Promise<SafeGitRepositoryControlInspectionV1>;
   bindRepositoryIdentity(): Promise<SafeGitRepositoryIdentityInspectionV1>;
+  bindEmptyHooksDirectory(): Promise<SafeGitEmptyHooksInspectionV1>;
   revalidate(): Promise<SafeGitDescriptorBoundInspectionV1>;
   close(): Promise<void>;
 }
@@ -248,6 +276,13 @@ class SafeGitBootstrapCapabilityInternalV1
   readonly #layout: NativeSafeGitDescriptorLayoutV1;
   #repositoryControl: NativeSafeGitRepositoryControlInspectionV1 | undefined;
   #pathIdentity: NativeSafeGitPathIdentityV1 | undefined;
+  #emptyHooksBinding:
+    | Awaited<
+      ReturnType<
+        typeof bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1
+      >
+    >
+    | undefined;
   #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -306,6 +341,51 @@ class SafeGitBootstrapCapabilityInternalV1
     }
   }
 
+  async bindEmptyHooksDirectory(): Promise<SafeGitEmptyHooksInspectionV1> {
+    const binding = this.#binding;
+    const control = this.#repositoryControl;
+    const pathIdentity = this.#pathIdentity;
+    if (
+      this.#closed || !this.#usable || binding === undefined ||
+      control === undefined || pathIdentity === undefined
+    ) {
+      throw new SafeGitBootstrapErrorV1("empty_hooks_directory_invalid");
+    }
+    try {
+      if (
+        revalidateNativeSafeGitDescriptorBootstrapV1(binding) !== this.#layout
+      ) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      const currentIdentity =
+        await deriveProviderAcceptanceSafeGitPathIdentityInternalV1(binding);
+      validatePathIdentityV1(currentIdentity);
+      if (!samePathIdentityV1(pathIdentity, currentIdentity)) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      const emptyHooksBinding =
+        await bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1(
+          binding,
+        );
+      validateEmptyHooksBindingV1(emptyHooksBinding);
+      if (
+        this.#emptyHooksBinding !== undefined &&
+        !sameEmptyHooksBindingV1(this.#emptyHooksBinding, emptyHooksBinding)
+      ) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      this.#emptyHooksBinding = emptyHooksBinding;
+      return emptyHooksInspectionV1(
+        this.#layout,
+        control,
+        pathIdentity,
+      );
+    } catch {
+      this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("empty_hooks_directory_invalid");
+    }
+  }
+
   async revalidate(): Promise<SafeGitDescriptorBoundInspectionV1> {
     const binding = this.#binding;
     if (this.#closed || !this.#usable || binding === undefined) {
@@ -326,6 +406,27 @@ class SafeGitBootstrapCapabilityInternalV1
       validatePathIdentityV1(currentIdentity);
       if (!samePathIdentityV1(expectedIdentity, currentIdentity)) {
         throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      const expectedEmptyHooksBinding = this.#emptyHooksBinding;
+      if (expectedEmptyHooksBinding !== undefined) {
+        const currentEmptyHooksBinding =
+          await bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1(
+            binding,
+          );
+        validateEmptyHooksBindingV1(currentEmptyHooksBinding);
+        if (
+          !sameEmptyHooksBindingV1(
+            expectedEmptyHooksBinding,
+            currentEmptyHooksBinding,
+          )
+        ) {
+          throw new SafeGitBootstrapErrorV1("binding_changed");
+        }
+        return emptyHooksInspectionV1(
+          layout,
+          this.#repositoryControl,
+          expectedIdentity,
+        );
       }
       return repositoryIdentityInspectionV1(
         layout,
@@ -773,6 +874,24 @@ function repositoryIdentityInspectionV1(
   });
 }
 
+function emptyHooksInspectionV1(
+  layout: SafeGitEmptyHooksInspectionV1["layout"],
+  control: NativeSafeGitRepositoryControlInspectionV1,
+  pathIdentity: NativeSafeGitPathIdentityV1,
+): SafeGitEmptyHooksInspectionV1 {
+  const identity = repositoryIdentityInspectionV1(
+    layout,
+    control,
+    pathIdentity,
+  );
+  return Object.freeze({
+    ...identity,
+    profile: SAFE_GIT_EMPTY_HOOKS_PROFILE_V1,
+    emptyHooksDirectory: "verified",
+    requiredNext: SAFE_GIT_EMPTY_HOOKS_REQUIRED_NEXT_V1,
+  });
+}
+
 function validatePathIdentityV1(
   identity: NativeSafeGitPathIdentityV1,
 ): void {
@@ -794,6 +913,37 @@ function samePathIdentityV1(
     left.repositoryId === right.repositoryId &&
     left.worktreeId === right.worktreeId &&
     left.rootIdentity === right.rootIdentity;
+}
+
+type ProviderEmptyHooksBindingV1 = Awaited<
+  ReturnType<typeof bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1>
+>;
+
+function validateEmptyHooksBindingV1(
+  binding: ProviderEmptyHooksBindingV1,
+): void {
+  if (
+    binding.profile !== "native_safe_git_empty_hooks_binding_v1" ||
+    binding.directoryIdentity.platform !== "posix" ||
+    !/^(0|[1-9][0-9]*)$/u.test(binding.directoryIdentity.device) ||
+    !/^(0|[1-9][0-9]*)$/u.test(binding.directoryIdentity.inode) ||
+    !/^hmac-sha256:[0-9a-f]{64}$/u.test(
+      binding.emptyHooksDirectoryToken,
+    )
+  ) {
+    throw new SafeGitBootstrapErrorV1("empty_hooks_directory_invalid");
+  }
+}
+
+function sameEmptyHooksBindingV1(
+  left: ProviderEmptyHooksBindingV1,
+  right: ProviderEmptyHooksBindingV1,
+): boolean {
+  return left.profile === right.profile &&
+    left.directoryIdentity.platform === right.directoryIdentity.platform &&
+    left.directoryIdentity.device === right.directoryIdentity.device &&
+    left.directoryIdentity.inode === right.directoryIdentity.inode &&
+    left.emptyHooksDirectoryToken === right.emptyHooksDirectoryToken;
 }
 
 async function bootstrapSafeGitDescriptorBoundCandidateCoreV1(

@@ -14,6 +14,10 @@ import {
 } from "./acceptance-store-core-internal.js";
 import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
 import {
+  observeProviderAcceptanceAuthorityLockTurnoverForTestInternalV1,
+  waitForProviderAcceptanceAuthorityLockReleasePollForTestInternalV1,
+} from "./cross-process-lock-internal.js";
+import {
   openOrInitializeProviderAcceptanceInstallationIdentityInternalV1,
   provisionProviderAcceptanceInstallationIdentityForTestInternalV1,
   type ProviderAcceptanceInstallationIdentityInitializationOptionsInternalV1,
@@ -41,8 +45,11 @@ import {
 } from "./strong-mutation-trust-verifier-core-internal.js";
 import {
   assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
+  bindNativeSafeGitEmptyHooksDirectoryV1,
+  closeNativeSafeGitDescriptorBootstrapV1,
   deriveNativeSafeGitPathIdentityV1,
   type NativeSafeGitDescriptorBindingV1,
+  type NativeSafeGitEmptyHooksDirectoryBindingV1,
   type NativeSafeGitPathIdentityV1,
 } from "@understand-code/native-kernel-bridge";
 
@@ -124,12 +131,61 @@ export function provisionProviderAcceptanceAuthorityForTestInternalV1(
   input: Readonly<{
     installationIdentityGenerationId: unknown;
     installationIdentityKey: Uint8Array;
+    legacyWithoutEmptyHooksDirectoryBinding?: boolean;
   }>,
 ): Promise<void> {
   return provisionProviderAcceptanceInstallationIdentityForTestInternalV1(
     requireCapabilityV1(capability),
     input,
   );
+}
+
+export async function bindProviderAcceptanceSafeGitEmptyHooksDirectoryForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  binding: NativeSafeGitDescriptorBindingV1,
+): Promise<NativeSafeGitEmptyHooksDirectoryBindingV1> {
+  try {
+    const identity =
+      await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+        requireCapabilityV1(capability),
+        {
+          authorizeNativeAuthority(opened) {
+            assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+              opened.authority,
+              binding,
+            );
+          },
+        },
+      );
+    return await identity.withKey(async (key, authority, expected) => {
+      if (expected === undefined) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      const actual = bindNativeSafeGitEmptyHooksDirectoryV1(
+        binding,
+        authority,
+        key,
+      );
+      if (
+        actual.profile !== "native_safe_git_empty_hooks_binding_v1" ||
+        actual.directoryIdentity.platform !==
+          expected.directoryIdentity.platform ||
+        actual.directoryIdentity.device !== expected.directoryIdentity.device ||
+        actual.directoryIdentity.inode !== expected.directoryIdentity.inode ||
+        actual.emptyHooksDirectoryToken !== expected.emptyHooksDirectoryToken
+      ) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      return actual;
+    });
+  } catch {
+    try {
+      closeNativeSafeGitDescriptorBootstrapV1(binding);
+    } catch {
+      // The redacted custody failure remains authoritative.
+    }
+    throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+  }
 }
 
 export async function openOrInitializeProviderAcceptanceAuthorityForTestInternalV1(
@@ -175,6 +231,36 @@ export function openProviderAcceptanceAuthorityStoreForTestInternalV1(
   return openProviderAcceptanceAuthorityStoreWithLayoutCoreInternalV1(
     requireCapabilityV1(capability),
     options,
+  );
+}
+
+export async function observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  testOnlyAfterPinnedRead: () => void | Promise<void>,
+): Promise<"absent" | "contended" | "stable"> {
+  requireTestProcessV1();
+  const layout = requireCapabilityV1(capability);
+  const identity =
+    await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+      layout,
+    );
+  return identity.withKey((key) =>
+    observeProviderAcceptanceAuthorityLockTurnoverForTestInternalV1(
+      layout,
+      key,
+      testOnlyAfterPinnedRead,
+    )
+  );
+}
+
+export function waitForProviderAcceptanceAuthorityLockReleasePollWithTestLayoutInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  testOnlyAfterPresentReobserve: () => void,
+): Promise<void> {
+  requireTestProcessV1();
+  return waitForProviderAcceptanceAuthorityLockReleasePollForTestInternalV1(
+    requireCapabilityV1(capability),
+    testOnlyAfterPresentReobserve,
   );
 }
 

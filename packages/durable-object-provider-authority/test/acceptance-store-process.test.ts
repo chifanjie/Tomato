@@ -1,11 +1,14 @@
 import { fork, type ChildProcess } from "node:child_process";
+import { createHmac } from "node:crypto";
 import {
   chmod,
+  link,
   lstat,
   mkdtemp,
   readFile,
   readdir,
   rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,13 +22,16 @@ import {
   type ProviderAcceptanceCompareAppendResultV1,
   type ProviderAcceptanceCurrentReadV1,
 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";
+import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   inspectProviderAcceptanceAuthoritySnapshotForTestInternalV1,
+  observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
+  waitForProviderAcceptanceAuthorityLockReleasePollWithTestLayoutInternalV1,
   type ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
 } from "../src/test-seam-internal.js";
 import {
@@ -45,6 +51,7 @@ type ProviderAcceptanceAuthorityDurablePhaseInternalV1 = Parameters<
 
 type WorkerMessageV1 =
   | { readonly type: "ready" }
+  | { readonly type: "opened"; readonly count: number }
   | {
       readonly type: "phase";
       readonly phase: ProviderAcceptanceAuthorityDurablePhaseInternalV1;
@@ -85,8 +92,9 @@ afterEach(async () => {
 });
 
 async function fixtureV1() {
-  const root = await mkdtemp(join(tmpdir(), "provider-authority-process-"));
-  fixtureRoots.add(root);
+  const parent = await mkdtemp(join(tmpdir(), "provider-authority-process-"));
+  const root = join(parent, "authority");
+  fixtureRoots.add(parent);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
@@ -117,7 +125,12 @@ function currentV1(
 }
 
 function startWorkerV1(options: Readonly<{
-  mode: "compare" | "crash" | "lock_crash" | "release_error";
+  mode:
+    | "compare"
+    | "crash"
+    | "lock_crash"
+    | "open_churn"
+    | "release_error";
   root: string;
   request: ProviderAcceptanceCompareAppendRequestV1;
   targetPhase?: ProviderAcceptanceAuthorityDurablePhaseInternalV1;
@@ -231,6 +244,31 @@ function lockPathV1(root: string, name: string): string {
   return join(privateDirectoryV1(root), name);
 }
 
+function authenticatedLockBytesV1(
+  nonce: string,
+  lockTokenOverride?: string,
+): Buffer {
+  const fields = Object.freeze({
+    schemaVersion: 1 as const,
+    profile: "understand_code_provider_acceptance_authority_lock_v1",
+    pid: process.pid,
+    nonce,
+    preparationName:
+      `.provider-acceptance-authority-v1.lock.prepare-${process.pid}-${nonce}`,
+  });
+  const lockToken = lockTokenOverride ??
+    `hmac-sha256:${createHmac("sha256", TEST_INSTALLATION_IDENTITY_KEY)
+      .update(canonicalizeJcsSafeIntegerUtf8V1([
+        "understand-code-provider-acceptance-authority-lock-v1",
+        fields,
+      ]))
+      .digest("hex")}`;
+  return Buffer.from(canonicalizeJcsSafeIntegerUtf8V1({
+    ...fields,
+    lockToken,
+  }));
+}
+
 async function lockProtocolEntriesV1(root: string): Promise<readonly string[]> {
   return (await readdir(privateDirectoryV1(root)))
     .filter((name) => name.startsWith(".provider-acceptance-authority-v1.lock"))
@@ -336,6 +374,7 @@ describe("provider Acceptance authority OS-process serialization", () => {
     const { root, capability, store } = await fixtureV1();
     await store.compareAppend(genesisRequestV1());
     const current = currentV1(await store.readCurrent());
+    expect(await lockProtocolEntriesV1(root)).toEqual([]);
     const leftRequest = successorRequestV1({
       current,
       operationNonce: operationNonceV1(21),
@@ -416,6 +455,148 @@ describe("provider Acceptance authority OS-process serialization", () => {
     expect(
       await reopened.compareAppend(validRightRequest),
     ).toEqual(rightMessage.result);
+  });
+
+  it("serializes repeated concurrent worker opens through authenticated lock turnover", async () => {
+    const { root, store } = await fixtureV1();
+    await store.compareAppend(genesisRequestV1());
+    const current = currentV1(await store.readCurrent());
+    expect(await lockProtocolEntriesV1(root)).toEqual([]);
+    const request = successorRequestV1({
+      current,
+      operationNonce: operationNonceV1(23),
+    });
+    const left = startWorkerV1({ mode: "open_churn", root, request });
+    const leftReady = waitForMessageV1(left, "ready");
+    const right = startWorkerV1({ mode: "open_churn", root, request });
+    const rightReady = waitForMessageV1(right, "ready");
+    await Promise.all([leftReady, rightReady]);
+    const leftOpened = waitForMessageV1(left, "opened");
+    const rightOpened = waitForMessageV1(right, "opened");
+    const leftExit = waitForExitV1(left);
+    const rightExit = waitForExitV1(right);
+    left.send({ type: "go" });
+    right.send({ type: "go" });
+    await expect(Promise.all([leftOpened, rightOpened])).resolves.toEqual([
+      { type: "opened", count: 16 },
+      { type: "opened", count: 16 },
+    ]);
+    await expect(Promise.all([leftExit, rightExit])).resolves.toEqual([
+      { code: 0, signal: null },
+      { code: 0, signal: null },
+    ]);
+    expect(await lockProtocolEntriesV1(root)).toEqual([]);
+  });
+});
+
+describe("provider Acceptance authority authenticated lock turnover", () => {
+  it("authenticates a pinned same-inode lock before classifying 2-to-1 turnover as contention", async () => {
+    const { root, capability } = await fixtureV1();
+    const canonical = lockPathV1(root, LOCK_CANONICAL_NAME_V1);
+    const stage = lockPathV1(root, LOCK_STAGE_NAME_V1);
+    await writeFile(canonical, authenticatedLockBytesV1("a".repeat(32)), {
+      mode: 0o600,
+    });
+    await link(canonical, stage);
+    await expectSameInodeWithLinksV1(canonical, stage, 2);
+    await expect(
+      observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+        capability,
+        () => unlink(stage),
+      ),
+    ).resolves.toBe("contended");
+    expect((await lstat(canonical)).nlink).toBe(1);
+    await unlink(canonical);
+    expect(await lockProtocolEntriesV1(root)).toEqual([]);
+  });
+
+  it("keeps malformed, wrong-HMAC, replacement-inode, and illegal-link observations fail closed", async () => {
+    const { root, capability } = await fixtureV1();
+    const canonical = lockPathV1(root, LOCK_CANONICAL_NAME_V1);
+    const stage = lockPathV1(root, LOCK_STAGE_NAME_V1);
+
+    await writeFile(canonical, "{}", { mode: 0o600 });
+    await expect(
+      observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+        capability,
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: "authority_busy" });
+    await unlink(canonical);
+
+    await writeFile(
+      canonical,
+      authenticatedLockBytesV1(
+        "b".repeat(32),
+        `hmac-sha256:${"0".repeat(64)}`,
+      ),
+      { mode: 0o600 },
+    );
+    await expect(
+      observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+        capability,
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: "authority_busy" });
+    await unlink(canonical);
+
+    await writeFile(canonical, authenticatedLockBytesV1("c".repeat(32)), {
+      mode: 0o600,
+    });
+    await expect(
+      observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+        capability,
+        async () => {
+          await unlink(canonical);
+          await writeFile(
+            canonical,
+            authenticatedLockBytesV1("d".repeat(32)),
+            { mode: 0o600 },
+          );
+        },
+      ),
+    ).rejects.toMatchObject({ code: "authority_busy" });
+    await unlink(canonical);
+
+    await writeFile(canonical, authenticatedLockBytesV1("e".repeat(32)), {
+      mode: 0o600,
+    });
+    await link(canonical, stage);
+    await link(canonical, `${canonical}.unexpected-link`);
+    let reachedPinnedRead = false;
+    await expect(
+      observeProviderAcceptanceAuthorityLockTurnoverWithTestLayoutInternalV1(
+        capability,
+        () => {
+          reachedPinnedRead = true;
+        },
+      ),
+    ).rejects.toMatchObject({ code: "authority_busy" });
+    expect(reachedPinnedRead).toBe(false);
+  });
+
+  it("polls canonical absence when the test seam suppresses every watch event", async () => {
+    const { root, capability } = await fixtureV1();
+    const canonical = lockPathV1(root, LOCK_CANONICAL_NAME_V1);
+    await writeFile(canonical, "{}", { mode: 0o600 });
+    let observedPresent!: () => void;
+    const present = new Promise<void>((resolvePromise) => {
+      observedPresent = resolvePromise;
+    });
+    let settled = false;
+    const waiting =
+      waitForProviderAcceptanceAuthorityLockReleasePollWithTestLayoutInternalV1(
+        capability,
+        observedPresent,
+      ).then(() => {
+        settled = true;
+      });
+    await present;
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 75));
+    expect(settled).toBe(false);
+    await unlink(canonical);
+    await expect(waiting).resolves.toBeUndefined();
+    expect(await lockProtocolEntriesV1(root)).toEqual([]);
   });
 });
 
@@ -529,6 +710,7 @@ describe("provider Acceptance authority SIGKILL recovery", () => {
         "installation-identity-v1.key",
         "provider-acceptance-authority-v1.publication.json",
         "provider-acceptance-authority-v1.snapshot.json",
+        "safe-git-empty-hooks-v1",
       ]);
     });
   }

@@ -34,6 +34,10 @@ export const PROVIDER_ACCEPTANCE_AUTHORITY_LOGICAL_LOCATORS_V1 = Object.freeze({
     "runtime-state/private/.provider-acceptance-authority-v1.lock.stale",
 } as const);
 
+/** Source-internal; native owns this fixed descriptor-relative locator. */
+export const PROVIDER_SAFE_GIT_EMPTY_HOOKS_LOGICAL_LOCATOR_INTERNAL_V1 =
+  "runtime-state/private/safe-git-empty-hooks-v1" as const;
+
 /** Source-internal only; deliberately absent from the package-root locator set. */
 export const PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1 =
   Object.freeze({
@@ -57,6 +61,7 @@ export interface ProviderAcceptanceAuthorityLayoutInternalV1 {
   readonly installationIdentityKeyPath: string;
   readonly installationIdentityInitializationMarkerPath: string;
   readonly installationIdentityStatePath: string;
+  readonly safeGitEmptyHooksDirectoryPath: string;
   readonly installationIdentityInitializationLockPath: string;
   readonly installationIdentityMarkerStagePath: string;
   readonly canonicalSnapshotPath: string;
@@ -147,6 +152,10 @@ function createLayoutV1(
       root,
       PROVIDER_ACCEPTANCE_AUTHORITY_LOGICAL_LOCATORS_V1
         .installationIdentityState,
+    ),
+    safeGitEmptyHooksDirectoryPath: join(
+      root,
+      PROVIDER_SAFE_GIT_EMPTY_HOOKS_LOGICAL_LOCATOR_INTERNAL_V1,
     ),
     installationIdentityInitializationLockPath: join(
       root,

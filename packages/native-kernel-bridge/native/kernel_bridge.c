@@ -46,6 +46,8 @@
 #define SAFE_GIT_DIRECTORY_ENTRY_LIMIT ((size_t)16384)
 #define SAFE_GIT_DIRECTORY_NAME_BYTES_LIMIT ((size_t)4194304)
 #define SAFE_GIT_CONFIG_KEY_LIMIT ((size_t)16384)
+#define INSTALLATION_AUTHORITY_NODE_LIMIT ((size_t)128)
+#define SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME "safe-git-empty-hooks-v1"
 
 struct safe_git_sha256_context {
   uint32_t state[8];
@@ -250,6 +252,14 @@ struct safe_git_absence {
   char component[NAME_MAX + 1];
 };
 
+struct safe_git_installation_node {
+  int file_descriptor;
+  int parent_index;
+  int managed;
+  char component[NAME_MAX + 1];
+  struct stat snapshot;
+};
+
 struct safe_git_descriptor_binding {
   int closed;
   enum safe_git_layout layout;
@@ -265,9 +275,16 @@ struct safe_git_descriptor_binding {
   enum safe_git_object_format object_format;
   size_t directory_snapshot_count;
   struct safe_git_directory_snapshot directory_snapshots[2];
+  int empty_hooks_bound;
+  int empty_hooks_test_authority;
+  int test_empty_hooks_race_armed;
+  size_t empty_hooks_node_count;
+  int empty_hooks_state_root_index;
+  int empty_hooks_directory_index;
+  struct safe_git_installation_node
+      empty_hooks_nodes[INSTALLATION_AUTHORITY_NODE_LIMIT];
 };
 
-#define INSTALLATION_AUTHORITY_NODE_LIMIT ((size_t)128)
 #define INSTALLATION_IDENTITY_RECORD_LIMIT ((size_t)16384)
 
 struct installation_authority_node {
@@ -285,6 +302,12 @@ struct installation_artifact_pin {
   unsigned char content_digest[32];
 };
 
+enum installation_test_namespace_race_phase {
+  INSTALLATION_TEST_NAMESPACE_RACE_NONE = 0,
+  INSTALLATION_TEST_NAMESPACE_RACE_STATIC_SHAPE = 1,
+  INSTALLATION_TEST_NAMESPACE_RACE_FRESH_SHAPE = 2,
+};
+
 struct installation_state_authority {
   int closed;
   size_t node_count;
@@ -294,10 +317,12 @@ struct installation_state_authority {
   int private_index;
   int provider_index;
   int acceptance_index;
+  int empty_hooks_index;
   const char *resolver_id;
   char *canonical_state_root_bytes;
   char owner_identity[64];
   struct installation_artifact_pin artifact_pins[4];
+  enum installation_test_namespace_race_phase test_namespace_race_phase;
 };
 
 struct installation_initialization_lock {
@@ -735,6 +760,20 @@ static void safe_git_release_binding(
     snapshot->node_index = -1;
   }
   binding->directory_snapshot_count = 0;
+  for (index = binding->empty_hooks_node_count; index > 0; index -= 1) {
+    struct safe_git_installation_node *node =
+        &binding->empty_hooks_nodes[index - 1];
+    if (node->file_descriptor >= 0) {
+      (void)close(node->file_descriptor);
+      node->file_descriptor = -1;
+    }
+  }
+  binding->empty_hooks_node_count = 0;
+  binding->empty_hooks_bound = 0;
+  binding->empty_hooks_test_authority = 0;
+  binding->test_empty_hooks_race_armed = 0;
+  binding->empty_hooks_state_root_index = -1;
+  binding->empty_hooks_directory_index = -1;
   for (index = binding->node_count; index > 0; index -= 1) {
     struct safe_git_bound_node *node = &binding->nodes[index - 1];
     if (node->file_descriptor >= 0) {
@@ -1123,6 +1162,8 @@ static int safe_git_read_and_pin_file(
 static int safe_git_add_absence(struct safe_git_descriptor_binding *binding,
                                 int parent_index, const char *component);
 static int safe_git_revalidate_binding(
+    struct safe_git_descriptor_binding *binding);
+static int safe_git_revalidate_empty_hooks_binding(
     struct safe_git_descriptor_binding *binding);
 static int safe_git_unwrap_argument(
     napi_env env, napi_callback_info info,
@@ -2565,7 +2606,8 @@ static int safe_git_revalidate_binding(
     }
     safe_git_release_directory_snapshot(&observed);
   }
-  return 1;
+  return !binding->empty_hooks_bound ||
+         safe_git_revalidate_empty_hooks_binding(binding);
 }
 
 static struct safe_git_descriptor_binding *safe_git_open_binding(
@@ -2588,6 +2630,8 @@ static struct safe_git_descriptor_binding *safe_git_open_binding(
   binding->workspace_root_index = -1;
   binding->git_directory_index = -1;
   binding->common_directory_index = -1;
+  binding->empty_hooks_state_root_index = -1;
+  binding->empty_hooks_directory_index = -1;
   binding->object_format = SAFE_GIT_OBJECT_FORMAT_UNBOUND;
   if (!safe_git_open_process_root(binding, &process_root_index) ||
       process_root_index != 0 ||
@@ -2915,9 +2959,59 @@ static napi_value resolve_native_installation_state_root(
   return result;
 }
 
-static int installation_directory_admitted(int file_descriptor,
-                                            const struct stat *expected,
-                                            int managed) {
+static int installation_directory_security_admitted_with_entry_churn(
+    int file_descriptor) {
+  struct stat before;
+  struct stat after;
+  memset(&before, 0, sizeof(before));
+  memset(&after, 0, sizeof(after));
+  if (fstat(file_descriptor, &before) != 0 || !S_ISDIR(before.st_mode)) {
+    return 0;
+  }
+#if defined(__APPLE__)
+  if (!has_no_dangerous_file_flags(&before) ||
+      !has_no_extended_access_control(file_descriptor,
+                                      EXPECTED_FILE_KIND_DIRECTORY) ||
+      fstat(file_descriptor, &after) != 0 ||
+      !has_no_dangerous_file_flags(&after) ||
+      before.st_flags != after.st_flags ||
+      !safe_git_identity_matches(&before, &after,
+                                 SAFE_GIT_BOUND_DIRECTORY) ||
+      !has_no_extended_access_control(file_descriptor,
+                                      EXPECTED_FILE_KIND_DIRECTORY) ||
+      fstat(file_descriptor, &after) != 0 ||
+      before.st_flags != after.st_flags ||
+      !has_no_dangerous_file_flags(&after)) {
+    return 0;
+  }
+#elif defined(__linux__)
+  unsigned int flags_before;
+  unsigned int flags_after;
+  if (!read_linux_file_flags(file_descriptor, &flags_before) ||
+      !has_no_dangerous_file_flags(flags_before) ||
+      !has_no_extended_access_control(file_descriptor,
+                                      EXPECTED_FILE_KIND_DIRECTORY) ||
+      !read_linux_file_flags(file_descriptor, &flags_after) ||
+      flags_before != flags_after || !has_no_dangerous_file_flags(flags_after) ||
+      fstat(file_descriptor, &after) != 0 ||
+      !safe_git_identity_matches(&before, &after,
+                                 SAFE_GIT_BOUND_DIRECTORY) ||
+      !has_no_extended_access_control(file_descriptor,
+                                      EXPECTED_FILE_KIND_DIRECTORY) ||
+      !read_linux_file_flags(file_descriptor, &flags_after) ||
+      flags_before != flags_after || !has_no_dangerous_file_flags(flags_after) ||
+      fstat(file_descriptor, &after) != 0) {
+    return 0;
+  }
+#else
+  return 0;
+#endif
+  return safe_git_identity_matches(&before, &after,
+                                   SAFE_GIT_BOUND_DIRECTORY);
+}
+
+static int installation_directory_admitted(
+    int file_descriptor, const struct stat *expected, int managed) {
   struct stat after;
   uid_t effective_uid = geteuid();
   gid_t effective_gid = getegid();
@@ -2931,8 +3025,8 @@ static int installation_directory_admitted(int file_descriptor,
               ((((unsigned int)expected->st_mode) & 0022U) != 0U &&
                !(expected->st_uid == 0 &&
                  (((unsigned int)expected->st_mode) & 07777U) == 01777U)))) ||
-      !fd_has_no_extended_access_control(file_descriptor,
-                                         EXPECTED_FILE_KIND_DIRECTORY) ||
+      !installation_directory_security_admitted_with_entry_churn(
+          file_descriptor) ||
       fstat(file_descriptor, &after) != 0 ||
       !safe_git_identity_matches(expected, &after,
                                  SAFE_GIT_BOUND_DIRECTORY)) {
@@ -2986,8 +3080,10 @@ static int installation_authority_add_node(
       authority->node_count >= INSTALLATION_AUTHORITY_NODE_LIMIT ||
       parent_index < -1 ||
       (parent_index >= 0 && (size_t)parent_index >= authority->node_count) ||
-      component_length > NAME_MAX || fstat(file_descriptor, &metadata) != 0 ||
-      !installation_directory_admitted(file_descriptor, &metadata, managed)) {
+      component_length > NAME_MAX || fstat(file_descriptor, &metadata) != 0) {
+    return 0;
+  }
+  if (!installation_directory_admitted(file_descriptor, &metadata, managed)) {
     return 0;
   }
   node = &authority->nodes[authority->node_count];
@@ -3132,7 +3228,40 @@ static int installation_authority_open_managed_child(
                                            1, create, &created, node_index);
 }
 
-static int installation_authority_revalidate(
+static int installation_directory_exact_entries(
+    int directory_file_descriptor, const char *const *expected,
+    size_t expected_count);
+
+static int installation_authority_open_empty_hooks(
+    struct installation_state_authority *authority, int create_structure) {
+  struct stat metadata;
+  int created = 0;
+  memset(&metadata, 0, sizeof(metadata));
+  if (authority == NULL || authority->private_index < 0) return 0;
+  if (create_structure) {
+    return installation_authority_open_child(
+               authority, authority->private_index,
+               SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME, 1, 1, &created,
+               &authority->empty_hooks_index) &&
+           created != 0;
+  }
+  errno = 0;
+  if (fstatat(authority->nodes[authority->private_index].file_descriptor,
+              SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME, &metadata,
+              AT_SYMLINK_NOFOLLOW) != 0) {
+    return errno == ENOENT;
+  }
+  return installation_authority_open_child(
+             authority, authority->private_index,
+             SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME, 1, 0, &created,
+             &authority->empty_hooks_index) &&
+         created == 0;
+}
+
+static int installation_authority_namespace_shape(
+    struct installation_state_authority *authority);
+
+static int installation_authority_revalidate_chain(
     struct installation_state_authority *authority) {
   size_t index;
   if (authority == NULL || authority->closed || authority->node_count == 0) {
@@ -3160,7 +3289,16 @@ static int installation_authority_revalidate(
       }
     }
   }
-  return 1;
+  return authority->empty_hooks_index < 0 ||
+         ((size_t)authority->empty_hooks_index < authority->node_count &&
+          installation_directory_exact_entries(
+              authority->nodes[authority->empty_hooks_index].file_descriptor,
+              NULL, 0));
+}
+
+static int installation_authority_revalidate(
+    struct installation_state_authority *authority) {
+  return installation_authority_namespace_shape(authority);
 }
 
 static int installation_encode_internal_bytes(const unsigned char *bytes,
@@ -3212,9 +3350,6 @@ static int installation_encode_internal_bytes(const unsigned char *bytes,
   return 1;
 }
 
-static int installation_authority_namespace_shape(
-    struct installation_state_authority *authority);
-
 static struct installation_state_authority *installation_authority_open(
     const char *root_path, const char *resolver_id, int create,
     size_t creation_suffix_components, int *root_created) {
@@ -3232,6 +3367,7 @@ static struct installation_state_authority *installation_authority_open(
   authority->private_index = -1;
   authority->provider_index = -1;
   authority->acceptance_index = -1;
+  authority->empty_hooks_index = -1;
   authority->resolver_id = resolver_id;
   memset(owner, 0, sizeof(owner));
   if (snprintf(owner, sizeof(owner), "posix-uid:%" PRIuMAX,
@@ -3271,14 +3407,14 @@ static struct installation_state_authority *installation_authority_open(
       !installation_authority_open_managed_child(
           authority, authority->runtime_state_index, "private", create_structure,
           &authority->private_index) ||
+      !installation_authority_open_empty_hooks(authority, create_structure) ||
       !installation_authority_open_managed_child(
           authority, authority->root_index, "provider", create_structure,
           &authority->provider_index) ||
       !installation_authority_open_managed_child(
           authority, authority->provider_index, "acceptance", create_structure,
           &authority->acceptance_index) ||
-      !installation_authority_revalidate(authority) ||
-      !installation_authority_namespace_shape(authority)) {
+      !installation_authority_revalidate(authority)) {
     safe_git_secure_zero(owner, sizeof(owner));
     installation_authority_release(authority);
     free(authority);
@@ -3313,18 +3449,13 @@ installation_authority_open_with_readonly_wait(
   return NULL;
 }
 
-static int installation_create_root_identity(
-    napi_env env, const struct installation_state_authority *authority,
-    napi_value *result) {
-  const struct stat *metadata;
+static int installation_create_posix_identity(napi_env env,
+                                              const struct stat *metadata,
+                                              napi_value *result) {
   char device[32];
   char inode[32];
-  if (authority == NULL || authority->root_index < 0 ||
-      (size_t)authority->root_index >= authority->node_count) {
-    return 0;
-  }
-  metadata = &authority->nodes[authority->root_index].snapshot;
-  if (snprintf(device, sizeof(device), "%" PRIuMAX,
+  if (metadata == NULL ||
+      snprintf(device, sizeof(device), "%" PRIuMAX,
                (uintmax_t)metadata->st_dev) <= 0 ||
       snprintf(inode, sizeof(inode), "%" PRIuMAX,
                (uintmax_t)metadata->st_ino) <= 0 ||
@@ -3335,6 +3466,15 @@ static int installation_create_root_identity(
     return 0;
   }
   return 1;
+}
+
+static int installation_create_root_identity(
+    napi_env env, const struct installation_state_authority *authority,
+    napi_value *result) {
+  return authority != NULL && authority->root_index >= 0 &&
+         (size_t)authority->root_index < authority->node_count &&
+         installation_create_posix_identity(
+             env, &authority->nodes[authority->root_index].snapshot, result);
 }
 
 static int installation_create_authority_inspection(
@@ -3528,7 +3668,6 @@ static napi_value revalidate_installation_state_authority(
   napi_value result;
   if (!installation_unwrap_authority_argument(env, info, &authority) ||
       !installation_authority_revalidate(authority) ||
-      !installation_authority_namespace_shape(authority) ||
       !installation_create_authority_inspection(env, authority, NULL, 0,
                                                 &result)) {
     if (authority != NULL) installation_authority_release(authority);
@@ -3546,6 +3685,41 @@ static napi_value close_installation_state_authority(
   }
   installation_authority_release(authority);
   if (napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_installation_state_authority_unavailable(env);
+  }
+  return result;
+}
+
+static int installation_create_empty_hooks_inspection(
+    napi_env env, const struct installation_state_authority *authority,
+    napi_value *result) {
+  napi_value directory_identity;
+  if (authority == NULL || authority->empty_hooks_index < 0 ||
+      (size_t)authority->empty_hooks_index >= authority->node_count ||
+      !installation_create_posix_identity(
+          env, &authority->nodes[authority->empty_hooks_index].snapshot,
+          &directory_identity) ||
+      napi_create_object(env, result) != napi_ok ||
+      !safe_git_set_string_property(
+          env, *result, "profile",
+          "native_installation_empty_hooks_directory_v1") ||
+      napi_set_named_property(env, *result, "directoryIdentity",
+                              directory_identity) != napi_ok) {
+    return 0;
+  }
+  return 1;
+}
+
+static napi_value inspect_installation_empty_hooks_directory(
+    napi_env env, napi_callback_info info) {
+  struct installation_state_authority *authority = NULL;
+  napi_value result;
+  if (!installation_unwrap_authority_argument(env, info, &authority) ||
+      !installation_authority_revalidate(authority) ||
+      authority->empty_hooks_index < 0 ||
+      !installation_create_empty_hooks_inspection(env, authority, &result) ||
+      !installation_authority_revalidate(authority)) {
+    if (authority != NULL) installation_authority_release(authority);
     return throw_installation_state_authority_unavailable(env);
   }
   return result;
@@ -3649,37 +3823,39 @@ static int installation_read_artifact(
   const char *name = installation_artifact_name(artifact);
   size_t maximum = installation_artifact_maximum(artifact);
   struct stat before;
+  struct stat after_handle;
   struct stat after_path;
-  struct stat directory_before;
-  struct stat directory_after;
-  int file_descriptor;
+  struct stat after_revalidation;
+  int file_descriptor = -1;
   unsigned char *content;
   memset(&before, 0, sizeof(before));
+  memset(&after_handle, 0, sizeof(after_handle));
   memset(&after_path, 0, sizeof(after_path));
-  memset(&directory_before, 0, sizeof(directory_before));
-  memset(&directory_after, 0, sizeof(directory_after));
+  memset(&after_revalidation, 0, sizeof(after_revalidation));
   if (authority == NULL || bytes == NULL || length == NULL || present == NULL ||
       snapshot == NULL || digest == NULL || name == NULL ||
       !installation_authority_revalidate(authority)) {
-    return 0;
-  }
-  if (fstat(authority->nodes[authority->private_index].file_descriptor,
-            &directory_before) != 0) {
     return 0;
   }
   errno = 0;
   if (fstatat(authority->nodes[authority->private_index].file_descriptor, name,
               &before, AT_SYMLINK_NOFOLLOW) != 0) {
     if (errno != ENOENT) return 0;
+    if (!installation_authority_revalidate(authority)) {
+      return 0;
+    }
+    errno = 0;
+    if (fstatat(authority->nodes[authority->private_index].file_descriptor,
+                name, &after_revalidation, AT_SYMLINK_NOFOLLOW) == 0 ||
+        errno != ENOENT) {
+      return 0;
+    }
     *bytes = NULL;
     *length = 0;
     *present = 0;
     memset(snapshot, 0, sizeof(*snapshot));
     memset(digest, 0, 32);
-    return fstat(authority->nodes[authority->private_index].file_descriptor,
-                 &directory_after) == 0 &&
-           stat_snapshot_matches(&directory_before, &directory_after) &&
-           installation_authority_revalidate(authority);
+    return 1;
   }
   if (!S_ISREG(before.st_mode) || before.st_size <= 0 ||
       (uintmax_t)before.st_size > (uintmax_t)maximum ||
@@ -3697,12 +3873,11 @@ static int installation_read_artifact(
   content = (unsigned char *)malloc((size_t)before.st_size);
   if (content == NULL ||
       !safe_git_pread_exact(file_descriptor, content, (size_t)before.st_size) ||
+      fstat(file_descriptor, &after_handle) != 0 ||
+      !stat_snapshot_matches(&before, &after_handle) ||
       fstatat(authority->nodes[authority->private_index].file_descriptor, name,
               &after_path, AT_SYMLINK_NOFOLLOW) != 0 ||
-      !stat_snapshot_matches(&before, &after_path) ||
-      fstat(authority->nodes[authority->private_index].file_descriptor,
-            &directory_after) != 0 ||
-      !stat_snapshot_matches(&directory_before, &directory_after)) {
+      !stat_snapshot_matches(&before, &after_path)) {
     if (file_descriptor >= 0) (void)close(file_descriptor);
     if (content != NULL) {
       safe_git_secure_zero(content, (size_t)before.st_size);
@@ -3717,7 +3892,10 @@ static int installation_read_artifact(
     return 0;
   }
   file_descriptor = -1;
-  if (!installation_authority_revalidate(authority)) {
+  if (!installation_authority_revalidate(authority) ||
+      fstatat(authority->nodes[authority->private_index].file_descriptor, name,
+              &after_revalidation, AT_SYMLINK_NOFOLLOW) != 0 ||
+      !stat_snapshot_matches(&before, &after_revalidation)) {
     safe_git_secure_zero(content, (size_t)before.st_size);
     free(content);
     return 0;
@@ -4267,68 +4445,233 @@ static int installation_directory_exact_entries(
   return observed == expected_count;
 }
 
-static int installation_authority_namespace_shape(
+#define INSTALLATION_NAMESPACE_SHAPE_LIMIT ((size_t)5)
+#define INSTALLATION_TEST_NAMESPACE_RACE_ENTRY \
+  ".native-installation-namespace-race-v1"
+
+struct installation_directory_shape_requirement {
+  int node_index;
+  const char *const *entries;
+  size_t entry_count;
+};
+
+static int installation_directory_shape_group_closed(
+    struct installation_state_authority *authority,
+    const struct installation_directory_shape_requirement *requirements,
+    size_t requirement_count) {
+  struct stat before[INSTALLATION_NAMESPACE_SHAPE_LIMIT];
+  struct stat after;
+  size_t index;
+  if (authority == NULL || requirements == NULL || requirement_count == 0 ||
+      requirement_count > INSTALLATION_NAMESPACE_SHAPE_LIMIT) {
+    return 0;
+  }
+  memset(before, 0, sizeof(before));
+  memset(&after, 0, sizeof(after));
+  for (index = 0; index < requirement_count; index += 1) {
+    int node_index = requirements[index].node_index;
+    if (node_index < 0 || (size_t)node_index >= authority->node_count ||
+        fstat(authority->nodes[node_index].file_descriptor, &before[index]) !=
+            0) {
+      return 0;
+    }
+  }
+  for (index = 0; index < requirement_count; index += 1) {
+    int node_index = requirements[index].node_index;
+    if (!installation_directory_exact_entries(
+            authority->nodes[node_index].file_descriptor,
+            requirements[index].entries,
+            requirements[index].entry_count)) {
+      return 0;
+    }
+  }
+  if (!installation_authority_revalidate_chain(authority)) return 0;
+  for (index = 0; index < requirement_count; index += 1) {
+    int node_index = requirements[index].node_index;
+    memset(&after, 0, sizeof(after));
+    if (fstat(authority->nodes[node_index].file_descriptor, &after) != 0 ||
+        !stat_snapshot_matches(&before[index], &after)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int installation_static_namespace_shape_closed(
     struct installation_state_authority *authority) {
   static const char *const root_entries[] = {"runtime-state", "provider"};
   static const char *const runtime_entries[] = {"private"};
   static const char *const provider_entries[] = {"acceptance"};
-  return authority != NULL && installation_authority_revalidate(authority) &&
-         installation_directory_exact_entries(
-             authority->nodes[authority->root_index].file_descriptor,
-             root_entries, 2) &&
-         installation_directory_exact_entries(
-             authority->nodes[authority->runtime_state_index].file_descriptor,
-             runtime_entries, 1) &&
-         installation_directory_exact_entries(
-             authority->nodes[authority->provider_index].file_descriptor,
-             provider_entries, 1) &&
-         installation_authority_revalidate(authority);
+  struct installation_directory_shape_requirement requirements[3];
+  if (authority == NULL) return 0;
+  requirements[0].node_index = authority->root_index;
+  requirements[0].entries = root_entries;
+  requirements[0].entry_count = 2;
+  requirements[1].node_index = authority->runtime_state_index;
+  requirements[1].entries = runtime_entries;
+  requirements[1].entry_count = 1;
+  requirements[2].node_index = authority->provider_index;
+  requirements[2].entries = provider_entries;
+  requirements[2].entry_count = 1;
+  return installation_directory_shape_group_closed(authority, requirements,
+                                                   3);
 }
 
-static int installation_assert_fresh(
+static int installation_fresh_namespace_shape_closed(
     struct installation_state_authority *authority) {
   static const char *const root_entries[] = {"runtime-state", "provider"};
   static const char *const runtime_entries[] = {"private"};
   static const char *const provider_entries[] = {"acceptance"};
   static const char *const private_entries[] = {
-      ".installation-identity-v1.lock"};
-  int lock_fd;
+      ".installation-identity-v1.lock", SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME};
+  struct installation_directory_shape_requirement requirements[5];
+  if (authority == NULL || authority->empty_hooks_index < 0) return 0;
+  requirements[0].node_index = authority->root_index;
+  requirements[0].entries = root_entries;
+  requirements[0].entry_count = 2;
+  requirements[1].node_index = authority->runtime_state_index;
+  requirements[1].entries = runtime_entries;
+  requirements[1].entry_count = 1;
+  requirements[2].node_index = authority->provider_index;
+  requirements[2].entries = provider_entries;
+  requirements[2].entry_count = 1;
+  requirements[3].node_index = authority->acceptance_index;
+  requirements[3].entries = NULL;
+  requirements[3].entry_count = 0;
+  requirements[4].node_index = authority->private_index;
+  requirements[4].entries = private_entries;
+  requirements[4].entry_count = 2;
+  return installation_directory_shape_group_closed(authority, requirements,
+                                                   5);
+}
+
+static int installation_apply_test_namespace_race(
+    struct installation_state_authority *authority,
+    enum installation_test_namespace_race_phase phase, int directory_index) {
+  int file_descriptor = -1;
+  int directory_file_descriptor;
+  if (authority == NULL ||
+      authority->test_namespace_race_phase ==
+          INSTALLATION_TEST_NAMESPACE_RACE_NONE ||
+      authority->test_namespace_race_phase != phase) {
+    return 1;
+  }
+  authority->test_namespace_race_phase =
+      INSTALLATION_TEST_NAMESPACE_RACE_NONE;
+  if (authority->resolver_id == NULL ||
+      strcmp(authority->resolver_id, "test-explicit-temporary-root-v1") != 0 ||
+      directory_index < 0 ||
+      (size_t)directory_index >= authority->node_count) {
+    return 0;
+  }
+  directory_file_descriptor =
+      authority->nodes[directory_index].file_descriptor;
+  file_descriptor =
+      openat(directory_file_descriptor, INSTALLATION_TEST_NAMESPACE_RACE_ENTRY,
+             O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC |
+                 O_NONBLOCK | O_NOCTTY,
+             0600);
+  if (file_descriptor < 0 || fchmod(file_descriptor, 0600) != 0 ||
+      fsync(file_descriptor) != 0) {
+    if (file_descriptor >= 0) (void)close(file_descriptor);
+    return 0;
+  }
+  if (close(file_descriptor) != 0) return 0;
+  return fsync(directory_file_descriptor) == 0;
+}
+
+static int installation_authority_namespace_shape(
+    struct installation_state_authority *authority) {
+  return authority != NULL &&
+         installation_authority_revalidate_chain(authority) &&
+         installation_static_namespace_shape_closed(authority) &&
+         installation_apply_test_namespace_race(
+             authority, INSTALLATION_TEST_NAMESPACE_RACE_STATIC_SHAPE,
+             authority->root_index) &&
+         installation_static_namespace_shape_closed(authority);
+}
+
+static int installation_assert_fresh(
+    struct installation_state_authority *authority) {
+  static const char lock_name[] = ".installation-identity-v1.lock";
+  int lock_fd = -1;
   struct stat lock_metadata;
-  if (authority == NULL || !installation_authority_revalidate(authority) ||
-      !installation_directory_exact_entries(
-          authority->nodes[authority->root_index].file_descriptor,
-          root_entries, 2) ||
-      !installation_directory_exact_entries(
-          authority->nodes[authority->runtime_state_index].file_descriptor,
-          runtime_entries, 1) ||
-      !installation_directory_exact_entries(
-          authority->nodes[authority->provider_index].file_descriptor,
-          provider_entries, 1) ||
-      !installation_directory_exact_entries(
-          authority->nodes[authority->acceptance_index].file_descriptor, NULL,
-          0) ||
-      !installation_directory_exact_entries(
-          authority->nodes[authority->private_index].file_descriptor,
-          private_entries, 1)) {
+  struct stat lock_at_path;
+  memset(&lock_metadata, 0, sizeof(lock_metadata));
+  memset(&lock_at_path, 0, sizeof(lock_at_path));
+  if (authority == NULL ||
+      !installation_fresh_namespace_shape_closed(authority) ||
+      !installation_apply_test_namespace_race(
+          authority, INSTALLATION_TEST_NAMESPACE_RACE_FRESH_SHAPE,
+          authority->private_index)) {
     return 0;
   }
   lock_fd = openat(authority->nodes[authority->private_index].file_descriptor,
-                   private_entries[0],
+                   lock_name,
                    O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK | O_NOCTTY);
-  memset(&lock_metadata, 0, sizeof(lock_metadata));
   if (lock_fd < 0 || fstat(lock_fd, &lock_metadata) != 0 ||
       !installation_lock_file_admitted(lock_fd, &lock_metadata) ||
-      !installation_authority_revalidate(authority)) {
+      fstatat(authority->nodes[authority->private_index].file_descriptor,
+              lock_name, &lock_at_path, AT_SYMLINK_NOFOLLOW) != 0 ||
+      !stat_snapshot_matches(&lock_metadata, &lock_at_path)) {
     if (lock_fd >= 0) (void)close(lock_fd);
     return 0;
   }
-  if (close(lock_fd) != 0) {
-    lock_fd = -1;
+  if (close(lock_fd) != 0) return 0;
+  return installation_fresh_namespace_shape_closed(authority);
+}
+
+static int installation_read_test_namespace_race_arguments(
+    napi_env env, napi_callback_info info,
+    struct installation_state_authority **authority,
+    enum installation_test_namespace_race_phase *phase) {
+  size_t argument_count = 2;
+  napi_value arguments[2];
+  napi_valuetype phase_type;
+  char phase_text[16];
+  size_t phase_length = 0;
+  if (authority == NULL || phase == NULL ||
+      napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 2 ||
+      !installation_unwrap_authority(env, arguments[0], authority) ||
+      napi_typeof(env, arguments[1], &phase_type) != napi_ok ||
+      phase_type != napi_string ||
+      napi_get_value_string_utf8(env, arguments[1], phase_text,
+                                 sizeof(phase_text), &phase_length) != napi_ok) {
     return 0;
   }
-  lock_fd = -1;
-  if (!installation_authority_revalidate(authority)) return 0;
-  return 1;
+  if (phase_length == strlen("static_shape") &&
+      strcmp(phase_text, "static_shape") == 0) {
+    *phase = INSTALLATION_TEST_NAMESPACE_RACE_STATIC_SHAPE;
+    return 1;
+  }
+  if (phase_length == strlen("fresh_shape") &&
+      strcmp(phase_text, "fresh_shape") == 0) {
+    *phase = INSTALLATION_TEST_NAMESPACE_RACE_FRESH_SHAPE;
+    return 1;
+  }
+  return 0;
+}
+
+static napi_value arm_test_installation_state_authority_namespace_race(
+    napi_env env, napi_callback_info info) {
+  struct installation_state_authority *authority = NULL;
+  enum installation_test_namespace_race_phase phase =
+      INSTALLATION_TEST_NAMESPACE_RACE_NONE;
+  napi_value result;
+  if (!installation_read_test_namespace_race_arguments(env, info, &authority,
+                                                        &phase) ||
+      authority->resolver_id == NULL ||
+      strcmp(authority->resolver_id, "test-explicit-temporary-root-v1") != 0 ||
+      authority->test_namespace_race_phase !=
+          INSTALLATION_TEST_NAMESPACE_RACE_NONE ||
+      !installation_authority_namespace_shape(authority) ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_installation_state_authority_unavailable(env);
+  }
+  authority->test_namespace_race_phase = phase;
+  return result;
 }
 
 static napi_value assert_installation_state_authority_fresh(
@@ -4357,7 +4700,9 @@ static int installation_authority_separated_from_safe_git(
   targets[0] = binding->workspace_root_index;
   targets[1] = binding->git_directory_index;
   targets[2] = binding->common_directory_index;
-  cursor = authority->root_index;
+  cursor = authority->empty_hooks_index >= 0
+               ? authority->empty_hooks_index
+               : authority->root_index;
   while (cursor >= 0) {
     for (target_index = 0; target_index < 3; target_index += 1) {
       int target = targets[target_index];
@@ -4397,6 +4742,249 @@ static napi_value assert_installation_state_authority_separated_from_safe_git(
     return throw_installation_state_authority_unavailable(env);
   }
   return result;
+}
+
+static void safe_git_reset_empty_hooks_copy(
+    struct safe_git_descriptor_binding *binding) {
+  size_t index;
+  if (binding == NULL) return;
+  for (index = binding->empty_hooks_node_count; index > 0; index -= 1) {
+    struct safe_git_installation_node *node =
+        &binding->empty_hooks_nodes[index - 1];
+    if (node->file_descriptor >= 0) {
+      (void)close(node->file_descriptor);
+      node->file_descriptor = -1;
+    }
+  }
+  binding->empty_hooks_node_count = 0;
+  binding->empty_hooks_bound = 0;
+  binding->empty_hooks_test_authority = 0;
+  binding->test_empty_hooks_race_armed = 0;
+  binding->empty_hooks_state_root_index = -1;
+  binding->empty_hooks_directory_index = -1;
+}
+
+#define SAFE_GIT_TEST_EMPTY_HOOKS_RACE_ENTRY \
+  ".native-safe-git-empty-hooks-race-v1"
+
+static int safe_git_apply_test_empty_hooks_race(
+    struct safe_git_descriptor_binding *binding) {
+  int directory_file_descriptor;
+  int file_descriptor = -1;
+  if (binding == NULL || !binding->test_empty_hooks_race_armed) return 1;
+  binding->test_empty_hooks_race_armed = 0;
+  if (!binding->empty_hooks_test_authority ||
+      binding->empty_hooks_directory_index < 0 ||
+      (size_t)binding->empty_hooks_directory_index >=
+          binding->empty_hooks_node_count) {
+    return 0;
+  }
+  directory_file_descriptor =
+      binding->empty_hooks_nodes[binding->empty_hooks_directory_index]
+          .file_descriptor;
+  file_descriptor =
+      openat(directory_file_descriptor, SAFE_GIT_TEST_EMPTY_HOOKS_RACE_ENTRY,
+             O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC |
+                 O_NONBLOCK | O_NOCTTY,
+             0600);
+  if (file_descriptor < 0 || fchmod(file_descriptor, 0600) != 0 ||
+      fsync(file_descriptor) != 0) {
+    if (file_descriptor >= 0) (void)close(file_descriptor);
+    return 0;
+  }
+  if (close(file_descriptor) != 0) return 0;
+  return fsync(directory_file_descriptor) == 0;
+}
+
+static int safe_git_revalidate_empty_hooks_binding(
+    struct safe_git_descriptor_binding *binding) {
+  size_t pass;
+  if (binding == NULL || !binding->empty_hooks_bound ||
+      binding->empty_hooks_node_count == 0 ||
+      binding->empty_hooks_state_root_index < 0 ||
+      binding->empty_hooks_directory_index < 0 ||
+      (size_t)binding->empty_hooks_state_root_index >=
+          binding->empty_hooks_node_count ||
+      (size_t)binding->empty_hooks_directory_index >=
+          binding->empty_hooks_node_count ||
+      binding->node_count == 0 ||
+      binding->empty_hooks_nodes[0].snapshot.st_dev !=
+          binding->nodes[0].snapshot.st_dev ||
+      binding->empty_hooks_nodes[0].snapshot.st_ino !=
+          binding->nodes[0].snapshot.st_ino) {
+    return 0;
+  }
+  for (pass = 0; pass < 2; pass += 1) {
+    size_t index;
+    int cursor;
+    int targets[3];
+    for (index = 0; index < binding->empty_hooks_node_count; index += 1) {
+      struct safe_git_installation_node *node =
+          &binding->empty_hooks_nodes[index];
+      struct stat at_handle;
+      memset(&at_handle, 0, sizeof(at_handle));
+      if (fstat(node->file_descriptor, &at_handle) != 0 ||
+          !safe_git_identity_matches(&node->snapshot, &at_handle,
+                                     SAFE_GIT_BOUND_DIRECTORY) ||
+          !installation_directory_admitted(node->file_descriptor, &at_handle,
+                                           node->managed)) {
+        return 0;
+      }
+      if (node->parent_index >= 0) {
+        struct stat at_parent;
+        memset(&at_parent, 0, sizeof(at_parent));
+        if ((size_t)node->parent_index >= binding->empty_hooks_node_count ||
+            fstatat(binding->empty_hooks_nodes[node->parent_index].file_descriptor,
+                    node->component, &at_parent, AT_SYMLINK_NOFOLLOW) != 0 ||
+            !safe_git_identity_matches(&node->snapshot, &at_parent,
+                                       SAFE_GIT_BOUND_DIRECTORY)) {
+          return 0;
+        }
+      } else if (index != 0) {
+        return 0;
+      }
+    }
+    targets[0] = binding->workspace_root_index;
+    targets[1] = binding->git_directory_index;
+    targets[2] = binding->common_directory_index;
+    cursor = binding->empty_hooks_directory_index;
+    while (cursor >= 0) {
+      size_t target_index;
+      for (target_index = 0; target_index < 3; target_index += 1) {
+        int target = targets[target_index];
+        if (target < 0 || (size_t)target >= binding->node_count ||
+            (binding->empty_hooks_nodes[cursor].snapshot.st_dev ==
+                 binding->nodes[target].snapshot.st_dev &&
+             binding->empty_hooks_nodes[cursor].snapshot.st_ino ==
+                 binding->nodes[target].snapshot.st_ino)) {
+          return 0;
+        }
+      }
+      cursor = binding->empty_hooks_nodes[cursor].parent_index;
+    }
+    if (!installation_directory_exact_entries(
+            binding->empty_hooks_nodes[binding->empty_hooks_directory_index]
+                .file_descriptor,
+            NULL, 0) ||
+        (pass == 0 && !safe_git_apply_test_empty_hooks_race(binding))) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_copy_empty_hooks_authority(
+    struct safe_git_descriptor_binding *binding,
+    const struct installation_state_authority *authority) {
+  int chain[INSTALLATION_AUTHORITY_NODE_LIMIT];
+  size_t chain_length = 0;
+  int cursor;
+  size_t ordinal;
+  if (binding == NULL || authority == NULL || binding->empty_hooks_bound ||
+      binding->empty_hooks_node_count != 0 || authority->empty_hooks_index < 0 ||
+      (size_t)authority->empty_hooks_index >= authority->node_count) {
+    return 0;
+  }
+  cursor = authority->empty_hooks_index;
+  while (cursor >= 0) {
+    if (chain_length >= INSTALLATION_AUTHORITY_NODE_LIMIT ||
+        (size_t)cursor >= authority->node_count) {
+      return 0;
+    }
+    chain[chain_length++] = cursor;
+    cursor = authority->nodes[cursor].parent_index;
+  }
+  if (chain_length == 0 || chain[chain_length - 1] != 0) return 0;
+  for (ordinal = 0; ordinal < chain_length; ordinal += 1) {
+    int source_index = chain[chain_length - ordinal - 1];
+    const struct installation_authority_node *source =
+        &authority->nodes[source_index];
+    struct safe_git_installation_node *target =
+        &binding->empty_hooks_nodes[ordinal];
+    struct stat observed;
+    int descriptor = openat(source->file_descriptor, ".",
+                            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    memset(&observed, 0, sizeof(observed));
+    if (descriptor < 0 || fstat(descriptor, &observed) != 0 ||
+        !safe_git_identity_matches(&source->snapshot, &observed,
+                                   SAFE_GIT_BOUND_DIRECTORY) ||
+        !installation_directory_admitted(descriptor, &observed,
+                                         source->managed)) {
+      if (descriptor >= 0) (void)close(descriptor);
+      safe_git_reset_empty_hooks_copy(binding);
+      return 0;
+    }
+    memset(target, 0, sizeof(*target));
+    target->file_descriptor = descriptor;
+    target->parent_index = ordinal == 0 ? -1 : (int)ordinal - 1;
+    target->managed = source->managed;
+    target->snapshot = observed;
+    memcpy(target->component, source->component,
+           strlen(source->component) + 1);
+    binding->empty_hooks_node_count += 1;
+    if (source_index == authority->root_index) {
+      binding->empty_hooks_state_root_index = (int)ordinal;
+    }
+    if (source_index == authority->empty_hooks_index) {
+      binding->empty_hooks_directory_index = (int)ordinal;
+    }
+  }
+  binding->empty_hooks_test_authority =
+      authority->resolver_id != NULL &&
+      strcmp(authority->resolver_id, "test-explicit-temporary-root-v1") == 0;
+  binding->empty_hooks_bound = 1;
+  if (!safe_git_revalidate_empty_hooks_binding(binding)) {
+    safe_git_reset_empty_hooks_copy(binding);
+    return 0;
+  }
+  return 1;
+}
+
+static int safe_git_empty_hooks_authority_matches(
+    const struct safe_git_descriptor_binding *binding,
+    const struct installation_state_authority *authority) {
+  int chain[INSTALLATION_AUTHORITY_NODE_LIMIT];
+  size_t chain_length = 0;
+  int cursor;
+  size_t ordinal;
+  if (binding == NULL || authority == NULL || !binding->empty_hooks_bound ||
+      authority->empty_hooks_index < 0 ||
+      (size_t)authority->empty_hooks_index >= authority->node_count) {
+    return 0;
+  }
+  cursor = authority->empty_hooks_index;
+  while (cursor >= 0) {
+    if (chain_length >= INSTALLATION_AUTHORITY_NODE_LIMIT ||
+        (size_t)cursor >= authority->node_count) {
+      return 0;
+    }
+    chain[chain_length++] = cursor;
+    cursor = authority->nodes[cursor].parent_index;
+  }
+  if (chain_length != binding->empty_hooks_node_count || chain_length == 0 ||
+      chain[chain_length - 1] != 0) {
+    return 0;
+  }
+  for (ordinal = 0; ordinal < chain_length; ordinal += 1) {
+    int source_index = chain[chain_length - ordinal - 1];
+    const struct installation_authority_node *source =
+        &authority->nodes[source_index];
+    const struct safe_git_installation_node *retained =
+        &binding->empty_hooks_nodes[ordinal];
+    if (retained->parent_index !=
+            (ordinal == 0 ? -1 : (int)ordinal - 1) ||
+        retained->managed != source->managed ||
+        strcmp(retained->component, source->component) != 0 ||
+        !safe_git_identity_matches(&retained->snapshot, &source->snapshot,
+                                   SAFE_GIT_BOUND_DIRECTORY) ||
+        (source_index == authority->root_index &&
+         binding->empty_hooks_state_root_index != (int)ordinal) ||
+        (source_index == authority->empty_hooks_index &&
+         binding->empty_hooks_directory_index != (int)ordinal)) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 static int safe_git_create_canonical_path(
@@ -4670,6 +5258,125 @@ static int safe_git_read_identity_arguments(
   return 1;
 }
 
+static int safe_git_read_empty_hooks_arguments(
+    napi_env env, napi_callback_info info,
+    struct safe_git_descriptor_binding **binding,
+    struct installation_state_authority **authority, unsigned char key[32]) {
+  size_t argument_count = 3;
+  napi_value arguments[3];
+  bool binding_tagged = false;
+  bool authority_tagged = false;
+  bool is_buffer = false;
+  void *key_bytes = NULL;
+  size_t key_length = 0;
+  if (binding == NULL || authority == NULL ||
+      napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 3 ||
+      napi_check_object_type_tag(env, arguments[0], &SAFE_GIT_BINDING_TYPE_TAG,
+                                 &binding_tagged) != napi_ok ||
+      !binding_tagged ||
+      napi_unwrap(env, arguments[0], (void **)binding) != napi_ok ||
+      *binding == NULL ||
+      napi_check_object_type_tag(env, arguments[1],
+                                 &INSTALLATION_AUTHORITY_TYPE_TAG,
+                                 &authority_tagged) != napi_ok ||
+      !authority_tagged ||
+      napi_unwrap(env, arguments[1], (void **)authority) != napi_ok ||
+      *authority == NULL ||
+      napi_is_buffer(env, arguments[2], &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, arguments[2], &key_bytes, &key_length) !=
+          napi_ok ||
+      key_bytes == NULL || key_length != 32) {
+    return 0;
+  }
+  memcpy(key, key_bytes, 32);
+  return 1;
+}
+
+static int safe_git_create_empty_hooks_binding_result(
+    napi_env env, const struct stat *identity, const char *token,
+    napi_value *result) {
+  napi_value directory_identity;
+  return identity != NULL && token != NULL &&
+         installation_create_posix_identity(env, identity,
+                                            &directory_identity) &&
+         napi_create_object(env, result) == napi_ok &&
+         safe_git_set_string_property(
+             env, *result, "profile",
+             "native_safe_git_empty_hooks_binding_v1") &&
+         napi_set_named_property(env, *result, "directoryIdentity",
+                                 directory_identity) == napi_ok &&
+         safe_git_set_string_property(env, *result,
+                                      "emptyHooksDirectoryToken", token);
+}
+
+static napi_value bind_safe_git_empty_hooks_directory(
+    napi_env env, napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  unsigned char key[32] = {0};
+  unsigned char digest[32] = {0};
+  char digest_hex[65] = {0};
+  char token[77] = {0};
+  char message[256] = {0};
+  const struct stat *identity = NULL;
+  napi_value result;
+  int message_length;
+  int success = 0;
+  if (!safe_git_read_empty_hooks_arguments(env, info, &binding, &authority,
+                                           key) ||
+      binding == NULL || authority == NULL || binding->closed ||
+      !binding->repository_control_bound ||
+      authority->empty_hooks_index < 0 ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !(binding->empty_hooks_bound
+            ? safe_git_empty_hooks_authority_matches(binding, authority)
+            : safe_git_copy_empty_hooks_authority(binding, authority)) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  identity = &binding
+                  ->empty_hooks_nodes[binding->empty_hooks_directory_index]
+                  .snapshot;
+  message_length = snprintf(
+      message, sizeof(message),
+      "[\"empty-hooks-directory-token-v1\",{\"directoryIdentity\":{\"device\":\"%" PRIuMAX
+      "\",\"inode\":\"%" PRIuMAX
+      "\",\"platform\":\"posix\"},\"entries\":[]}]",
+      (uintmax_t)identity->st_dev, (uintmax_t)identity->st_ino);
+  if (message_length <= 0 || (size_t)message_length >= sizeof(message)) {
+    goto cleanup;
+  }
+  safe_git_hmac_sha256(key, (const unsigned char *)message,
+                       (size_t)message_length, digest);
+  safe_git_digest_hex(digest, digest_hex);
+  if (snprintf(token, sizeof(token), "hmac-sha256:%s", digest_hex) !=
+          (int)sizeof(token) - 1 ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_empty_hooks_binding_result(env, identity, token,
+                                                  &result) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(digest, sizeof(digest));
+  safe_git_secure_zero(digest_hex, sizeof(digest_hex));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(message, sizeof(message));
+  if (!success) {
+    if (binding != NULL) safe_git_release_binding(binding);
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+}
+
 static int safe_git_create_path_identity_result(
     napi_env env, const char *repository_id, const char *worktree_id,
     const char *root_identity, napi_value *result) {
@@ -4770,14 +5477,30 @@ static napi_value open_safe_git_descriptor_bootstrap(
 
 static napi_value revalidate_safe_git_descriptor_bootstrap(
     napi_env env, napi_callback_info info) {
-  struct safe_git_descriptor_binding *binding;
+  struct safe_git_descriptor_binding *binding = NULL;
   napi_value result;
 
   if (!safe_git_unwrap_argument(env, info, &binding) ||
       !safe_git_revalidate_binding(binding) ||
       !safe_git_create_layout_result(env, binding, NULL, &result)) {
+    if (binding != NULL) safe_git_release_binding(binding);
     return throw_safe_git_unavailable(env);
   }
+  return result;
+}
+
+static napi_value arm_test_safe_git_empty_hooks_race(
+    napi_env env, napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  napi_value result;
+  if (!safe_git_unwrap_argument(env, info, &binding) ||
+      !binding->empty_hooks_bound || !binding->empty_hooks_test_authority ||
+      binding->test_empty_hooks_race_armed ||
+      !safe_git_revalidate_binding(binding) ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_safe_git_unavailable(env);
+  }
+  binding->test_empty_hooks_race_armed = 1;
   return result;
 }
 
@@ -5051,6 +5774,9 @@ NAPI_MODULE_INIT() {
        NULL},
       {"closeInstallationStateAuthority", NULL,
        close_installation_state_authority, NULL, NULL, NULL, napi_default, NULL},
+      {"inspectInstallationEmptyHooksDirectory", NULL,
+       inspect_installation_empty_hooks_directory, NULL, NULL, NULL,
+       napi_default, NULL},
       {"readInstallationIdentityArtifact", NULL,
        read_installation_identity_artifact, NULL, NULL, NULL, napi_default,
        NULL},
@@ -5068,6 +5794,9 @@ NAPI_MODULE_INIT() {
        napi_default, NULL},
       {"assertInstallationStateAuthorityFresh", NULL,
        assert_installation_state_authority_fresh, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"armTestInstallationStateAuthorityNamespaceRace", NULL,
+       arm_test_installation_state_authority_namespace_race, NULL, NULL, NULL,
        napi_default, NULL},
       {"assertInstallationStateAuthoritySeparatedFromSafeGit", NULL,
        assert_installation_state_authority_separated_from_safe_git, NULL, NULL,
@@ -5090,8 +5819,14 @@ NAPI_MODULE_INIT() {
       {"revalidateSafeGitDescriptorBootstrap", NULL,
        revalidate_safe_git_descriptor_bootstrap, NULL, NULL, NULL, napi_default,
        NULL},
+      {"armTestSafeGitEmptyHooksRace", NULL,
+       arm_test_safe_git_empty_hooks_race, NULL, NULL, NULL, napi_default,
+       NULL},
       {"bindSafeGitRepositoryControl", NULL,
        bind_safe_git_repository_control, NULL, NULL, NULL, napi_default, NULL},
+      {"bindSafeGitEmptyHooksDirectory", NULL,
+       bind_safe_git_empty_hooks_directory, NULL, NULL, NULL, napi_default,
+       NULL},
       {"deriveSafeGitPathIdentity", NULL, derive_safe_git_path_identity, NULL,
        NULL, NULL, napi_default, NULL},
       {"closeSafeGitDescriptorBootstrap", NULL,

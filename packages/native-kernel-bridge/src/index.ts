@@ -75,6 +75,20 @@ export interface NativeInstallationStateRootIdentityV1 {
   readonly inode: string;
 }
 
+export interface NativeInstallationEmptyHooksDirectoryInspectionV1 {
+  readonly profile: "native_installation_empty_hooks_directory_v1";
+  readonly directoryIdentity: NativeInstallationStateRootIdentityV1;
+}
+
+export type NativeSafeGitEmptyHooksDirectoryTokenV1 =
+  `hmac-sha256:${string}`;
+
+export interface NativeSafeGitEmptyHooksDirectoryBindingV1 {
+  readonly profile: "native_safe_git_empty_hooks_binding_v1";
+  readonly directoryIdentity: NativeInstallationStateRootIdentityV1;
+  readonly emptyHooksDirectoryToken: NativeSafeGitEmptyHooksDirectoryTokenV1;
+}
+
 declare const nativeInstallationStateAuthorityBrandV1: unique symbol;
 export interface NativeInstallationStateAuthorityV1 {
   readonly [nativeInstallationStateAuthorityBrandV1]: true;
@@ -88,6 +102,10 @@ export interface NativeInstallationInitializationLockV1 {
 export interface NativeInstallationStateAuthorityOpenOptionsV1 {
   readonly create: boolean;
 }
+
+export type NativeTestInstallationStateAuthorityNamespaceRaceV1 =
+  | "static_shape"
+  | "fresh_shape";
 
 export interface NativeInstallationStateAuthorityOpenResultV1 {
   readonly profile: "native_installation_state_authority_v1";
@@ -105,6 +123,11 @@ export interface NativeInstallationStateAuthorityOpenResultV1 {
 }
 
 interface NativeKernelBridgeAddonV1 {
+  readonly armTestSafeGitEmptyHooksRace: (binding: object) => unknown;
+  readonly armTestInstallationStateAuthorityNamespaceRace: (
+    authority: object,
+    phase: NativeTestInstallationStateAuthorityNamespaceRaceV1,
+  ) => unknown;
   readonly acquireInstallationIdentityInitializationLock: (
     authority: object,
   ) => unknown;
@@ -123,6 +146,11 @@ interface NativeKernelBridgeAddonV1 {
     expectedKind: ProviderRuntimeNativeFdAccessControlOptionsV1["expectedKind"],
   ) => unknown;
   readonly bindSafeGitRepositoryControl: (binding: object) => unknown;
+  readonly bindSafeGitEmptyHooksDirectory: (
+    binding: object,
+    authority: object,
+    key: Buffer,
+  ) => unknown;
   readonly deriveSafeGitPathIdentity: (
     binding: object,
     key: Buffer,
@@ -140,6 +168,9 @@ interface NativeKernelBridgeAddonV1 {
   readonly openTestInstallationStateAuthority: (
     root: string,
     create: boolean,
+  ) => unknown;
+  readonly inspectInstallationEmptyHooksDirectory: (
+    authority: object,
   ) => unknown;
   readonly readInstallationIdentityArtifact: (
     authority: object,
@@ -164,6 +195,7 @@ interface SocketHandleV1 {
 interface NativeSafeGitBindingStateV1 {
   closed: boolean;
   readonly layout: NativeSafeGitDescriptorLayoutV1;
+  emptyHooksBound: boolean;
 }
 
 interface NativeInstallationStateAuthorityStateV1 {
@@ -267,6 +299,8 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         nativeAddonPath,
       ) as Partial<NativeKernelBridgeAddonV1>;
       if (
+        typeof candidate.armTestSafeGitEmptyHooksRace !== "function" ||
+        typeof candidate.armTestInstallationStateAuthorityNamespaceRace !== "function" ||
         typeof candidate.acquireInstallationIdentityInitializationLock !== "function" ||
         typeof candidate.assertInstallationStateAuthorityFresh !== "function" ||
         typeof candidate.assertInstallationStateAuthoritySeparatedFromSafeGit !== "function" ||
@@ -275,6 +309,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         typeof candidate.resolveInstallationStateRoot !== "function" ||
         typeof candidate.assertFdHasNoExtendedAccessControl !== "function" ||
         typeof candidate.getKernelBridgeProfile !== "function" ||
+        typeof candidate.bindSafeGitEmptyHooksDirectory !== "function" ||
         typeof candidate.bindSafeGitRepositoryControl !== "function" ||
         typeof candidate.closeInstallationStateAuthority !== "function" ||
         typeof candidate.createInstallationIdentityArtifact !== "function" ||
@@ -282,6 +317,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         typeof candidate.openSafeGitDescriptorBootstrap !== "function" ||
         typeof candidate.openInstallationStateAuthority !== "function" ||
         typeof candidate.openTestInstallationStateAuthority !== "function" ||
+        typeof candidate.inspectInstallationEmptyHooksDirectory !== "function" ||
         typeof candidate.readInstallationIdentityArtifact !== "function" ||
         typeof candidate.revalidateSafeGitDescriptorBootstrap !== "function" ||
         typeof candidate.revalidateInstallationStateAuthority !== "function" ||
@@ -295,6 +331,10 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         continue;
       }
       loadedAddonV1 = Object.freeze({
+        armTestSafeGitEmptyHooksRace:
+          candidate.armTestSafeGitEmptyHooksRace,
+        armTestInstallationStateAuthorityNamespaceRace:
+          candidate.armTestInstallationStateAuthorityNamespaceRace,
         acquireInstallationIdentityInitializationLock:
           candidate.acquireInstallationIdentityInitializationLock,
         assertInstallationStateAuthorityFresh:
@@ -307,6 +347,8 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
           candidate.assertFdHasNoExtendedAccessControl,
         bindSafeGitRepositoryControl:
           candidate.bindSafeGitRepositoryControl,
+        bindSafeGitEmptyHooksDirectory:
+          candidate.bindSafeGitEmptyHooksDirectory,
         closeSafeGitDescriptorBootstrap:
           candidate.closeSafeGitDescriptorBootstrap,
         closeInstallationStateAuthority:
@@ -321,6 +363,8 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
           candidate.openInstallationStateAuthority,
         openTestInstallationStateAuthority:
           candidate.openTestInstallationStateAuthority,
+        inspectInstallationEmptyHooksDirectory:
+          candidate.inspectInstallationEmptyHooksDirectory,
         readInstallationIdentityArtifact:
           candidate.readInstallationIdentityArtifact,
         readPeerCredentials: candidate.readPeerCredentials,
@@ -483,7 +527,11 @@ function parseSafeGitOpenResultV1(
   }
   const layout = parseSafeGitLayoutV1(candidate.layout);
   Object.freeze(candidate.binding);
-  nativeSafeGitBindingsV1.set(candidate.binding, { closed: false, layout });
+  nativeSafeGitBindingsV1.set(candidate.binding, {
+    closed: false,
+    layout,
+    emptyHooksBound: false,
+  });
   return Object.freeze({
     binding: candidate.binding as NativeSafeGitDescriptorBindingV1,
     layout,
@@ -501,6 +549,18 @@ function safeGitBindingStateV1(
     throw safeGitUnavailableV1();
   }
   return [value, state] as const;
+}
+
+function poisonSafeGitBindingV1(
+  nativeBinding: object,
+  state: NativeSafeGitBindingStateV1,
+): void {
+  state.closed = true;
+  try {
+    loadNativeAddonV1().closeSafeGitDescriptorBootstrap(nativeBinding);
+  } catch {
+    // The strict wrapper remains poisoned even if native cleanup reports drift.
+  }
 }
 
 function parseSafeGitRepositoryControlV1(
@@ -639,6 +699,63 @@ function parseInstallationStateRootIdentityV1(
     platform: "posix",
     device: candidate.device,
     inode: candidate.inode,
+  });
+}
+
+function parseInstallationEmptyHooksDirectoryV1(
+  value: unknown,
+): NativeInstallationEmptyHooksDirectoryInspectionV1 {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw installationStateAuthorityUnavailableV1();
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  if (
+    keys.join("\0") !== ["directoryIdentity", "profile"].join("\0") ||
+    candidate.profile !== "native_installation_empty_hooks_directory_v1"
+  ) {
+    throw installationStateAuthorityUnavailableV1();
+  }
+  return Object.freeze({
+    profile: "native_installation_empty_hooks_directory_v1",
+    directoryIdentity: parseInstallationStateRootIdentityV1(
+      candidate.directoryIdentity,
+    ),
+  });
+}
+
+function parseSafeGitEmptyHooksDirectoryBindingV1(
+  value: unknown,
+): NativeSafeGitEmptyHooksDirectoryBindingV1 {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw safeGitUnavailableV1();
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  if (
+    keys.join("\0") !==
+      ["directoryIdentity", "emptyHooksDirectoryToken", "profile"].join("\0") ||
+    candidate.profile !== "native_safe_git_empty_hooks_binding_v1" ||
+    typeof candidate.emptyHooksDirectoryToken !== "string" ||
+    !/^hmac-sha256:[0-9a-f]{64}$/u.test(
+      candidate.emptyHooksDirectoryToken,
+    )
+  ) {
+    throw safeGitUnavailableV1();
+  }
+  let directoryIdentity: NativeInstallationStateRootIdentityV1;
+  try {
+    directoryIdentity = parseInstallationStateRootIdentityV1(
+      candidate.directoryIdentity,
+    );
+  } catch {
+    throw safeGitUnavailableV1();
+  }
+  return Object.freeze({
+    profile: "native_safe_git_empty_hooks_binding_v1",
+    directoryIdentity,
+    emptyHooksDirectoryToken:
+      candidate.emptyHooksDirectoryToken as NativeSafeGitEmptyHooksDirectoryTokenV1,
   });
 }
 
@@ -832,6 +949,22 @@ export function openNativeTestInstallationStateAuthorityV1(
   }
 }
 
+/** Returns only the pinned POSIX identity of the native-owned empty hooks directory. */
+export function inspectNativeInstallationEmptyHooksDirectoryV1(
+  authority: NativeInstallationStateAuthorityV1,
+): NativeInstallationEmptyHooksDirectoryInspectionV1 {
+  try {
+    const [nativeAuthority] = installationStateAuthorityStateV1(authority);
+    return parseInstallationEmptyHooksDirectoryV1(
+      loadNativeAddonV1().inspectInstallationEmptyHooksDirectory(
+        nativeAuthority,
+      ),
+    );
+  } catch {
+    throw installationStateAuthorityUnavailableV1();
+  }
+}
+
 export function revalidateNativeInstallationStateAuthorityV1(
   authority: NativeInstallationStateAuthorityV1,
 ): void {
@@ -994,6 +1127,29 @@ export function assertNativeInstallationStateAuthorityFreshV1(
   }
 }
 
+/** Test-authority-only deterministic namespace race seam. */
+export function armNativeTestInstallationStateAuthorityNamespaceRaceV1(
+  authority: NativeInstallationStateAuthorityV1,
+  phase: NativeTestInstallationStateAuthorityNamespaceRaceV1,
+): void {
+  try {
+    const [nativeAuthority] = installationStateAuthorityStateV1(authority);
+    if (phase !== "static_shape" && phase !== "fresh_shape") {
+      throw installationStateAuthorityUnavailableV1();
+    }
+    if (
+      loadNativeAddonV1().armTestInstallationStateAuthorityNamespaceRace(
+        nativeAuthority,
+        phase,
+      ) !== true
+    ) {
+      throw installationStateAuthorityUnavailableV1();
+    }
+  } catch {
+    throw installationStateAuthorityUnavailableV1();
+  }
+}
+
 export function assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
   authority: NativeInstallationStateAuthorityV1,
   binding: NativeSafeGitDescriptorBindingV1,
@@ -1090,6 +1246,58 @@ export function bindNativeSafeGitRepositoryControlV1(
     return parseSafeGitRepositoryControlV1(
       loadNativeAddonV1().bindSafeGitRepositoryControl(nativeBinding),
     );
+  } catch {
+    throw safeGitUnavailableV1();
+  }
+}
+
+/**
+ * Binds the installation-owned empty hooks directory into the repository
+ * descriptor authority and derives its installation-keyed frozen token.
+ */
+export function bindNativeSafeGitEmptyHooksDirectoryV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+  authority: NativeInstallationStateAuthorityV1,
+  installationIdentityKey: Buffer,
+): NativeSafeGitEmptyHooksDirectoryBindingV1 {
+  let nativeBinding: object | undefined;
+  let bindingState: NativeSafeGitBindingStateV1 | undefined;
+  try {
+    [nativeBinding, bindingState] = safeGitBindingStateV1(binding);
+    const [nativeAuthority] = installationStateAuthorityStateV1(authority);
+    if (bindingState.closed) {
+      throw safeGitUnavailableV1();
+    }
+    const result = parseSafeGitEmptyHooksDirectoryBindingV1(
+      loadNativeAddonV1().bindSafeGitEmptyHooksDirectory(
+        nativeBinding,
+        nativeAuthority,
+        installationIdentityKey,
+      ),
+    );
+    bindingState.emptyHooksBound = true;
+    return result;
+  } catch {
+    if (nativeBinding !== undefined && bindingState !== undefined) {
+      poisonSafeGitBindingV1(nativeBinding, bindingState);
+    }
+    throw safeGitUnavailableV1();
+  }
+}
+
+/** Test-authority-only deterministic post-scan empty-hooks race seam. */
+export function armNativeTestSafeGitEmptyHooksDirectoryRaceV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+): void {
+  try {
+    const [nativeBinding, state] = safeGitBindingStateV1(binding);
+    if (
+      state.closed ||
+      !state.emptyHooksBound ||
+      loadNativeAddonV1().armTestSafeGitEmptyHooksRace(nativeBinding) !== true
+    ) {
+      throw safeGitUnavailableV1();
+    }
   } catch {
     throw safeGitUnavailableV1();
   }

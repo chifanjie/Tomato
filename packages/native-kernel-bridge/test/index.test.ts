@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import {
   appendFileSync,
@@ -20,14 +20,18 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   acquireNativeInstallationIdentityInitializationLockV1,
+  armNativeTestSafeGitEmptyHooksDirectoryRaceV1,
+  armNativeTestInstallationStateAuthorityNamespaceRaceV1,
   assertNativeInstallationStateAuthorityFreshV1,
   assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
   assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1,
+  bindNativeSafeGitEmptyHooksDirectoryV1,
   bindNativeSafeGitRepositoryControlV1,
   closeNativeInstallationStateAuthorityV1,
   closeNativeSafeGitDescriptorBootstrapV1,
   createNativeInstallationIdentityArtifactV1,
   deriveNativeSafeGitPathIdentityV1,
+  inspectNativeInstallationEmptyHooksDirectoryV1,
   openNativeTestInstallationStateAuthorityV1,
   openNativeSafeGitDescriptorBootstrapV1,
   readNativeInstallationIdentityArtifactV1,
@@ -87,7 +91,7 @@ afterEach(() => {
 describe.runIf(process.platform === "darwin" || process.platform === "linux")(
   "native kernel bridge loader",
   () => {
-    it("owns fixed identity artifacts, a nonblocking kernel lock, and active reopen", () => {
+    it("owns fixed identity artifacts, a nonblocking kernel lock, and active reopen", async () => {
       const fixture = createFixtureRootV1();
       const authorityRoot = join(fixture, "authority");
       const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
@@ -143,6 +147,106 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
       readKey!.fill(0);
       expect(readNativeInstallationIdentityArtifactV1(opened.authority, "key")).toEqual(key);
 
+      const lockPath = join(
+        authorityRoot,
+        "runtime-state",
+        "private",
+        ".installation-identity-v1.lock",
+      );
+      const ancestorChurnPath = join(fixture, "unmanaged-ancestor-churn");
+      const lockChurn = spawn(
+        process.execPath,
+        [
+          "-e",
+          `const fs = require("node:fs");
+const lockPath = process.argv[1];
+const ancestorChurnPath = process.argv[2];
+process.stdout.write("ready\\n");
+const deadline = Date.now() + 750;
+while (Date.now() < deadline) {
+  let descriptor;
+  try {
+    descriptor = fs.openSync(
+      lockPath,
+      fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_RDWR,
+      0o600,
+    );
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+  if (descriptor !== undefined) fs.closeSync(descriptor);
+  try {
+    fs.unlinkSync(lockPath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    fs.mkdirSync(ancestorChurnPath, { mode: 0o700 });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+  try {
+    fs.rmdirSync(ancestorChurnPath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}`,
+          lockPath,
+          ancestorChurnPath,
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let lockChurnStderr = "";
+      lockChurn.stderr.setEncoding("utf8");
+      lockChurn.stderr.on("data", (chunk: string) => {
+        lockChurnStderr += chunk;
+      });
+      await new Promise<void>((resolve, reject) => {
+        lockChurn.once("error", reject);
+        lockChurn.stdout.once("data", () => resolve());
+        lockChurn.once("exit", (code) => {
+          if (code !== 0) reject(new Error(`lock churn failed (${code}): ${lockChurnStderr}`));
+        });
+      });
+      try {
+        for (let attempt = 0; attempt < 500; attempt += 1) {
+          revalidateNativeInstallationStateAuthorityV1(opened.authority);
+          const concurrentlyOpened = openNativeTestInstallationStateAuthorityV1(
+            authorityRoot,
+            { create: false },
+          );
+          revalidateNativeInstallationStateAuthorityV1(
+            concurrentlyOpened.authority,
+          );
+          closeNativeInstallationStateAuthorityV1(
+            concurrentlyOpened.authority,
+          );
+          const observed = readNativeInstallationIdentityArtifactV1(
+            opened.authority,
+            "key",
+          );
+          expect(observed).toEqual(key);
+          observed!.fill(0);
+        }
+        const lockChurnExit = await new Promise<number | null>((resolve) => {
+          if (lockChurn.exitCode !== null) {
+            resolve(lockChurn.exitCode);
+          } else {
+            lockChurn.once("exit", (code) => resolve(code));
+          }
+        });
+        expect(lockChurnExit, lockChurnStderr).toBe(0);
+      } finally {
+        if (lockChurn.exitCode === null && lockChurn.signalCode === null) {
+          lockChurn.kill();
+          await new Promise<void>((resolve) => {
+            lockChurn.once("exit", () => resolve());
+          });
+        }
+        rmSync(lockPath, { force: true });
+        rmSync(ancestorChurnPath, { force: true, recursive: true });
+      }
+
       const stage = Buffer.from('{"profile":"initializing"}', "utf8");
       createNativeInstallationIdentityArtifactV1(opened.authority, "init_stage", stage);
       replaceNativeInstallationIdentityInitStageV1(opened.authority);
@@ -162,35 +266,325 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
       closeNativeInstallationStateAuthorityV1(reopened.authority);
     });
 
-    it("rejects fresh-namespace drift and pinned init-stage replacement races", () => {
+    it("binds the fresh native-owned empty hooks directory with its frozen HMAC", () => {
       const fixture = createFixtureRootV1();
       const authorityRoot = join(fixture, "authority");
+      const hooksPath = join(
+        authorityRoot,
+        "runtime-state",
+        "private",
+        "safe-git-empty-hooks-v1",
+      );
+      const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: true,
+      });
+      const inspected = inspectNativeInstallationEmptyHooksDirectoryV1(
+        opened.authority,
+      );
+      expect(inspected).toEqual({
+        profile: "native_installation_empty_hooks_directory_v1",
+        directoryIdentity: {
+          platform: "posix",
+          device: expect.stringMatching(/^(0|[1-9][0-9]*)$/u),
+          inode: expect.stringMatching(/^(0|[1-9][0-9]*)$/u),
+        },
+      });
+      expect(readdirSync(hooksPath)).toEqual([]);
+      expect(JSON.stringify(inspected)).not.toContain(authorityRoot);
+
+      const repository = join(fixture, "repository");
+      initializeRepositoryV1(repository);
+      const first = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(first.binding);
+      const firstKey = Buffer.alloc(32, 0x51);
+      const firstBinding = bindNativeSafeGitEmptyHooksDirectoryV1(
+        first.binding,
+        opened.authority,
+        firstKey,
+      );
+      const expectedFirstToken = `hmac-sha256:${hmacHexV1(firstKey, [
+        "empty-hooks-directory-token-v1",
+        {
+          directoryIdentity: {
+            device: inspected.directoryIdentity.device,
+            inode: inspected.directoryIdentity.inode,
+            platform: "posix",
+          },
+          entries: [],
+        },
+      ])}`;
+      expect(firstBinding).toEqual({
+        profile: "native_safe_git_empty_hooks_binding_v1",
+        directoryIdentity: inspected.directoryIdentity,
+        emptyHooksDirectoryToken: expectedFirstToken,
+      });
+      expect(JSON.stringify(firstBinding)).not.toContain(authorityRoot);
+
+      closeNativeInstallationStateAuthorityV1(opened.authority);
+      expect(revalidateNativeSafeGitDescriptorBootstrapV1(first.binding)).toBe(
+        "ordinary",
+      );
+      const reopened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: false,
+      });
+      expect(
+        inspectNativeInstallationEmptyHooksDirectoryV1(reopened.authority),
+      ).toEqual(inspected);
+      expect(
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          first.binding,
+          reopened.authority,
+          firstKey,
+        ),
+      ).toEqual(firstBinding);
+
+      const second = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(second.binding);
+      const secondKey = Buffer.alloc(32, 0x52);
+      const secondBinding = bindNativeSafeGitEmptyHooksDirectoryV1(
+        second.binding,
+        reopened.authority,
+        secondKey,
+      );
+      expect(secondBinding.directoryIdentity).toEqual(
+        inspected.directoryIdentity,
+      );
+      expect(secondBinding.emptyHooksDirectoryToken).not.toBe(
+        firstBinding.emptyHooksDirectoryToken,
+      );
+
+      const missingControl = openNativeSafeGitDescriptorBootstrapV1(repository);
+      expectSafeGitUnavailableV1(() =>
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          missingControl.binding,
+          reopened.authority,
+          firstKey,
+        )
+      );
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(missingControl.binding)
+      );
+
+      const mismatched = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(mismatched.binding);
+      expect(
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          mismatched.binding,
+          reopened.authority,
+          firstKey,
+        ),
+      ).toEqual(firstBinding);
+      const otherAuthority = openNativeTestInstallationStateAuthorityV1(
+        join(fixture, "other-authority"),
+        { create: true },
+      );
+      expectSafeGitUnavailableV1(() =>
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          mismatched.binding,
+          otherAuthority.authority,
+          firstKey,
+        )
+      );
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(mismatched.binding)
+      );
+      closeNativeSafeGitDescriptorBootstrapV1(mismatched.binding);
+      closeNativeInstallationStateAuthorityV1(otherAuthority.authority);
+
+      const invalid = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(invalid.binding);
+      expectSafeGitUnavailableV1(() =>
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          invalid.binding,
+          reopened.authority,
+          Buffer.alloc(31) as Buffer,
+        )
+      );
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(invalid.binding)
+      );
+
+      const raced = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(raced.binding);
+      bindNativeSafeGitEmptyHooksDirectoryV1(
+        raced.binding,
+        reopened.authority,
+        firstKey,
+      );
+      armNativeTestSafeGitEmptyHooksDirectoryRaceV1(raced.binding);
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(raced.binding),
+      );
+      expect(readdirSync(hooksPath)).toEqual([
+        ".native-safe-git-empty-hooks-race-v1",
+      ]);
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(raced.binding),
+      );
+      closeNativeSafeGitDescriptorBootstrapV1(raced.binding);
+
+      writeFileSync(join(hooksPath, "unexpected-hook"), "#!/bin/sh\n", {
+        mode: 0o600,
+      });
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(first.binding)
+      );
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(second.binding)
+      );
+      closeNativeSafeGitDescriptorBootstrapV1(first.binding);
+      closeNativeSafeGitDescriptorBootstrapV1(second.binding);
+      closeNativeSafeGitDescriptorBootstrapV1(invalid.binding);
+      closeNativeSafeGitDescriptorBootstrapV1(missingControl.binding);
+      closeNativeInstallationStateAuthorityV1(reopened.authority);
+    });
+
+    it("never supplements an established installation root missing empty hooks", () => {
+      const fixture = createFixtureRootV1();
+      const authorityRoot = join(fixture, "authority");
+      const privatePath = join(authorityRoot, "runtime-state", "private");
+      const hooksPath = join(privatePath, "safe-git-empty-hooks-v1");
+      const fresh = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: true,
+      });
+      closeNativeInstallationStateAuthorityV1(fresh.authority);
+      rmSync(hooksPath, { recursive: true });
+      expect(readdirSync(privatePath)).toEqual([]);
+
+      const established = openNativeTestInstallationStateAuthorityV1(
+        authorityRoot,
+        { create: true },
+      );
+      expect(established.rootCreated).toBe(false);
+      revalidateNativeInstallationStateAuthorityV1(established.authority);
+      expectInstallationAuthorityUnavailableV1(() =>
+        inspectNativeInstallationEmptyHooksDirectoryV1(established.authority)
+      );
+      expect(readdirSync(privatePath)).toEqual([]);
+      closeNativeInstallationStateAuthorityV1(established.authority);
+    });
+
+    it("rejects empty-hooks swaps, mode drift, and extended ACLs", () => {
+      const swappedFixture = createFixtureRootV1();
+      const swappedRoot = join(swappedFixture, "authority");
+      const swappedHooks = join(
+        swappedRoot,
+        "runtime-state",
+        "private",
+        "safe-git-empty-hooks-v1",
+      );
+      const swapped = openNativeTestInstallationStateAuthorityV1(swappedRoot, {
+        create: true,
+      });
+      renameSync(swappedHooks, `${swappedHooks}-original`);
+      mkdirSync(swappedHooks, { mode: 0o700 });
+      expectInstallationAuthorityUnavailableV1(() =>
+        revalidateNativeInstallationStateAuthorityV1(swapped.authority)
+      );
+      closeNativeInstallationStateAuthorityV1(swapped.authority);
+
+      const modeFixture = createFixtureRootV1();
+      const modeRoot = join(modeFixture, "authority");
+      const modeHooks = join(
+        modeRoot,
+        "runtime-state",
+        "private",
+        "safe-git-empty-hooks-v1",
+      );
+      const mode = openNativeTestInstallationStateAuthorityV1(modeRoot, {
+        create: true,
+      });
+      chmodSync(modeHooks, 0o755);
+      expectInstallationAuthorityUnavailableV1(() =>
+        inspectNativeInstallationEmptyHooksDirectoryV1(mode.authority)
+      );
+      closeNativeInstallationStateAuthorityV1(mode.authority);
+
+      if (process.platform === "darwin") {
+        const aclFixture = createFixtureRootV1();
+        const aclRoot = join(aclFixture, "authority");
+        const aclHooks = join(
+          aclRoot,
+          "runtime-state",
+          "private",
+          "safe-git-empty-hooks-v1",
+        );
+        const acl = openNativeTestInstallationStateAuthorityV1(aclRoot, {
+          create: true,
+        });
+        execFileSync("chmod", ["+a", "everyone allow read", aclHooks]);
+        try {
+          expectInstallationAuthorityUnavailableV1(() =>
+            inspectNativeInstallationEmptyHooksDirectoryV1(acl.authority)
+          );
+        } finally {
+          execFileSync("chmod", ["-N", aclHooks]);
+          closeNativeInstallationStateAuthorityV1(acl.authority);
+        }
+
+        const flags = openNativeTestInstallationStateAuthorityV1(aclRoot, {
+          create: false,
+        });
+        execFileSync("chflags", ["uchg", aclHooks]);
+        try {
+          expectInstallationAuthorityUnavailableV1(() =>
+            inspectNativeInstallationEmptyHooksDirectoryV1(flags.authority)
+          );
+        } finally {
+          execFileSync("chflags", ["nouchg", aclHooks]);
+          closeNativeInstallationStateAuthorityV1(flags.authority);
+        }
+      }
+    });
+
+    it("rejects fresh-namespace drift and pinned init-stage replacement races", () => {
+      const fixture = createFixtureRootV1();
+      const staticAuthorityRoot = join(fixture, "static-authority");
+      const staticAuthority = openNativeTestInstallationStateAuthorityV1(
+        staticAuthorityRoot,
+        { create: true },
+      );
+      armNativeTestInstallationStateAuthorityNamespaceRaceV1(
+        staticAuthority.authority,
+        "static_shape",
+      );
+      expectInstallationAuthorityUnavailableV1(() =>
+        revalidateNativeInstallationStateAuthorityV1(staticAuthority.authority),
+      );
+      expect(readdirSync(staticAuthorityRoot).sort()).toEqual([
+        ".native-installation-namespace-race-v1",
+        "provider",
+        "runtime-state",
+      ]);
+      expect(
+        readdirSync(join(staticAuthorityRoot, "runtime-state", "private")),
+      ).toEqual(["safe-git-empty-hooks-v1"]);
+
+      const authorityRoot = join(fixture, "authority");
+      const privatePath = join(authorityRoot, "runtime-state", "private");
       const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
         create: true,
       });
       const lock = acquireNativeInstallationIdentityInitializationLockV1(opened.authority);
       expect(lock).toBeDefined();
       releaseNativeInstallationIdentityInitializationLockV1(lock!);
-      writeFileSync(join(authorityRoot, "runtime-state", "private", "unknown"), "x", {
-        mode: 0o600,
-      });
+      armNativeTestInstallationStateAuthorityNamespaceRaceV1(
+        opened.authority,
+        "fresh_shape",
+      );
       expectInstallationAuthorityUnavailableV1(() =>
         assertNativeInstallationStateAuthorityFreshV1(opened.authority),
       );
+      expect(readdirSync(privatePath).sort()).toEqual([
+        ".installation-identity-v1.lock",
+        ".native-installation-namespace-race-v1",
+        "safe-git-empty-hooks-v1",
+      ]);
       const providerCompatible = openNativeTestInstallationStateAuthorityV1(
         authorityRoot,
         { create: false },
       );
       closeNativeInstallationStateAuthorityV1(providerCompatible.authority);
-      writeFileSync(join(authorityRoot, "unexpected-root-entry"), "x", {
-        mode: 0o600,
-      });
-      expectInstallationAuthorityUnavailableV1(() =>
-        openNativeTestInstallationStateAuthorityV1(authorityRoot, {
-          create: false,
-        }),
-      );
-
       expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init")).toBeUndefined();
       createNativeInstallationIdentityArtifactV1(
         opened.authority,
@@ -205,6 +599,14 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
         replaceNativeInstallationIdentityInitStageV1(opened.authority),
       );
       closeNativeInstallationStateAuthorityV1(opened.authority);
+      writeFileSync(join(authorityRoot, "unexpected-root-entry"), "x", {
+        mode: 0o600,
+      });
+      expectInstallationAuthorityUnavailableV1(() =>
+        openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+          create: false,
+        }),
+      );
     });
 
     it("does not adopt or mutate a pre-existing empty state root", () => {
@@ -293,6 +695,22 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
           binding.binding,
         ),
       );
+      const descendantBinding = openNativeSafeGitDescriptorBootstrapV1(
+        repository,
+      );
+      bindNativeSafeGitRepositoryControlV1(descendantBinding.binding);
+      expectSafeGitUnavailableV1(() =>
+        bindNativeSafeGitEmptyHooksDirectoryV1(
+          descendantBinding.binding,
+          descendant.authority,
+          Buffer.alloc(32, 0x61),
+        )
+      );
+      expectSafeGitUnavailableV1(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(
+          descendantBinding.binding,
+        )
+      );
       const separate = openNativeTestInstallationStateAuthorityV1(
         join(fixture, "separate"),
         { create: true },
@@ -304,6 +722,7 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
       closeNativeInstallationStateAuthorityV1(equal.authority);
       closeNativeInstallationStateAuthorityV1(descendant.authority);
       closeNativeInstallationStateAuthorityV1(separate.authority);
+      closeNativeSafeGitDescriptorBootstrapV1(descendantBinding.binding);
       closeNativeSafeGitDescriptorBootstrapV1(binding.binding);
     });
     it("resolves the effective account state root independently of environment", () => {

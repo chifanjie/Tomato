@@ -78,8 +78,19 @@ sendV1({ type: "ready" });
 await waitForGoV1();
 
 try {
-  const result = await store.compareAppend(request);
-  sendV1({ type: "result", result });
+  if (mode === "open_churn") {
+    const count = 16;
+    for (let index = 0; index < count; index += 1) {
+      await openProviderAcceptanceAuthorityStoreForTestInternalV1(
+        capability,
+        { clock: fixedClockV1 },
+      );
+    }
+    sendV1({ type: "opened", count });
+  } else {
+    const result = await store.compareAppend(request);
+    sendV1({ type: "result", result });
+  }
   process.exitCode = 0;
   process.disconnect();
 } catch (error) {

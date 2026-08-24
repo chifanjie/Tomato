@@ -85,8 +85,9 @@ afterEach(async () => {
 });
 
 async function fixtureV1() {
-  const root = await mkdtemp(join(tmpdir(), "strong-mutation-broker-"));
-  fixtureRoots.add(root);
+  const parent = await mkdtemp(join(tmpdir(), "strong-mutation-broker-"));
+  const root = join(parent, "authority");
+  fixtureRoots.add(parent);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
   brokerVerifierByLayoutV1.set(

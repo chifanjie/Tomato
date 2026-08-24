@@ -11,6 +11,7 @@ import {
   assertNativeInstallationStateAuthorityFreshV1,
   closeNativeInstallationStateAuthorityV1,
   createNativeInstallationIdentityArtifactV1,
+  inspectNativeInstallationEmptyHooksDirectoryV1,
   openNativeInstallationStateAuthorityV1,
   openNativeTestInstallationStateAuthorityV1,
   readNativeInstallationIdentityArtifactV1,
@@ -19,6 +20,7 @@ import {
   revalidateNativeInstallationStateAuthorityV1,
   type NativeInstallationIdentityArtifactV1,
   type NativeInstallationInitializationLockV1,
+  type NativeInstallationStateAuthorityV1,
   type NativeInstallationStateAuthorityOpenResultV1,
 } from "@understand-code/native-kernel-bridge";
 
@@ -50,6 +52,8 @@ const IDENTITY_MARKER_TOKEN_DOMAIN_V1 =
   "understand-code-provider-acceptance-authority-identity-marker-v1";
 const IDENTITY_STATE_ROOT_BINDING_DOMAIN_V1 =
   "installation-state-root-binding-v1";
+const EMPTY_HOOKS_DIRECTORY_TOKEN_DOMAIN_V1 =
+  "empty-hooks-directory-token-v1";
 const LOCK_PREPARATION_NAME_V1 =
   /^\.provider-acceptance-authority-v1\.lock\.prepare-[1-9][0-9]*-[0-9a-f]{32}$/u;
 const RECOVERY_PREPARATION_NAME_V1 =
@@ -64,6 +68,8 @@ interface InstallationIdentityAuthorityStateInternalV1 {
   readonly resolverId: string;
   readonly stateRootFileIdentity: InstallationStateRootFileIdentityInternalV1;
   readonly stateRootBindingToken: string;
+  readonly emptyHooksDirectoryBinding?:
+    InstallationEmptyHooksDirectoryBindingInternalV1;
   readonly keyCheckToken: string;
 }
 
@@ -71,6 +77,11 @@ interface InstallationStateRootFileIdentityInternalV1 {
   readonly platform: "posix";
   readonly device: string;
   readonly inode: string;
+}
+
+interface InstallationEmptyHooksDirectoryBindingInternalV1 {
+  readonly directoryIdentity: InstallationStateRootFileIdentityInternalV1;
+  readonly emptyHooksDirectoryToken: string;
 }
 
 interface InstallationIdentityAuthorityMarkerInternalV1 {
@@ -109,17 +120,24 @@ function exactRecordV1(
 function parseIdentityStateV1(
   value: unknown,
 ): InstallationIdentityAuthorityStateInternalV1 {
+  const legacyKeys = [
+    "schemaVersion",
+    "profile",
+    "installationIdentityGenerationId",
+    "initializationNonce",
+    "resolverId",
+    "stateRootFileIdentity",
+    "stateRootBindingToken",
+    "keyCheckToken",
+  ] as const;
+  const currentKeys = [
+    ...legacyKeys.slice(0, -1),
+    "emptyHooksDirectoryBinding",
+    "keyCheckToken",
+  ] as const;
   if (
-    !exactRecordV1(value, [
-      "schemaVersion",
-      "profile",
-      "installationIdentityGenerationId",
-      "initializationNonce",
-      "resolverId",
-      "stateRootFileIdentity",
-      "stateRootBindingToken",
-      "keyCheckToken",
-    ]) ||
+    (!exactRecordV1(value, legacyKeys) &&
+      !exactRecordV1(value, currentKeys)) ||
     value.schemaVersion !== 1 ||
     value.profile !== IDENTITY_STATE_PROFILE_V1 ||
     typeof value.initializationNonce !== "string" ||
@@ -133,6 +151,8 @@ function parseIdentityStateV1(
     !isStateRootIdentityV1(value.stateRootFileIdentity) ||
     typeof value.stateRootBindingToken !== "string" ||
     !/^hmac-sha256:[0-9a-f]{64}$/u.test(value.stateRootBindingToken) ||
+    (Object.hasOwn(value, "emptyHooksDirectoryBinding") &&
+      !isEmptyHooksDirectoryBindingV1(value.emptyHooksDirectoryBinding)) ||
     typeof value.keyCheckToken !== "string" ||
     !/^hmac-sha256:[0-9a-f]{64}$/u.test(value.keyCheckToken)
   ) {
@@ -149,6 +169,21 @@ function parseIdentityStateV1(
     resolverId: value.resolverId,
     stateRootFileIdentity: value.stateRootFileIdentity,
     stateRootBindingToken: value.stateRootBindingToken,
+    ...(Object.hasOwn(value, "emptyHooksDirectoryBinding")
+      ? {
+          emptyHooksDirectoryBinding: Object.freeze({
+            directoryIdentity: Object.freeze({
+              ...(value.emptyHooksDirectoryBinding as
+                InstallationEmptyHooksDirectoryBindingInternalV1)
+                .directoryIdentity,
+            }),
+            emptyHooksDirectoryToken:
+              (value.emptyHooksDirectoryBinding as
+                InstallationEmptyHooksDirectoryBindingInternalV1)
+                .emptyHooksDirectoryToken,
+          }),
+        }
+      : {}),
     keyCheckToken: value.keyCheckToken,
   });
 }
@@ -160,6 +195,18 @@ function isStateRootIdentityV1(
     value.platform === "posix" &&
     typeof value.device === "string" && /^(0|[1-9][0-9]*)$/u.test(value.device) &&
     typeof value.inode === "string" && /^(0|[1-9][0-9]*)$/u.test(value.inode);
+}
+
+function isEmptyHooksDirectoryBindingV1(
+  value: unknown,
+): value is InstallationEmptyHooksDirectoryBindingInternalV1 {
+  return exactRecordV1(value, [
+    "directoryIdentity",
+    "emptyHooksDirectoryToken",
+  ]) &&
+    isStateRootIdentityV1(value.directoryIdentity) &&
+    typeof value.emptyHooksDirectoryToken === "string" &&
+    /^hmac-sha256:[0-9a-f]{64}$/u.test(value.emptyHooksDirectoryToken);
 }
 
 function openNativeAuthorityForLayoutV1(
@@ -268,6 +315,34 @@ function sameStateRootIdentityV1(
     left.inode === right.inode;
 }
 
+function emptyHooksDirectoryTokenFieldsV1(
+  directoryIdentity: InstallationStateRootFileIdentityInternalV1,
+): object {
+  return Object.freeze({
+    directoryIdentity,
+    entries: Object.freeze([]),
+  });
+}
+
+function inspectEmptyHooksDirectoryIdentityV1(
+  authority: NativeInstallationStateAuthorityV1,
+): InstallationStateRootFileIdentityInternalV1 {
+  try {
+    const inspection =
+      inspectNativeInstallationEmptyHooksDirectoryV1(authority);
+    if (
+      inspection.profile !== "native_installation_empty_hooks_directory_v1" ||
+      !isStateRootIdentityV1(inspection.directoryIdentity)
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+    }
+    return Object.freeze({ ...inspection.directoryIdentity });
+  } catch (error) {
+    if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
+    throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+  }
+}
+
 function parseIdentityMarkerV1(
   value: unknown,
 ): InstallationIdentityAuthorityMarkerInternalV1 {
@@ -333,7 +408,13 @@ export interface ProviderAcceptanceInstallationIdentityInternalV1 {
   readonly installationIdentityGenerationId:
     InstallationIdentityGenerationIdV1;
   /** Callback-only custody: the key is zeroed immediately after the callback. */
-  readonly withKey: <T>(operation: (key: Buffer) => Promise<T>) => Promise<T>;
+  readonly withKey: <T>(operation: (
+    key: Buffer,
+    authority: NativeInstallationStateAuthorityV1,
+    emptyHooksDirectoryBinding:
+      | InstallationEmptyHooksDirectoryBindingInternalV1
+      | undefined,
+  ) => Promise<T>) => Promise<T>;
 }
 
 export interface ProviderAcceptanceInstallationIdentityOpenOptionsInternalV1 {
@@ -417,7 +498,13 @@ export async function openProviderAcceptanceInstallationIdentityInternalV1(
     throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
   }
 
-  const withKey = async <T>(operation: (key: Buffer) => Promise<T>): Promise<T> => {
+  const withKey = async <T>(operation: (
+    key: Buffer,
+    authority: NativeInstallationStateAuthorityV1,
+    emptyHooksDirectoryBinding:
+      | InstallationEmptyHooksDirectoryBindingInternalV1
+      | undefined,
+  ) => Promise<T>): Promise<T> => {
     let current: NativeInstallationStateAuthorityOpenResultV1 | undefined;
     let key: Buffer | undefined;
     let operationStarted = false;
@@ -472,9 +559,35 @@ export async function openProviderAcceptanceInstallationIdentityInternalV1(
       ) {
         throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
       }
+      if (state.emptyHooksDirectoryBinding !== undefined) {
+        const currentEmptyHooksDirectoryIdentity =
+          inspectEmptyHooksDirectoryIdentityV1(current.authority);
+        if (
+          !sameStateRootIdentityV1(
+            state.emptyHooksDirectoryBinding.directoryIdentity,
+            currentEmptyHooksDirectoryIdentity,
+          ) ||
+          !verifyHmacTokenForDomainInternalV1(
+            key,
+            EMPTY_HOOKS_DIRECTORY_TOKEN_DOMAIN_V1,
+            emptyHooksDirectoryTokenFieldsV1(
+              currentEmptyHooksDirectoryIdentity,
+            ),
+            state.emptyHooksDirectoryBinding.emptyHooksDirectoryToken,
+          )
+        ) {
+          throw new ProviderAcceptanceAuthorityErrorV1(
+            "identity_key_invalid",
+          );
+        }
+      }
       operationStarted = true;
       try {
-        return await operation(key);
+        return await operation(
+          key,
+          current.authority,
+          state.emptyHooksDirectoryBinding,
+        );
       } catch (error) {
         operationFailed = true;
         throw error;
@@ -511,6 +624,7 @@ async function createIdentityRecordsV1(
   installationIdentityGenerationId: InstallationIdentityGenerationIdV1,
   key: Buffer,
   initializationNonce: string,
+  includeEmptyHooksDirectoryBinding = true,
 ): Promise<Readonly<{
   state: InstallationIdentityAuthorityStateInternalV1;
   marker: InstallationIdentityAuthorityMarkerInternalV1;
@@ -522,6 +636,21 @@ async function createIdentityRecordsV1(
     IDENTITY_STATE_ROOT_BINDING_DOMAIN_V1,
     stateRootBindingFieldsV1(opened, stateRootFileIdentity),
   );
+  const emptyHooksDirectoryBinding = includeEmptyHooksDirectoryBinding
+    ? (() => {
+        const directoryIdentity = inspectEmptyHooksDirectoryIdentityV1(
+          opened.authority,
+        );
+        return Object.freeze({
+          directoryIdentity,
+          emptyHooksDirectoryToken: hmacTokenForDomainInternalV1(
+            key,
+            EMPTY_HOOKS_DIRECTORY_TOKEN_DOMAIN_V1,
+            emptyHooksDirectoryTokenFieldsV1(directoryIdentity),
+          ),
+        });
+      })()
+    : undefined;
   const unsignedState = Object.freeze({
     schemaVersion: 1 as const,
     profile: IDENTITY_STATE_PROFILE_V1,
@@ -530,6 +659,9 @@ async function createIdentityRecordsV1(
     resolverId: opened.resolverId,
     stateRootFileIdentity,
     stateRootBindingToken,
+    ...(emptyHooksDirectoryBinding === undefined
+      ? {}
+      : { emptyHooksDirectoryBinding }),
   });
   const state: InstallationIdentityAuthorityStateInternalV1 = Object.freeze({
     ...unsignedState,
@@ -833,6 +965,8 @@ export async function openOrInitializeProviderAcceptanceInstallationIdentityInte
             initializing.plannedState.installationIdentityGenerationId,
             keyFile,
             initializing.plannedState.initializationNonce,
+            initializing.plannedState.emptyHooksDirectoryBinding !==
+              undefined,
           );
           if (
             Buffer.compare(
@@ -911,9 +1045,9 @@ export async function provisionProviderAcceptanceInstallationIdentityForTestInte
   input: Readonly<{
     installationIdentityGenerationId: unknown;
     installationIdentityKey: Uint8Array;
+    legacyWithoutEmptyHooksDirectoryBinding?: boolean;
   }>,
 ): Promise<void> {
-  await ensureProviderAcceptanceAuthorityDirectoriesInternalV1(layout, true);
   if (
     !(input.installationIdentityKey instanceof Uint8Array) ||
     input.installationIdentityKey.byteLength !== 32
@@ -933,11 +1067,13 @@ export async function provisionProviderAcceptanceInstallationIdentityForTestInte
   const initializationNonce = randomBytes(16).toString("hex");
   const opened = openNativeAuthorityForLayoutV1(layout, true);
   try {
+    await ensureProviderAcceptanceAuthorityDirectoriesInternalV1(layout, false);
     const records = await createIdentityRecordsV1(
       opened,
       installationIdentityGenerationId,
       key,
       initializationNonce,
+      input.legacyWithoutEmptyHooksDirectoryBinding !== true,
     );
     createNativeInstallationIdentityArtifactV1(
       opened.authority,

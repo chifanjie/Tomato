@@ -68,8 +68,9 @@ async function fixtureV1(options: Readonly<{
     evidence: EvidenceV1,
   ) => unknown | Promise<unknown>;
 }> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "broker-trust-verifier-"));
-  fixtureRoots.add(root);
+  const parent = await mkdtemp(join(tmpdir(), "broker-trust-verifier-"));
+  const root = join(parent, "authority");
+  fixtureRoots.add(parent);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {

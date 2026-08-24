@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SAFE_GIT_EMPTY_HOOKS_PROFILE_V1,
   SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
+  SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1,
   SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
   SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
   SafeGitBootstrapErrorV1,
@@ -38,6 +39,9 @@ const identityAuthorityTestStateV1 = vi.hoisted(() => ({
   unavailable: false,
   emptyHooksUnavailable: false,
   emptyHooksTokenByte: 0x51,
+  executableBindings: 0,
+  executableUnavailable: false,
+  executablePath: undefined as string | undefined,
 }));
 
 vi.mock(
@@ -47,6 +51,27 @@ vi.mock(
       typeof import("@understand-code/native-kernel-bridge")
     >("@understand-code/native-kernel-bridge");
     return {
+      bindProviderAcceptanceSafeGitExecutableInternalV1: async (
+        _binding: NativeSafeGitDescriptorBindingV1,
+        absoluteExecutablePath: string,
+      ) => {
+        identityAuthorityTestStateV1.executableBindings += 1;
+        if (
+          identityAuthorityTestStateV1.executableUnavailable ||
+          (identityAuthorityTestStateV1.executablePath !== undefined &&
+            identityAuthorityTestStateV1.executablePath !==
+              absoluteExecutablePath)
+        ) {
+          throw new Error(
+            `test executable authority unavailable: ${absoluteExecutablePath}`,
+          );
+        }
+        identityAuthorityTestStateV1.executablePath = absoluteExecutablePath;
+        return Object.freeze({
+          profile: "native_safe_git_executable_binding_v1" as const,
+          executableBinding: "verified" as const,
+        });
+      },
       bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1: async () => {
         identityAuthorityTestStateV1.emptyHooksBindings += 1;
         if (identityAuthorityTestStateV1.emptyHooksUnavailable) {
@@ -90,13 +115,16 @@ afterEach(() => {
   identityAuthorityTestStateV1.unavailable = false;
   identityAuthorityTestStateV1.emptyHooksUnavailable = false;
   identityAuthorityTestStateV1.emptyHooksTokenByte = 0x51;
+  identityAuthorityTestStateV1.executableBindings = 0;
+  identityAuthorityTestStateV1.executableUnavailable = false;
+  identityAuthorityTestStateV1.executablePath = undefined;
   cleanupTemporaryDirectories();
 });
 
 async function expectBootstrapFailure(
   operation: Promise<unknown>,
   code: SafeGitBootstrapErrorV1["code"],
-  pathCanary: string,
+  pathCanaries: string | readonly string[],
 ): Promise<void> {
   try {
     await operation;
@@ -104,7 +132,11 @@ async function expectBootstrapFailure(
   } catch (error) {
     expect(error).toBeInstanceOf(SafeGitBootstrapErrorV1);
     expect((error as SafeGitBootstrapErrorV1).code).toBe(code);
-    expect((error as Error).message).not.toContain(pathCanary);
+    for (const pathCanary of typeof pathCanaries === "string"
+      ? [pathCanaries]
+      : pathCanaries) {
+      expect((error as Error).message).not.toContain(pathCanary);
+    }
   }
 }
 
@@ -394,6 +426,141 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
       identityAuthorityTestStateV1.emptyHooksUnavailable = false;
       identityAuthorityTestStateV1.emptyHooksTokenByte = 0x51;
     }
+  });
+
+  it("promotes only an explicit absolute Git executable with a fixed redacted projection", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-executable"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+
+    await expectBootstrapFailure(
+      result.capability.bindGitExecutable(absoluteExecutablePath),
+      "executable_binding_invalid",
+      [root, absoluteExecutablePath],
+    );
+    expect(identityAuthorityTestStateV1.executableBindings).toBe(0);
+    expect(result.capability.closed).toBe(false);
+
+    const emptyHooks = await result.capability.bindEmptyHooksDirectory();
+    await expectBootstrapFailure(
+      result.capability.bindGitExecutable("git"),
+      "executable_binding_invalid",
+      root,
+    );
+    expect(identityAuthorityTestStateV1.executableBindings).toBe(0);
+    expect(result.capability.closed).toBe(false);
+
+    const executable =
+      await result.capability.bindGitExecutable(absoluteExecutablePath);
+    expect(executable).toEqual({
+      ...emptyHooks,
+      profile: SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1,
+      executableBinding: "verified",
+      gitVersion: "locked",
+      requiredNext: [
+        "git_version_diagnostic",
+        "handle_bound_execution",
+        "os_sandbox",
+        "strong_writer",
+      ],
+    });
+    expect(identityAuthorityTestStateV1.executableBindings).toBe(1);
+    const serialized = JSON.stringify({
+      executable,
+      capability: result.capability,
+    });
+    expect(serialized).not.toContain(root);
+    expect(serialized).not.toContain(absoluteExecutablePath);
+    expect(serialized).not.toContain("hmac-sha256:");
+    expect(serialized).not.toMatch(/(?:device|digest|inode|path|token)/iu);
+
+    await expect(
+      result.capability.bindGitExecutable(absoluteExecutablePath),
+    ).resolves.toEqual(executable);
+    expect(identityAuthorityTestStateV1.executableBindings).toBe(2);
+    await expect(result.capability.revalidate()).resolves.toEqual(executable);
+    expect(identityAuthorityTestStateV1.executableBindings).toBe(2);
+    await result.capability.close();
+    await result.capability.close();
+    expect(result.capability.closed).toBe(true);
+  });
+
+  it("permanently poisons executable authority on path mismatch or native drift", async () => {
+    for (const failure of [
+      "path_mismatch",
+      "native_drift",
+      "descriptor_drift",
+    ] as const) {
+      identityAuthorityTestStateV1.executablePath = undefined;
+      identityAuthorityTestStateV1.executableUnavailable = false;
+      const root = initializeRepository();
+      const absoluteExecutablePath = join(
+        temporaryDirectory("safe-git-executable"),
+        "git",
+      );
+      const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+      await result.capability.bindRepositoryControl();
+      await result.capability.bindRepositoryIdentity();
+      await result.capability.bindEmptyHooksDirectory();
+      await result.capability.bindGitExecutable(absoluteExecutablePath);
+
+      if (failure === "path_mismatch") {
+        const differentExecutablePath = join(
+          temporaryDirectory("safe-git-executable-other"),
+          "git",
+        );
+        await expectBootstrapFailure(
+          result.capability.bindGitExecutable(
+            differentExecutablePath,
+          ),
+          "executable_binding_invalid",
+          [root, absoluteExecutablePath, differentExecutablePath],
+        );
+      } else if (failure === "native_drift") {
+        identityAuthorityTestStateV1.executableUnavailable = true;
+        await expectBootstrapFailure(
+          result.capability.bindGitExecutable(absoluteExecutablePath),
+          "executable_binding_invalid",
+          [root, absoluteExecutablePath],
+        );
+      } else {
+        renameSync(join(root, ".git"), join(root, ".git.drifted"));
+        await expectBootstrapFailure(
+          result.capability.revalidate(),
+          "binding_changed",
+          root,
+        );
+      }
+      expect(result.capability.closed).toBe(true);
+      expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
+      identityAuthorityTestStateV1.executableUnavailable = false;
+    }
+  });
+
+  it("redacts executable custody errors and poisons the retained binding", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-secret-executable"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    await result.capability.bindEmptyHooksDirectory();
+    identityAuthorityTestStateV1.executableUnavailable = true;
+
+    await expectBootstrapFailure(
+      result.capability.bindGitExecutable(absoluteExecutablePath),
+      "executable_binding_invalid",
+      [root, absoluteExecutablePath],
+    );
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
   });
 
   it("does not open installation identity before repository control is bound", async () => {
@@ -868,13 +1035,19 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
   });
 
   it("has no Git process execution dependency", () => {
-    const source = readFileSync(
+    const sources = [
       new URL("../src/safe-git-bootstrap.ts", import.meta.url),
-      "utf8",
-    );
-    expect(source).not.toContain("node:child_process");
-    expect(source).not.toContain("executeGit(");
-    expect(source).not.toContain("execFile(");
-    expect(source).not.toContain("spawn(");
+      new URL(
+        "../../durable-object-provider-authority/src/acceptance-store-internal.ts",
+        import.meta.url,
+      ),
+    ].map((url) => readFileSync(url, "utf8"));
+    for (const source of sources) {
+      expect(source).not.toContain("node:child_process");
+      expect(source).not.toContain("executeGit(");
+      expect(source).not.toMatch(/\b(?:exec|execFile|fork|spawn)\s*\(/u);
+      expect(source).not.toContain("git --version");
+      expect(source).not.toContain('"--version"');
+    }
   });
 });

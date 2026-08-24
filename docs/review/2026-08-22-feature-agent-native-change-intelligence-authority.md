@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-24 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 当前增量基于 commit：7c8544c42dd34028a4b539a1e749c27555e35833 `feat(repository-state): derive installation-keyed identities`
+> 当前增量基于 commit：d4575866357f57bebbc23333a7490379bf0603f1 `feat(repository-state): bind installation empty hooks`
 
 ## 背景与动机
 
@@ -52,6 +52,17 @@ retained chain 的 exact join；legacy/既有 root 缺失该 pin 时只保留历
 目录。公开 `descriptor_bound_safe_git_empty_hooks_v1` 只投影 `emptyHooksDirectory: "verified"`；路径、
 device/inode、token 与 key 均不越界。handle-bound execution、OS sandbox 与 strong writer 继续锁定。
 
+下一最小增量只增加独立版本的 Git executable admission/pinning，不启动任何进程。caller 必须显式提供
+absolute realpath；native 逐 component no-follow 打开并保留 descriptor chain，拒绝 symlink、repository/
+installation/empty-hooks identity overlap、非 regular/non-executable/set-id/hardlink、用户可写 production
+binary 与不稳定 content。完整 binary bytes 在 hash 前后由 exact stat 夹住，file identity、owner、mode、
+size 与 digest 进入 installation-keyed `safe-git-executable-binding-token-v1`；key 在 callback 内立即
+清零，后续现有 binding revalidation 重新打开 namespace、重验完整 stat 并重算 binary digest，证明
+retained token 的完整 preimage 未变。公开 `descriptor_bound_safe_git_executable_binding_v1` 只投影
+`executableBinding: "verified"`；Git version、handle execution、OS sandbox 与 strong writer 继续锁定。
+冻结合同要求 version probe 自身也位于完整 command-scoped OS containment 内，因此本增量明确禁止
+`git --version`、spawn/fork/exec 或任何未隔离执行，不能声明 SafeGit adapter/version diagnostic 已完成。
+
 ## 改动策略
 
 1. **persisted 与 Surface 分离**：Snapshot/Pulse 各自使用 `legacy | strong` persisted union；public
@@ -74,6 +85,10 @@ device/inode、token 与 key 均不越界。handle-bound execution、OS sandbox 
 7. **同一候选发布链**：仓内 `test:surface-release` 强制真实 Browser 先组装、校验并导出唯一 candidate，
    再把同一私有 candidate directory 交给强制 Codex/Claude Host gate；禁止任意 tarball override、
    ambient/stale dist 替代和 host/browser skip。
+8. **可执行文件只绑定不执行**：显式 absolute-realpath 输入只进入 native descriptor custody；固定
+   512 MiB admission cap 是本候选的保守策略，不冒充冻结常量。完整 file identity、owner/mode/size/
+   digest 只进入 owner-only HMAC 与 native revalidation；public TypeScript capability 仅保留 bound boolean，
+   不保留原始路径，也不通过 PATH、spawn 或 version probe 推导路径。
 
 ## 改动范围
 
@@ -83,8 +98,8 @@ device/inode、token 与 key 均不越界。handle-bound execution、OS sandbox 
 | Snapshot/Pulse contracts | `packages/contracts/src/repository.ts` | 新增 legacy/strong persisted unions、strong invariants/trusted validators、strict Surface unions |
 | MCP/JSON Schema | `packages/contracts/src/mcp.ts`、`src/json-schema.ts`、`schemas/v1/*` | `get_repo_pulse` 改用 strict Surface/meta；发布 6 个新 Schema 并更新 3 个既有 Schema |
 | Surface projector | `packages/repository-state/src/surface.ts`、`src/index.ts` | 逐字段投影 legacy redacted/strong safe view |
-| Native kernel bridge | `packages/native-kernel-bridge/*`、Provider Runtime re-export、CLI native asset wiring | 单一 N-API asset 保留 peer/ACL ABI，并新增 opaque descriptor-bound SafeGit open/control/empty-hooks promotion/revalidate/close |
-| SafeGit bootstrap/control candidate | `packages/repository-state/src/safe-git-bootstrap.ts`、testing internal、package export | 逐组件 no-follow、真实 linked-worktree 双向绑定、ACL/flags admission、strict config/local ODB/files refs、installation-keyed identity 与 empty-hooks promotion，并保留 execution/sandbox/writer locks |
+| Native kernel bridge | `packages/native-kernel-bridge/*`、Provider Runtime re-export、CLI native asset wiring | 单一 N-API asset 保留 peer/ACL ABI，并新增 opaque descriptor-bound SafeGit open/control/empty-hooks/executable promotion、digest/token revalidation 与统一 close；不含进程执行 |
+| SafeGit bootstrap/control candidate | `packages/repository-state/src/safe-git-bootstrap.ts`、testing internal、package export | 逐组件 no-follow、真实 linked-worktree 双向绑定、ACL/flags admission、strict config/local ODB/files refs、installation-keyed identity、empty-hooks 与 executable-binding 分版本 promotion，并保留 version/execution/sandbox/writer locks |
 | Installation identity authority | `packages/durable-object-provider-authority/*`、Native bridge、Repository State | OS-trusted state resolver、marker-first immutable key lifecycle、root 与 empty-hooks identity HMAC binding、descriptor-bound三身份签发与分版本 promotion |
 | CLI capability boundary | `packages/cli/src/errors/tool-errors.ts`、handlers、runtime、registry | 统一 exact provider error；公开 Task 读写、refresh 和 Workbench 在副作用前锁定；工具描述与能力一致 |
 | Task quarantine | `packages/task-engine/src/engine.ts`、`src/change-intelligence.ts` | public context recovery capability lock；底层强 Artifact 拒绝与零写保护 |
@@ -190,6 +205,18 @@ Review baseline 由 D-29 accepted authority 明确：
     文件读取器误判为 namespace corruption，导致双 worker 在 ready 前等待；现使用锁专用 pinned-fd
     观察，只有 HMAC 已认证且同 inode 的合法 publish/release link 变换进入既有 contention/deadline 路径，不同 inode、
     非法 link count、非法 mode/owner/size 与 HMAC 错误继续 fail closed，未放宽 timeout。
+33. Executable overlap gate 若把双方共享的 `/` 等 ancestor 当作 protected leaf，会让所有合法 system Git
+    都不可达；现只拒绝 executable chain 与 workspace、Git/common、installation root 和 empty-hooks 的
+    protected leaf identity 重合，共享 ancestor 仍逐级 no-follow pin 与重验。
+34. Darwin `/usr/bin/git` 是会触发开发者工具解析的 shim，不能冒充已绑定真实 Git；production admission
+    显式拒绝该 exact path，测试只用 `/usr/bin/xcrun --find git` 定位后 `realpath` 得到真实 binary，且生产
+    路径没有 PATH lookup 或 subprocess。
+35. Native revalidation 失败若只释放 C handles 而未同步撤销 TypeScript WeakMap 状态，调用方可能继续拿
+    stale capability 尝试 promotion；现所有 executable bind/revalidate 失败都统一 close/poison，重复调用
+    稳定 fail closed。
+36. Executable revalidation 最初只沿 retained `/` descriptor 做 parent lookup，无法证明调用时 process-root
+    namespace 仍是同一根；现每轮都重新 no-follow 打开 `/`，复核稳定 identity、ACL 与 flags，再验证完整
+    component chain、exact executable stat 和 binary digest。
 
 没有使用测试侧 unlock、旧 runtime overlay、放宽 Schema/timeout、恢复 legacy writer 或 skip 取得
 绿色结果。
@@ -200,16 +227,20 @@ Review baseline 由 D-29 accepted authority 明确：
 
 - Contracts：typecheck；58 generated schemas；28 fixtures；13 files / 147 tests；14 packed entry
   points distribution smoke。
-- Native Kernel Bridge：Darwin arm64 build/typecheck、26/26；覆盖 installation authority/artifact/lock、
+- Native Kernel Bridge：Darwin arm64 build/typecheck、36/36；覆盖 installation authority/artifact/lock、
   ordinary、SHA-256、真实 linked worktree、strict
-  config/local ODB/files refs、hostile control、snapshot cap、promotion poison、symlink/namespace drift/FIFO；
+  config/local ODB/files refs、hostile control、snapshot cap、promotion poison、symlink/namespace drift/FIFO，
+  以及真实 Git、Darwin shim、test-only owner arm、canonical path、file-kind/mode/link/size、protected-leaf
+  overlap、same-size content drift、rename/replacement、different path/key 与 zero-execution；
   Provider native compatibility 4/4 复跑通过。
-- Repository State：typecheck；6 files / 126 passed、1 个既有 Linux-only skip；descriptor-bound SafeGit
-  focused 39/39，覆盖 bootstrap、control/identity/empty-hooks promotion、真实 linked worktree、worktree
-  config、alternate/reftable/include、config replacement、重复 revalidate 与 custody/token drift。
-- Provider Authority：typecheck/build；受控单 worker 完整 13 files / 243 passed、3 个既有 skip；identity
+- Repository State：typecheck；6 files / 129 passed、1 个既有 Linux-only skip；descriptor-bound SafeGit
+  focused 42/42，覆盖 bootstrap、control/identity/empty-hooks/executable promotion、真实 linked worktree、
+  worktree config、alternate/reftable/include、config replacement、重复 revalidate、path mismatch 与
+  custody/token/native drift。
+- Provider Authority：typecheck/build；受控单 worker 完整 13 files / 245 passed、3 个既有 skip；identity
   lifecycle 14/14（含 12-process、crash cut、triple deletion no-rekey、zero-write no-adoption），真实
-  Provider custody → native SafeGit 6/6，compareAppend 7/7；跨进程 process 25/25，并以 pinned-read
+  Provider custody → native SafeGit 8/8（含真实 executable bind、redacted failure 与 complete poison），
+  compareAppend 7/7；跨进程 process 25/25，并以 pinned-read
   确定性 seam 覆盖 authenticated lock turnover/negative 与漏 watch 的同 deadline 只读重观察。
 - Provider Runtime：typecheck/build；25 files / 109 tests；最终 native compatibility 4/4 复跑通过。
 - CLI：typecheck/build；cold-packed install 1/1，并从 tgz 内唯一 native asset 真实执行 profile、
@@ -254,13 +285,17 @@ Review baseline 由 D-29 accepted authority 明确：
   repositoryId，并隔离 worktreeId/rootIdentity。
 - empty-hooks promotion 可声明 installation-keyed、exactly-empty、descriptor-retained 与 drift-revalidated；
   仅 fresh root 创建，legacy/既有 root 不补建不采用，public projection 不含路径、device/inode 或 token。
+- executable-binding promotion 可声明 caller-selected absolute realpath 已逐组件 no-follow admission、保留
+  descriptor chain、完整 SHA-256 与 installation-keyed token，并在每次重验时重新打开 namespace、重验
+  identity/ACL/flags/stat 和 digest；公开只含 `executableBinding: "verified"`，不含 path、digest、token、
+  file identity、owner、mode 或 size，且全程没有执行 Git。
 
 ## 不可声明与剩余边界
 
 - 不得声称 Store identity namespace activation、worktree equality key、完整 SafeGit adapter、security scanner、
   strong Snapshot/Pulse writer或 Provider Store bootstrap/ownership/recovery 已实现。
-- SafeGit candidate 仍不是完整 adapter；不得声称 object/ref content reader、pinned binary/handle exec、
-  fixed env/argv、OS sandbox/resource containment 或八类 control read-set 已全部闭合。
+- SafeGit candidate 仍不是完整 adapter；不得声称 object/ref content reader、Git version diagnostic、
+  handle-bound execution、fixed env/argv、OS sandbox/resource containment 或八类 control read-set 已全部闭合。
 - 不得声称 `strongWrites`、strong Task baseline、formal Actual/Hunk/Check 或
   `evidence_backed_v1` 已开放。
 - strong Surface projector 是冻结的结构投影；当前 public runtime 仍拒绝无 terminal Store authority
@@ -273,5 +308,6 @@ Review baseline 由 D-29 accepted authority 明确：
 ## 结论
 
 两项独立 post-fix focused review 均未发现剩余 P0/P1。本 bounded D-29 security/capability + SafeGit descriptor-bound
-bootstrap/control/identity/empty-hooks slice 可提交；总体目标保持 active，继续 Step 15 的 handle-bound
+bootstrap/control/identity/empty-hooks/executable-binding slice 可提交；总体目标保持 active，继续 Step 15 的 Git
+version diagnostic、handle-bound
 execution、OS sandbox、path-safe writer、Task baseline 与 strong Check，不得将总目标标记 complete。

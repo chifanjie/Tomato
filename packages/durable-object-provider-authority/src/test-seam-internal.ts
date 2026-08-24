@@ -46,10 +46,12 @@ import {
 import {
   assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
   bindNativeSafeGitEmptyHooksDirectoryV1,
+  bindNativeSafeGitExecutableV1,
   closeNativeSafeGitDescriptorBootstrapV1,
   deriveNativeSafeGitPathIdentityV1,
   type NativeSafeGitDescriptorBindingV1,
   type NativeSafeGitEmptyHooksDirectoryBindingV1,
+  type NativeSafeGitExecutableBindingInspectionV1,
   type NativeSafeGitPathIdentityV1,
 } from "@understand-code/native-kernel-bridge";
 
@@ -183,6 +185,57 @@ export async function bindProviderAcceptanceSafeGitEmptyHooksDirectoryForTestInt
       closeNativeSafeGitDescriptorBootstrapV1(binding);
     } catch {
       // The redacted custody failure remains authoritative.
+    }
+    throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+  }
+}
+
+export async function bindProviderAcceptanceSafeGitExecutableForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  binding: NativeSafeGitDescriptorBindingV1,
+  absoluteExecutablePath: string,
+): Promise<NativeSafeGitExecutableBindingInspectionV1> {
+  try {
+    const identity =
+      await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+        requireCapabilityV1(capability),
+        {
+          authorizeNativeAuthority(opened) {
+            assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+              opened.authority,
+              binding,
+            );
+          },
+        },
+      );
+    return await identity.withKey(async (key, authority, expected) => {
+      if (expected === undefined) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      const actual = bindNativeSafeGitExecutableV1(
+        binding,
+        authority,
+        key,
+        absoluteExecutablePath,
+      );
+      const keys = Object.keys(actual).sort();
+      if (
+        keys.length !== 2 ||
+        keys[0] !== "executableBinding" ||
+        keys[1] !== "profile" ||
+        actual.profile !== "native_safe_git_executable_binding_v1" ||
+        actual.executableBinding !== "verified" ||
+        !Object.isFrozen(actual)
+      ) {
+        throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+      }
+      return actual;
+    });
+  } catch {
+    try {
+      closeNativeSafeGitDescriptorBootstrapV1(binding);
+    } catch {
+      // The fixed, path-redacted custody failure remains authoritative.
     }
     throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
   }

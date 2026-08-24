@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
+  chmod,
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -26,6 +28,7 @@ import {
 
 import {
   bindProviderAcceptanceSafeGitEmptyHooksDirectoryForTestInternalV1,
+  bindProviderAcceptanceSafeGitExecutableForTestInternalV1,
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   deriveProviderAcceptanceSafeGitPathIdentityForTestInternalV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
@@ -37,6 +40,20 @@ import {
 
 const execFileAsync = promisify(execFile);
 const roots = new Set<string>();
+
+async function canonicalGitExecutableV1(): Promise<string> {
+  if (process.platform === "darwin") {
+    const discovered = await execFileAsync(
+      "/usr/bin/xcrun",
+      ["--find", "git"],
+      { encoding: "utf8" },
+    );
+    const candidate = discovered.stdout.trim();
+    if (candidate === "") throw new Error("canonical test Git is unavailable");
+    return realpath(candidate);
+  }
+  return realpath("/usr/bin/git");
+}
 
 async function snapshotTreeV1(root: string): Promise<readonly string[]> {
   const records: string[] = [];
@@ -94,7 +111,12 @@ async function fixtureV1() {
   const stateRoot = join(stateParent, "authority");
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(stateRoot);
-  return Object.freeze({ bootstrap, stateRoot, capability });
+  return Object.freeze({
+    bootstrap,
+    repositoryRoot,
+    stateRoot,
+    capability,
+  });
 }
 
 afterEach(async () => {
@@ -196,6 +218,88 @@ describe("Provider custody to native SafeGit identity integration", () => {
           "runtime-state/private/safe-git-empty-hooks-v1",
         )),
       ).resolves.toEqual([]);
+    } finally {
+      closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding);
+    }
+  });
+
+  it("binds the same absolute executable idempotently with an exact redacted DTO", async () => {
+    const fixture = await fixtureV1();
+    const executablePath = await canonicalGitExecutableV1();
+    try {
+      if (process.platform === "darwin") {
+        expect(executablePath).not.toBe(await realpath("/usr/bin/git"));
+      }
+      await bindProviderAcceptanceSafeGitEmptyHooksDirectoryForTestInternalV1(
+        fixture.capability,
+        fixture.bootstrap.binding,
+      );
+      const first =
+        await bindProviderAcceptanceSafeGitExecutableForTestInternalV1(
+          fixture.capability,
+          fixture.bootstrap.binding,
+          executablePath,
+        );
+      const second =
+        await bindProviderAcceptanceSafeGitExecutableForTestInternalV1(
+          fixture.capability,
+          fixture.bootstrap.binding,
+          executablePath,
+        );
+      expect(first).toEqual({
+        profile: "native_safe_git_executable_binding_v1",
+        executableBinding: "verified",
+      });
+      expect(second).toEqual(first);
+      expect(Object.keys(first).sort()).toEqual([
+        "executableBinding",
+        "profile",
+      ]);
+      expect(Object.isFrozen(first)).toBe(true);
+      const serialized = JSON.stringify({ first, second });
+      expect(serialized).not.toContain(executablePath);
+      expect(serialized).not.toMatch(
+        /(?:device|digest|hmac|inode|mode|path|size|token)/iu,
+      );
+      expect(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(
+          fixture.bootstrap.binding,
+        )
+      ).not.toThrow();
+    } finally {
+      closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding);
+    }
+  });
+
+  it("redacts executable binding failure and poisons the complete SafeGit binding", async () => {
+    const fixture = await fixtureV1();
+    const repositoryExecutablePath = join(fixture.repositoryRoot, "git");
+    await copyFile(await canonicalGitExecutableV1(), repositoryExecutablePath);
+    await chmod(repositoryExecutablePath, 0o500);
+    try {
+      await bindProviderAcceptanceSafeGitEmptyHooksDirectoryForTestInternalV1(
+        fixture.capability,
+        fixture.bootstrap.binding,
+      );
+      try {
+        await bindProviderAcceptanceSafeGitExecutableForTestInternalV1(
+          fixture.capability,
+          fixture.bootstrap.binding,
+          await realpath(repositoryExecutablePath),
+        );
+        throw new Error("expected executable binding failure");
+      } catch (error) {
+        expect(error).toMatchObject({ code: "identity_key_invalid" });
+        expect((error as Error).message).not.toContain(
+          repositoryExecutablePath,
+        );
+        expect(JSON.stringify(error)).not.toContain(repositoryExecutablePath);
+      }
+      expect(() =>
+        revalidateNativeSafeGitDescriptorBootstrapV1(
+          fixture.bootstrap.binding,
+        )
+      ).toThrow();
     } finally {
       closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding);
     }

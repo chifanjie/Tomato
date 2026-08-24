@@ -33,6 +33,7 @@ import {
 } from "@understand-code/contracts";
 import {
   bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1,
+  bindProviderAcceptanceSafeGitExecutableInternalV1,
   deriveProviderAcceptanceSafeGitPathIdentityInternalV1,
 } from "@understand-code/durable-object-provider-authority/internal/acceptance-store";
 
@@ -88,6 +89,14 @@ export const SAFE_GIT_EMPTY_HOOKS_REQUIRED_NEXT_V1 = Object.freeze([
   "os_sandbox",
   "strong_writer",
 ] as const);
+export const SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1 =
+  "descriptor_bound_safe_git_executable_binding_v1" as const;
+export const SAFE_GIT_EXECUTABLE_BINDING_REQUIRED_NEXT_V1 = Object.freeze([
+  "git_version_diagnostic",
+  "handle_bound_execution",
+  "os_sandbox",
+  "strong_writer",
+] as const);
 
 export type SafeGitBootstrapErrorCodeV1 =
   | "unsupported_platform"
@@ -104,6 +113,7 @@ export type SafeGitBootstrapErrorCodeV1 =
   | "repository_control_invalid"
   | "repository_identity_invalid"
   | "empty_hooks_directory_invalid"
+  | "executable_binding_invalid"
   | "binding_changed";
 
 const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
@@ -129,6 +139,8 @@ const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
       "repository identity authority is unavailable or could not be verified",
     empty_hooks_directory_invalid:
       "SafeGit empty-hooks authority is unavailable or could not be verified",
+    executable_binding_invalid:
+      "SafeGit executable authority is unavailable or could not be verified",
     binding_changed: "filesystem bootstrap binding changed during validation",
   });
 
@@ -236,11 +248,26 @@ export interface SafeGitEmptyHooksInspectionV1
   ];
 }
 
+/** Empty-hooks authority promoted with one native-bound Git executable. */
+export interface SafeGitExecutableBindingInspectionV1
+  extends Omit<SafeGitEmptyHooksInspectionV1, "profile" | "requiredNext"> {
+  readonly profile: typeof SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1;
+  readonly executableBinding: "verified";
+  readonly gitVersion: "locked";
+  readonly requiredNext: readonly [
+    "git_version_diagnostic",
+    "handle_bound_execution",
+    "os_sandbox",
+    "strong_writer",
+  ];
+}
+
 export type SafeGitDescriptorBoundInspectionV1 =
   | SafeGitDescriptorBootstrapInspectionV1
   | SafeGitRepositoryControlInspectionV1
   | SafeGitRepositoryIdentityInspectionV1
-  | SafeGitEmptyHooksInspectionV1;
+  | SafeGitEmptyHooksInspectionV1
+  | SafeGitExecutableBindingInspectionV1;
 
 export interface SafeGitDescriptorBoundCapabilityV1 {
   readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
@@ -248,6 +275,9 @@ export interface SafeGitDescriptorBoundCapabilityV1 {
   bindRepositoryControl(): Promise<SafeGitRepositoryControlInspectionV1>;
   bindRepositoryIdentity(): Promise<SafeGitRepositoryIdentityInspectionV1>;
   bindEmptyHooksDirectory(): Promise<SafeGitEmptyHooksInspectionV1>;
+  bindGitExecutable(
+    absoluteExecutablePath: string,
+  ): Promise<SafeGitExecutableBindingInspectionV1>;
   revalidate(): Promise<SafeGitDescriptorBoundInspectionV1>;
   close(): Promise<void>;
 }
@@ -283,6 +313,7 @@ class SafeGitBootstrapCapabilityInternalV1
       >
     >
     | undefined;
+  #executableBound = false;
   #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -386,57 +417,119 @@ class SafeGitBootstrapCapabilityInternalV1
     }
   }
 
+  async bindGitExecutable(
+    absoluteExecutablePath: string,
+  ): Promise<SafeGitExecutableBindingInspectionV1> {
+    const binding = this.#binding;
+    const control = this.#repositoryControl;
+    const pathIdentity = this.#pathIdentity;
+    const emptyHooksBinding = this.#emptyHooksBinding;
+    if (
+      this.#closed || !this.#usable || binding === undefined ||
+      control === undefined || pathIdentity === undefined ||
+      emptyHooksBinding === undefined ||
+      typeof absoluteExecutablePath !== "string" ||
+      !isAbsolute(absoluteExecutablePath)
+    ) {
+      throw new SafeGitBootstrapErrorV1("executable_binding_invalid");
+    }
+    try {
+      const current = await this.#revalidateThroughEmptyHooks(binding);
+      if (current.profile !== SAFE_GIT_EMPTY_HOOKS_PROFILE_V1) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      const executableBinding =
+        await bindProviderAcceptanceSafeGitExecutableInternalV1(
+          binding,
+          absoluteExecutablePath,
+        );
+      validateExecutableBindingV1(executableBinding);
+      this.#executableBound = true;
+      return executableBindingInspectionV1(
+        this.#layout,
+        control,
+        pathIdentity,
+      );
+    } catch {
+      this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("executable_binding_invalid");
+    }
+  }
+
   async revalidate(): Promise<SafeGitDescriptorBoundInspectionV1> {
     const binding = this.#binding;
     if (this.#closed || !this.#usable || binding === undefined) {
       throw new SafeGitBootstrapErrorV1("binding_changed");
     }
     try {
-      const layout = revalidateNativeSafeGitDescriptorBootstrapV1(binding);
-      if (layout !== this.#layout) {
+      const inspection = await this.#revalidateThroughEmptyHooks(binding);
+      if (!this.#executableBound) return inspection;
+      if (
+        inspection.profile !== SAFE_GIT_EMPTY_HOOKS_PROFILE_V1 ||
+        this.#repositoryControl === undefined ||
+        this.#pathIdentity === undefined ||
+        this.#emptyHooksBinding === undefined
+      ) {
         throw new SafeGitBootstrapErrorV1("binding_changed");
       }
-      if (this.#repositoryControl === undefined) return inspectionV1(layout);
-      const expectedIdentity = this.#pathIdentity;
-      if (expectedIdentity === undefined) {
-        return repositoryControlInspectionV1(layout, this.#repositoryControl);
-      }
-      const currentIdentity =
-        await deriveProviderAcceptanceSafeGitPathIdentityInternalV1(binding);
-      validatePathIdentityV1(currentIdentity);
-      if (!samePathIdentityV1(expectedIdentity, currentIdentity)) {
-        throw new SafeGitBootstrapErrorV1("binding_changed");
-      }
-      const expectedEmptyHooksBinding = this.#emptyHooksBinding;
-      if (expectedEmptyHooksBinding !== undefined) {
-        const currentEmptyHooksBinding =
-          await bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1(
-            binding,
-          );
-        validateEmptyHooksBindingV1(currentEmptyHooksBinding);
-        if (
-          !sameEmptyHooksBindingV1(
-            expectedEmptyHooksBinding,
-            currentEmptyHooksBinding,
-          )
-        ) {
-          throw new SafeGitBootstrapErrorV1("binding_changed");
-        }
-        return emptyHooksInspectionV1(
-          layout,
-          this.#repositoryControl,
-          expectedIdentity,
-        );
-      }
-      return repositoryIdentityInspectionV1(
-        layout,
+      return executableBindingInspectionV1(
+        this.#layout,
         this.#repositoryControl,
-        expectedIdentity,
+        this.#pathIdentity,
       );
     } catch {
       this.#poisonBinding(binding);
       throw new SafeGitBootstrapErrorV1("binding_changed");
     }
+  }
+
+  async #revalidateThroughEmptyHooks(
+    binding: NativeSafeGitDescriptorBindingV1,
+  ): Promise<
+    | SafeGitDescriptorBootstrapInspectionV1
+    | SafeGitRepositoryControlInspectionV1
+    | SafeGitRepositoryIdentityInspectionV1
+    | SafeGitEmptyHooksInspectionV1
+  > {
+    const layout = revalidateNativeSafeGitDescriptorBootstrapV1(binding);
+    if (layout !== this.#layout) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    if (this.#repositoryControl === undefined) return inspectionV1(layout);
+    const expectedIdentity = this.#pathIdentity;
+    if (expectedIdentity === undefined) {
+      return repositoryControlInspectionV1(layout, this.#repositoryControl);
+    }
+    const currentIdentity =
+      await deriveProviderAcceptanceSafeGitPathIdentityInternalV1(binding);
+    validatePathIdentityV1(currentIdentity);
+    if (!samePathIdentityV1(expectedIdentity, currentIdentity)) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    const expectedEmptyHooksBinding = this.#emptyHooksBinding;
+    if (expectedEmptyHooksBinding === undefined) {
+      return repositoryIdentityInspectionV1(
+        layout,
+        this.#repositoryControl,
+        expectedIdentity,
+      );
+    }
+    const currentEmptyHooksBinding =
+      await bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1(binding);
+    validateEmptyHooksBindingV1(currentEmptyHooksBinding);
+    if (
+      !sameEmptyHooksBindingV1(
+        expectedEmptyHooksBinding,
+        currentEmptyHooksBinding,
+      )
+    ) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    return emptyHooksInspectionV1(
+      layout,
+      this.#repositoryControl,
+      expectedIdentity,
+    );
   }
 
   #poisonBinding(binding: NativeSafeGitDescriptorBindingV1): void {
@@ -892,6 +985,21 @@ function emptyHooksInspectionV1(
   });
 }
 
+function executableBindingInspectionV1(
+  layout: SafeGitExecutableBindingInspectionV1["layout"],
+  control: NativeSafeGitRepositoryControlInspectionV1,
+  pathIdentity: NativeSafeGitPathIdentityV1,
+): SafeGitExecutableBindingInspectionV1 {
+  const emptyHooks = emptyHooksInspectionV1(layout, control, pathIdentity);
+  return Object.freeze({
+    ...emptyHooks,
+    profile: SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1,
+    executableBinding: "verified",
+    gitVersion: "locked",
+    requiredNext: SAFE_GIT_EXECUTABLE_BINDING_REQUIRED_NEXT_V1,
+  });
+}
+
 function validatePathIdentityV1(
   identity: NativeSafeGitPathIdentityV1,
 ): void {
@@ -944,6 +1052,25 @@ function sameEmptyHooksBindingV1(
     left.directoryIdentity.device === right.directoryIdentity.device &&
     left.directoryIdentity.inode === right.directoryIdentity.inode &&
     left.emptyHooksDirectoryToken === right.emptyHooksDirectoryToken;
+}
+
+type ProviderExecutableBindingV1 = Awaited<
+  ReturnType<typeof bindProviderAcceptanceSafeGitExecutableInternalV1>
+>;
+
+function validateExecutableBindingV1(
+  binding: ProviderExecutableBindingV1,
+): void {
+  const keys = Object.keys(binding).sort();
+  if (
+    keys.length !== 2 ||
+    keys[0] !== "executableBinding" ||
+    keys[1] !== "profile" ||
+    binding.profile !== "native_safe_git_executable_binding_v1" ||
+    binding.executableBinding !== "verified"
+  ) {
+    throw new SafeGitBootstrapErrorV1("executable_binding_invalid");
+  }
 }
 
 async function bootstrapSafeGitDescriptorBoundCandidateCoreV1(

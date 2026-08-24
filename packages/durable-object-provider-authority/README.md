@@ -34,6 +34,14 @@ token private. Legacy or pre-existing roots without that authenticated pin stay
 readable for their historical identity semantics but cannot be promoted to
 empty-hooks authority, and are never supplemented or adopted.
 
+The internal SafeGit executable facade accepts only a caller-selected absolute
+executable path after repository and empty-hooks promotion. Installation key
+bytes and the authenticated native installation authority remain callback-only;
+native owns executable identity, content, and token validation. The facade
+returns only the fixed `native_safe_git_executable_binding_v1` verification
+label, closes the complete SafeGit binding on every failure, and never performs
+PATH lookup, version probing, spawn, or execution.
+
 The package also contains a source-internal, locked strong-mutation broker
 transaction candidate. It is intentionally absent from the package root,
 export map, and executable. While holding the same cross-process lock as

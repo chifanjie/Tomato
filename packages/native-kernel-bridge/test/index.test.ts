@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -10,7 +11,9 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,12 +23,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   acquireNativeInstallationIdentityInitializationLockV1,
+  armNativeTestSafeGitExecutableOwnerAdmissionV1,
   armNativeTestSafeGitEmptyHooksDirectoryRaceV1,
   armNativeTestInstallationStateAuthorityNamespaceRaceV1,
   assertNativeInstallationStateAuthorityFreshV1,
   assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
   assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1,
   bindNativeSafeGitEmptyHooksDirectoryV1,
+  bindNativeSafeGitExecutableV1,
   bindNativeSafeGitRepositoryControlV1,
   closeNativeInstallationStateAuthorityV1,
   closeNativeSafeGitDescriptorBootstrapV1,
@@ -79,6 +84,73 @@ function canonicalLocatorV1(path: string): string {
 
 function hmacHexV1(key: Buffer, value: unknown): string {
   return createHmac("sha256", key).update(JSON.stringify(value)).digest("hex");
+}
+
+function canonicalGitExecutableV1(): string {
+  const candidate =
+    process.platform === "darwin"
+      ? execFileSync("xcrun", ["--find", "git"], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        }).trim()
+      : "/usr/bin/git";
+  return realpathSync(candidate);
+}
+
+function createExecutableFixtureV1(keyByte = 0x71) {
+  const root = createFixtureRootV1();
+  const repository = join(root, "repository");
+  const authorityRoot = join(root, "authority");
+  const key = Buffer.alloc(32, keyByte);
+  initializeRepositoryV1(repository);
+  const authority = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+    create: true,
+  });
+  const bootstrap = openNativeSafeGitDescriptorBootstrapV1(repository);
+  bindNativeSafeGitRepositoryControlV1(bootstrap.binding);
+  bindNativeSafeGitEmptyHooksDirectoryV1(
+    bootstrap.binding,
+    authority.authority,
+    key,
+  );
+  return { authority, authorityRoot, bootstrap, key, repository, root };
+}
+
+function closeExecutableFixtureV1(
+  fixture: ReturnType<typeof createExecutableFixtureV1>,
+): void {
+  closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding);
+  closeNativeInstallationStateAuthorityV1(fixture.authority.authority);
+}
+
+function createTemporaryExecutableV1(
+  root: string,
+  name = "git",
+  content: string | Buffer = "#!/bin/sh\nexit 0\n",
+): string {
+  const directory = join(root, "tools");
+  mkdirSync(directory, { mode: 0o700, recursive: true });
+  const path = join(directory, name);
+  writeFileSync(path, content, { mode: 0o700 });
+  chmodSync(path, 0o700);
+  return path;
+}
+
+function bindTemporaryExecutableV1(
+  fixture: ReturnType<typeof createExecutableFixtureV1>,
+  path: string,
+  key = fixture.key,
+) {
+  armNativeTestSafeGitExecutableOwnerAdmissionV1(
+    fixture.bootstrap.binding,
+    fixture.authority.authority,
+  );
+  return bindNativeSafeGitExecutableV1(
+    fixture.bootstrap.binding,
+    fixture.authority.authority,
+    key,
+    path,
+  );
 }
 
 afterEach(() => {
@@ -437,6 +509,459 @@ while (Date.now() < deadline) {
       closeNativeSafeGitDescriptorBootstrapV1(invalid.binding);
       closeNativeSafeGitDescriptorBootstrapV1(missingControl.binding);
       closeNativeInstallationStateAuthorityV1(reopened.authority);
+    });
+
+    it("binds the actual canonical Git idempotently with an exact two-key redaction", () => {
+      const executablePath = canonicalGitExecutableV1();
+      const firstFixture = createExecutableFixtureV1(0x41);
+      const secondFixture = createExecutableFixtureV1(0x42);
+      if (process.platform === "darwin") {
+        expect(executablePath).not.toBe("/usr/bin/git");
+      } else {
+        expect(executablePath).toBe("/usr/bin/git");
+      }
+      try {
+        const first = bindNativeSafeGitExecutableV1(
+          firstFixture.bootstrap.binding,
+          firstFixture.authority.authority,
+          firstFixture.key,
+          executablePath,
+        );
+        const repeated = bindNativeSafeGitExecutableV1(
+          firstFixture.bootstrap.binding,
+          firstFixture.authority.authority,
+          firstFixture.key,
+          executablePath,
+        );
+        const second = bindNativeSafeGitExecutableV1(
+          secondFixture.bootstrap.binding,
+          secondFixture.authority.authority,
+          secondFixture.key,
+          executablePath,
+        );
+        const exactResult = {
+          profile: "native_safe_git_executable_binding_v1",
+          executableBinding: "verified",
+        };
+        expect(first).toEqual(exactResult);
+        expect(repeated).toEqual(exactResult);
+        expect(second).toEqual(exactResult);
+        expect(Object.keys(first).sort()).toEqual([
+          "executableBinding",
+          "profile",
+        ]);
+        expect(Object.isFrozen(first)).toBe(true);
+        expect(Object.isFrozen(repeated)).toBe(true);
+        expect(Object.isFrozen(second)).toBe(true);
+        const serialized = JSON.stringify({ first, repeated, second });
+        expect(serialized).not.toContain(executablePath);
+        expect(serialized).not.toContain(firstFixture.key.toString("hex"));
+        expect(serialized).not.toContain(secondFixture.key.toString("hex"));
+        expect(serialized).not.toMatch(
+          /(?:binaryDigest|device|hmac|inode|mode|ownerIdentity|path|size|token)/iu,
+        );
+        expect(
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            firstFixture.bootstrap.binding,
+          ),
+        ).toBe("ordinary");
+        expect(
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            secondFixture.bootstrap.binding,
+          ),
+        ).toBe("ordinary");
+      } finally {
+        closeExecutableFixtureV1(firstFixture);
+        closeExecutableFixtureV1(secondFixture);
+      }
+    });
+
+    it.runIf(process.platform === "darwin")(
+      "rejects the exact Darwin command-line-tools shim path",
+      () => {
+        const fixture = createExecutableFixtureV1();
+        try {
+          expectSafeGitUnavailableV1(() =>
+            bindNativeSafeGitExecutableV1(
+              fixture.bootstrap.binding,
+              fixture.authority.authority,
+              fixture.key,
+              "/usr/bin/git",
+            ),
+          );
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+        } finally {
+          closeExecutableFixtureV1(fixture);
+        }
+      },
+    );
+
+    it("requires the explicit authority-tied test arm for a temporary executable", () => {
+      const unarmed = createExecutableFixtureV1();
+      const unarmedPath = createTemporaryExecutableV1(unarmed.root);
+      try {
+        expectSafeGitUnavailableV1(() =>
+          bindNativeSafeGitExecutableV1(
+            unarmed.bootstrap.binding,
+            unarmed.authority.authority,
+            unarmed.key,
+            unarmedPath,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            unarmed.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(unarmed);
+      }
+
+      const armed = createExecutableFixtureV1();
+      const armedPath = createTemporaryExecutableV1(armed.root);
+      const foreignAuthority = openNativeTestInstallationStateAuthorityV1(
+        join(armed.root, "foreign-authority"),
+        { create: true },
+      );
+      try {
+        expectSafeGitUnavailableV1(() =>
+          armNativeTestSafeGitExecutableOwnerAdmissionV1(
+            armed.bootstrap.binding,
+            foreignAuthority.authority,
+          ),
+        );
+        expect(bindTemporaryExecutableV1(armed, armedPath)).toEqual({
+          profile: "native_safe_git_executable_binding_v1",
+          executableBinding: "verified",
+        });
+        expect(
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            armed.bootstrap.binding,
+          ),
+        ).toBe("ordinary");
+      } finally {
+        closeNativeInstallationStateAuthorityV1(foreignAuthority.authority);
+        closeExecutableFixtureV1(armed);
+      }
+    });
+
+    it("rejects non-canonical executable path spellings and poisons the binding", () => {
+      const invalidPaths = [
+        (_valid: string, _root: string) => "tools/git",
+        (valid: string, _root: string) => `${valid}\0hidden`,
+        (_valid: string, root: string) => `${join(root, "tools")}/./git`,
+        (_valid: string, root: string) =>
+          `${join(root, "tools")}/../tools/git`,
+        (_valid: string, root: string) => `${join(root, "tools")}//git`,
+        (valid: string, _root: string) => `${valid}/`,
+      ] as const;
+      for (const invalidPath of invalidPaths) {
+        const fixture = createExecutableFixtureV1();
+        const valid = createTemporaryExecutableV1(fixture.root);
+        armNativeTestSafeGitExecutableOwnerAdmissionV1(
+          fixture.bootstrap.binding,
+          fixture.authority.authority,
+        );
+        try {
+          expectSafeGitUnavailableV1(() =>
+            bindNativeSafeGitExecutableV1(
+              fixture.bootstrap.binding,
+              fixture.authority.authority,
+              fixture.key,
+              invalidPath(valid, fixture.root),
+            ),
+          );
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+        } finally {
+          closeExecutableFixtureV1(fixture);
+        }
+      }
+    });
+
+    it("rejects symlink, special, non-executable, setid, linked, empty, and oversized files", () => {
+      const invalidExecutableBuilders = [
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const target = createTemporaryExecutableV1(fixture.root, "target");
+          const path = join(fixture.root, "tools", "git");
+          symlinkSync(target, path, "file");
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const directory = join(fixture.root, "tools");
+          mkdirSync(directory, { mode: 0o700 });
+          const path = join(directory, "git");
+          execFileSync("mkfifo", [path], { stdio: "pipe" });
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const path = join(fixture.root, "tools", "git");
+          mkdirSync(path, { mode: 0o700, recursive: true });
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const path = createTemporaryExecutableV1(fixture.root);
+          chmodSync(path, 0o400);
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const path = createTemporaryExecutableV1(fixture.root);
+          chmodSync(path, 0o4500);
+          expect(statSync(path).mode & 0o6000).toBe(0o4000);
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const path = createTemporaryExecutableV1(fixture.root);
+          linkSync(path, join(fixture.root, "tools", "git-hardlink"));
+          expect(statSync(path).nlink).toBe(2);
+          return path;
+        },
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) =>
+          createTemporaryExecutableV1(fixture.root, "git", Buffer.alloc(0)),
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) => {
+          const path = createTemporaryExecutableV1(
+            fixture.root,
+            "git",
+            Buffer.from([0]),
+          );
+          truncateSync(path, 512 * 1024 * 1024 + 1);
+          expect(statSync(path).size).toBe(512 * 1024 * 1024 + 1);
+          return path;
+        },
+      ] as const;
+      for (const buildInvalidExecutable of invalidExecutableBuilders) {
+        const fixture = createExecutableFixtureV1();
+        const path = buildInvalidExecutable(fixture);
+        armNativeTestSafeGitExecutableOwnerAdmissionV1(
+          fixture.bootstrap.binding,
+          fixture.authority.authority,
+        );
+        try {
+          expectSafeGitUnavailableV1(() =>
+            bindNativeSafeGitExecutableV1(
+              fixture.bootstrap.binding,
+              fixture.authority.authority,
+              fixture.key,
+              path,
+            ),
+          );
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+        } finally {
+          closeExecutableFixtureV1(fixture);
+        }
+      }
+    });
+
+    it("rejects executables under workspace, Git, and installation-state leaves", () => {
+      const protectedRepositoryPaths = [
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) =>
+          join(fixture.repository, "git"),
+        (fixture: ReturnType<typeof createExecutableFixtureV1>) =>
+          join(fixture.repository, ".git", "git"),
+      ] as const;
+      for (const protectedPath of protectedRepositoryPaths) {
+        const fixture = createExecutableFixtureV1();
+        const path = protectedPath(fixture);
+        writeFileSync(path, "#!/bin/sh\nexit 0\n", { mode: 0o500 });
+        chmodSync(path, 0o500);
+        armNativeTestSafeGitExecutableOwnerAdmissionV1(
+          fixture.bootstrap.binding,
+          fixture.authority.authority,
+        );
+        try {
+          expectSafeGitUnavailableV1(() =>
+            bindNativeSafeGitExecutableV1(
+              fixture.bootstrap.binding,
+              fixture.authority.authority,
+              fixture.key,
+              path,
+            ),
+          );
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+        } finally {
+          closeExecutableFixtureV1(fixture);
+        }
+      }
+
+      const stateFixture = createExecutableFixtureV1();
+      armNativeTestSafeGitExecutableOwnerAdmissionV1(
+        stateFixture.bootstrap.binding,
+        stateFixture.authority.authority,
+      );
+      const statePath = join(
+        stateFixture.authorityRoot,
+        "runtime-state",
+        "private",
+        "safe-git-empty-hooks-v1",
+        "git",
+      );
+      writeFileSync(statePath, "#!/bin/sh\nexit 0\n", { mode: 0o500 });
+      chmodSync(statePath, 0o500);
+      try {
+        expectSafeGitUnavailableV1(() =>
+          bindNativeSafeGitExecutableV1(
+            stateFixture.bootstrap.binding,
+            stateFixture.authority.authority,
+            stateFixture.key,
+            statePath,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            stateFixture.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(stateFixture);
+      }
+    });
+
+    it("poisons revalidation after same-size mutation, rename, or replacement", () => {
+      const mutated = createExecutableFixtureV1();
+      const mutatedPath = createTemporaryExecutableV1(mutated.root);
+      try {
+        bindTemporaryExecutableV1(mutated, mutatedPath);
+        const before = readFileSync(mutatedPath);
+        const after = Buffer.from(before);
+        after[0] = after[0]! ^ 0x01;
+        writeFileSync(mutatedPath, after);
+        expect(statSync(mutatedPath).size).toBe(before.byteLength);
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            mutated.bootstrap.binding,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            mutated.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(mutated);
+      }
+
+      for (const replace of [false, true]) {
+        const fixture = createExecutableFixtureV1();
+        const path = createTemporaryExecutableV1(fixture.root);
+        const bytes = readFileSync(path);
+        bindTemporaryExecutableV1(fixture, path);
+        renameSync(path, `${path}.retained`);
+        if (replace) {
+          writeFileSync(path, bytes, { mode: 0o500 });
+          chmodSync(path, 0o500);
+        }
+        try {
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+          expectSafeGitUnavailableV1(() =>
+            revalidateNativeSafeGitDescriptorBootstrapV1(
+              fixture.bootstrap.binding,
+            ),
+          );
+        } finally {
+          closeExecutableFixtureV1(fixture);
+        }
+      }
+    });
+
+    it("poisons a bound executable on a different path or key", () => {
+      const changedPath = createExecutableFixtureV1();
+      const firstPath = createTemporaryExecutableV1(changedPath.root, "git-a");
+      const secondPath = createTemporaryExecutableV1(changedPath.root, "git-b");
+      try {
+        bindTemporaryExecutableV1(changedPath, firstPath);
+        expectSafeGitUnavailableV1(() =>
+          bindNativeSafeGitExecutableV1(
+            changedPath.bootstrap.binding,
+            changedPath.authority.authority,
+            changedPath.key,
+            secondPath,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            changedPath.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(changedPath);
+      }
+
+      const changedKey = createExecutableFixtureV1();
+      const path = createTemporaryExecutableV1(changedKey.root);
+      try {
+        bindTemporaryExecutableV1(changedKey, path);
+        expectSafeGitUnavailableV1(() =>
+          bindNativeSafeGitExecutableV1(
+            changedKey.bootstrap.binding,
+            changedKey.authority.authority,
+            Buffer.alloc(32, 0x72),
+            path,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            changedKey.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(changedKey);
+      }
+    });
+
+    it("allows sibling churn and idempotently closes the executable binding", () => {
+      const fixture = createExecutableFixtureV1();
+      const path = createTemporaryExecutableV1(fixture.root);
+      try {
+        bindTemporaryExecutableV1(fixture, path);
+        const sibling = join(fixture.root, "tools", "sibling");
+        writeFileSync(sibling, "churn", { mode: 0o600 });
+        rmSync(sibling);
+        expect(
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            fixture.bootstrap.binding,
+          ),
+        ).toBe("ordinary");
+        closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding);
+        expect(() =>
+          closeNativeSafeGitDescriptorBootstrapV1(fixture.bootstrap.binding),
+        ).not.toThrow();
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            fixture.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(fixture);
+      }
+    });
+
+    it("contains no native process-launch API", () => {
+      const source = readFileSync(
+        new URL("../native/kernel_bridge.c", import.meta.url),
+        "utf8",
+      );
+      expect(source).not.toMatch(
+        /\b(?:exec|execl|execle|execlp|execv|execve|execvp|execvpe|fork|popen|posix_spawn|posix_spawnp|spawn|system|vfork)\s*\(/u,
+      );
     });
 
     it("never supplements an established installation root missing empty hooks", () => {

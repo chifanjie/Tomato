@@ -28,6 +28,8 @@ payloads defined by `@understand-code/contracts`.
 - Derives installation-keyed repository/worktree/root identities and separately
   promotes an installation-pinned, descriptor-retained exactly-empty hooks
   directory without exposing either the key or host filesystem identities.
+- Binds one caller-supplied absolute Git executable through native descriptor
+  custody without PATH lookup, execution, or projecting executable identity.
 
 ## Snapshot
 
@@ -131,9 +133,21 @@ is absent, promotion fails closed with zero writes. The public projection says
 only `emptyHooksDirectory: "verified"` and never exposes the directory path,
 device, inode, or token.
 
+After the repository identity and empty-hooks authority are both verified, call
+`capability.bindGitExecutable(absoluteExecutablePath)` to request the distinct
+`descriptor_bound_safe_git_executable_binding_v1` proof. The only input is an
+explicit absolute executable path; PATH lookup and relative executable names are
+not accepted. Provider installation-key custody passes the key and authenticated
+installation authority directly into native binding, then returns only
+`executableBinding: "verified"`. The public projection contains no path, digest,
+token, device, inode, mode, size, or raw native error. Rebinding the same path
+performs native revalidation; a different path or any later drift permanently
+closes the complete SafeGit capability.
+
 This is still not the complete SafeGit adapter. Handle-bound execution, the
-fixed invocation environment, OS sandbox/resource containment, and strong
-writes remain explicitly `locked`. It is not connected to the
+Git version diagnostic, fixed invocation environment, handle-bound execution,
+OS sandbox/resource containment, and strong writes remain explicitly `locked`.
+Binding an executable does not run it. This path is not connected to the
 legacy Snapshot producer and does not authorize Git execution, Provider I/O,
 or any public strong capability.
 

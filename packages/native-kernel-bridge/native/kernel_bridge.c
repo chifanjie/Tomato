@@ -46,6 +46,8 @@
 #define SAFE_GIT_DIRECTORY_ENTRY_LIMIT ((size_t)16384)
 #define SAFE_GIT_DIRECTORY_NAME_BYTES_LIMIT ((size_t)4194304)
 #define SAFE_GIT_CONFIG_KEY_LIMIT ((size_t)16384)
+#define SAFE_GIT_EXECUTABLE_BINARY_LIMIT ((uint64_t)536870912)
+#define SAFE_GIT_EXECUTABLE_NODE_LIMIT ((size_t)128)
 #define INSTALLATION_AUTHORITY_NODE_LIMIT ((size_t)128)
 #define SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME "safe-git-empty-hooks-v1"
 
@@ -260,6 +262,27 @@ struct safe_git_installation_node {
   struct stat snapshot;
 };
 
+struct safe_git_executable_node {
+  int file_descriptor;
+  int parent_index;
+  enum safe_git_bound_kind kind;
+  unsigned int platform_file_flags;
+  char component[NAME_MAX + 1];
+  struct stat snapshot;
+};
+
+struct safe_git_executable_binding {
+  int bound;
+  int test_owner_admission;
+  size_t node_count;
+  int executable_index;
+  struct safe_git_executable_node nodes[SAFE_GIT_EXECUTABLE_NODE_LIMIT];
+  struct stat authority_root_identity;
+  unsigned char binary_digest[32];
+  unsigned char binding_token[32];
+  char canonical_path[SAFE_GIT_PATH_LIMIT + 1];
+};
+
 struct safe_git_descriptor_binding {
   int closed;
   enum safe_git_layout layout;
@@ -278,11 +301,13 @@ struct safe_git_descriptor_binding {
   int empty_hooks_bound;
   int empty_hooks_test_authority;
   int test_empty_hooks_race_armed;
+  int test_executable_owner_admission_armed;
   size_t empty_hooks_node_count;
   int empty_hooks_state_root_index;
   int empty_hooks_directory_index;
   struct safe_git_installation_node
       empty_hooks_nodes[INSTALLATION_AUTHORITY_NODE_LIMIT];
+  struct safe_git_executable_binding executable;
 };
 
 #define INSTALLATION_IDENTITY_RECORD_LIMIT ((size_t)16384)
@@ -670,6 +695,35 @@ static int fd_has_no_extended_access_control(
 #endif
 }
 
+static int safe_git_executable_platform_flags(
+    int file_descriptor, const struct stat *metadata, unsigned int *flags) {
+  if (metadata == NULL || flags == NULL) return 0;
+#if defined(__APPLE__)
+  (void)file_descriptor;
+  *flags = (unsigned int)metadata->st_flags;
+  return has_no_dangerous_file_flags(metadata);
+#elif defined(__linux__)
+  return read_linux_file_flags(file_descriptor, flags) &&
+         has_no_dangerous_file_flags(*flags);
+#else
+  (void)file_descriptor;
+  return 0;
+#endif
+}
+
+static int safe_git_executable_has_no_linux_capability(int file_descriptor) {
+#if defined(__linux__)
+  errno = 0;
+  if (fgetxattr(file_descriptor, "security.capability", NULL, 0) >= 0) {
+    return 0;
+  }
+  return errno == ENODATA;
+#else
+  (void)file_descriptor;
+  return 1;
+#endif
+}
+
 static napi_value throw_safe_git_unavailable(napi_env env) {
   return throw_coded_error(
       env, "ERR_NATIVE_KERNEL_BRIDGE_SAFE_GIT_UNAVAILABLE",
@@ -744,6 +798,17 @@ static void safe_git_release_binding(
   if (binding == NULL) {
     return;
   }
+  for (index = binding->executable.node_count; index > 0; index -= 1) {
+    struct safe_git_executable_node *node =
+        &binding->executable.nodes[index - 1];
+    if (node->file_descriptor >= 0) {
+      (void)close(node->file_descriptor);
+      node->file_descriptor = -1;
+    }
+  }
+  safe_git_secure_zero(&binding->executable,
+                       sizeof(binding->executable));
+  binding->test_executable_owner_admission_armed = 0;
   for (index = 0; index < binding->directory_snapshot_count; index += 1) {
     struct safe_git_directory_snapshot *snapshot =
         &binding->directory_snapshots[index];
@@ -1165,6 +1230,411 @@ static int safe_git_revalidate_binding(
     struct safe_git_descriptor_binding *binding);
 static int safe_git_revalidate_empty_hooks_binding(
     struct safe_git_descriptor_binding *binding);
+static int safe_git_revalidate_executable_binding(
+    struct safe_git_descriptor_binding *binding);
+
+static int safe_git_executable_path_is_canonical(const char *path) {
+  size_t length;
+  size_t cursor;
+  if (path == NULL || path[0] != '/') return 0;
+  length = strlen(path);
+  if (length <= 1 || length > SAFE_GIT_PATH_LIMIT ||
+      path[length - 1] == '/') {
+    return 0;
+  }
+#if defined(__APPLE__)
+  if (strcmp(path, "/usr/bin/git") == 0) return 0;
+#endif
+  cursor = 1;
+  while (cursor < length) {
+    size_t end = cursor;
+    while (end < length && path[end] != '/') end += 1;
+    if (end == cursor || end - cursor > NAME_MAX ||
+        (end - cursor == 1 && path[cursor] == '.') ||
+        (end - cursor == 2 && path[cursor] == '.' &&
+         path[cursor + 1] == '.')) {
+      return 0;
+    }
+    cursor = end + 1;
+  }
+  return 1;
+}
+
+static void safe_git_release_executable_state(
+    struct safe_git_executable_binding *state) {
+  size_t index;
+  if (state == NULL) return;
+  for (index = state->node_count; index > 0; index -= 1) {
+    int fd = state->nodes[index - 1].file_descriptor;
+    if (fd >= 0) (void)close(fd);
+  }
+  safe_git_secure_zero(state, sizeof(*state));
+}
+
+static int safe_git_executable_node_admitted(
+    int fd, const struct stat *metadata, enum safe_git_bound_kind kind,
+    int test_owner, unsigned int *platform_flags) {
+  int owner_ok;
+  unsigned int mode;
+  if (metadata == NULL || platform_flags == NULL ||
+      !safe_git_kind_matches(metadata, kind)) {
+    return 0;
+  }
+  mode = (unsigned int)metadata->st_mode;
+  owner_ok = metadata->st_uid == 0 ||
+             (test_owner && metadata->st_uid == geteuid());
+  if (!owner_ok || (mode & 0022U) != 0U) {
+    if (!(test_owner && kind == SAFE_GIT_BOUND_DIRECTORY &&
+          metadata->st_uid == 0 && (mode & S_ISVTX) != 0U &&
+          (mode & 0022U) == 0022U)) {
+      return 0;
+    }
+  }
+  if (kind == SAFE_GIT_BOUND_REGULAR_FILE &&
+      ((mode & 0111U) == 0U || (mode & 06000U) != 0U ||
+       metadata->st_nlink != 1 || metadata->st_size <= 0 ||
+       (uint64_t)metadata->st_size > SAFE_GIT_EXECUTABLE_BINARY_LIMIT)) {
+    return 0;
+  }
+  return fd_has_no_extended_access_control(fd, safe_git_expected_kind(kind)) &&
+         safe_git_executable_platform_flags(fd, metadata, platform_flags) &&
+         (kind != SAFE_GIT_BOUND_REGULAR_FILE ||
+          safe_git_executable_has_no_linux_capability(fd));
+}
+
+static int safe_git_add_executable_node(
+    struct safe_git_executable_binding *state, int fd, int parent_index,
+    const char *component, enum safe_git_bound_kind kind, int test_owner,
+    int *node_index) {
+  struct safe_git_executable_node *node;
+  struct stat metadata;
+  unsigned int flags = 0;
+  size_t length = component == NULL ? 0 : strlen(component);
+  memset(&metadata, 0, sizeof(metadata));
+  if (state == NULL || fd < 0 || node_index == NULL ||
+      state->node_count >= SAFE_GIT_EXECUTABLE_NODE_LIMIT ||
+      parent_index < -1 ||
+      (parent_index >= 0 && (size_t)parent_index >= state->node_count) ||
+      length > NAME_MAX || fstat(fd, &metadata) != 0 ||
+      !safe_git_executable_node_admitted(fd, &metadata, kind, test_owner,
+                                         &flags)) {
+    return 0;
+  }
+  node = &state->nodes[state->node_count];
+  memset(node, 0, sizeof(*node));
+  node->file_descriptor = fd;
+  node->parent_index = parent_index;
+  node->kind = kind;
+  node->platform_file_flags = flags;
+  node->snapshot = metadata;
+  if (length > 0) memcpy(node->component, component, length);
+  node->component[length] = '\0';
+  *node_index = (int)state->node_count;
+  state->node_count += 1;
+  return 1;
+}
+
+static int safe_git_open_executable_path(
+    const char *path, int test_owner,
+    struct safe_git_executable_binding *state) {
+  size_t length;
+  size_t cursor;
+  int current;
+  int fd;
+  if (state == NULL || !safe_git_executable_path_is_canonical(path)) return 0;
+  memset(state, 0, sizeof(*state));
+  fd = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0 || !safe_git_add_executable_node(
+                    state, fd, -1, "", SAFE_GIT_BOUND_DIRECTORY,
+                    test_owner, &current)) {
+    if (fd >= 0) (void)close(fd);
+    return 0;
+  }
+  length = strlen(path);
+  cursor = 1;
+  while (cursor < length) {
+    size_t end = cursor;
+    size_t component_length;
+    char component[NAME_MAX + 1];
+    enum safe_git_bound_kind kind;
+    struct stat before;
+    struct stat after;
+    int child;
+    int flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC;
+    while (end < length && path[end] != '/') end += 1;
+    component_length = end - cursor;
+    memcpy(component, path + cursor, component_length);
+    component[component_length] = '\0';
+    kind = end == length ? SAFE_GIT_BOUND_REGULAR_FILE
+                         : SAFE_GIT_BOUND_DIRECTORY;
+    memset(&before, 0, sizeof(before));
+    memset(&after, 0, sizeof(after));
+    if (fstatat(state->nodes[current].file_descriptor, component, &before,
+                AT_SYMLINK_NOFOLLOW) != 0 ||
+        !safe_git_kind_matches(&before, kind)) {
+      safe_git_release_executable_state(state);
+      return 0;
+    }
+    if (kind == SAFE_GIT_BOUND_DIRECTORY) {
+      flags |= O_DIRECTORY;
+    } else {
+      flags |= O_NONBLOCK | O_NOCTTY;
+    }
+    fd = openat(state->nodes[current].file_descriptor, component, flags);
+    if (fd < 0 || fstat(fd, &after) != 0 ||
+        (kind == SAFE_GIT_BOUND_DIRECTORY
+             ? !safe_git_identity_matches(&before, &after, kind)
+             : !stat_snapshot_matches(&before, &after)) ||
+        !safe_git_add_executable_node(state, fd, current, component, kind,
+                                      test_owner, &child)) {
+      if (fd >= 0) (void)close(fd);
+      safe_git_release_executable_state(state);
+      return 0;
+    }
+    current = child;
+    cursor = end + 1;
+  }
+  state->bound = 1;
+  state->test_owner_admission = test_owner;
+  state->executable_index = current;
+  memcpy(state->canonical_path, path, length + 1);
+  return 1;
+}
+
+static int safe_git_constant_time_equal(const unsigned char *left,
+                                        const unsigned char *right,
+                                        size_t length) {
+  unsigned char difference = 0;
+  size_t index;
+  if (left == NULL || right == NULL) return 0;
+  for (index = 0; index < length; index += 1) {
+    difference |= (unsigned char)(left[index] ^ right[index]);
+  }
+  return difference == 0;
+}
+
+static int safe_git_hash_executable(
+    const struct safe_git_executable_binding *state,
+    unsigned char digest[32]) {
+  struct safe_git_sha256_context context;
+  const struct safe_git_executable_node *node;
+  struct stat before;
+  struct stat after;
+  unsigned char buffer[65536];
+  off_t offset = 0;
+  int success = 0;
+  if (state == NULL || digest == NULL || !state->bound ||
+      state->executable_index < 0 ||
+      (size_t)state->executable_index >= state->node_count) {
+    return 0;
+  }
+  node = &state->nodes[state->executable_index];
+  memset(&context, 0, sizeof(context));
+  memset(&before, 0, sizeof(before));
+  memset(&after, 0, sizeof(after));
+  memset(buffer, 0, sizeof(buffer));
+  if (fstat(node->file_descriptor, &before) != 0 ||
+      !stat_snapshot_matches(&node->snapshot, &before) ||
+      before.st_size <= 0 ||
+      (uint64_t)before.st_size > SAFE_GIT_EXECUTABLE_BINARY_LIMIT) {
+    goto cleanup;
+  }
+  safe_git_sha256_init(&context);
+  while (offset < before.st_size) {
+    off_t remaining = before.st_size - offset;
+    size_t requested = remaining < (off_t)sizeof(buffer)
+                           ? (size_t)remaining
+                           : sizeof(buffer);
+    ssize_t observed;
+    do {
+      observed = pread(node->file_descriptor, buffer, requested, offset);
+    } while (observed < 0 && errno == EINTR);
+    if (observed <= 0 || (size_t)observed > requested) goto cleanup;
+    safe_git_sha256_update(&context, buffer, (size_t)observed);
+    offset += observed;
+  }
+  {
+    unsigned char extra;
+    ssize_t observed;
+    do {
+      observed = pread(node->file_descriptor, &extra, 1, offset);
+    } while (observed < 0 && errno == EINTR);
+    if (observed != 0) goto cleanup;
+  }
+  if (fstat(node->file_descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&before, &after)) {
+    goto cleanup;
+  }
+  safe_git_sha256_final(&context, digest);
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(&context, sizeof(context));
+  safe_git_secure_zero(buffer, sizeof(buffer));
+  if (!success) safe_git_secure_zero(digest, 32);
+  return success;
+}
+
+static int safe_git_executable_node_revalidates(
+    const struct safe_git_executable_binding *state, size_t index) {
+  const struct safe_git_executable_node *node;
+  struct stat at_handle;
+  struct stat at_parent;
+  unsigned int flags = 0;
+  if (state == NULL || index >= state->node_count) return 0;
+  node = &state->nodes[index];
+  memset(&at_handle, 0, sizeof(at_handle));
+  memset(&at_parent, 0, sizeof(at_parent));
+  if (node->file_descriptor < 0 ||
+      fstat(node->file_descriptor, &at_handle) != 0 ||
+      !safe_git_executable_node_admitted(
+          node->file_descriptor, &at_handle, node->kind,
+          state->test_owner_admission, &flags) ||
+      flags != node->platform_file_flags ||
+      (node->kind == SAFE_GIT_BOUND_DIRECTORY
+           ? !safe_git_identity_matches(&node->snapshot, &at_handle,
+                                        node->kind)
+           : !stat_snapshot_matches(&node->snapshot, &at_handle))) {
+    return 0;
+  }
+  if (node->parent_index < 0) {
+    return index == 0 && node->kind == SAFE_GIT_BOUND_DIRECTORY &&
+           node->component[0] == '\0';
+  }
+  if ((size_t)node->parent_index >= index ||
+      state->nodes[node->parent_index].kind != SAFE_GIT_BOUND_DIRECTORY ||
+      fstatat(state->nodes[node->parent_index].file_descriptor,
+              node->component, &at_parent, AT_SYMLINK_NOFOLLOW) != 0) {
+    return 0;
+  }
+  return node->kind == SAFE_GIT_BOUND_DIRECTORY
+             ? safe_git_identity_matches(&node->snapshot, &at_parent,
+                                         node->kind)
+             : stat_snapshot_matches(&node->snapshot, &at_parent);
+}
+
+static int safe_git_revalidate_executable_state(
+    const struct safe_git_executable_binding *state) {
+  unsigned char digest[32] = {0};
+  struct stat namespace_root;
+  unsigned int namespace_root_flags = 0;
+  size_t index;
+  int namespace_root_fd = -1;
+  int success = 0;
+  memset(&namespace_root, 0, sizeof(namespace_root));
+  if (state == NULL || !state->bound || state->node_count < 2 ||
+      state->node_count > SAFE_GIT_EXECUTABLE_NODE_LIMIT ||
+      state->executable_index != (int)state->node_count - 1 ||
+      !safe_git_executable_path_is_canonical(state->canonical_path)) {
+    return 0;
+  }
+  namespace_root_fd =
+      open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (namespace_root_fd < 0 || fstat(namespace_root_fd, &namespace_root) != 0 ||
+      !safe_git_executable_node_admitted(
+          namespace_root_fd, &namespace_root, SAFE_GIT_BOUND_DIRECTORY,
+          state->test_owner_admission, &namespace_root_flags) ||
+      namespace_root_flags != state->nodes[0].platform_file_flags ||
+      !safe_git_identity_matches(&state->nodes[0].snapshot, &namespace_root,
+                                 SAFE_GIT_BOUND_DIRECTORY)) {
+    goto cleanup;
+  }
+  (void)close(namespace_root_fd);
+  namespace_root_fd = -1;
+  for (index = 0; index < state->node_count; index += 1) {
+    enum safe_git_bound_kind expected =
+        index + 1 == state->node_count ? SAFE_GIT_BOUND_REGULAR_FILE
+                                       : SAFE_GIT_BOUND_DIRECTORY;
+    if (state->nodes[index].kind != expected ||
+        (index == 0 ? state->nodes[index].parent_index != -1
+                    : state->nodes[index].parent_index != (int)index - 1) ||
+        !safe_git_executable_node_revalidates(state, index)) {
+      goto cleanup;
+    }
+  }
+  if (!safe_git_hash_executable(state, digest) ||
+      !safe_git_constant_time_equal(digest, state->binary_digest,
+                                    sizeof(digest))) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  if (namespace_root_fd >= 0) (void)close(namespace_root_fd);
+  safe_git_secure_zero(digest, sizeof(digest));
+  return success;
+}
+
+static int safe_git_revalidate_executable_binding(
+    struct safe_git_descriptor_binding *binding) {
+  return binding != NULL &&
+         (!binding->executable.bound ||
+          (binding->empty_hooks_bound &&
+           safe_git_revalidate_executable_state(&binding->executable)));
+}
+
+static int safe_git_same_file_identity(const struct stat *left,
+                                       const struct stat *right) {
+  return left != NULL && right != NULL && left->st_dev == right->st_dev &&
+         left->st_ino == right->st_ino;
+}
+
+static int safe_git_executable_is_separated(
+    const struct safe_git_descriptor_binding *binding,
+    const struct installation_state_authority *authority,
+    const struct safe_git_executable_binding *state) {
+  const struct stat *protected_nodes[7];
+  size_t protected_count = 0;
+  size_t executable_index;
+  size_t protected_index;
+  if (binding == NULL || authority == NULL || state == NULL || !state->bound ||
+      binding->workspace_root_index < 0 ||
+      binding->git_directory_index < 0 ||
+      binding->common_directory_index < 0 ||
+      binding->empty_hooks_state_root_index < 0 ||
+      binding->empty_hooks_directory_index < 0 || authority->root_index < 0 ||
+      authority->empty_hooks_index < 0 ||
+      (size_t)binding->workspace_root_index >= binding->node_count ||
+      (size_t)binding->git_directory_index >= binding->node_count ||
+      (size_t)binding->common_directory_index >= binding->node_count ||
+      (size_t)binding->empty_hooks_state_root_index >=
+          binding->empty_hooks_node_count ||
+      (size_t)binding->empty_hooks_directory_index >=
+          binding->empty_hooks_node_count ||
+      (size_t)authority->root_index >= authority->node_count ||
+      (size_t)authority->empty_hooks_index >= authority->node_count) {
+    return 0;
+  }
+  protected_nodes[protected_count++] =
+      &binding->nodes[binding->workspace_root_index].snapshot;
+  protected_nodes[protected_count++] =
+      &binding->nodes[binding->git_directory_index].snapshot;
+  protected_nodes[protected_count++] =
+      &binding->nodes[binding->common_directory_index].snapshot;
+  protected_nodes[protected_count++] =
+      &binding->empty_hooks_nodes[binding->empty_hooks_state_root_index]
+           .snapshot;
+  protected_nodes[protected_count++] =
+      &binding->empty_hooks_nodes[binding->empty_hooks_directory_index]
+           .snapshot;
+  protected_nodes[protected_count++] =
+      &authority->nodes[authority->root_index].snapshot;
+  protected_nodes[protected_count++] =
+      &authority->nodes[authority->empty_hooks_index].snapshot;
+  for (executable_index = 0; executable_index < state->node_count;
+       executable_index += 1) {
+    for (protected_index = 0; protected_index < protected_count;
+         protected_index += 1) {
+      if (safe_git_same_file_identity(
+              &state->nodes[executable_index].snapshot,
+              protected_nodes[protected_index])) {
+        return 0;
+      }
+    }
+  }
+  return 1;
+}
+
 static int safe_git_unwrap_argument(
     napi_env env, napi_callback_info info,
     struct safe_git_descriptor_binding **binding);
@@ -2606,8 +3076,11 @@ static int safe_git_revalidate_binding(
     }
     safe_git_release_directory_snapshot(&observed);
   }
-  return !binding->empty_hooks_bound ||
-         safe_git_revalidate_empty_hooks_binding(binding);
+  if (binding->empty_hooks_bound &&
+      !safe_git_revalidate_empty_hooks_binding(binding)) {
+    return 0;
+  }
+  return safe_git_revalidate_executable_binding(binding);
 }
 
 static struct safe_git_descriptor_binding *safe_git_open_binding(
@@ -3348,6 +3821,60 @@ static int installation_encode_internal_bytes(const unsigned char *bytes,
   }
   *encoded = output;
   return 1;
+}
+
+static void safe_git_digest_hex(const unsigned char digest[32], char hex[65]);
+
+static int safe_git_create_executable_binding_token(
+    const struct safe_git_executable_binding *state,
+    const unsigned char key[32], unsigned char token[32]) {
+  const struct safe_git_executable_node *node;
+  char owner[64] = {0};
+  char *owner_identity = NULL;
+  char digest_hex[65] = {0};
+  char message[1024] = {0};
+  int message_length;
+  int success = 0;
+  if (state == NULL || key == NULL || token == NULL || !state->bound ||
+      state->executable_index < 0 ||
+      (size_t)state->executable_index >= state->node_count) {
+    return 0;
+  }
+  node = &state->nodes[state->executable_index];
+  safe_git_digest_hex(state->binary_digest, digest_hex);
+  if (snprintf(owner, sizeof(owner), "posix-uid:%" PRIuMAX,
+               (uintmax_t)node->snapshot.st_uid) <= 0 ||
+      !installation_encode_internal_bytes((const unsigned char *)owner,
+                                          strlen(owner), &owner_identity)) {
+    goto cleanup;
+  }
+  message_length = snprintf(
+      message, sizeof(message),
+      "[\"safe-git-executable-binding-token-v1\",{\"binaryDigest\":\"sha256:%s\",\"fileIdentity\":{\"device\":\"%" PRIuMAX
+      "\",\"inode\":\"%" PRIuMAX
+      "\",\"platform\":\"posix\"},\"mode\":\"%" PRIuMAX
+      "\",\"ownerIdentity\":\"%s\",\"size\":\"%" PRIuMAX "\"}]",
+      digest_hex, (uintmax_t)node->snapshot.st_dev,
+      (uintmax_t)node->snapshot.st_ino,
+      (uintmax_t)(((unsigned int)node->snapshot.st_mode) & 07777U),
+      owner_identity, (uintmax_t)node->snapshot.st_size);
+  if (message_length <= 0 || (size_t)message_length >= sizeof(message)) {
+    goto cleanup;
+  }
+  safe_git_hmac_sha256(key, (const unsigned char *)message,
+                       (size_t)message_length, token);
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(owner, sizeof(owner));
+  safe_git_secure_zero(digest_hex, sizeof(digest_hex));
+  safe_git_secure_zero(message, sizeof(message));
+  if (owner_identity != NULL) {
+    safe_git_secure_zero(owner_identity, strlen(owner_identity));
+    free(owner_identity);
+  }
+  if (!success) safe_git_secure_zero(token, 32);
+  return success;
 }
 
 static struct installation_state_authority *installation_authority_open(
@@ -5294,6 +5821,72 @@ static int safe_git_read_empty_hooks_arguments(
   return 1;
 }
 
+static int safe_git_read_executable_arguments(
+    napi_env env, napi_callback_info info,
+    struct safe_git_descriptor_binding **binding,
+    struct installation_state_authority **authority, unsigned char key[32],
+    char **path) {
+  size_t argument_count = 4;
+  napi_value arguments[4];
+  bool binding_tagged = false;
+  bool authority_tagged = false;
+  bool is_buffer = false;
+  napi_valuetype path_type;
+  void *key_bytes = NULL;
+  size_t key_length = 0;
+  size_t path_length = 0;
+  size_t copied = 0;
+  char *buffer = NULL;
+  if (binding == NULL || authority == NULL || key == NULL || path == NULL ||
+      napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 4 ||
+      napi_check_object_type_tag(env, arguments[0], &SAFE_GIT_BINDING_TYPE_TAG,
+                                 &binding_tagged) != napi_ok ||
+      !binding_tagged ||
+      napi_unwrap(env, arguments[0], (void **)binding) != napi_ok ||
+      *binding == NULL ||
+      napi_check_object_type_tag(env, arguments[1],
+                                 &INSTALLATION_AUTHORITY_TYPE_TAG,
+                                 &authority_tagged) != napi_ok ||
+      !authority_tagged ||
+      napi_unwrap(env, arguments[1], (void **)authority) != napi_ok ||
+      *authority == NULL ||
+      napi_is_buffer(env, arguments[2], &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, arguments[2], &key_bytes, &key_length) !=
+          napi_ok ||
+      key_bytes == NULL || key_length != 32 ||
+      napi_typeof(env, arguments[3], &path_type) != napi_ok ||
+      path_type != napi_string ||
+      napi_get_value_string_utf8(env, arguments[3], NULL, 0, &path_length) !=
+          napi_ok ||
+      path_length <= 1 || path_length > SAFE_GIT_PATH_LIMIT) {
+    return 0;
+  }
+  buffer = (char *)malloc(path_length + 1);
+  if (buffer == NULL ||
+      napi_get_value_string_utf8(env, arguments[3], buffer, path_length + 1,
+                                 &copied) != napi_ok ||
+      copied != path_length || strlen(buffer) != path_length ||
+      !safe_git_executable_path_is_canonical(buffer)) {
+    free(buffer);
+    return 0;
+  }
+  memcpy(key, key_bytes, 32);
+  *path = buffer;
+  return 1;
+}
+
+static int safe_git_create_executable_binding_result(napi_env env,
+                                                     napi_value *result) {
+  return result != NULL && napi_create_object(env, result) == napi_ok &&
+         safe_git_set_string_property(
+             env, *result, "profile",
+             "native_safe_git_executable_binding_v1") &&
+         safe_git_set_string_property(env, *result, "executableBinding",
+                                      "verified");
+}
+
 static int safe_git_create_empty_hooks_binding_result(
     napi_env env, const struct stat *identity, const char *token,
     napi_value *result) {
@@ -5370,6 +5963,98 @@ cleanup:
   safe_git_secure_zero(digest_hex, sizeof(digest_hex));
   safe_git_secure_zero(token, sizeof(token));
   safe_git_secure_zero(message, sizeof(message));
+  if (!success) {
+    if (binding != NULL) safe_git_release_binding(binding);
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+}
+
+static napi_value bind_safe_git_executable(napi_env env,
+                                           napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  struct safe_git_executable_binding candidate;
+  unsigned char key[32] = {0};
+  unsigned char token[32] = {0};
+  char *path = NULL;
+  napi_value result;
+  int test_owner = 0;
+  int candidate_active = 0;
+  int success = 0;
+  memset(&candidate, 0, sizeof(candidate));
+  if (!safe_git_read_executable_arguments(env, info, &binding, &authority,
+                                          key, &path) ||
+      binding == NULL || authority == NULL || binding->closed ||
+      !binding->repository_control_bound || !binding->empty_hooks_bound ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !safe_git_empty_hooks_authority_matches(binding, authority) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  if (binding->executable.bound) {
+    if (strcmp(binding->executable.canonical_path, path) != 0 ||
+        !safe_git_same_file_identity(
+            &binding->executable.authority_root_identity,
+            &authority->nodes[authority->root_index].snapshot) ||
+        !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                  token) ||
+        !safe_git_constant_time_equal(token,
+                                      binding->executable.binding_token,
+                                      sizeof(token)) ||
+        !safe_git_revalidate_binding(binding) ||
+        !installation_authority_revalidate(authority) ||
+        !safe_git_create_executable_binding_result(env, &result) ||
+        !safe_git_revalidate_binding(binding) ||
+        !installation_authority_revalidate(authority)) {
+      goto cleanup;
+    }
+    success = 1;
+    goto cleanup;
+  }
+  test_owner = binding->test_executable_owner_admission_armed;
+  binding->test_executable_owner_admission_armed = 0;
+  if (test_owner &&
+      strcmp(authority->resolver_id, "test-explicit-temporary-root-v1") != 0) {
+    goto cleanup;
+  }
+  if (!safe_git_open_executable_path(path, test_owner, &candidate)) {
+    goto cleanup;
+  }
+  candidate_active = 1;
+  candidate.authority_root_identity =
+      authority->nodes[authority->root_index].snapshot;
+  if (!safe_git_executable_is_separated(binding, authority, &candidate) ||
+      !safe_git_hash_executable(&candidate, candidate.binary_digest) ||
+      !safe_git_create_executable_binding_token(&candidate, key,
+                                                candidate.binding_token) ||
+      !safe_git_revalidate_executable_state(&candidate) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  binding->executable = candidate;
+  safe_git_secure_zero(&candidate, sizeof(candidate));
+  candidate_active = 0;
+  if (!safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_executable_binding_result(env, &result) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  if (path != NULL) {
+    safe_git_secure_zero(path, strlen(path));
+    free(path);
+  }
+  if (candidate_active) safe_git_release_executable_state(&candidate);
+  safe_git_secure_zero(&candidate, sizeof(candidate));
   if (!success) {
     if (binding != NULL) safe_git_release_binding(binding);
     return throw_safe_git_unavailable(env);
@@ -5501,6 +6186,44 @@ static napi_value arm_test_safe_git_empty_hooks_race(
     return throw_safe_git_unavailable(env);
   }
   binding->test_empty_hooks_race_armed = 1;
+  return result;
+}
+
+static napi_value arm_test_safe_git_executable_owner_admission(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 2;
+  napi_value arguments[2];
+  bool binding_tagged = false;
+  bool authority_tagged = false;
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  napi_value result;
+  if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 2 ||
+      napi_check_object_type_tag(env, arguments[0], &SAFE_GIT_BINDING_TYPE_TAG,
+                                 &binding_tagged) != napi_ok ||
+      !binding_tagged ||
+      napi_unwrap(env, arguments[0], (void **)&binding) != napi_ok ||
+      binding == NULL ||
+      napi_check_object_type_tag(env, arguments[1],
+                                 &INSTALLATION_AUTHORITY_TYPE_TAG,
+                                 &authority_tagged) != napi_ok ||
+      !authority_tagged ||
+      napi_unwrap(env, arguments[1], (void **)&authority) != napi_ok ||
+      authority == NULL || binding->closed || !binding->empty_hooks_bound ||
+      !binding->empty_hooks_test_authority || binding->executable.bound ||
+      binding->test_executable_owner_admission_armed ||
+      authority->resolver_id == NULL ||
+      strcmp(authority->resolver_id, "test-explicit-temporary-root-v1") != 0 ||
+      !safe_git_empty_hooks_authority_matches(binding, authority) ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_safe_git_unavailable(env);
+  }
+  binding->test_executable_owner_admission_armed = 1;
   return result;
 }
 
@@ -5822,11 +6545,16 @@ NAPI_MODULE_INIT() {
       {"armTestSafeGitEmptyHooksRace", NULL,
        arm_test_safe_git_empty_hooks_race, NULL, NULL, NULL, napi_default,
        NULL},
+      {"armTestSafeGitExecutableOwnerAdmission", NULL,
+       arm_test_safe_git_executable_owner_admission, NULL, NULL, NULL,
+       napi_default, NULL},
       {"bindSafeGitRepositoryControl", NULL,
        bind_safe_git_repository_control, NULL, NULL, NULL, napi_default, NULL},
       {"bindSafeGitEmptyHooksDirectory", NULL,
        bind_safe_git_empty_hooks_directory, NULL, NULL, NULL, napi_default,
        NULL},
+      {"bindSafeGitExecutable", NULL, bind_safe_git_executable, NULL, NULL,
+       NULL, napi_default, NULL},
       {"deriveSafeGitPathIdentity", NULL, derive_safe_git_path_identity, NULL,
        NULL, NULL, napi_default, NULL},
       {"closeSafeGitDescriptorBootstrap", NULL,

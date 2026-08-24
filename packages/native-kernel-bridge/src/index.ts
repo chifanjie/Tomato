@@ -89,6 +89,11 @@ export interface NativeSafeGitEmptyHooksDirectoryBindingV1 {
   readonly emptyHooksDirectoryToken: NativeSafeGitEmptyHooksDirectoryTokenV1;
 }
 
+export interface NativeSafeGitExecutableBindingInspectionV1 {
+  readonly profile: "native_safe_git_executable_binding_v1";
+  readonly executableBinding: "verified";
+}
+
 declare const nativeInstallationStateAuthorityBrandV1: unique symbol;
 export interface NativeInstallationStateAuthorityV1 {
   readonly [nativeInstallationStateAuthorityBrandV1]: true;
@@ -124,6 +129,10 @@ export interface NativeInstallationStateAuthorityOpenResultV1 {
 
 interface NativeKernelBridgeAddonV1 {
   readonly armTestSafeGitEmptyHooksRace: (binding: object) => unknown;
+  readonly armTestSafeGitExecutableOwnerAdmission: (
+    binding: object,
+    authority: object,
+  ) => unknown;
   readonly armTestInstallationStateAuthorityNamespaceRace: (
     authority: object,
     phase: NativeTestInstallationStateAuthorityNamespaceRaceV1,
@@ -150,6 +159,12 @@ interface NativeKernelBridgeAddonV1 {
     binding: object,
     authority: object,
     key: Buffer,
+  ) => unknown;
+  readonly bindSafeGitExecutable: (
+    binding: object,
+    authority: object,
+    key: Buffer,
+    absoluteExecutablePath: string,
   ) => unknown;
   readonly deriveSafeGitPathIdentity: (
     binding: object,
@@ -196,6 +211,7 @@ interface NativeSafeGitBindingStateV1 {
   closed: boolean;
   readonly layout: NativeSafeGitDescriptorLayoutV1;
   emptyHooksBound: boolean;
+  executableBound: boolean;
 }
 
 interface NativeInstallationStateAuthorityStateV1 {
@@ -300,6 +316,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
       ) as Partial<NativeKernelBridgeAddonV1>;
       if (
         typeof candidate.armTestSafeGitEmptyHooksRace !== "function" ||
+        typeof candidate.armTestSafeGitExecutableOwnerAdmission !== "function" ||
         typeof candidate.armTestInstallationStateAuthorityNamespaceRace !== "function" ||
         typeof candidate.acquireInstallationIdentityInitializationLock !== "function" ||
         typeof candidate.assertInstallationStateAuthorityFresh !== "function" ||
@@ -310,6 +327,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         typeof candidate.assertFdHasNoExtendedAccessControl !== "function" ||
         typeof candidate.getKernelBridgeProfile !== "function" ||
         typeof candidate.bindSafeGitEmptyHooksDirectory !== "function" ||
+        typeof candidate.bindSafeGitExecutable !== "function" ||
         typeof candidate.bindSafeGitRepositoryControl !== "function" ||
         typeof candidate.closeInstallationStateAuthority !== "function" ||
         typeof candidate.createInstallationIdentityArtifact !== "function" ||
@@ -333,6 +351,8 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
       loadedAddonV1 = Object.freeze({
         armTestSafeGitEmptyHooksRace:
           candidate.armTestSafeGitEmptyHooksRace,
+        armTestSafeGitExecutableOwnerAdmission:
+          candidate.armTestSafeGitExecutableOwnerAdmission,
         armTestInstallationStateAuthorityNamespaceRace:
           candidate.armTestInstallationStateAuthorityNamespaceRace,
         acquireInstallationIdentityInitializationLock:
@@ -349,6 +369,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
           candidate.bindSafeGitRepositoryControl,
         bindSafeGitEmptyHooksDirectory:
           candidate.bindSafeGitEmptyHooksDirectory,
+        bindSafeGitExecutable: candidate.bindSafeGitExecutable,
         closeSafeGitDescriptorBootstrap:
           candidate.closeSafeGitDescriptorBootstrap,
         closeInstallationStateAuthority:
@@ -531,6 +552,7 @@ function parseSafeGitOpenResultV1(
     closed: false,
     layout,
     emptyHooksBound: false,
+    executableBound: false,
   });
   return Object.freeze({
     binding: candidate.binding as NativeSafeGitDescriptorBindingV1,
@@ -756,6 +778,32 @@ function parseSafeGitEmptyHooksDirectoryBindingV1(
     directoryIdentity,
     emptyHooksDirectoryToken:
       candidate.emptyHooksDirectoryToken as NativeSafeGitEmptyHooksDirectoryTokenV1,
+  });
+}
+
+function parseSafeGitExecutableBindingV1(
+  value: unknown,
+): NativeSafeGitExecutableBindingInspectionV1 {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw safeGitUnavailableV1();
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  if (
+    keys.join("\0") !== ["executableBinding", "profile"].join("\0") ||
+    candidate.profile !== "native_safe_git_executable_binding_v1" ||
+    candidate.executableBinding !== "verified"
+  ) {
+    throw safeGitUnavailableV1();
+  }
+  return Object.freeze({
+    profile: "native_safe_git_executable_binding_v1",
+    executableBinding: "verified",
   });
 }
 
@@ -1207,9 +1255,11 @@ export function openNativeSafeGitDescriptorBootstrapV1(
 export function revalidateNativeSafeGitDescriptorBootstrapV1(
   binding: NativeSafeGitDescriptorBindingV1,
 ): NativeSafeGitDescriptorLayoutV1 {
+  let nativeBinding: object | undefined;
+  let bindingState: NativeSafeGitBindingStateV1 | undefined;
   try {
-    const [nativeBinding, state] = safeGitBindingStateV1(binding);
-    if (state.closed) {
+    [nativeBinding, bindingState] = safeGitBindingStateV1(binding);
+    if (bindingState.closed) {
       throw safeGitUnavailableV1();
     }
     const value = loadNativeAddonV1().revalidateSafeGitDescriptorBootstrap(
@@ -1221,11 +1271,18 @@ export function revalidateNativeSafeGitDescriptorBootstrapV1(
     const candidate = value as Record<string, unknown>;
     const keys = Object.keys(candidate);
     const layout = parseSafeGitLayoutV1(candidate.layout);
-    if (keys.length !== 1 || keys[0] !== "layout" || layout !== state.layout) {
+    if (
+      keys.length !== 1 ||
+      keys[0] !== "layout" ||
+      layout !== bindingState.layout
+    ) {
       throw safeGitUnavailableV1();
     }
     return layout;
   } catch {
+    if (nativeBinding !== undefined && bindingState !== undefined) {
+      poisonSafeGitBindingV1(nativeBinding, bindingState);
+    }
     throw safeGitUnavailableV1();
   }
 }
@@ -1285,6 +1342,53 @@ export function bindNativeSafeGitEmptyHooksDirectoryV1(
   }
 }
 
+/**
+ * Pins one explicit Git executable into the retained descriptor authority.
+ * The executable path, identity, digest, and keyed token remain native-private.
+ */
+export function bindNativeSafeGitExecutableV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+  authority: NativeInstallationStateAuthorityV1,
+  installationIdentityKey: Buffer,
+  absoluteExecutablePath: string,
+): NativeSafeGitExecutableBindingInspectionV1 {
+  let nativeBinding: object | undefined;
+  let bindingState: NativeSafeGitBindingStateV1 | undefined;
+  try {
+    [nativeBinding, bindingState] = safeGitBindingStateV1(binding);
+    const [nativeAuthority, authorityState] =
+      installationStateAuthorityStateV1(authority);
+    if (
+      bindingState.closed ||
+      authorityState.closed ||
+      !bindingState.emptyHooksBound ||
+      !Buffer.isBuffer(installationIdentityKey) ||
+      installationIdentityKey.byteLength !== 32 ||
+      typeof absoluteExecutablePath !== "string" ||
+      !isAbsolute(absoluteExecutablePath) ||
+      absoluteExecutablePath.includes("\0") ||
+      Buffer.byteLength(absoluteExecutablePath, "utf8") > 4096
+    ) {
+      throw safeGitUnavailableV1();
+    }
+    const result = parseSafeGitExecutableBindingV1(
+      loadNativeAddonV1().bindSafeGitExecutable(
+        nativeBinding,
+        nativeAuthority,
+        installationIdentityKey,
+        absoluteExecutablePath,
+      ),
+    );
+    bindingState.executableBound = true;
+    return result;
+  } catch {
+    if (nativeBinding !== undefined && bindingState !== undefined) {
+      poisonSafeGitBindingV1(nativeBinding, bindingState);
+    }
+    throw safeGitUnavailableV1();
+  }
+}
+
 /** Test-authority-only deterministic post-scan empty-hooks race seam. */
 export function armNativeTestSafeGitEmptyHooksDirectoryRaceV1(
   binding: NativeSafeGitDescriptorBindingV1,
@@ -1295,6 +1399,33 @@ export function armNativeTestSafeGitEmptyHooksDirectoryRaceV1(
       state.closed ||
       !state.emptyHooksBound ||
       loadNativeAddonV1().armTestSafeGitEmptyHooksRace(nativeBinding) !== true
+    ) {
+      throw safeGitUnavailableV1();
+    }
+  } catch {
+    throw safeGitUnavailableV1();
+  }
+}
+
+/** Test-only one-shot admission for current-owner temporary executable files. */
+export function armNativeTestSafeGitExecutableOwnerAdmissionV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+  authority: NativeInstallationStateAuthorityV1,
+): void {
+  try {
+    const [nativeBinding, bindingState] = safeGitBindingStateV1(binding);
+    const [nativeAuthority, authorityState] =
+      installationStateAuthorityStateV1(authority);
+    if (
+      bindingState.closed ||
+      authorityState.closed ||
+      !bindingState.emptyHooksBound ||
+      bindingState.executableBound ||
+      authorityState.resolverId !== "test-explicit-temporary-root-v1" ||
+      loadNativeAddonV1().armTestSafeGitExecutableOwnerAdmission(
+          nativeBinding,
+          nativeAuthority,
+        ) !== true
     ) {
       throw safeGitUnavailableV1();
     }

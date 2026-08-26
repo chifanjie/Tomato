@@ -19,8 +19,10 @@ describe("production strong object gateway", () => {
     const directory = providerProductionStrongClientGatewayDirectoryPathV1(root);
     expect(directory).toMatch(/^\/run\/understand-code-provider-strong-client-[0-9a-f]{32}$/u);
     expect(providerProductionStrongClientGatewaySocketPathV1(root)).toBe(
-      `${directory}/provider-production-strong-object-gateway-v1.sock`,
+      `${directory}/provider-gateway-v1.sock`,
     );
+    expect(Buffer.byteLength(providerProductionStrongClientGatewaySocketPathV1(root)) + 1)
+      .toBeLessThanOrEqual(104);
   });
 
   it("rejects retained root and foreign supplementary groups after uid drop", () => {

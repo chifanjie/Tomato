@@ -37,7 +37,10 @@ export const PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_ROLLBACK_FILE_V1 =
 export const PROVIDER_PRODUCTION_STRONG_CLIENT_DESCRIPTOR_SUFFIX_V1 =
   ".provider-production-strong-client-v1.json" as const;
 export const PROVIDER_PRODUCTION_STRONG_OBJECT_GATEWAY_SOCKET_FILE_V1 =
-  "provider-production-strong-object-gateway-v1.sock" as const;
+  // Linux `sockaddr_un.sun_path` is bounded (108 bytes including the NUL).
+  // Keep the installation-bound directory and full hash while budgeting the
+  // leaf name so the public filesystem socket is representable on Linux.
+  "provider-gateway-v1.sock" as const;
 
 export const PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_PROFILE_V1 =
   "provider_production_strong_client_trust_snapshot_v1" as const;

@@ -545,6 +545,7 @@ async function main() {
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-contracts", "build"]);
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-runtime", "build"]);
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-client", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/durable-object-provider-authority", "build"]);
   await run("pnpm", ["--filter", "@understand-code/host-adapters", "build"]);
   await run("pnpm", ["--filter", "@understand-code/contracts", "build"]);
   await run("pnpm", ["--filter", "@understand-code/installation-lifecycle", "build"]);

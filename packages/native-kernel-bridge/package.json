@@ -19,7 +19,9 @@
   "scripts": {
     "build": "tsc && node native/build-native-kernel-bridge.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "pnpm run build && vitest run"
+    "test": "pnpm run build && vitest run",
+    "test:linux-exact-object": "node test/exact-object-publication-linux.mjs",
+    "test:linux-delegated": "node test/safe-git-runner-linux-delegated.mjs"
   },
   "engines": {
     "node": ">=22"

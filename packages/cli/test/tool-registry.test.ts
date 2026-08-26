@@ -2,12 +2,14 @@ import Ajv2020 from "ajv/dist/2020.js";
 import {
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
+  StrongCheckChangeOutputV1Schema,
   GetEvidenceOutputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  StrongRecordVerificationOutputV1Schema,
   RefreshIndexOutputV1Schema,
   SearchContextOutputV1Schema,
   TraceImpactOutputV1Schema,
@@ -58,12 +60,14 @@ const expectedOutputSchemas = {
   check_change: toolOutputSchema(
     z.union([
       CheckChangeOutputV1Schema.shape.structuredContent,
+      StrongCheckChangeOutputV1Schema.shape.structuredContent,
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
   record_verification: toolOutputSchema(
     z.union([
       RecordVerificationOutputV1Schema.shape.structuredContent,
+      StrongRecordVerificationOutputV1Schema.shape.structuredContent,
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
@@ -148,8 +152,10 @@ describe("advertised tool contracts", () => {
       expect(tool.outputSchema).toMatchObject({
         $schema: "https://json-schema.org/draft/2020-12/schema",
         type: "object",
-        anyOf: [{ type: "object" }, { type: "object" }],
       });
+      expect(tool.outputSchema.anyOf).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: "object" })]),
+      );
     }
   });
 

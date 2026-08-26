@@ -182,6 +182,127 @@
             ],
             "additionalProperties": false
           }
+        },
+        "conclusion": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "paths_observed"
+                },
+                "impactPathIds": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "boundaryEvidenceIds": {
+                  "type": "array",
+                  "items": false,
+                  "minItems": 0,
+                  "maxItems": 0
+                }
+              },
+              "required": [
+                "status",
+                "impactPathIds",
+                "boundaryEvidenceIds"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "none_observed"
+                },
+                "impactPathIds": {
+                  "type": "array",
+                  "items": false,
+                  "minItems": 0,
+                  "maxItems": 0
+                },
+                "boundaryEvidenceIds": {
+                  "type": "array",
+                  "items": false,
+                  "minItems": 0,
+                  "maxItems": 0
+                }
+              },
+              "required": [
+                "status",
+                "impactPathIds",
+                "boundaryEvidenceIds"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "partial"
+                },
+                "impactPathIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "boundaryEvidenceIds": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^boundary-evidence:[0-9a-f]{22}$"
+                  }
+                }
+              },
+              "required": [
+                "status",
+                "impactPathIds",
+                "boundaryEvidenceIds"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "unknown"
+                },
+                "impactPathIds": {
+                  "type": "array",
+                  "items": false,
+                  "minItems": 0,
+                  "maxItems": 0
+                },
+                "boundaryEvidenceIds": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^boundary-evidence:[0-9a-f]{22}$"
+                  }
+                }
+              },
+              "required": [
+                "status",
+                "impactPathIds",
+                "boundaryEvidenceIds"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [

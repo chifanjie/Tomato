@@ -1,6 +1,7 @@
 import type {
   BuildTaskBriefInputV1,
   BuildTaskBriefResultV1,
+  ContentDigest,
   ChangeCheckV1,
   ClaimV1,
   EvidenceV1,
@@ -10,13 +11,17 @@ import type {
   ImpactPathV1,
   MutationResultV1,
   RepoPulseV1,
+  RepoPulsePersistedPayloadV1,
   RepositorySnapshotV1,
+  RepositorySnapshotPersistedPayloadV1,
   TaskArtifactBundleV1,
   TaskBriefV1,
   TaskManifestV1,
   TaskOperationReceiptV1,
   UpdateTaskInputV1,
   VerificationRecordV1,
+  StrongChangeIntelligenceAuthorityV1,
+  StrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
 import type {
   KnowledgeGraph,
@@ -58,7 +63,7 @@ export interface TaskContextLoadInput {
    * bind any byte-level Source Evidence to this value instead of inferring
    * freshness from the live worktree alone.
    */
-  repositorySnapshot: RepositorySnapshotV1;
+  repositorySnapshot: RepositorySnapshotPersistedPayloadV1;
   scope?: readonly string[];
   baseRef?: string;
 }
@@ -101,6 +106,43 @@ export interface TaskContextProvider {
   analyzeTaskChanges?(
     input: TaskChangeAnalysisInput,
   ): Promise<TaskChangeAnalysisResult>;
+}
+
+export interface StrongRepositoryContentMaterialV1 {
+  readonly status: "absent" | "content";
+  readonly path: string;
+  readonly domain?: "git_object" | "index_blob" | "worktree_raw" | "baseline_private_blob";
+  readonly objectId?: string;
+  readonly mode?: "100644" | "100755";
+  readonly bytes?: Buffer;
+  readonly contentDigest?: string;
+}
+
+export interface StrongRepositoryChangeMaterialV1 {
+  readonly change: Omit<StrongRepositorySnapshotV1["changes"][number], "source"> & {
+    readonly source:
+      | "baseline_reconciliation"
+      | "committed"
+      | "staged"
+      | "unstaged"
+      | "untracked"
+      | "conflict";
+  };
+  readonly before: StrongRepositoryContentMaterialV1;
+  readonly after: StrongRepositoryContentMaterialV1;
+}
+
+export interface StrongRepositoryAnalysisMaterialV1 {
+  readonly baselineTreeObjectId: string;
+  readonly graphPin: StrongRepositoryGraphPinV1;
+  readonly graph: KnowledgeGraph;
+  readonly changes: readonly StrongRepositoryChangeMaterialV1[];
+}
+
+export interface StrongRepositoryGraphPinV1 {
+  readonly artifactId: string;
+  readonly contentDigest: ContentDigest;
+  readonly sourceSnapshotId: string;
 }
 
 export interface TaskChangeAnalysisInput {
@@ -159,6 +201,11 @@ export interface TaskChangeAnalysisResult {
 
 export interface TaskEngineOptions {
   contextProvider: TaskContextProvider;
+  /**
+   * Provider-gated strong writer. Omission intentionally leaves strong Check
+   * and Verification fail-closed while preserving legacy read compatibility.
+   */
+  strongChangeAuthority?: StrongChangeIntelligenceAuthorityV1;
   clock?: () => Date;
   createScope?: string;
 }
@@ -226,6 +273,8 @@ export type {
   BuildTaskBriefResultV1,
   GetTaskBriefInputV1,
   RepoPulseV1,
+  RepoPulsePersistedPayloadV1,
   RepositorySnapshotV1,
+  RepositorySnapshotPersistedPayloadV1,
   UpdateTaskInputV1,
 };

@@ -247,7 +247,15 @@ async function main(): Promise<void> {
   }
 
   const initialBinding = await resolveInitialBinding(invocation.rootCandidates);
-  await runStdioServer({ initialBinding });
+  await runStdioServer({
+    initialBinding,
+    ...(invocation.canonicalInstallationRoot === undefined
+      ? {}
+      : {
+          canonicalInstallationRoot:
+            invocation.canonicalInstallationRoot,
+        }),
+  });
 }
 
 try {

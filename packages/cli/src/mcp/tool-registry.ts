@@ -1,6 +1,8 @@
 import {
   CheckChangeInputV1Schema,
   RecordVerificationInputV1Schema,
+  StrongCheckChangesInputV1Schema,
+  StrongRecordVerificationInputV1Schema,
   UpdateTaskInputV1Schema,
 } from "@understand-code/contracts";
 import {
@@ -21,6 +23,8 @@ import {
   RefreshIndexOutputV1Schema,
   SearchContextInputV1Schema,
   SearchContextOutputV1Schema,
+  StrongCheckChangeOutputV1Schema,
+  StrongRecordVerificationOutputV1Schema,
   TraceImpactInputV1Schema,
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
@@ -77,10 +81,53 @@ export function normalizeToolJsonSchema<T>(value: T): T {
   for (const [key, child] of Object.entries(source)) {
     result[key] = normalizeToolJsonSchema(child);
   }
+  const allOf = result.allOf;
+  if (
+    Array.isArray(allOf) &&
+    allOf.length === 2 &&
+    allOf[0] !== null &&
+    typeof allOf[0] === "object" &&
+    (allOf[0] as Record<string, unknown>).type === "object" &&
+    Object.keys(
+      ((allOf[0] as Record<string, unknown>).properties ?? {}) as Record<
+        string,
+        unknown
+      >,
+    ).length === 0 &&
+    (allOf[0] as Record<string, unknown>).additionalProperties === false &&
+    allOf[1] !== null &&
+    typeof allOf[1] === "object"
+  ) {
+    const second = allOf[1] as Record<string, unknown>;
+    const mergedProperties: Record<string, unknown> = {};
+    const alternatives = second.anyOf;
+    if (Array.isArray(alternatives)) {
+      for (const alternative of alternatives) {
+        if (alternative !== null && typeof alternative === "object") {
+          const properties = (alternative as Record<string, unknown>).properties;
+          if (properties !== null && typeof properties === "object") {
+            Object.assign(mergedProperties, properties);
+          }
+        }
+      }
+    }
+    const schema = result.$schema;
+    for (const key of Object.keys(result)) delete result[key];
+    if (schema !== undefined) result.$schema = schema;
+    Object.assign(result, second, {
+      type: "object",
+      properties: mergedProperties,
+      additionalProperties: false,
+    });
+  }
   const prefixItems = result.prefixItems;
   if (Array.isArray(prefixItems)) {
-    result.minItems ??= prefixItems.length;
-    result.maxItems ??= prefixItems.length;
+    // Zod can emit an inconsistent `minItems: 1` for an empty tuple.  The
+    // tuple cardinality is authoritative and must win before Ajv 2020-12
+    // validation (an empty prefixItems array cannot require one item).
+    result.minItems = prefixItems.length;
+    result.maxItems = prefixItems.length;
+    if (prefixItems.length === 0) delete result.prefixItems;
     result.items ??= false;
   }
   return result as T;
@@ -116,8 +163,17 @@ const inputSchemas = {
   build_task_brief: BuildTaskBriefInputV1Schema,
   get_task_brief: GetTaskBriefInputV1Schema,
   update_task: UpdateTaskInputV1Schema,
-  check_change: CheckChangeInputV1Schema,
-  record_verification: RecordVerificationInputV1Schema,
+  check_change: z.intersection(
+    z.strictObject({}),
+    z.union([CheckChangeInputV1Schema, StrongCheckChangesInputV1Schema]),
+  ),
+  record_verification: z.intersection(
+    z.strictObject({}),
+    z.union([
+      RecordVerificationInputV1Schema,
+      StrongRecordVerificationInputV1Schema,
+    ]),
+  ),
   open_workbench: OpenWorkbenchInputV1Schema,
   get_evidence: GetEvidenceInputV1Schema,
   search_context: SearchContextInputV1Schema,
@@ -144,10 +200,12 @@ const outputSchemas = {
   ]),
   check_change: z.union([
     CheckChangeOutputV1Schema.shape.structuredContent,
+    StrongCheckChangeOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
   record_verification: z.union([
     RecordVerificationOutputV1Schema.shape.structuredContent,
+    StrongRecordVerificationOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
   open_workbench: z.union([

@@ -17,6 +17,8 @@ import {
   IdempotencyScopeV1Schema,
   IdempotencyKeySchema,
   IsoTimestampSchema,
+  KeyedStateTokenV1Schema,
+  PathSafeRepositorySnapshotIdV1Schema,
   ProducerVersionSchema,
   RepositoryIdSchema,
   TaskIdSchema,
@@ -639,9 +641,10 @@ function taskOperationReceiptEventIssue(
           receipt.result.verification.id ||
         receipt.result.verification.snapshotId !== event.sourceSnapshotId ||
         receipt.result.verification.recordedAt !== event.occurredAt ||
-        receipt.result.verification.actor !== event.actor
+        (!("profile" in receipt.result.verification) &&
+          receipt.result.verification.actor !== event.actor)
       ) {
-        return "record_verification receipt must match its verification_recorded Event status, Snapshot, actor, and audit time";
+        return "record_verification receipt must match its verification_recorded Event status, Snapshot, and audit time";
       }
       return undefined;
   }
@@ -1014,6 +1017,447 @@ export class ArtifactStore {
 
   #now(): string {
     return IsoTimestampSchema.parse(this.#clock().toISOString());
+  }
+
+  /**
+   * Marker-first reservation for strong mutations. The cut identity excludes
+   * the idempotency key so a second key cannot create an orphan Provider blob
+   * while the local Task still reflects the pre-commit revision.
+   */
+  async reserveStrongOperationIntent(inputValue: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: "check_change" | "record_verification";
+    idempotencyKey: string;
+    actor: string;
+    proposedAt: string;
+    requestDigest?: string;
+    fullInputEqualityTag?: string;
+  }>): Promise<string> {
+    const input = {
+      taskId: TaskIdSchema.parse(inputValue.taskId),
+      expectedRevision: inputValue.expectedRevision,
+      operation: inputValue.operation,
+      idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
+      actor: ActorSchema.parse(inputValue.actor),
+      proposedAt: IsoTimestampSchema.parse(inputValue.proposedAt),
+      ...(inputValue.requestDigest === undefined
+        ? {}
+        : { requestDigest: ContentDigestSchema.parse(inputValue.requestDigest) }),
+      ...(inputValue.fullInputEqualityTag === undefined
+        ? {}
+        : {
+            fullInputEqualityTag: KeyedStateTokenV1Schema.parse(
+              inputValue.fullInputEqualityTag,
+            ),
+          }),
+    };
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      throw new ArtifactStoreError("revision_conflict", "Strong operation intent revision is invalid.");
+    }
+    const cut = sha256CanonicalJson([
+      "strong-operation-intent-cut-v1",
+      {
+        taskId: input.taskId,
+        expectedRevision: input.expectedRevision,
+        operation: input.operation,
+      },
+    ]).slice("sha256:".length, "sha256:".length + 32);
+    const relativeDirectory = `.understand-code/.recovery/strong-operation-intents/${input.taskId}`;
+    const targetPath = path.join(this.layout.worktreeRoot, relativeDirectory, `${cut}.json`);
+    await ensureManagedDirectory(this.layout.worktreeRoot, relativeDirectory);
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(input.taskId),
+      async () => {
+        let existing: unknown;
+        try {
+          existing = await readManagedJson(this.layout.worktreeRoot, targetPath);
+        } catch (error) {
+          if (
+            !(
+              error instanceof ArtifactStoreError &&
+              error.code === "artifact_not_found"
+            ) &&
+            (error as NodeJS.ErrnoException).code !== "ENOENT"
+          ) throw error;
+        }
+        if (existing !== undefined) {
+          if (
+            typeof existing !== "object" || existing === null ||
+            Array.isArray(existing)
+          ) {
+            throw new ArtifactStoreError("artifact_corrupt", "Strong operation intent marker is invalid.");
+          }
+          const marker = existing as Record<string, unknown>;
+          if (
+            marker.profile !== "strong_operation_intent_v1" ||
+            marker.taskId !== input.taskId ||
+            marker.expectedRevision !== input.expectedRevision ||
+            marker.operation !== input.operation ||
+            marker.idempotencyKey !== input.idempotencyKey ||
+            marker.actor !== input.actor ||
+            (input.requestDigest !== undefined && marker.requestDigest !== input.requestDigest) ||
+            (input.fullInputEqualityTag !== undefined &&
+              marker.fullInputEqualityTag !== input.fullInputEqualityTag) ||
+            typeof marker.occurredAt !== "string"
+          ) {
+            throw new ArtifactStoreError("idempotency_conflict", "A different strong request already owns this Task cut.");
+          }
+          return IsoTimestampSchema.parse(marker.occurredAt);
+        }
+        const marker = {
+          profile: "strong_operation_intent_v1",
+          taskId: input.taskId,
+          expectedRevision: input.expectedRevision,
+          operation: input.operation,
+          idempotencyKey: input.idempotencyKey,
+          actor: input.actor,
+          ...(input.requestDigest === undefined ? {} : { requestDigest: input.requestDigest }),
+          ...(input.fullInputEqualityTag === undefined
+            ? {}
+            : { fullInputEqualityTag: input.fullInputEqualityTag }),
+          occurredAt: input.proposedAt,
+        };
+        await atomicWriteJson(this.layout.worktreeRoot, targetPath, marker, { mode: 0o600 });
+        return input.proposedAt;
+      },
+      this.#lockOptions,
+    );
+  }
+
+  /**
+   * Durable marker for the strong Task-creation transaction.  Task creation
+   * must reserve this marker before the baseline authority is allowed to
+   * create a Git lease or Provider-private object.  The marker is recovery
+   * state only (owner-readable, never part of a public Artifact projection)
+   * and binds the complete request to one immutable Snapshot cut.
+   */
+  async persistStrongTaskCreationIntent(inputValue: Readonly<{
+    taskId: string;
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: string;
+    snapshotId: string;
+    snapshotContentDigest: string;
+    contextBuildSpec: Readonly<Record<string, unknown>>;
+  }>): Promise<Readonly<Record<string, unknown>>> {
+    const taskId = TaskIdSchema.parse(inputValue.taskId);
+    const idempotencyKey = IdempotencyKeySchema.parse(inputValue.idempotencyKey);
+    const actor = ActorSchema.parse(inputValue.actor);
+    const requestDigest = ContentDigestSchema.parse(inputValue.requestDigest);
+    const snapshotId = PathSafeRepositorySnapshotIdV1Schema.parse(
+      inputValue.snapshotId,
+    );
+    const snapshotContentDigest = ContentDigestSchema.parse(
+      inputValue.snapshotContentDigest,
+    );
+    if (
+      typeof inputValue.contextBuildSpec !== "object" ||
+      inputValue.contextBuildSpec === null ||
+      Array.isArray(inputValue.contextBuildSpec)
+    ) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Strong Task creation context build spec is invalid.",
+      );
+    }
+    const marker = {
+      profile: "strong_task_creation_intent_v1" as const,
+      schemaVersion: 1 as const,
+      taskId,
+      idempotencyKey,
+      actor,
+      requestDigest,
+      snapshotId,
+      snapshotContentDigest,
+      contextBuildSpec: inputValue.contextBuildSpec,
+    };
+    const relativeDirectory =
+      ".understand-code/.recovery/task-creation-intents";
+    const targetPath = path.join(
+      this.layout.worktreeRoot,
+      relativeDirectory,
+      `${taskId}.json`,
+    );
+    await ensureManagedDirectory(this.layout.worktreeRoot, relativeDirectory);
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(taskId),
+      async () => {
+        try {
+          const existing = await readManagedJson(
+            this.layout.worktreeRoot,
+            targetPath,
+          );
+          if (canonicalizeJson(existing) !== canonicalizeJson(marker)) {
+            throw new ArtifactStoreError(
+              "idempotency_conflict",
+              "A different strong Task creation already owns this cut.",
+            );
+          }
+          return marker;
+        } catch (error) {
+          if (
+            !(
+              error instanceof ArtifactStoreError &&
+              error.code === "artifact_not_found"
+            ) &&
+            (error as NodeJS.ErrnoException).code !== "ENOENT"
+          ) throw error;
+        }
+        await atomicWriteJson(this.layout.worktreeRoot, targetPath, marker, {
+          mode: 0o600,
+        });
+        const readback = await readManagedJson(
+          this.layout.worktreeRoot,
+          targetPath,
+        );
+        if (canonicalizeJson(readback) !== canonicalizeJson(marker)) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "Strong Task creation intent read-back mismatch.",
+          );
+        }
+        return marker;
+      },
+      this.#lockOptions,
+    );
+  }
+
+  async readStrongTaskCreationIntent(
+    taskIdValue: string,
+  ): Promise<Readonly<Record<string, unknown>> | undefined> {
+    const taskId = TaskIdSchema.parse(taskIdValue);
+    const relativeDirectory =
+      ".understand-code/.recovery/task-creation-intents";
+    const targetPath = path.join(
+      this.layout.worktreeRoot,
+      relativeDirectory,
+      `${taskId}.json`,
+    );
+    let value: unknown;
+    try {
+      value = await readManagedJson(this.layout.worktreeRoot, targetPath);
+    } catch (error) {
+      if (
+        (error instanceof ArtifactStoreError &&
+          error.code === "artifact_not_found") ||
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) return undefined;
+      throw error;
+    }
+    if (
+      typeof value !== "object" || value === null || Array.isArray(value)
+    ) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Strong Task creation intent marker is invalid.",
+      );
+    }
+    const marker = value as Record<string, unknown>;
+    if (
+      marker.profile !== "strong_task_creation_intent_v1" ||
+      marker.schemaVersion !== 1 ||
+      marker.taskId !== taskId ||
+      typeof marker.idempotencyKey !== "string" ||
+      typeof marker.actor !== "string" ||
+      typeof marker.requestDigest !== "string" ||
+      typeof marker.snapshotId !== "string" ||
+      typeof marker.snapshotContentDigest !== "string" ||
+      typeof marker.contextBuildSpec !== "object" ||
+      marker.contextBuildSpec === null ||
+      Array.isArray(marker.contextBuildSpec)
+    ) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Strong Task creation intent marker has an unsupported shape.",
+      );
+    }
+    return marker;
+  }
+
+  async completeStrongTaskCreationIntent(taskIdValue: string): Promise<void> {
+    const taskId = TaskIdSchema.parse(taskIdValue);
+    const relativeDirectory =
+      ".understand-code/.recovery/task-creation-intents";
+    const targetPath = path.join(
+      this.layout.worktreeRoot,
+      relativeDirectory,
+      `${taskId}.json`,
+    );
+    await withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(taskId),
+      async () => {
+        try {
+          await unlink(targetPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          return;
+        }
+        await fsyncDirectory(
+          path.join(this.layout.worktreeRoot, relativeDirectory),
+        );
+      },
+      this.#lockOptions,
+    );
+  }
+
+  /**
+   * Durable single-envelope transaction intent for a Task Baseline lease.
+   * The envelope binds the exact Git lease plan and Provider blob plan before
+   * either authority is allowed to produce a side effect.
+   */
+  async persistStrongBaselineTransactionIntent(inputValue: Readonly<{
+    taskId: string;
+    markerNonce: string;
+    gitLease: Readonly<Record<string, unknown>>;
+    providerPlan: Readonly<Record<string, unknown>>;
+  }>): Promise<Readonly<{
+    markerContentDigest: ContentDigest;
+    markerRelativePath: string;
+    marker: Readonly<Record<string, unknown>>;
+  }>> {
+    const taskId = TaskIdSchema.parse(inputValue.taskId);
+    if (!/^[0-9a-f]{32}$/u.test(inputValue.markerNonce)) {
+      throw new ArtifactStoreError("revision_conflict", "Baseline marker nonce is invalid.");
+    }
+    const marker = {
+      gitLease: inputValue.gitLease,
+      profile: "task_baseline_transaction_intent_v1" as const,
+      providerPlan: inputValue.providerPlan,
+      schemaVersion: 1 as const,
+    };
+    const canonical = canonicalizeJson(marker);
+    // The native descriptor-bound verifier consumes this envelope byte-for-
+    // byte.  It is written through atomicWriteFile below (no terminal LF).
+    const persistedBytes = Buffer.from(canonical, "utf8");
+    const markerContentDigest = sha256Bytes(persistedBytes);
+    const markerRelativePath =
+      `.understand-code/.recovery/task-baseline-transactions/${taskId}-${inputValue.markerNonce}.json`;
+    const targetPath = path.join(this.layout.worktreeRoot, markerRelativePath);
+    await ensureManagedDirectory(
+      this.layout.worktreeRoot,
+      ".understand-code/.recovery/task-baseline-transactions",
+    );
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(taskId),
+      async () => {
+        try {
+          const existing = await readManagedJson(this.layout.worktreeRoot, targetPath);
+          if (canonicalizeJson(existing) !== canonical) {
+            throw new ArtifactStoreError(
+              "idempotency_conflict",
+              "A different baseline transaction already owns this cut.",
+            );
+          }
+          return { markerContentDigest, markerRelativePath, marker };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        // The native SafeGit lease gate pins the exact canonical marker bytes
+        // (including their digest) through a descriptor-relative handle.  Keep
+        // this transaction envelope newline-free so the bytes hashed here are
+        // exactly the bytes the native side reads; the ordinary JSON artifact
+        // writer's trailing newline would otherwise create a split-brain hash.
+        await atomicWriteFile(this.layout.worktreeRoot, targetPath, canonical, {
+          mode: 0o600,
+        });
+        const readback = await readManagedJson(this.layout.worktreeRoot, targetPath);
+        if (canonicalizeJson(readback) !== canonical) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "Baseline transaction marker read-back mismatch.",
+          );
+        }
+        return { markerContentDigest, markerRelativePath, marker };
+      },
+      this.#lockOptions,
+    );
+  }
+
+  /**
+   * Reads the single baseline transaction envelope created before the Git
+   * lease/Provider writes.  Recovery callers use this to recover the exact
+   * Provider baseline locator (including dirty-overlay private blobs) instead
+   * of reconstructing a baseline from a live worktree.
+   */
+  async readStrongBaselineTransactionIntent(inputValue: Readonly<{
+    taskId: string;
+    markerNonce: string;
+  }>): Promise<Readonly<Record<string, unknown>> | undefined> {
+    const taskId = TaskIdSchema.parse(inputValue.taskId);
+    if (!/^[0-9a-f]{32}$/u.test(inputValue.markerNonce)) {
+      throw new ArtifactStoreError("revision_conflict", "Baseline marker nonce is invalid.");
+    }
+    const markerRelativePath =
+      `.understand-code/.recovery/task-baseline-transactions/${taskId}-${inputValue.markerNonce}.json`;
+    const targetPath = path.join(this.layout.worktreeRoot, markerRelativePath);
+    let marker: unknown;
+    try {
+      marker = await readManagedJson(this.layout.worktreeRoot, targetPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+    if (
+      typeof marker !== "object" || marker === null || Array.isArray(marker)
+    ) {
+      throw new ArtifactStoreError("artifact_corrupt", "Baseline transaction marker is invalid.");
+    }
+    const value = marker as Record<string, unknown>;
+    if (
+      value.profile !== "task_baseline_transaction_intent_v1" ||
+      value.schemaVersion !== 1 ||
+      typeof value.gitLease !== "object" || value.gitLease === null ||
+      Array.isArray(value.gitLease) ||
+      typeof value.providerPlan !== "object" || value.providerPlan === null ||
+      Array.isArray(value.providerPlan)
+    ) {
+      throw new ArtifactStoreError("artifact_corrupt", "Baseline transaction marker has an unsupported shape.");
+    }
+    return value;
+  }
+
+  /**
+   * Removes baseline transaction intents only after the corresponding Task
+   * bundle has reached its durable created-stage commit point. Matching is
+   * restricted to one validated TaskId prefix inside the managed recovery
+   * directory, so an orphaned lease can never be silently discarded for a
+   * different Task.
+   */
+  async completeStrongBaselineTransactionIntent(taskIdValue: string): Promise<void> {
+    const taskId = TaskIdSchema.parse(taskIdValue);
+    const relativeDirectory =
+      ".understand-code/.recovery/task-baseline-transactions";
+    const directory = path.join(this.layout.worktreeRoot, relativeDirectory);
+    await withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(taskId),
+      async () => {
+        let entries: string[];
+        try {
+          entries = await readdir(directory);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
+        }
+        const prefix = `${taskId}-`;
+        const matches = entries.filter(
+          (entry) =>
+            entry.startsWith(prefix) &&
+            entry.endsWith(".json") &&
+            /^[0-9a-f]{32}\.json$/u.test(entry.slice(prefix.length)),
+        );
+        for (const entry of matches) {
+          await unlink(path.join(directory, entry));
+        }
+        if (matches.length > 0) await fsyncDirectory(directory);
+      },
+      this.#lockOptions,
+    );
   }
 
   async #verifiedSnapshotDescriptor(
@@ -1854,6 +2298,13 @@ export class ArtifactStore {
         );
       }
       usedEvidenceIds.add(evidence.id);
+      if (!("boundaryReason" in before)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} cannot target a strong Finding Claim.`,
+          { taskId: prepared.taskId, action: action.type, claimId: before.id },
+        );
+      }
       const {
         boundaryReason,
         derivationPath: _derivationPath,
@@ -1980,6 +2431,7 @@ export class ArtifactStore {
       );
       if (
         target === undefined ||
+        "profile" in target ||
         target.status !== "skipped" ||
         target.skipAcceptance !== undefined
       ) {
@@ -2097,15 +2549,21 @@ export class ArtifactStore {
           )
         : new Set<string>();
     const expected = {
-      claims: currentClaims.payload.claims.map((claim) => ({
-        ...claim,
-        findingIds: claim.findingIds.filter(
+      claims: currentClaims.payload.claims.flatMap<unknown>((claim) => {
+        const findingIds = (claim.findingIds as readonly string[]).filter(
           (findingId) => !removedFindingIds.has(findingId),
-        ),
-        verificationRecordIds: claim.verificationRecordIds.filter(
-          (recordId) => !removedVerificationIds.has(recordId),
-        ),
-      })),
+        );
+        if (!("verificationRecordIds" in claim)) {
+          return findingIds.length === 0 ? [] : [{ ...claim, findingIds }];
+        }
+        return [{
+          ...claim,
+          findingIds,
+          verificationRecordIds: claim.verificationRecordIds.filter(
+            (recordId) => !removedVerificationIds.has(recordId),
+          ),
+        }];
+      }),
     };
     if (
       canonicalizeJson(expected) !==
@@ -2222,7 +2680,7 @@ export class ArtifactStore {
         .filter(
           (finding) =>
             finding.claimIds.includes(before.id) &&
-            !before.findingIds.includes(finding.id),
+            !(before.findingIds as readonly string[]).includes(finding.id),
         )
         .map((finding) => finding.id);
       const expected = {
@@ -2271,7 +2729,7 @@ export class ArtifactStore {
       const appendedClaimIds = appendedClaims
         .filter(
           (claim) =>
-            claim.evidenceIds.includes(before.id) &&
+            (claim.evidenceIds as readonly string[]).includes(before.id) &&
             findings.some(
               (finding) =>
                 finding.claimIds.includes(claim.id) &&
@@ -2429,7 +2887,8 @@ export class ArtifactStore {
     for (let index = 0; index < beforeClaims.length; index += 1) {
       const before = beforeClaims[index]!;
       const after = afterClaims[index]!;
-      const expected = appendedRecord.claimIds.includes(before.id)
+      const expected = appendedRecord.claimIds.includes(before.id) &&
+          "verificationRecordIds" in before
         ? {
             ...before,
             verificationRecordIds: [
@@ -6130,6 +6589,12 @@ export class ArtifactStore {
           evidence: (payload("evidence_ledger") as { evidence?: unknown })
             .evidence,
           impactPaths: (payload("impact") as { paths?: unknown }).paths,
+          ...((payload("impact") as { conclusion?: unknown }).conclusion === undefined
+            ? {}
+            : {
+                impactConclusion: (payload("impact") as { conclusion: unknown })
+                  .conclusion,
+              }),
           changeChecks: byType.has("change_check")
             ? [payload("change_check")]
             : [],

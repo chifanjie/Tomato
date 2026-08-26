@@ -13,6 +13,7 @@ import {
   isTaskOrdinaryTransitionV1,
   type ChangeCheckV1,
   type ClaimV1,
+  type EvidenceBackedChangeCheckV1,
   type EvidenceV1,
   type ImpactPathV1,
   type TaskArtifactBundleV1,
@@ -21,6 +22,9 @@ import {
   type TaskOperationReceiptV1,
   type TaskTransitionTargetV1,
   type UpdateTaskInputV1,
+  type PersistedClaimV1,
+  type PersistedEvidenceV1,
+  type StrongVerificationRecordV1,
   type VerificationRecordV1,
 } from "@understand-code/contracts";
 
@@ -39,11 +43,11 @@ import {
 interface MutableTaskData {
   manifest: TaskManifestV1;
   brief?: Extract<TaskArtifactBundleV1, { brief: unknown }>["brief"];
-  claims: ClaimV1[];
-  evidence: EvidenceV1[];
+  claims: PersistedClaimV1[];
+  evidence: PersistedEvidenceV1[];
   impactPaths: Extract<TaskArtifactBundleV1, { impactPaths: unknown }>["impactPaths"];
-  changeChecks: ChangeCheckV1[];
-  verificationRecords: VerificationRecordV1[];
+  changeChecks: Array<ChangeCheckV1 | EvidenceBackedChangeCheckV1>;
+  verificationRecords: Array<VerificationRecordV1 | StrongVerificationRecordV1>;
 }
 
 export interface RebuiltTaskContextV1 {
@@ -92,8 +96,9 @@ function clearSnapshotBoundProjections(data: MutableTaskData): void {
   const removedVerificationIds = new Set(
     data.verificationRecords.map((record) => record.id),
   );
-  data.claims = data.claims.map((claim) =>
-    ClaimV1Schema.parse({
+  data.claims = data.claims
+    .filter((claim) => "verificationRecordIds" in claim)
+    .map((claim) => ClaimV1Schema.parse({
       ...claim,
       findingIds: claim.findingIds.filter(
         (findingId) => !removedFindingIds.has(findingId),
@@ -101,8 +106,7 @@ function clearSnapshotBoundProjections(data: MutableTaskData): void {
       verificationRecordIds: claim.verificationRecordIds.filter(
         (recordId) => !removedVerificationIds.has(recordId),
       ),
-    }),
-  );
+    }));
   data.changeChecks = [];
   data.verificationRecords = [];
 }
@@ -262,12 +266,12 @@ function requireClaim(
   kind: ClaimV1["kind"],
 ): ClaimV1 {
   const target = data.claims.find((claim) => claim.id === claimId);
-  if (target === undefined || target.kind !== kind) {
+  if (target === undefined || target.kind !== kind || !("verificationRecordIds" in target)) {
     gateUnsatisfied(data.manifest, data.manifest.status, [
       { code: `${kind}_claim_required`, resourceId: claimId },
     ]);
   }
-  return target;
+  return ClaimV1Schema.parse(target);
 }
 
 function humanConfirmClaims(
@@ -280,6 +284,11 @@ function humanConfirmClaims(
   const selected = new Set(claimIds);
   data.claims = data.claims.map((candidate) => {
     if (!selected.has(candidate.id)) return candidate;
+    if (!("verificationRecordIds" in candidate)) {
+      gateUnsatisfied(data.manifest, data.manifest.status, [
+        { code: "context_claim_required", resourceId: candidate.id },
+      ]);
+    }
     const evidenceId = stableId("evidence:human", {
       taskId: data.manifest.taskId,
       eventId,
@@ -326,27 +335,28 @@ function humanConfirmClaims(
   });
 }
 
-function latestCheck(data: MutableTaskData): ChangeCheckV1 | undefined {
+function latestCheck(data: MutableTaskData): ChangeCheckV1 | EvidenceBackedChangeCheckV1 | undefined {
   return [...data.changeChecks].sort(
     (left, right) => right.taskRevision - left.taskRevision,
   )[0];
 }
 
 function isLegacyEmptyChangeCheck(
-  check: ChangeCheckV1 | undefined,
+  check: ChangeCheckV1 | EvidenceBackedChangeCheckV1 | undefined,
 ): boolean {
   return (
     check !== undefined &&
+    !("profile" in check) &&
     classifyChangeCheckV1(check).profile === "legacy_summary" &&
     check.findings.length === 0
   );
 }
 
 function latestVerification(
-  records: readonly VerificationRecordV1[],
+  records: readonly (VerificationRecordV1 | StrongVerificationRecordV1)[],
   planEntryId: string,
   snapshotId: string,
-): VerificationRecordV1 | undefined {
+): VerificationRecordV1 | StrongVerificationRecordV1 | undefined {
   return records
     .filter(
       (record) =>
@@ -605,6 +615,7 @@ function applyTransition(
         (record.status !== "passed" &&
           !(
             record.status === "skipped" &&
+            "skipAcceptance" in record &&
             record.skipAcceptance !== undefined
           ))
       ) {
@@ -868,6 +879,7 @@ function applyAction(
       if (
         record === undefined ||
         record.status !== "skipped" ||
+        "profile" in record ||
         record.skipAcceptance !== undefined ||
         record.snapshotId !== data.manifest.latestSnapshotId
       ) {

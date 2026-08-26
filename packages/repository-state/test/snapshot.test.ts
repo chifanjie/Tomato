@@ -176,7 +176,7 @@ describe("getRepositorySnapshot", () => {
     });
   });
 
-  it("parses the second NUL path of a staged rename", async () => {
+  it("degrades a staged rename to deterministic delete plus add", async () => {
     const root = initializeRepository({ "src/old name.ts": "export {};\n" });
     git(root, ["mv", "--", "src/old name.ts", "src/新 name.ts"]);
 
@@ -184,14 +184,18 @@ describe("getRepositorySnapshot", () => {
     expect(snapshot.changes).toEqual([
       expect.objectContaining({
         source: "staged",
-        kind: "renamed",
-        oldPath: "src/old name.ts",
+        kind: "deleted",
+        path: "src/old name.ts",
+      }),
+      expect.objectContaining({
+        source: "staged",
+        kind: "added",
         path: "src/新 name.ts",
       }),
     ]);
   });
 
-  it("detects a staged copy without misclassifying it as an add", async () => {
+  it("does not infer staged copies from content similarity", async () => {
     const root = initializeRepository({ "src/source.ts": "export {};\n" });
     writeRepositoryFile(root, "src/copied.ts", "export {};\n");
     git(root, ["add", "--", "src/copied.ts"]);
@@ -200,8 +204,7 @@ describe("getRepositorySnapshot", () => {
     expect(snapshot.changes).toEqual([
       expect.objectContaining({
         source: "staged",
-        kind: "copied",
-        oldPath: "src/source.ts",
+        kind: "added",
         path: "src/copied.ts",
       }),
     ]);

@@ -58,23 +58,1099 @@
         "evidence": {
           "type": "array",
           "items": {
-            "oneOf": [
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "freshness": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "changed",
+                          "stale",
+                          "invalid"
+                        ]
+                      },
+                      "claimIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "producedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "observedAtSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "derivationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "evidence"
+                                },
+                                "evidenceId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "evidenceId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "graph_relation"
+                                },
+                                "relationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "relationId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rule"
+                                },
+                                "ruleId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ruleId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "assumption"
+                                },
+                                "claimId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "claimId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "freshnessReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "invalidatedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "invalidationReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "source",
+                          "config",
+                          "test",
+                          "document"
+                        ]
+                      },
+                      "epistemicStatus": {
+                        "type": "string",
+                        "enum": [
+                          "observed",
+                          "inferred"
+                        ]
+                      },
+                      "filePath": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "lineRange": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "commit": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "contentHash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "freshness",
+                      "claimIds",
+                      "nodeIds",
+                      "producedBy",
+                      "createdAt",
+                      "observedAtSnapshotId",
+                      "kind",
+                      "epistemicStatus",
+                      "filePath",
+                      "contentHash"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "freshness": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "changed",
+                          "stale",
+                          "invalid"
+                        ]
+                      },
+                      "claimIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "producedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "observedAtSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "derivationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "evidence"
+                                },
+                                "evidenceId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "evidenceId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "graph_relation"
+                                },
+                                "relationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "relationId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rule"
+                                },
+                                "ruleId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ruleId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "assumption"
+                                },
+                                "claimId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "claimId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "freshnessReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "invalidatedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "invalidationReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "git"
+                      },
+                      "epistemicStatus": {
+                        "type": "string",
+                        "const": "observed"
+                      },
+                      "commit": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "contentHash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "freshness",
+                      "claimIds",
+                      "nodeIds",
+                      "producedBy",
+                      "createdAt",
+                      "observedAtSnapshotId",
+                      "kind",
+                      "epistemicStatus",
+                      "commit"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "freshness": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "changed",
+                          "stale",
+                          "invalid"
+                        ]
+                      },
+                      "claimIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "producedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "observedAtSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "derivationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "evidence"
+                                },
+                                "evidenceId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "evidenceId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "graph_relation"
+                                },
+                                "relationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "relationId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rule"
+                                },
+                                "ruleId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ruleId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "assumption"
+                                },
+                                "claimId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "claimId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "freshnessReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "invalidatedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "invalidationReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "graph_path"
+                      },
+                      "epistemicStatus": {
+                        "type": "string",
+                        "enum": [
+                          "observed",
+                          "inferred"
+                        ]
+                      },
+                      "relationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "contentHash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "freshness",
+                      "claimIds",
+                      "nodeIds",
+                      "producedBy",
+                      "createdAt",
+                      "observedAtSnapshotId",
+                      "kind",
+                      "epistemicStatus",
+                      "relationPath"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "freshness": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "changed",
+                          "stale",
+                          "invalid"
+                        ]
+                      },
+                      "claimIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "producedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "observedAtSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "derivationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "evidence"
+                                },
+                                "evidenceId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "evidenceId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "graph_relation"
+                                },
+                                "relationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "relationId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rule"
+                                },
+                                "ruleId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ruleId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "assumption"
+                                },
+                                "claimId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "claimId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "freshnessReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "invalidatedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "invalidationReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "human"
+                      },
+                      "epistemicStatus": {
+                        "type": "string",
+                        "const": "human_confirmed"
+                      },
+                      "confirmation": {
+                        "type": "object",
+                        "properties": {
+                          "actor": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "input": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "confirmedAt": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                          }
+                        },
+                        "required": [
+                          "actor",
+                          "input",
+                          "confirmedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "freshness",
+                      "claimIds",
+                      "nodeIds",
+                      "producedBy",
+                      "createdAt",
+                      "observedAtSnapshotId",
+                      "kind",
+                      "epistemicStatus",
+                      "confirmation"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "freshness": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "changed",
+                          "stale",
+                          "invalid"
+                        ]
+                      },
+                      "claimIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "producedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "observedAtSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "derivationPath": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "evidence"
+                                },
+                                "evidenceId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "evidenceId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "graph_relation"
+                                },
+                                "relationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "relationId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rule"
+                                },
+                                "ruleId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ruleId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "assumption"
+                                },
+                                "claimId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16384
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "claimId",
+                                "description"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "freshnessReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "invalidatedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                      },
+                      "invalidationReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "analysis_boundary"
+                      },
+                      "epistemicStatus": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "boundaryReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "relationPath": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "freshness",
+                      "claimIds",
+                      "nodeIds",
+                      "producedBy",
+                      "createdAt",
+                      "observedAtSnapshotId",
+                      "kind",
+                      "epistemicStatus",
+                      "boundaryReason",
+                      "relationPath"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
               {
                 "type": "object",
                 "properties": {
                   "id": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                    "pattern": "^diff-evidence:[0-9a-f]{22}$"
+                  },
+                  "profile": {
+                    "type": "string",
+                    "const": "evidence_backed_v1"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "diff_hunk"
+                  },
+                  "epistemicStatus": {
+                    "type": "string",
+                    "const": "observed"
                   },
                   "freshness": {
                     "type": "string",
-                    "enum": [
-                      "current",
-                      "changed",
-                      "stale",
-                      "invalid"
-                    ]
+                    "const": "current"
                   },
                   "claimIds": {
                     "type": "array",
@@ -103,819 +1179,233 @@
                   },
                   "observedAtSnapshotId": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "derivationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "evidence"
-                            },
-                            "evidenceId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "evidenceId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "graph_relation"
-                            },
-                            "relationId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "relationId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rule"
-                            },
-                            "ruleId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "ruleId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "assumption"
-                            },
-                            "claimId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "claimId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    }
-                  },
-                  "freshnessReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "invalidatedAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "invalidationReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "source",
-                      "config",
-                      "test",
-                      "document"
-                    ]
-                  },
-                  "epistemicStatus": {
-                    "type": "string",
-                    "enum": [
-                      "observed",
-                      "inferred"
-                    ]
+                    "pattern": "^snapshot-[0-9a-f]{64}$"
                   },
                   "filePath": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4096
                   },
-                  "lineRange": {
-                    "type": "array",
-                    "prefixItems": [
-                      {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      }
-                    ]
-                  },
-                  "excerpt": {
-                    "type": "string",
-                    "maxLength": 8192
-                  },
-                  "commit": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "contentHash": {
-                    "type": "string",
-                    "pattern": "^sha256:[0-9a-f]{64}$"
-                  }
-                },
-                "required": [
-                  "id",
-                  "freshness",
-                  "claimIds",
-                  "nodeIds",
-                  "producedBy",
-                  "createdAt",
-                  "observedAtSnapshotId",
-                  "kind",
-                  "epistemicStatus",
-                  "filePath",
-                  "contentHash"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "freshness": {
-                    "type": "string",
-                    "enum": [
-                      "current",
-                      "changed",
-                      "stale",
-                      "invalid"
-                    ]
-                  },
-                  "claimIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "nodeIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "producedBy": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "createdAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "observedAtSnapshotId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "derivationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "evidence"
-                            },
-                            "evidenceId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "evidenceId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "graph_relation"
-                            },
-                            "relationId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "relationId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rule"
-                            },
-                            "ruleId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "ruleId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "assumption"
-                            },
-                            "claimId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "claimId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    }
-                  },
-                  "freshnessReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "invalidatedAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "invalidationReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "git"
-                  },
-                  "epistemicStatus": {
-                    "type": "string",
-                    "const": "observed"
-                  },
-                  "commit": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "contentHash": {
-                    "type": "string",
-                    "pattern": "^sha256:[0-9a-f]{64}$"
-                  }
-                },
-                "required": [
-                  "id",
-                  "freshness",
-                  "claimIds",
-                  "nodeIds",
-                  "producedBy",
-                  "createdAt",
-                  "observedAtSnapshotId",
-                  "kind",
-                  "epistemicStatus",
-                  "commit"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "freshness": {
-                    "type": "string",
-                    "enum": [
-                      "current",
-                      "changed",
-                      "stale",
-                      "invalid"
-                    ]
-                  },
-                  "claimIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "nodeIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "producedBy": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "createdAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "observedAtSnapshotId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "derivationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "evidence"
-                            },
-                            "evidenceId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "evidenceId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "graph_relation"
-                            },
-                            "relationId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "relationId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rule"
-                            },
-                            "ruleId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "ruleId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "assumption"
-                            },
-                            "claimId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "claimId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    }
-                  },
-                  "freshnessReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "invalidatedAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "invalidationReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "graph_path"
-                  },
-                  "epistemicStatus": {
-                    "type": "string",
-                    "enum": [
-                      "observed",
-                      "inferred"
-                    ]
-                  },
-                  "relationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "contentHash": {
-                    "type": "string",
-                    "pattern": "^sha256:[0-9a-f]{64}$"
-                  }
-                },
-                "required": [
-                  "id",
-                  "freshness",
-                  "claimIds",
-                  "nodeIds",
-                  "producedBy",
-                  "createdAt",
-                  "observedAtSnapshotId",
-                  "kind",
-                  "epistemicStatus",
-                  "relationPath"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "freshness": {
-                    "type": "string",
-                    "enum": [
-                      "current",
-                      "changed",
-                      "stale",
-                      "invalid"
-                    ]
-                  },
-                  "claimIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "nodeIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "producedBy": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "createdAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "observedAtSnapshotId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "derivationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "evidence"
-                            },
-                            "evidenceId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "evidenceId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "graph_relation"
-                            },
-                            "relationId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "relationId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rule"
-                            },
-                            "ruleId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "ruleId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "assumption"
-                            },
-                            "claimId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "claimId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    }
-                  },
-                  "freshnessReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "invalidatedAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "invalidationReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "human"
-                  },
-                  "epistemicStatus": {
-                    "type": "string",
-                    "const": "human_confirmed"
-                  },
-                  "confirmation": {
+                  "hunk": {
                     "type": "object",
                     "properties": {
-                      "actor": {
+                      "id": {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256
+                        "pattern": "^diff-hunk:[0-9a-f]{22}$"
                       },
-                      "input": {
+                      "algorithm": {
+                        "type": "string",
+                        "const": "diff-lines-v1"
+                      },
+                      "baselineSnapshotId": {
+                        "type": "string",
+                        "pattern": "^snapshot-[0-9a-f]{64}$"
+                      },
+                      "actualSnapshotId": {
+                        "type": "string",
+                        "pattern": "^snapshot-[0-9a-f]{64}$"
+                      },
+                      "path": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 4096
                       },
-                      "confirmedAt": {
+                      "oldPath": {
                         "type": "string",
-                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "beforeContent": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "const": "absent"
+                              }
+                            },
+                            "required": [
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "const": "content"
+                              },
+                              "contentDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "contentDigest"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "afterContent": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "const": "absent"
+                              }
+                            },
+                            "required": [
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "const": "content"
+                              },
+                              "contentDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "contentDigest"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "oldSpan": {
+                        "type": "object",
+                        "properties": {
+                          "startLine": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "lineCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startLine",
+                          "lineCount"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "newSpan": {
+                        "type": "object",
+                        "properties": {
+                          "startLine": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "lineCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startLine",
+                          "lineCount"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "sourceLayers": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "baseline_reconciliation",
+                            "committed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflict"
+                          ]
+                        }
+                      },
+                      "operations": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "op": {
+                              "type": "string",
+                              "enum": [
+                                "equal",
+                                "delete",
+                                "insert"
+                              ]
+                            },
+                            "lineDigest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "op",
+                            "lineDigest"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "operationsDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "patchDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
                       }
                     },
                     "required": [
-                      "actor",
-                      "input",
-                      "confirmedAt"
+                      "id",
+                      "algorithm",
+                      "baselineSnapshotId",
+                      "actualSnapshotId",
+                      "path",
+                      "beforeContent",
+                      "afterContent",
+                      "oldSpan",
+                      "newSpan",
+                      "sourceLayers",
+                      "operations",
+                      "operationsDigest",
+                      "patchDigest"
                     ],
                     "additionalProperties": false
                   }
                 },
                 "required": [
                   "id",
+                  "profile",
+                  "kind",
+                  "epistemicStatus",
                   "freshness",
                   "claimIds",
                   "nodeIds",
                   "producedBy",
                   "createdAt",
                   "observedAtSnapshotId",
-                  "kind",
-                  "epistemicStatus",
-                  "confirmation"
+                  "filePath",
+                  "hunk"
                 ],
                 "additionalProperties": false
               },
@@ -924,169 +1414,11 @@
                 "properties": {
                   "id": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                    "pattern": "^boundary-evidence:[0-9a-f]{22}$"
                   },
-                  "freshness": {
+                  "profile": {
                     "type": "string",
-                    "enum": [
-                      "current",
-                      "changed",
-                      "stale",
-                      "invalid"
-                    ]
-                  },
-                  "claimIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "nodeIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    }
-                  },
-                  "producedBy": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "createdAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "observedAtSnapshotId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "derivationPath": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "evidence"
-                            },
-                            "evidenceId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "evidenceId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "graph_relation"
-                            },
-                            "relationId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "relationId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rule"
-                            },
-                            "ruleId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "ruleId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "assumption"
-                            },
-                            "claimId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
-                            },
-                            "description": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 16384
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "claimId",
-                            "description"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    }
-                  },
-                  "freshnessReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
-                  },
-                  "invalidatedAt": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
-                  },
-                  "invalidationReason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
+                    "const": "evidence_backed_v1"
                   },
                   "kind": {
                     "type": "string",
@@ -1096,32 +1428,263 @@
                     "type": "string",
                     "const": "unknown"
                   },
-                  "boundaryReason": {
+                  "freshness": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16384
+                    "const": "current"
                   },
-                  "relationPath": {
+                  "claimIds": {
                     "type": "array",
                     "items": {
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 256
                     }
+                  },
+                  "nodeIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "producedBy": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                  },
+                  "observedAtSnapshotId": {
+                    "type": "string",
+                    "pattern": "^snapshot-[0-9a-f]{64}$"
+                  },
+                  "boundary": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^analysis-boundary:[0-9a-f]{22}$"
+                      },
+                      "stage": {
+                        "type": "string",
+                        "enum": [
+                          "baseline_capture",
+                          "repository_delta",
+                          "content_domain",
+                          "diff",
+                          "parse",
+                          "symbol_mapping",
+                          "planned_matching",
+                          "impact_analysis",
+                          "verification_coverage",
+                          "security_policy",
+                          "integrity"
+                        ]
+                      },
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "sensitive_path",
+                          "secret_detected",
+                          "binary_content",
+                          "invalid_utf8",
+                          "invalid_repository_metadata",
+                          "unsafe_git_ref",
+                          "unrepresentable_path",
+                          "security_scan_unit_oversized",
+                          "security_scan_capture_limit",
+                          "unsupported_transform",
+                          "sparse_checkout",
+                          "conflict_without_final_bytes",
+                          "special_file",
+                          "symlink_boundary",
+                          "unavailable_content",
+                          "unstable_read",
+                          "missing_git_object",
+                          "unpinned_git_object",
+                          "budget_exhausted",
+                          "baseline_blob_budget_exhausted",
+                          "private_store_blob_quota_exhausted",
+                          "parser_unsupported",
+                          "parser_error",
+                          "ambiguous_symbol",
+                          "ambiguous_lineage",
+                          "graph_incomplete",
+                          "dynamic_dependency",
+                          "unsupported_verification_method",
+                          "ambiguous_verification_coverage",
+                          "policy_error",
+                          "artifact_integrity_error"
+                        ]
+                      },
+                      "scope": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "repository"
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "path"
+                              },
+                              "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "redacted_path_set"
+                              },
+                              "count": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "count"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "hunk"
+                              },
+                              "hunkId": {
+                                "type": "string",
+                                "pattern": "^diff-hunk:[0-9a-f]{22}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "hunkId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "symbol"
+                              },
+                              "symbolRefId": {
+                                "type": "string",
+                                "pattern": "^source-symbol-ref:[0-9a-f]{22}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "symbolRefId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "claim"
+                              },
+                              "claimId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "claimId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "verification_plan_entry"
+                              },
+                              "verificationPlanEntryId": {
+                                "type": "string",
+                                "pattern": "^verification-plan:[0-9a-f]{22}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "verificationPlanEntryId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "recovery": {
+                        "type": "string",
+                        "enum": [
+                          "retry_after_refresh",
+                          "manual_inspection",
+                          "restore_artifact",
+                          "use_supported_repository_configuration",
+                          "reduce_scope",
+                          "increase_deterministic_budget",
+                          "increase_store_quota_or_cleanup",
+                          "supersede_task",
+                          "none"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "stage",
+                      "code",
+                      "scope",
+                      "recovery"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
                   "id",
+                  "profile",
+                  "kind",
+                  "epistemicStatus",
                   "freshness",
                   "claimIds",
                   "nodeIds",
                   "producedBy",
                   "createdAt",
                   "observedAtSnapshotId",
-                  "kind",
-                  "epistemicStatus",
-                  "boundaryReason",
-                  "relationPath"
+                  "boundary"
                 ],
                 "additionalProperties": false
               }

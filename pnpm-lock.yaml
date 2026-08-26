@@ -259,6 +259,9 @@ importers:
       '@understand-code/durable-object-provider-contracts':
         specifier: workspace:*
         version: link:../durable-object-provider-contracts
+      '@understand-code/durable-object-provider-runtime':
+        specifier: workspace:*
+        version: link:../durable-object-provider-runtime
       '@understand-code/native-kernel-bridge':
         specifier: workspace:*
         version: link:../native-kernel-bridge
@@ -278,13 +281,16 @@ importers:
       '@understand-code/durable-object-provider-contracts':
         specifier: workspace:*
         version: link:../durable-object-provider-contracts
+      '@understand-code/durable-object-provider-runtime':
+        specifier: workspace:*
+        version: link:../durable-object-provider-runtime
+      '@understand-code/native-kernel-bridge':
+        specifier: workspace:*
+        version: link:../native-kernel-bridge
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
-      '@understand-code/durable-object-provider-runtime':
-        specifier: workspace:*
-        version: link:../durable-object-provider-runtime
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

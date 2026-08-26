@@ -8,8 +8,8 @@ import {
   type EvidenceFreshnessV1,
   type EvidenceV1,
   type ImpactPathV1,
-  type RepoPulseV1,
-  type RepositorySnapshotV1,
+  type RepoPulsePersistedPayloadV1,
+  type RepositorySnapshotPersistedPayloadV1,
 } from "@understand-code/contracts";
 
 import type {
@@ -17,7 +17,7 @@ import type {
   SourceEvidenceRecord,
   TaskContextData,
 } from "./engine-types.js";
-import { stableId } from "./ids.js";
+import { sha256CanonicalJson, stableId } from "./ids.js";
 import { traceImpact } from "./impact.js";
 import { rankCandidates } from "./ranking.js";
 import { compareUnicodeCodeUnits } from "./stable-order.js";
@@ -27,9 +27,10 @@ export interface BuildContextDraftInput {
   intent: string;
   snapshotId: string;
   createdAt: string;
-  pulse: RepoPulseV1;
-  repositorySnapshot: RepositorySnapshotV1;
+  pulse: RepoPulsePersistedPayloadV1;
+  repositorySnapshot: RepositorySnapshotPersistedPayloadV1;
   context: TaskContextData;
+  contextGenerationId?: string;
   scope?: readonly string[];
   tokenBudget?: number;
   maxCandidates?: number;
@@ -53,7 +54,7 @@ function claim(
 }
 
 function evidenceFreshness(
-  pulse: RepoPulseV1,
+  pulse: RepoPulsePersistedPayloadV1,
   freshConclusion: boolean,
 ): EvidenceFreshnessV1 {
   return pulse.status === "stale" || !freshConclusion
@@ -632,25 +633,52 @@ export function buildContextDraft(
         candidateFilePaths.get(candidate.nodeId)!,
         candidate.freshConclusion,
       );
+      const expectation = plannedChangeExpectation(level);
+      const filePath = candidateFilePaths.get(candidate.nodeId)!;
+      const symbolId = candidate.node.type === "file"
+        ? undefined
+        : candidate.nodeId;
+      const intent =
+        `Inspect and, if confirmed, update ${candidate.node.name} for the requested task.`;
+      const claimIds = [recommendationByNode.get(candidate.nodeId)!];
+      const impactPathIds = impactIdsByStart.get(candidate.nodeId) ?? [];
+      const intentDigest = sha256CanonicalJson([
+        "planned-change-intent-v1",
+        { intent },
+      ]);
       return {
-        id: stableId("planned-change", {
-          taskId: input.taskId,
-          nodeId: candidate.nodeId,
-        }),
-        expectation: plannedChangeExpectation(level),
+        id: input.contextGenerationId === undefined
+          ? stableId("planned-change", {
+              taskId: input.taskId,
+              nodeId: candidate.nodeId,
+            })
+          : stableId("planned-change", [
+              "planned-change-v1",
+              {
+                taskId: input.taskId,
+                contextGenerationId: input.contextGenerationId,
+                filePath,
+                ...(symbolId === undefined ? {} : { symbolId }),
+                expectation,
+                intentDigest,
+                claimIds,
+                impactPathIds,
+              },
+            ]),
+        expectation,
         candidateLevel: level,
-        filePath: candidateFilePaths.get(candidate.nodeId)!,
-        ...(candidate.node.type === "file"
-          ? {}
-          : { symbolId: candidate.nodeId }),
-        intent:
-          `Inspect and, if confirmed, update ${candidate.node.name} for the requested task.`,
-        claimIds: [recommendationByNode.get(candidate.nodeId)!],
-        impactPathIds: impactIdsByStart.get(candidate.nodeId) ?? [],
+        filePath,
+        ...(symbolId === undefined ? {} : { symbolId }),
+        intent,
+        claimIds,
+        impactPathIds,
       };
     });
 
   const brief = TaskBriefV1Schema.parse({
+    ...(input.contextGenerationId === undefined
+      ? {}
+      : { contextGenerationId: input.contextGenerationId }),
     originalIntent: input.intent,
     goalClaimId,
     nonGoalClaimIds: [],
@@ -662,10 +690,21 @@ export function buildContextDraft(
     unknownClaimIds,
     verificationPlan: [
       {
-        id: stableId("verification-plan", {
-          taskId: input.taskId,
-          acceptanceClaimId,
-        }),
+        id: input.contextGenerationId === undefined
+          ? stableId("verification-plan", {
+              taskId: input.taskId,
+              acceptanceClaimId,
+            })
+          : stableId("verification-plan", [
+              "verification-plan-v1",
+              {
+                taskId: input.taskId,
+                contextGenerationId: input.contextGenerationId,
+                acceptanceClaimIds: [acceptanceClaimId],
+                method: "test",
+                required: true,
+              },
+            ]),
         acceptanceClaimIds: [acceptanceClaimId],
         method: "test",
         description:

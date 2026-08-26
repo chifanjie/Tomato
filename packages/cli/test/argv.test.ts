@@ -9,6 +9,42 @@ describe("CLI arguments", () => {
     ).toEqual({ kind: "mcp", rootCandidates: ["/tmp/repository"] });
   });
 
+  it("accepts one explicit absolute Provider service installation selector", () => {
+    expect(
+      parseCliArguments([
+        "mcp",
+        "--stdio",
+        "--root",
+        "/tmp/repository",
+        "--installation-root",
+        "/var/lib/understand-code/provider-authority",
+      ]),
+    ).toEqual({
+      kind: "mcp",
+      rootCandidates: ["/tmp/repository"],
+      canonicalInstallationRoot:
+        "/var/lib/understand-code/provider-authority",
+    });
+    expect(() =>
+      parseCliArguments([
+        "mcp",
+        "--stdio",
+        "--installation-root",
+        "relative-provider-root",
+      ])
+    ).toThrow(CliArgumentError);
+    expect(() =>
+      parseCliArguments([
+        "mcp",
+        "--stdio",
+        "--installation-root",
+        "/var/lib/provider-a",
+        "--installation-root",
+        "/var/lib/provider-b",
+      ])
+    ).toThrow(CliArgumentError);
+  });
+
   it("accepts only an absolute signed config for the private provider service", () => {
     expect(
       parseCliArguments([

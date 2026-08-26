@@ -149,6 +149,27 @@ export {
   renderProviderServiceDescriptorV1,
   verifyProviderServiceHandoffConfigV1,
 } from "./service-handoff.js";
+export {
+  PROVIDER_PRODUCTION_STRONG_CLIENT_DESCRIPTOR_PROFILE_V1,
+  PROVIDER_PRODUCTION_STRONG_CLIENT_DESCRIPTOR_SUFFIX_V1,
+  PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1,
+  PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_PROFILE_V1,
+  PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_ROLLBACK_FILE_V1,
+  PROVIDER_PRODUCTION_STRONG_OBJECT_GATEWAY_SOCKET_FILE_V1,
+  installProviderProductionStrongClientTrustV1,
+  providerProductionStrongClientDescriptorPathV1,
+  providerProductionStrongClientGatewayDirectoryPathV1,
+  providerProductionStrongClientGatewaySocketPathV1,
+  rollbackProviderProductionStrongClientTrustV1,
+  rotateProviderProductionStrongClientTrustV1,
+  uninstallProviderProductionStrongClientTrustV1,
+} from "./provider-production-strong-client-trust-lifecycle.js";
+export type {
+  InstallProviderProductionStrongClientTrustV1Input,
+  ProviderProductionStrongClientCallerPrincipalV1,
+  ProviderProductionStrongClientTrustLifecycleResultV1,
+  ProviderProductionStrongClientTrustMaterialV1,
+} from "./provider-production-strong-client-trust-lifecycle.js";
 export type {
   ProviderServiceDescriptorFormatV1,
   ProviderServiceDescriptorV1,

@@ -6,6 +6,12 @@ import {
   VerificationRecordV1Schema,
 } from "./change.js";
 import {
+  EvidenceBackedChangeCheckV1Schema,
+  StrongChangeCheckMutationOutcomeV1Schema,
+  StrongVerificationMutationOutcomeV1Schema,
+  StrongVerificationRecordV1Schema,
+} from "./strong-change-intelligence.js";
+import {
   ClaimIdSchema,
   ContentDigestSchema,
   EvidenceIdSchema,
@@ -33,13 +39,35 @@ const BuildTaskBriefReceiptResultV1Schema =
   });
 
 const CheckChangeReceiptResultV1Schema = z.strictObject({
-  changeCheck: ChangeCheckV1Schema,
+  changeCheck: z.union([ChangeCheckV1Schema, EvidenceBackedChangeCheckV1Schema]),
   mutation: MutationResultV1Schema,
+  strongOutcome: StrongChangeCheckMutationOutcomeV1Schema.optional(),
+}).superRefine((result, context) => {
+  const strong = "analysis" in result.changeCheck && result.changeCheck.analysis.profile === "evidence_backed_v1";
+  if (strong !== (result.strongOutcome !== undefined)) {
+    context.addIssue({ code: "custom", path: ["strongOutcome"], message: "strong Check receipts retain the complete public outcome for crash replay" });
+  } else if (result.strongOutcome !== undefined && (
+    result.strongOutcome.idempotentReplay ||
+    result.strongOutcome.changeCheck.id !== result.changeCheck.id
+  )) {
+    context.addIssue({ code: "custom", path: ["strongOutcome"], message: "persisted strong Check outcome must be the original matching result" });
+  }
 });
 
 const RecordVerificationReceiptResultV1Schema = z.strictObject({
-  verification: VerificationRecordV1Schema,
+  verification: z.union([VerificationRecordV1Schema, StrongVerificationRecordV1Schema]),
   mutation: MutationResultV1Schema,
+  strongOutcome: StrongVerificationMutationOutcomeV1Schema.optional(),
+}).superRefine((result, context) => {
+  const strong = "profile" in result.verification && result.verification.profile === "verification_record_strong_v1";
+  if (strong !== (result.strongOutcome !== undefined)) {
+    context.addIssue({ code: "custom", path: ["strongOutcome"], message: "strong Verification receipts retain the complete public outcome for crash replay" });
+  } else if (result.strongOutcome !== undefined && (
+    result.strongOutcome.idempotentReplay ||
+    result.strongOutcome.verification.id !== result.verification.id
+  )) {
+    context.addIssue({ code: "custom", path: ["strongOutcome"], message: "persisted strong Verification outcome must be the original matching result" });
+  }
 });
 
 const receiptCommonShape = {

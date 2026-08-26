@@ -34,6 +34,10 @@ import {
   type ProviderServiceHandoffConfigV1,
 } from "./service-handoff.js";
 import { probeProviderRuntimeTargetV1 } from "./target-inspection.js";
+import {
+  createProviderRuntimeStrongMutationBrokerVerifierInternalV1,
+  PROVIDER_RUNTIME_STRONG_MUTATION_BROKER_SOCKET_BASENAME_INTERNAL_V1,
+} from "./strong-mutation-broker-client-internal.js";
 
 interface RuntimeCliOptionsV1 {
   readonly rootPath: string;
@@ -52,6 +56,10 @@ export interface ResolvedServiceRuntimeV1 {
   readonly config: ProviderServiceHandoffConfigV1;
   readonly acceptanceIdentityVerificationCapability?:
     ProviderServiceInstallationIdentityVerificationCapabilityInternalV1;
+  readonly authorityPrincipal: Readonly<{
+    readonly uid: number;
+    readonly gid: number;
+  }>;
 }
 
 function isServiceConfigCliOptionsV1(
@@ -166,6 +174,7 @@ async function readServiceConfigV1(
     await readProviderServiceInstallationIdentityCustodyV1(config);
   return {
     config,
+    authorityPrincipal: Object.freeze({ uid: metadata.uid, gid: metadata.gid }),
     ...(acceptanceIdentityVerificationCapability === undefined
       ? {}
       : { acceptanceIdentityVerificationCapability }),
@@ -384,12 +393,27 @@ export async function runDurableObjectProviderRuntimeCliV1(
   );
   const serviceSigningKey =
     service === undefined ? undefined : await readServiceSigningKeyV1(service.config);
+  const strongMutationAuthorityVerifier =
+    service === undefined || service.config.payload.platform !== "linux"
+    ? undefined
+    : createProviderRuntimeStrongMutationBrokerVerifierInternalV1({
+      socketPath: join(
+        service.config.payload.runtimeRoot,
+        PROVIDER_RUNTIME_STRONG_MUTATION_BROKER_SOCKET_BASENAME_INTERNAL_V1,
+      ),
+      expectedAuthorityUid: service.authorityPrincipal.uid,
+      expectedAuthorityGid: service.authorityPrincipal.gid,
+      expectedSocketGid: service.config.payload.principal.gid,
+    });
   const server = new DurableObjectProviderRuntimeServerV1({
     rootPath: options.rootPath,
     socketPath: options.socketPath,
     providerId: options.providerId,
     authKey,
     authorizedCapabilityDigest: options.authorizedCapabilityDigest,
+    ...(strongMutationAuthorityVerifier === undefined
+      ? {}
+      : { strongMutationAuthorityVerifier }),
     ...(service === undefined
       ? {}
       : {

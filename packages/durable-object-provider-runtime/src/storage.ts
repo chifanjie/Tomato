@@ -5,10 +5,13 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   readFile,
   rename,
+  statfs,
   unlink,
 } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import {
@@ -16,12 +19,32 @@ import {
   PROVIDER_RUNTIME_IPC_STORAGE_FILE_MODE_V1,
   ProviderRuntimeIpcFixedObjectLocatorV1Schema,
   ProviderRuntimeIpcJournalStateV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  ProviderRuntimeIpcStrongMutationResponseV1Schema,
   type ProviderRuntimeIpcFixedObjectLocatorV1,
   type ProviderRuntimeIpcJournalStateV1,
   type ProviderRuntimeIpcJsonValueV1,
+  type ProviderRuntimeIpcStrongMutationRequestV1,
+  type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import { canonicalizeJcsSafeIntegerV1 } from "@understand-code/durable-object-provider-contracts/jcs";
 import { DurableObjectIdentityProviderIdV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1,
+  closeProviderRuntimeNativeExactObjectPublisherV1,
+  closeProviderRuntimeNativeExactObjectSourceV1,
+  commitProviderRuntimeNativeExactObjectV1,
+  openProviderRuntimeNativeExactObjectPublisherV1,
+  revalidateProviderRuntimeNativeExactObjectPublisherV1,
+  stageProviderRuntimeNativeExactObjectV1,
+  type ProviderRuntimeNativeExactObjectPublisherV1,
+  type ProviderRuntimeNativeExactObjectSourceV1,
+} from "@understand-code/native-kernel-bridge";
+
+import {
+  consumeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+  type ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+} from "./strong-mutation-session-authority-internal.js";
 
 const JOURNAL_DISK_PROFILE_V1 =
   "provider_runtime_durable_operation_journal_v1" as const;
@@ -31,6 +54,8 @@ const CONTENT_DIGEST_PREFIX = "sha256:";
 const OPERATION_NONCE_PATTERN = /^[0-9a-f]{32}$/u;
 const DEFAULT_MAX_OBJECT_BYTES = 6 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_BYTES = 8 * 1024 * 1024;
+const STRONG_MUTATION_OUTCOME_PROFILE_V1 =
+  "provider_runtime_strong_mutation_outcome_v1" as const;
 
 type JsonObjectV1 = Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 
@@ -42,6 +67,7 @@ export type ProviderRuntimeStorageErrorCodeV1 =
   | "object_not_found"
   | "operation_nonce_conflict"
   | "provider_mismatch"
+  | "strong_mutation_outcome_missing"
   | "storage_failure"
   | "storage_security_violation";
 
@@ -52,6 +78,19 @@ export class ProviderRuntimeStorageErrorV1 extends Error {
     super(message);
     this.name = "ProviderRuntimeStorageErrorV1";
     this.code = code;
+  }
+}
+
+/**
+ * The namespace link may exist, but the held parent directory has not yet
+ * acknowledged durability.  Callers must preserve the prepared outcome and
+ * retry recovery; this is never a terminal failed mutation response.
+ */
+export class ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1
+  extends Error {
+  constructor(options?: ErrorOptions) {
+    super("strong mutation durability is indeterminate", options);
+    this.name = "ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1";
   }
 }
 
@@ -81,6 +120,19 @@ interface DurableOperationJournalDiskV1 {
   readonly records: readonly DurableOperationJournalRecordDiskV1[];
 }
 
+function journalStateFromRecordV1(
+  record: DurableOperationJournalRecordDiskV1,
+): ProviderRuntimeIpcJournalStateV1 {
+  return ProviderRuntimeIpcJournalStateV1Schema.parse({
+    profile: JOURNAL_STATE_PROFILE_V1,
+    revision: record.revision,
+    phase: record.phase,
+    operationNonce: record.operationNonce,
+    mutationDigest: record.mutationDigest,
+    artifacts: record.artifacts,
+  });
+}
+
 export interface WriteFixedObjectResultV1 {
   readonly resolution: "committed" | "replayed";
   readonly locator: ProviderRuntimeIpcFixedObjectLocatorV1;
@@ -105,6 +157,40 @@ export interface CompareCommitInputV1 {
 export interface CompareCommitResultV1 {
   readonly resolution: "committed" | "replayed" | "stale";
   readonly state: ProviderRuntimeIpcJournalStateV1;
+}
+
+interface DurableStrongMutationOutcomeDiskV1 {
+  readonly profile: typeof STRONG_MUTATION_OUTCOME_PROFILE_V1;
+  readonly providerId: string;
+  readonly bindingDigest: string;
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+  readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+  readonly phase: "prepared" | "completed";
+  readonly outcomeDigest: string;
+}
+
+interface RetainedStrongMutationDirectoryV1 {
+  readonly handle: FileHandle;
+  readonly dev: bigint;
+  readonly ino: bigint;
+}
+
+interface RetainedStrongMutationExactObjectAuthorityV1 {
+  readonly providerObjects: RetainedStrongMutationDirectoryV1;
+  readonly journal: RetainedStrongMutationDirectoryV1;
+  readonly outcomes: RetainedStrongMutationDirectoryV1;
+  /** Present for every production strong writer; absent only in test fixtures. */
+  readonly nativePublisher?: ProviderRuntimeNativeExactObjectPublisherV1;
+}
+
+export type CreateProviderRuntimeStrongMutationResponseV1 = (
+  payload: unknown,
+) => ProviderRuntimeIpcStrongMutationResponseV1;
+
+export interface ProviderRuntimeDurableStrongMutationOutcomeInspectionV1 {
+  readonly phase: "prepared" | "completed";
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+  readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
 }
 
 function sha256DigestV1(bytes: string | Uint8Array): string {
@@ -194,6 +280,26 @@ function mutationDigestV1(input: CompareCommitInputV1): string {
       artifacts: input.artifacts,
     }),
   );
+}
+
+function strongMutationOutcomeDigestV1(
+  input: Omit<DurableStrongMutationOutcomeDiskV1, "outcomeDigest">,
+): string {
+  return sha256DigestV1(
+    canonicalizeJcsSafeIntegerV1({
+      domain: "understand-code-provider-runtime-strong-mutation-outcome-v1",
+      outcome: input,
+    }),
+  );
+}
+
+function exactCanonicalV1(left: unknown, right: unknown): boolean {
+  try {
+    return canonicalizeJcsSafeIntegerV1(left) ===
+      canonicalizeJcsSafeIntegerV1(right);
+  } catch {
+    return false;
+  }
 }
 
 function exactObjectKeysV1(value: object, expected: readonly string[]): boolean {
@@ -331,6 +437,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
   readonly objectsPath: string;
   readonly journalPath: string;
   readonly journalStatePath: string;
+  readonly strongMutationOutcomesPath: string;
 
   readonly #maxObjectBytes: number;
   readonly #maxJournalBytes: number;
@@ -338,6 +445,11 @@ export class DurableObjectProviderRuntimeStoreV1 {
   #records: readonly DurableOperationJournalRecordDiskV1[] = [];
   #initialized = false;
   #mutationTail: Promise<void> = Promise.resolve();
+  #strongMutationTail: Promise<void> = Promise.resolve();
+  #strongMutationExactObjectAuthority:
+    | RetainedStrongMutationExactObjectAuthorityV1
+    | undefined;
+  #testCompletedOutcomePersistFailureArmed = false;
 
   constructor(options: DurableObjectProviderRuntimeStoreOptionsV1) {
     this.rootPath = resolve(options.rootPath);
@@ -347,6 +459,10 @@ export class DurableObjectProviderRuntimeStoreV1 {
     this.objectsPath = join(this.rootPath, "objects");
     this.journalPath = join(this.rootPath, "journal");
     this.journalStatePath = join(this.journalPath, "state.json");
+    this.strongMutationOutcomesPath = join(
+      this.rootPath,
+      "strong-mutation-outcomes",
+    );
     this.#maxObjectBytes = options.maxObjectBytes ?? DEFAULT_MAX_OBJECT_BYTES;
     this.#maxJournalBytes = options.maxJournalBytes ?? DEFAULT_MAX_JOURNAL_BYTES;
     assertSafeBoundV1(this.#maxObjectBytes, "maxObjectBytes");
@@ -358,6 +474,11 @@ export class DurableObjectProviderRuntimeStoreV1 {
     await ensurePrivateDirectoryV1(this.rootPath);
     await ensurePrivateDirectoryV1(this.objectsPath);
     await ensurePrivateDirectoryV1(this.journalPath);
+    await ensurePrivateDirectoryV1(this.strongMutationOutcomesPath);
+    await ensurePrivateDirectoryV1(join(
+      this.objectsPath,
+      encodeURIComponent(this.providerId),
+    ));
 
     try {
       await assertPrivateRegularFileV1(this.journalStatePath);
@@ -386,9 +507,593 @@ export class DurableObjectProviderRuntimeStoreV1 {
     this.#initialized = true;
   }
 
+  /** Retain the exact native Linux/ext4 publication and private-state roots. */
+  async establishStrongMutationExactObjectAuthorityV1(): Promise<void> {
+    this.#assertInitialized();
+    if (this.#strongMutationExactObjectAuthority !== undefined) return;
+    const testing = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+    if (process.platform !== "linux" && !testing) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation exact-object authority requires Linux",
+      );
+    }
+    const opened: FileHandle[] = [];
+    let nativePublisher: ProviderRuntimeNativeExactObjectPublisherV1 | undefined;
+    try {
+      const retain = async (path: string): Promise<RetainedStrongMutationDirectoryV1> => {
+        const handle = await open(path, "r");
+        opened.push(handle);
+        const metadata = await handle.stat({ bigint: true });
+        if (
+          !metadata.isDirectory() ||
+          (typeof process.getuid === "function" &&
+            metadata.uid !== BigInt(process.getuid())) ||
+          (metadata.mode & 0o777n) !== 0o700n
+        ) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "storage_security_violation",
+            "strong mutation directory authority is invalid",
+          );
+        }
+        if (!testing) {
+          const filesystem = await statfs(`/proc/self/fd/${handle.fd}`, {
+            bigint: true,
+          });
+          if (filesystem.type !== 0xef53n) {
+            throw new ProviderRuntimeStorageErrorV1(
+              "storage_security_violation",
+              "strong mutation exact-object authority requires ext4",
+            );
+          }
+          assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+            handle.fd,
+            { expectedKind: "directory" },
+          );
+        }
+        return Object.freeze({
+          handle,
+          dev: metadata.dev,
+          ino: metadata.ino,
+        });
+      };
+      const providerObjectsPath = join(
+        this.objectsPath,
+        encodeURIComponent(this.providerId),
+      );
+      const providerObjects = await retain(providerObjectsPath);
+      nativePublisher = testing
+        ? undefined
+        : openProviderRuntimeNativeExactObjectPublisherV1(
+          providerObjectsPath,
+          {
+            expectedOwnerUid: process.geteuid?.() ?? process.getuid!(),
+            expectedOwnerGid: process.getegid?.() ?? process.getgid!(),
+          },
+        );
+      const authority = Object.freeze({
+        providerObjects,
+        journal: await retain(this.journalPath),
+        outcomes: await retain(this.strongMutationOutcomesPath),
+        ...(nativePublisher === undefined ? {} : { nativePublisher }),
+      });
+      this.#strongMutationExactObjectAuthority = authority;
+      nativePublisher = undefined;
+      opened.length = 0;
+    } finally {
+      if (nativePublisher !== undefined) {
+        try {
+          closeProviderRuntimeNativeExactObjectPublisherV1(nativePublisher);
+        } catch {
+          // Preserve the original admission failure.
+        }
+      }
+      await Promise.allSettled(opened.map((handle) => handle.close()));
+    }
+  }
+
+  async closeStrongMutationExactObjectAuthorityV1(): Promise<void> {
+    const authority = this.#strongMutationExactObjectAuthority;
+    this.#strongMutationExactObjectAuthority = undefined;
+    if (authority === undefined) return;
+    let nativeCloseError: unknown;
+    if (authority.nativePublisher !== undefined) {
+      try {
+        closeProviderRuntimeNativeExactObjectPublisherV1(
+          authority.nativePublisher,
+        );
+      } catch (error) {
+        nativeCloseError = error;
+      }
+    }
+    await Promise.allSettled([
+      authority.providerObjects.handle.close(),
+      authority.journal.handle.close(),
+      authority.outcomes.handle.close(),
+    ]);
+    if (nativeCloseError !== undefined) throw nativeCloseError;
+  }
+
   inspectState(): ProviderRuntimeIpcJournalStateV1 {
     this.#assertInitialized();
     return canonicalCloneV1(this.#state);
+  }
+
+  /** Test-only one-shot cut after execution but before completed persistence. */
+  armTestStrongMutationCompletedOutcomePersistFailureOnceV1(): void {
+    if (
+      (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") ||
+      this.#testCompletedOutcomePersistFailureArmed
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation persistence fault seam is unavailable",
+      );
+    }
+    this.#testCompletedOutcomePersistFailureArmed = true;
+  }
+
+  /**
+   * Write-ahead strong-mutation execution.  The exact principal-signed result
+   * is fsynced before the first storage side effect.  A crash may therefore
+   * leave only `prepared`; recovery applies the same idempotent plan and
+   * returns the byte-identical response instead of authorizing a new plan.
+   */
+  async executeStrongMutationDurablyV1(
+    requestInput: ProviderRuntimeIpcStrongMutationRequestV1,
+    authorization:
+      ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+    createResponse: CreateProviderRuntimeStrongMutationResponseV1,
+  ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
+    this.#assertInitialized();
+    return this.#strongMutationExclusive(async () => {
+      const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        requestInput,
+      );
+      await this.#assertRetainedStrongMutationExactObjectAuthorityV1();
+      if (!consumeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+        authorization,
+        {
+          bindingDigest: request.bindingDigest,
+          requestDigest: request.requestDigest,
+          disposition: "execute",
+        },
+      )) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "strong mutation execution authorization is unavailable",
+        );
+      }
+      const existing = await this.#readStrongMutationOutcomeV1(request);
+      if (existing !== undefined) {
+        return this.#resumePreparedStrongMutationV1(existing);
+      }
+      const payload = await this.#planStrongMutationPayloadV1(request);
+      const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+        createResponse(payload),
+      );
+      this.#assertStrongMutationResponseContextV1(request, response);
+      if (!response.ok || !exactCanonicalV1(response.payload, payload)) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "strong mutation signer changed the prepared result",
+        );
+      }
+      const prepared = this.#strongMutationOutcomeV1(
+        request,
+        response,
+        "prepared",
+      );
+      await this.#persistStrongMutationOutcomeV1(prepared);
+      return this.#resumePreparedStrongMutationV1(prepared);
+    });
+  }
+
+  /** Recovery-only: absence of a previously fsynced outcome fails closed. */
+  async recoverStrongMutationOutcomeV1(
+    requestInput: ProviderRuntimeIpcStrongMutationRequestV1,
+    authorization:
+      ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+  ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
+    this.#assertInitialized();
+    return this.#strongMutationExclusive(async () => {
+      const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        requestInput,
+      );
+      await this.#assertRetainedStrongMutationExactObjectAuthorityV1();
+      if (!consumeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+        authorization,
+        {
+          bindingDigest: request.bindingDigest,
+          requestDigest: request.requestDigest,
+          disposition: "recover",
+        },
+      )) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "strong mutation recovery authorization is unavailable",
+        );
+      }
+      const existing = await this.#readStrongMutationOutcomeV1(request);
+      if (existing === undefined) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "strong_mutation_outcome_missing",
+          "durable strong mutation outcome is unavailable",
+        );
+      }
+      return this.#resumePreparedStrongMutationV1(existing);
+    });
+  }
+
+  async inspectStrongMutationOutcomesForRecoveryV1(): Promise<
+    readonly ProviderRuntimeDurableStrongMutationOutcomeInspectionV1[]
+  > {
+    this.#assertInitialized();
+    return this.#strongMutationExclusive(async () => {
+      const authority = this.#strongMutationExactObjectAuthority;
+      const parent = authority !== undefined && process.platform === "linux"
+        ? `/proc/self/fd/${authority.outcomes.handle.fd}`
+        : this.strongMutationOutcomesPath;
+      const names = (await readdir(parent)).sort();
+      const outcomes: ProviderRuntimeDurableStrongMutationOutcomeInspectionV1[] = [];
+      for (const name of names) {
+        if (!/^[0-9a-f]{64}\.json$/u.test(name)) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "strong mutation outcome directory contains an unknown entry",
+          );
+        }
+        const candidatePath = join(parent, name);
+        await assertPrivateRegularFileV1(candidatePath);
+        const serialized = await readFile(candidatePath, "utf8");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(serialized) as unknown;
+        } catch {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "durable strong mutation outcome is not JSON",
+          );
+        }
+        const candidate = asRecordV1(parsed, "strong mutation outcome");
+        const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+          candidate.request,
+        );
+        if (
+          request.bindingDigest.slice(CONTENT_DIGEST_PREFIX.length) !==
+            name.slice(0, -".json".length)
+        ) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "strong mutation outcome filename is not bound to its request",
+          );
+        }
+        const outcome = await this.#readStrongMutationOutcomeV1(request);
+        if (outcome === undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "strong mutation outcome disappeared during recovery scan",
+          );
+        }
+        outcomes.push(Object.freeze({
+          phase: outcome.phase,
+          request: outcome.request,
+          response: outcome.response,
+        }));
+      }
+      return Object.freeze(outcomes);
+    });
+  }
+
+  async #planStrongMutationPayloadV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+  ): Promise<unknown> {
+    if (request.operation === "write_object") {
+      let resolution: "committed" | "replayed" = "committed";
+      try {
+        const existing = await this.readFixedObject(request.payload.locator);
+        if (
+          existing.logicalBytes !== request.payload.logicalBytes ||
+          existing.verifiedContentDigest !==
+            request.payload.locator.contentDigest
+        ) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "object_digest_mismatch",
+            "existing fixed object conflicts with strong mutation",
+          );
+        }
+        resolution = "replayed";
+      } catch (error) {
+        if (
+          !(error instanceof ProviderRuntimeStorageErrorV1) ||
+          error.code !== "object_not_found"
+        ) throw error;
+      }
+      return {
+        operation: "write_object" as const,
+        resolution,
+        locator: request.payload.locator,
+        logicalBytes: request.payload.logicalBytes,
+        verifiedContentDigest: request.payload.locator.contentDigest,
+      };
+    }
+
+    const input = request.payload;
+    assertSafeBoundV1(input.expectedRevision, "expectedRevision");
+    const artifacts = canonicalCloneV1(input.artifacts);
+    const normalized: CompareCommitInputV1 = {
+      expectedRevision: input.expectedRevision,
+      operationNonce: input.operationNonce,
+      phase: input.phase,
+      artifacts,
+    };
+    const digest = mutationDigestV1(normalized);
+    const prior = this.#records.find(
+      (record) => record.operationNonce === input.operationNonce,
+    );
+    if (prior !== undefined && prior.mutationDigest !== digest) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "operation_nonce_conflict",
+        "operationNonce was already committed for a different mutation",
+      );
+    }
+    if (prior !== undefined) {
+      return {
+        operation: "compare_commit" as const,
+        resolution: "replayed" as const,
+        state: canonicalCloneV1(journalStateFromRecordV1(prior)),
+      };
+    }
+    if (input.expectedRevision !== this.#state.revision) {
+      return {
+        operation: "compare_commit" as const,
+        resolution: "stale" as const,
+        state: canonicalCloneV1(this.#state),
+      };
+    }
+    return {
+      operation: "compare_commit" as const,
+      resolution: "committed" as const,
+      state: ProviderRuntimeIpcJournalStateV1Schema.parse({
+        profile: JOURNAL_STATE_PROFILE_V1,
+        revision: input.expectedRevision + 1,
+        phase: input.phase,
+        operationNonce: input.operationNonce,
+        mutationDigest: digest,
+        artifacts,
+      }),
+    };
+  }
+
+  async #completePreparedStrongMutationV1(
+    outcome: DurableStrongMutationOutcomeDiskV1,
+  ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
+    if (outcome.phase === "completed") return outcome.response;
+    if (!outcome.response.ok) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "prepared strong mutation outcome is not successful",
+      );
+    }
+    const request = outcome.request;
+    const expected = outcome.response.payload;
+    // This is the last asynchronous admission cut before the native source is
+    // staged. The production write below never accepts a source pathname/name.
+    await this.#assertRetainedStrongMutationExactObjectAuthorityV1();
+    if (request.operation === "write_object") {
+      if (expected.operation !== "write_object") {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "prepared strong write outcome has the wrong operation",
+        );
+      }
+      const actual = await this.#writeStrongFixedObjectExactV1(
+        request.payload.locator,
+        request.payload.logicalBytes,
+        request.payload.bytes,
+        expected.resolution === "committed",
+      );
+      if (
+        actual.verifiedContentDigest !== expected.verifiedContentDigest ||
+        actual.logicalBytes !== expected.logicalBytes ||
+        !exactCanonicalV1(actual.locator, expected.locator) ||
+        (expected.resolution === "replayed" && actual.resolution !== "replayed")
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "strong write result diverged from its durable plan",
+        );
+      }
+    } else {
+      if (
+        expected.operation !== "compare_commit" ||
+        expected.resolution === "stale"
+      ) {
+        if (expected.operation !== "compare_commit") {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "prepared strong compare outcome has the wrong operation",
+          );
+        }
+        // A signed prepared stale decision is immutable and has no side
+        // effect. Never re-run CAS after the head later reaches its expected
+        // revision, or a stale response could become an unintended commit.
+      } else {
+        const actual = await this.compareCommit(request.payload);
+        if (
+          !exactCanonicalV1(actual.state, expected.state) ||
+          (expected.resolution === "replayed"
+            ? actual.resolution !== "replayed"
+            : actual.resolution !== "committed" &&
+              actual.resolution !== "replayed")
+        ) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "storage_security_violation",
+            "strong compare-commit result diverged from its durable plan",
+          );
+        }
+      }
+    }
+    const completed = this.#strongMutationOutcomeV1(
+      outcome.request,
+      outcome.response,
+      "completed",
+    );
+    await this.#persistStrongMutationOutcomeV1(completed);
+    return completed.response;
+  }
+
+  async #resumePreparedStrongMutationV1(
+    outcome: DurableStrongMutationOutcomeDiskV1,
+  ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
+    try {
+      return await this.#completePreparedStrongMutationV1(outcome);
+    } catch (error) {
+      if (
+        error instanceof
+          ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1
+      ) throw error;
+      // Once the successful principal-signed prepared outcome is durable, no
+      // later failure may be resolved as a conflicting terminal error. Keep
+      // the broker binding pending and retry only this exact prepared plan.
+      throw new ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1({
+        cause: error,
+      });
+    }
+  }
+
+  async #writeStrongFixedObjectExactV1(
+    locatorInput: ProviderRuntimeIpcFixedObjectLocatorV1,
+    logicalBytes: number,
+    canonicalBytes: string,
+    requireDurablePublicationAttempt: boolean,
+  ): Promise<WriteFixedObjectResultV1> {
+    const authority = this.#strongMutationExactObjectAuthority;
+    if (authority === undefined) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation exact-object authority is unavailable",
+      );
+    }
+    // Cross-platform protocol tests cannot register a production provider.
+    // The production CLI never takes this branch.
+    if (authority.nativePublisher === undefined) {
+      if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "native exact-object publication is unavailable",
+        );
+      }
+      return this.writeFixedObject(locatorInput, logicalBytes, canonicalBytes);
+    }
+
+    const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
+      locatorInput,
+    );
+    assertSafeBoundV1(logicalBytes, "logicalBytes");
+    const bytes = parseCanonicalBytesV1(canonicalBytes, this.#maxObjectBytes);
+    if (bytes.byteLength !== logicalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "object_length_mismatch",
+        "logicalBytes does not match the decoded object byte length",
+      );
+    }
+    const verifiedContentDigest = sha256DigestV1(bytes);
+    if (verifiedContentDigest !== locator.contentDigest) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "object_digest_mismatch",
+        "object bytes do not match the fixed locator content digest",
+      );
+    }
+    if (!requireDurablePublicationAttempt) {
+      try {
+        const existing = await this.readFixedObject(locator);
+        if (
+          existing.logicalBytes !== logicalBytes ||
+          existing.verifiedContentDigest !== verifiedContentDigest
+        ) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "object_digest_mismatch",
+            "existing fixed object conflicts with the strong write",
+          );
+        }
+        return {
+          resolution: "replayed",
+          locator,
+          logicalBytes,
+          verifiedContentDigest,
+        };
+      } catch (error) {
+        if (
+          !(error instanceof ProviderRuntimeStorageErrorV1) ||
+          error.code !== "object_not_found"
+        ) throw error;
+      }
+    }
+
+    let source: ProviderRuntimeNativeExactObjectSourceV1 | undefined;
+    try {
+      revalidateProviderRuntimeNativeExactObjectPublisherV1(
+        authority.nativePublisher,
+      );
+      source = stageProviderRuntimeNativeExactObjectV1(
+        authority.nativePublisher,
+        bytes,
+      );
+      const result = commitProviderRuntimeNativeExactObjectV1(
+        authority.nativePublisher,
+        source,
+        `${locator.contentDigest.slice(CONTENT_DIGEST_PREFIX.length)}.blob`,
+      );
+      source = undefined;
+      if (result.status === "durability_indeterminate") {
+        throw new ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1();
+      }
+      if (result.status === "committed") {
+        return {
+          resolution: "committed",
+          locator,
+          logicalBytes,
+          verifiedContentDigest,
+        };
+      }
+      if (result.reason === "final_collision") {
+        const existing = await this.readFixedObject(locator);
+        if (
+          existing.logicalBytes === logicalBytes &&
+          existing.verifiedContentDigest === verifiedContentDigest
+        ) {
+          return {
+            resolution: "replayed",
+            locator,
+            logicalBytes,
+            verifiedContentDigest,
+          };
+        }
+      }
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        `native exact-object publication rejected: ${result.reason}`,
+      );
+    } catch (error) {
+      if (
+        error instanceof ProviderRuntimeStorageErrorV1 ||
+        error instanceof
+          ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1
+      ) throw error;
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "native exact-object publication is unavailable",
+      );
+    } finally {
+      if (source !== undefined) {
+        try {
+          closeProviderRuntimeNativeExactObjectSourceV1(source);
+        } catch {
+          // The publication failure remains fail-closed.
+        }
+      }
+    }
   }
 
   async writeFixedObject(
@@ -564,7 +1269,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
         }
         return {
           resolution: "replayed",
-          state: canonicalCloneV1(this.#state),
+          state: canonicalCloneV1(journalStateFromRecordV1(prior)),
         };
       }
       if (input.expectedRevision !== this.#state.revision) {
@@ -625,14 +1330,175 @@ export class DurableObjectProviderRuntimeStoreV1 {
         "fixed object locator does not belong to this runtime provider",
       );
     }
-    const providerDirectory = join(
-      this.objectsPath,
-      encodeURIComponent(this.providerId),
-    );
-    await ensurePrivateDirectoryV1(providerDirectory);
+    const authority = this.#strongMutationExactObjectAuthority;
+    const providerDirectory = authority !== undefined && process.platform === "linux"
+      ? `/proc/self/fd/${authority.providerObjects.handle.fd}`
+      : join(this.objectsPath, encodeURIComponent(this.providerId));
+    if (authority === undefined) await ensurePrivateDirectoryV1(providerDirectory);
     return join(
       providerDirectory,
       `${locator.contentDigest.slice(CONTENT_DIGEST_PREFIX.length)}.blob`,
+    );
+  }
+
+  #strongMutationOutcomePathV1(bindingDigest: string): string {
+    if (!/^sha256:[0-9a-f]{64}$/u.test(bindingDigest)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "invalid_input",
+        "strong mutation binding digest is invalid",
+      );
+    }
+    const authority = this.#strongMutationExactObjectAuthority;
+    const parent = authority !== undefined && process.platform === "linux"
+      ? `/proc/self/fd/${authority.outcomes.handle.fd}`
+      : this.strongMutationOutcomesPath;
+    return join(
+      parent,
+      `${bindingDigest.slice(CONTENT_DIGEST_PREFIX.length)}.json`,
+    );
+  }
+
+  #assertStrongMutationResponseContextV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    response: ProviderRuntimeIpcStrongMutationResponseV1,
+  ): void {
+    if (
+      response.requestId !== request.requestId ||
+      response.principalAttestationDigest !==
+        request.principalAttestationDigest ||
+      response.bindingDigest !== request.bindingDigest ||
+      response.operation !== request.operation ||
+      response.operationNonce !== request.operationNonce ||
+      response.requestDigest !== request.requestDigest
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation response does not bind its request",
+      );
+    }
+  }
+
+  #strongMutationOutcomeV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    response: ProviderRuntimeIpcStrongMutationResponseV1,
+    phase: DurableStrongMutationOutcomeDiskV1["phase"],
+  ): DurableStrongMutationOutcomeDiskV1 {
+    const withoutDigest = {
+      profile: STRONG_MUTATION_OUTCOME_PROFILE_V1,
+      providerId: this.providerId,
+      bindingDigest: request.bindingDigest,
+      request: canonicalCloneV1(request),
+      response: canonicalCloneV1(response),
+      phase,
+    } satisfies Omit<DurableStrongMutationOutcomeDiskV1, "outcomeDigest">;
+    return Object.freeze({
+      ...withoutDigest,
+      outcomeDigest: strongMutationOutcomeDigestV1(withoutDigest),
+    });
+  }
+
+  async #readStrongMutationOutcomeV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+  ): Promise<DurableStrongMutationOutcomeDiskV1 | undefined> {
+    const path = this.#strongMutationOutcomePathV1(request.bindingDigest);
+    let serialized: string;
+    try {
+      await assertPrivateRegularFileV1(path);
+      serialized = await readFile(path, "utf8");
+    } catch (error) {
+      if (isErrnoV1(error, "ENOENT")) return undefined;
+      throw error;
+    }
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation outcome exceeds its byte limit",
+      );
+    }
+    let unknownDisk: unknown;
+    try {
+      unknownDisk = JSON.parse(serialized) as unknown;
+    } catch {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation outcome is not JSON",
+      );
+    }
+    const disk = asRecordV1(unknownDisk, "strong mutation outcome");
+    if (
+      !exactObjectKeysV1(disk, [
+        "profile",
+        "providerId",
+        "bindingDigest",
+        "request",
+        "response",
+        "phase",
+        "outcomeDigest",
+      ]) ||
+      disk.profile !== STRONG_MUTATION_OUTCOME_PROFILE_V1 ||
+      disk.providerId !== this.providerId ||
+      disk.bindingDigest !== request.bindingDigest ||
+      (disk.phase !== "prepared" && disk.phase !== "completed") ||
+      typeof disk.outcomeDigest !== "string"
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation outcome fields are invalid",
+      );
+    }
+    const storedRequest = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+      disk.request,
+    );
+    const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+      disk.response,
+    );
+    this.#assertStrongMutationResponseContextV1(storedRequest, response);
+    if (!exactCanonicalV1(storedRequest, request)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "operation_nonce_conflict",
+        "strong mutation binding was already used for another request",
+      );
+    }
+    const withoutDigest = {
+      profile: STRONG_MUTATION_OUTCOME_PROFILE_V1,
+      providerId: this.providerId,
+      bindingDigest: request.bindingDigest,
+      request: storedRequest,
+      response,
+      phase: disk.phase,
+    } satisfies Omit<DurableStrongMutationOutcomeDiskV1, "outcomeDigest">;
+    if (disk.outcomeDigest !== strongMutationOutcomeDigestV1(withoutDigest)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation outcome digest is invalid",
+      );
+    }
+    return Object.freeze({ ...withoutDigest, outcomeDigest: disk.outcomeDigest });
+  }
+
+  async #persistStrongMutationOutcomeV1(
+    outcome: DurableStrongMutationOutcomeDiskV1,
+  ): Promise<void> {
+    if (
+      outcome.phase === "completed" &&
+      this.#testCompletedOutcomePersistFailureArmed
+    ) {
+      this.#testCompletedOutcomePersistFailureArmed = false;
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_failure",
+        "injected completed strong mutation outcome persistence failure",
+      );
+    }
+    const serialized = `${canonicalizeJcsSafeIntegerV1(outcome)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_failure",
+        "durable strong mutation outcome exceeds its byte limit",
+      );
+    }
+    await atomicReplacePrivateFileV1(
+      this.#strongMutationOutcomePathV1(outcome.bindingDigest),
+      serialized,
     );
   }
 
@@ -809,7 +1675,53 @@ export class DurableObjectProviderRuntimeStoreV1 {
         "durable operation journal exceeds its configured byte limit",
       );
     }
-    await atomicReplacePrivateFileV1(this.journalStatePath, serialized);
+    const authority = this.#strongMutationExactObjectAuthority;
+    const path = authority !== undefined && process.platform === "linux"
+      ? join(`/proc/self/fd/${authority.journal.handle.fd}`, "state.json")
+      : this.journalStatePath;
+    await atomicReplacePrivateFileV1(path, serialized);
+  }
+
+  async #assertRetainedStrongMutationExactObjectAuthorityV1(): Promise<void> {
+    const authority = this.#strongMutationExactObjectAuthority;
+    if (authority === undefined) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation exact-object authority is unavailable",
+      );
+    }
+    for (const retained of [
+      authority.providerObjects,
+      authority.journal,
+      authority.outcomes,
+    ]) {
+      const current = await retained.handle.stat({ bigint: true });
+      if (
+        !current.isDirectory() ||
+        current.dev !== retained.dev ||
+        current.ino !== retained.ino ||
+        (current.mode & 0o777n) !== 0o700n ||
+        (typeof process.getuid === "function" &&
+          current.uid !== BigInt(process.getuid()))
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "retained strong mutation directory authority changed",
+        );
+      }
+    }
+    if (authority.nativePublisher !== undefined) {
+      try {
+        revalidateProviderRuntimeNativeExactObjectPublisherV1(
+          authority.nativePublisher,
+        );
+      } catch {
+        throw new ProviderRuntimeStorageErrorV1(
+          "storage_security_violation",
+          "retained native exact-object authority changed",
+        );
+      }
+    }
   }
 
   #assertInitialized(): void {
@@ -825,6 +1737,20 @@ export class DurableObjectProviderRuntimeStoreV1 {
     const prior = this.#mutationTail;
     let release!: () => void;
     this.#mutationTail = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    await prior;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
+  async #strongMutationExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const prior = this.#strongMutationTail;
+    let release!: () => void;
+    this.#strongMutationTail = new Promise<void>((resolvePromise) => {
       release = resolvePromise;
     });
     await prior;

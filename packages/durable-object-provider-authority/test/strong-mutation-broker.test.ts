@@ -10,11 +10,19 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import * as publicAuthorityApi from "../src/index.js";
 import {
+  PROVIDER_STRONG_MUTATION_NATIVE_EXACT_OBJECT_BLOCKER_INTERNAL_V1,
+  registerProviderStrongMutationLinuxExt4ExecutionFenceInternalV1,
+  type ProviderStrongMutationLinuxExt4ExactObjectAuthorityCapabilityInternalV1,
+} from "../src/strong-mutation-execution-fence-internal.js";
+import {
+  createProviderStrongMutationProductionSessionCallbacksForTestInternalV1,
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   inspectProviderStrongMutationBrokerSnapshotForTestInternalV1 as inspectProviderStrongMutationBrokerSnapshotWithVerifierV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
+  openProviderStrongMutationExecutionBrokerStoreForTestInternalV1,
   openProviderStrongMutationBrokerStoreForTestInternalV1 as openProviderStrongMutationBrokerStoreWithVerifierV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
+  registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1,
 } from "../src/test-seam-internal.js";
 import {
   TEST_INSTALLATION_IDENTITY_KEY,
@@ -28,6 +36,7 @@ import {
   brokerResolveRequestV1,
   canonicalDigestOracleV1,
   currentAcceptanceIdentityV1,
+  strongMutationPrincipalAttestationV1,
   strongMutationCompareRequestV1,
   strongMutationCompareResponseV1,
   strongMutationBindingDigestOracleV1,
@@ -38,6 +47,7 @@ import {
   strongMutationTrustedConfigurationV1,
   strongMutationTrustedGenerationFloorsV1,
   strongMutationTrustVerifierV1,
+  strongMutationTrustEvidenceV1,
 } from "./strong-mutation-broker-fixtures.js";
 
 const fixtureRoots = new Set<string>();
@@ -720,6 +730,246 @@ describe("locked strong-mutation broker transaction candidate", () => {
       ).resolves.toEqual(before);
     },
   );
+});
+
+describe("execution-fenced production strong-mutation session", () => {
+  it("admits one exact begin and resolves the signed response after broker restart", async () => {
+    const { capability, current } = await fixtureV1();
+    const acceptanceIdentity = currentAcceptanceIdentityV1(current);
+    const principalAttestation =
+      strongMutationPrincipalAttestationV1(acceptanceIdentity);
+    const request = strongMutationRequestV1(current, {
+      principalAttestation,
+    });
+    const grant = request.authorityGrant.payload;
+    let nativeRevalidationCount = 0;
+    const executionFence =
+      registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
+        profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
+        providerId: grant.providerId,
+        targetProfileId: grant.targetProfileId,
+        targetFingerprintDigest: grant.targetFingerprintDigest,
+        capabilityDigest: grant.capabilityDigest,
+        installationIdentityGenerationId:
+          grant.acceptanceIdentity.installationIdentityGenerationId,
+        principal: {
+          uid: 501,
+          gid: 20,
+          handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+        },
+        revalidateExactObjectAuthority(input) {
+          nativeRevalidationCount += 1;
+          return input.request.bindingDigest === request.bindingDigest &&
+            input.principalAttestation.handoffPayloadDigest ===
+              principalAttestation.handoffPayloadDigest;
+        },
+      });
+    const registryOnlyVerifier = await strongMutationTrustVerifierV1((query) => {
+      const evidence = strongMutationTrustEvidenceV1(
+        query.acceptanceIdentity,
+      );
+      return {
+        bootstrapTrustBundle: evidence.bootstrapTrustBundle,
+        rootMetadataHistory: evidence.rootMetadataHistory,
+        registryManifestHistory: evidence.registryManifestHistory,
+      };
+    });
+    const openFencedBroker = () =>
+      openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        registryOnlyVerifier,
+        executionFence,
+        { clock: testAuthorityClockV1 },
+      );
+    const context = Object.freeze({
+      request,
+      providerId: grant.providerId,
+      capabilityDigest: grant.capabilityDigest,
+      principalAttestationDigest: request.principalAttestationDigest,
+      bindingDigest: request.bindingDigest,
+      operation: request.operation,
+      operationNonce: request.operationNonce,
+      requestDigest: request.requestDigest,
+      authorityGrant: request.authorityGrant,
+      journalHead: grant.journalHead,
+      acceptanceIdentity: grant.acceptanceIdentity,
+      principalAttestation,
+    });
+
+    const broker = await openFencedBroker();
+    expect(broker).toMatchObject({
+      executionFence:
+        "established_linux_ext4_exact_object_dedicated_os_principal_v1",
+      strongWrites: "unlocked",
+    });
+    const session =
+      createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+        broker,
+      );
+    const fresh = await session.consumeGrant(context);
+    expect(fresh).toMatchObject({ disposition: "execute" });
+    if (fresh === false || fresh.disposition === "resolved") {
+      throw new Error("expected fresh execution authority");
+    }
+    await expect(fresh.activateExecutionAuthorization()).resolves.toBe(true);
+    const sameProcessRecovery = await session.consumeGrant(context);
+    expect(sameProcessRecovery).toMatchObject({ disposition: "recover" });
+    if (
+      sameProcessRecovery === false ||
+      sameProcessRecovery.disposition === "resolved"
+    ) throw new Error("expected pending recovery authority");
+    await expect(
+      sameProcessRecovery.activateExecutionAuthorization(),
+    ).resolves.toBe(true);
+
+    const recoveredBroker = await openFencedBroker();
+    const recoveredSession =
+      createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+        recoveredBroker,
+      );
+    const recovered = await recoveredSession.consumeGrant(context);
+    expect(recovered).toMatchObject({ disposition: "recover" });
+    if (recovered === false || recovered.disposition === "resolved") {
+      throw new Error("expected restart recovery authority");
+    }
+    await expect(
+      recovered.activateExecutionAuthorization(),
+    ).resolves.toBe(true);
+    const response = strongMutationResponseV1(request);
+    await expect(
+      recoveredSession.resolveGrant({ context, response }),
+    ).resolves.toBe(true);
+
+    const replayBroker = await openFencedBroker();
+    const replaySession =
+      createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+        replayBroker,
+      );
+    await expect(replaySession.consumeGrant(context)).resolves.toMatchObject({
+      disposition: "resolved",
+      response,
+    });
+    await expect(
+      replaySession.resolveGrant({ context, response }),
+    ).resolves.toBe(true);
+    await expect(replayBroker.begin(request)).resolves.toMatchObject({
+      resolution: "recorded",
+      disposition: "replayed",
+      intent: {
+        state: "resolved",
+        response,
+        executionFence:
+          "established_linux_ext4_exact_object_dedicated_os_principal_v1",
+        strongWrites: "unlocked",
+      },
+    });
+    expect(nativeRevalidationCount).toBeGreaterThan(0);
+  });
+
+  it("rejects omitted, tampered, and replayed live principal transcripts", async () => {
+    const { capability, current } = await fixtureV1();
+    const acceptanceIdentity = currentAcceptanceIdentityV1(current);
+    const principalAttestation =
+      strongMutationPrincipalAttestationV1(acceptanceIdentity);
+    const request = strongMutationRequestV1(current, { principalAttestation });
+    const grant = request.authorityGrant.payload;
+    const registryOnlyVerifier = await strongMutationTrustVerifierV1((query) => {
+      const evidence = strongMutationTrustEvidenceV1(query.acceptanceIdentity);
+      return {
+        bootstrapTrustBundle: evidence.bootstrapTrustBundle,
+        rootMetadataHistory: evidence.rootMetadataHistory,
+        registryManifestHistory: evidence.registryManifestHistory,
+      };
+    });
+    const executionFence =
+      registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
+        profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
+        providerId: grant.providerId,
+        targetProfileId: grant.targetProfileId,
+        targetFingerprintDigest: grant.targetFingerprintDigest,
+        capabilityDigest: grant.capabilityDigest,
+        installationIdentityGenerationId:
+          grant.acceptanceIdentity.installationIdentityGenerationId,
+        principal: {
+          uid: 501,
+          gid: 20,
+          handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+        },
+        revalidateExactObjectAuthority() {
+          return true;
+        },
+      });
+    const broker =
+      await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        registryOnlyVerifier,
+        executionFence,
+        { clock: testAuthorityClockV1 },
+      );
+    const session =
+      createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+        broker,
+      );
+    const context = {
+      request,
+      providerId: grant.providerId,
+      capabilityDigest: grant.capabilityDigest,
+      principalAttestationDigest: request.principalAttestationDigest,
+      bindingDigest: request.bindingDigest,
+      operation: request.operation,
+      operationNonce: request.operationNonce,
+      requestDigest: request.requestDigest,
+      authorityGrant: request.authorityGrant,
+      journalHead: grant.journalHead,
+      acceptanceIdentity: grant.acceptanceIdentity,
+    } as const;
+    await expect(session.consumeGrant(context)).resolves.toBe(false);
+    const tampered: any = cloneJsonV1(principalAttestation);
+    tampered.signature = `base64url:${"A".repeat(86)}`;
+    await expect(session.consumeGrant({
+      ...context,
+      principalAttestation: tampered,
+    })).resolves.toBe(false);
+    const replayed = strongMutationPrincipalAttestationV1(
+      acceptanceIdentity,
+      { claimsOverrides: { challenge: "f".repeat(64) } },
+    );
+    await expect(session.consumeGrant({
+      ...context,
+      principalAttestation: replayed,
+    })).resolves.toBe(false);
+  });
+
+  it("rejects structural fence and broker forgeries", async () => {
+    const { capability } = await fixtureV1();
+    expect(() =>
+      registerProviderStrongMutationLinuxExt4ExecutionFenceInternalV1(
+        {} as ProviderStrongMutationLinuxExt4ExactObjectAuthorityCapabilityInternalV1,
+      )
+    ).toThrow(
+      PROVIDER_STRONG_MUTATION_NATIVE_EXACT_OBJECT_BLOCKER_INTERNAL_V1,
+    );
+    await expect(
+      openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        verifierForLayoutV1(capability),
+        {} as Parameters<
+          typeof openProviderStrongMutationExecutionBrokerStoreForTestInternalV1
+        >[2],
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    let brokerForgeryError: unknown;
+    try {
+      createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+        {} as Parameters<
+          typeof createProviderStrongMutationProductionSessionCallbacksForTestInternalV1
+        >[0],
+      );
+    } catch (error) {
+      brokerForgeryError = error;
+    }
+    expect(brokerForgeryError).toMatchObject({ code: "invalid_request" });
+  });
 });
 
 describe("locked broker public boundary", () => {

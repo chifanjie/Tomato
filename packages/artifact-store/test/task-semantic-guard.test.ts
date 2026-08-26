@@ -65,10 +65,24 @@ const ARTIFACT_IDS = {
   verification: "artifact:verification",
 } as const;
 
-type ContextualBundle = Extract<
-  TaskArtifactBundleV1,
-  { brief: TaskBriefV1 }
->;
+/*
+ * These fixtures exercise the legacy contextual mutation guard.  The
+ * production bundle is now a union with the strong projections, so extracting
+ * by `brief` leaves the compiler with a persisted-claim/evidence union even
+ * though this fixture deliberately uses the legacy schemas.  Keep that
+ * boundary explicit here; runtime parsing still validates the real contract.
+ */
+type ContextualBundle = {
+  manifest: TaskManifestV1;
+  brief: TaskBriefV1;
+  claims: ClaimV1[];
+  evidence: EvidenceV1[];
+  impactPaths: ImpactPathV1[];
+  changeChecks: ChangeCheckV1[];
+  verificationRecords: VerificationRecordV1[];
+  events: TaskEventV1[];
+  idempotencyRecords: IdempotencyRecordV1[];
+};
 
 type ContextualRead = Omit<ReadTaskBundleResult, "bundle"> & {
   bundle: ContextualBundle;

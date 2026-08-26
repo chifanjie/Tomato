@@ -73,14 +73,21 @@ function fullTaskData(read: ReadTaskBundleResult): FullTaskData {
       { taskId: read.bundle.manifest.taskId, artifactType: "task_brief" },
     );
   }
+  if (read.bundle.manifest.taskProfile === "agent_task_v1") {
+    throw new TaskEngineError(
+      "capability_unavailable",
+      "Strong Tasks must use the evidence-backed Change Intelligence authority.",
+      { reason: "strong_authority_required" },
+    );
+  }
   return {
     manifest: structuredClone(read.bundle.manifest),
     brief: structuredClone(read.bundle.brief),
-    claims: structuredClone(read.bundle.claims),
-    evidence: structuredClone(read.bundle.evidence),
+    claims: read.bundle.claims.map((claim) => ClaimV1Schema.parse(structuredClone(claim))),
+    evidence: read.bundle.evidence.map((item) => EvidenceV1Schema.parse(structuredClone(item))),
     impactPaths: structuredClone(read.bundle.impactPaths),
-    changeChecks: structuredClone(read.bundle.changeChecks),
-    verificationRecords: structuredClone(read.bundle.verificationRecords),
+    changeChecks: read.bundle.changeChecks.map((check) => ChangeCheckV1Schema.parse(structuredClone(check))),
+    verificationRecords: read.bundle.verificationRecords.map((record) => VerificationRecordV1Schema.parse(structuredClone(record))),
   };
 }
 
@@ -200,9 +207,10 @@ function taskReplay(
     const result = (
       receipt as Extract<TaskOperationReceiptV1, { operation: "check_change" }>
     ).result;
+    const changeCheck = ChangeCheckV1Schema.parse(result.changeCheck);
     return {
-      changeCheck: result.changeCheck,
-      changeCheckClassification: classifyChangeCheckV1(result.changeCheck),
+      changeCheck,
+      changeCheckClassification: classifyChangeCheckV1(changeCheck),
       mutation: { ...result.mutation, idempotentReplay: true },
     };
   }
@@ -213,7 +221,7 @@ function taskReplay(
     >
   ).result;
   return {
-    verification: result.verification,
+    verification: VerificationRecordV1Schema.parse(result.verification),
     mutation: { ...result.mutation, idempotentReplay: true },
   };
 }

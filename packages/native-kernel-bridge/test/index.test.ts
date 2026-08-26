@@ -36,6 +36,7 @@ import {
   closeNativeSafeGitDescriptorBootstrapV1,
   createNativeInstallationIdentityArtifactV1,
   deriveNativeSafeGitPathIdentityV1,
+  executeNativeSafeGitVersionV1,
   inspectNativeInstallationEmptyHooksDirectoryV1,
   openNativeTestInstallationStateAuthorityV1,
   openNativeSafeGitDescriptorBootstrapV1,
@@ -646,6 +647,35 @@ while (Date.now() < deadline) {
       } finally {
         closeNativeInstallationStateAuthorityV1(foreignAuthority.authority);
         closeExecutableFixtureV1(armed);
+      }
+    });
+
+    it("fails closed instead of executing a bound script outside the native Git runner", () => {
+      const fixture = createExecutableFixtureV1();
+      const executablePath = createTemporaryExecutableV1(
+        fixture.root,
+        "git",
+        "#!/bin/sh\nprintf 'git version 9.9.9\\n'\n",
+      );
+      try {
+        expect(bindTemporaryExecutableV1(fixture, executablePath)).toEqual({
+          profile: "native_safe_git_executable_binding_v1",
+          executableBinding: "verified",
+        });
+        expectSafeGitUnavailableV1(() =>
+          executeNativeSafeGitVersionV1(
+            fixture.bootstrap.binding,
+            fixture.authority.authority,
+            fixture.key,
+          ),
+        );
+        expectSafeGitUnavailableV1(() =>
+          revalidateNativeSafeGitDescriptorBootstrapV1(
+            fixture.bootstrap.binding,
+          ),
+        );
+      } finally {
+        closeExecutableFixtureV1(fixture);
       }
     });
 

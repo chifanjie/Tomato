@@ -29,11 +29,21 @@ import {
 import {
   classifyProviderStrongMutationBrokerAdmissionInternalV1,
   inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1,
+  openProviderStrongMutationBrokerStoreWithExecutionFenceAndLayoutCoreInternalV1,
   openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1,
   type ProviderStrongMutationBrokerAdmissionInputInternalV1,
   type ProviderStrongMutationBrokerAdmissionResultInternalV1,
   type ProviderStrongMutationBrokerStoreInternalV1,
 } from "./strong-mutation-broker-core-internal.js";
+import {
+  registerProviderStrongMutationLinuxExt4ExecutionFenceForTestInternalV1,
+  type ProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  type RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
+} from "./strong-mutation-execution-fence-internal.js";
+import {
+  createProviderStrongMutationProductionSessionCallbacksInternalV1,
+  type ProviderStrongMutationProductionSessionCallbacksInternalV1,
+} from "./strong-mutation-production-session-internal.js";
 import {
   PROVIDER_STRONG_MUTATION_TRUST_EVIDENCE_SNAPSHOT_LIMITS_INTERNAL_V1,
   classifyProviderStrongMutationTrustEvidenceSnapshotAdmissionInternalV1,
@@ -361,6 +371,41 @@ export function openProviderStrongMutationBrokerStoreForTestInternalV1(
   );
 }
 
+export function registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1(
+  input: RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
+): ProviderStrongMutationExecutionFenceCapabilityInternalV1 {
+  requireTestProcessV1();
+  return registerProviderStrongMutationLinuxExt4ExecutionFenceForTestInternalV1(
+    input,
+  );
+}
+
+export function openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  executionFenceCapability:
+    ProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
+): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
+  requireTestProcessV1();
+  return openProviderStrongMutationBrokerStoreWithExecutionFenceAndLayoutCoreInternalV1(
+    requireCapabilityV1(capability),
+    verifierCapability,
+    executionFenceCapability,
+    options,
+  );
+}
+
+export function createProviderStrongMutationProductionSessionCallbacksForTestInternalV1(
+  broker: ProviderStrongMutationBrokerStoreInternalV1,
+): ProviderStrongMutationProductionSessionCallbacksInternalV1 {
+  requireTestProcessV1();
+  return createProviderStrongMutationProductionSessionCallbacksInternalV1(
+    broker,
+  );
+}
+
 export function mintProviderStrongMutationTrustVerifierForTestInternalV1(
   input: MintProviderStrongMutationTrustVerifierCapabilityInternalV1Input,
 ): ProviderStrongMutationTrustVerifierCapabilityInternalV1 {
@@ -410,4 +455,7 @@ export type {
   ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   ProviderStrongMutationBrokerAdmissionInputInternalV1,
   ProviderStrongMutationBrokerAdmissionResultInternalV1,
+  ProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
+  ProviderStrongMutationProductionSessionCallbacksInternalV1,
 };

@@ -1,4 +1,5 @@
 import { constants, promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import type { FileHandle } from "node:fs/promises";
 import { userInfo } from "node:os";
 import {
@@ -11,7 +12,7 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { TextDecoder } from "node:util";
+import { TextDecoder, types as utilTypes } from "node:util";
 
 import {
   bindNativeSafeGitRepositoryControlV1,
@@ -22,11 +23,15 @@ import {
   type NativeSafeGitDescriptorLayoutV1,
   type NativeSafeGitPathIdentityV1,
   type NativeSafeGitRepositoryControlInspectionV1,
+  type NativeSafeGitVersionV1,
 } from "@understand-code/native-kernel-bridge";
 import {
   PathSafeRepositoryIdV1Schema,
+  PathSafeRepositorySnapshotIdV1Schema,
   PathSafeRootIdentityV1Schema,
   PathSafeWorktreeIdV1Schema,
+  TaskIdSchema,
+  canonicalizeJson,
   type PathSafeRepositoryIdV1,
   type PathSafeRootIdentityV1,
   type PathSafeWorktreeIdV1,
@@ -35,9 +40,20 @@ import {
   bindProviderAcceptanceSafeGitEmptyHooksDirectoryInternalV1,
   bindProviderAcceptanceSafeGitExecutableInternalV1,
   deriveProviderAcceptanceSafeGitPathIdentityInternalV1,
+  executeProviderAcceptanceSafeGitReadInternalV1,
+  createProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1,
+  recoverProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1,
+  rollbackProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1,
+  executeProviderAcceptanceSafeGitVersionInternalV1,
 } from "@understand-code/durable-object-provider-authority/internal/acceptance-store";
 
 import { getSafeGitBootstrapTestHooksInternalV1 } from "./safe-git-bootstrap-testing-internal.js";
+import type {
+  SafeGitReadCommandV1,
+  SafeGitReadExecutorV1,
+  SafeGitReadRequestV1,
+} from "./safe-git-read-command.js";
+import { classifySafeGitReadCommandV1 } from "./safe-git-read-command.js";
 
 const MAX_POINTER_BYTES_V1 = 4_096;
 const MAX_BOUND_COMPONENTS_V1 = 256;
@@ -97,6 +113,12 @@ export const SAFE_GIT_EXECUTABLE_BINDING_REQUIRED_NEXT_V1 = Object.freeze([
   "os_sandbox",
   "strong_writer",
 ] as const);
+export const SAFE_GIT_VERSION_PROBE_PROFILE_V1 =
+  "descriptor_bound_safe_git_version_probe_v1" as const;
+export const SAFE_GIT_VERSION_PROBE_REQUIRED_NEXT_V1 = Object.freeze([
+  "remaining_safe_git_commands",
+  "strong_writer",
+] as const);
 
 export type SafeGitBootstrapErrorCodeV1 =
   | "unsupported_platform"
@@ -114,6 +136,9 @@ export type SafeGitBootstrapErrorCodeV1 =
   | "repository_identity_invalid"
   | "empty_hooks_directory_invalid"
   | "executable_binding_invalid"
+  | "version_execution_invalid"
+  | "read_execution_invalid"
+  | "lease_execution_invalid"
   | "binding_changed";
 
 const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
@@ -141,6 +166,12 @@ const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
       "SafeGit empty-hooks authority is unavailable or could not be verified",
     executable_binding_invalid:
       "SafeGit executable authority is unavailable or could not be verified",
+    version_execution_invalid:
+      "SafeGit version execution authority is unavailable or could not be verified",
+    read_execution_invalid:
+      "SafeGit read execution authority is unavailable or could not be verified",
+    lease_execution_invalid:
+      "SafeGit Task baseline lease authority is unavailable or could not be verified",
     binding_changed: "filesystem bootstrap binding changed during validation",
   });
 
@@ -262,12 +293,33 @@ export interface SafeGitExecutableBindingInspectionV1
   ];
 }
 
+/** A real, handle-bound and OS-contained execution of the bootstrap version probe. */
+export interface SafeGitVersionProbeInspectionV1
+  extends Omit<
+    SafeGitExecutableBindingInspectionV1,
+    | "profile"
+    | "gitVersion"
+    | "handleBoundExecution"
+    | "osSandbox"
+    | "requiredNext"
+  > {
+  readonly profile: typeof SAFE_GIT_VERSION_PROBE_PROFILE_V1;
+  readonly gitVersion: NativeSafeGitVersionV1;
+  readonly handleBoundExecution: "verified_version_probe";
+  readonly osSandbox: "verified_version_probe";
+  readonly requiredNext: readonly [
+    "remaining_safe_git_commands",
+    "strong_writer",
+  ];
+}
+
 export type SafeGitDescriptorBoundInspectionV1 =
   | SafeGitDescriptorBootstrapInspectionV1
   | SafeGitRepositoryControlInspectionV1
   | SafeGitRepositoryIdentityInspectionV1
   | SafeGitEmptyHooksInspectionV1
-  | SafeGitExecutableBindingInspectionV1;
+  | SafeGitExecutableBindingInspectionV1
+  | SafeGitVersionProbeInspectionV1;
 
 export interface SafeGitDescriptorBoundCapabilityV1 {
   readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
@@ -278,8 +330,68 @@ export interface SafeGitDescriptorBoundCapabilityV1 {
   bindGitExecutable(
     absoluteExecutablePath: string,
   ): Promise<SafeGitExecutableBindingInspectionV1>;
+  executeGitVersion(): Promise<SafeGitVersionProbeInspectionV1>;
+  createReadExecutor(): SafeGitReadExecutorV1;
+  executeGitObjectType(objectId: string): Promise<"blob" | "tree" | "commit">;
+  createTaskBaselineLease(
+    request: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1>;
+  recoverTaskBaselineLease(
+    request: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1>;
+  rollbackTaskBaselineLease(
+    request: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1>;
   revalidate(): Promise<SafeGitDescriptorBoundInspectionV1>;
   close(): Promise<void>;
+}
+
+export interface SafeGitTaskBaselineLeaseCreateRequestV1 {
+  readonly taskId: string;
+  readonly baselineSnapshotId: string;
+  readonly commit: string;
+  readonly expectedAbsent: true;
+  readonly markerNonce: string;
+  readonly markerContentDigest: `sha256:${string}`;
+}
+
+export interface SafeGitTaskBaselineLeaseV1 {
+  readonly resolution: "created" | "replayed" | "rolled_back";
+  readonly leaseId: `git-lease:${string}`;
+  readonly refName: `refs/understand-code/task-baselines/${string}`;
+  readonly objectId: string;
+}
+
+export interface SafeGitTaskBaselineLeaseIntentV1
+  extends Omit<SafeGitTaskBaselineLeaseV1, "resolution"> {
+  readonly profile: "task_baseline_git_lease_plan_v1";
+  readonly repositoryId: PathSafeRepositoryIdV1;
+  readonly worktreeId: PathSafeWorktreeIdV1;
+  readonly taskId: string;
+  readonly baselineSnapshotId: string;
+  readonly objectFormat: "sha1" | "sha256";
+  readonly markerNonce: string;
+  readonly expectedOldObjectId: string;
+  readonly refPreexisting: false;
+  readonly reflogPreexisting: false;
+  readonly reflogRelativePath: string;
+  readonly markerRelativePath: string;
+  readonly gitLease: Readonly<{
+    readonly baselineSnapshotId: string;
+    readonly commit: string;
+    readonly expectedOldObjectId: string;
+    readonly leaseId: `git-lease:${string}`;
+    readonly markerNonce: string;
+    readonly objectFormat: "sha1" | "sha256";
+    readonly profile: "task_baseline_git_lease_plan_v1";
+    readonly refName: `refs/understand-code/task-baselines/${string}`;
+    readonly refPreexisting: false;
+    readonly reflogPreexisting: false;
+    readonly reflogRelativePath: string;
+    readonly repositoryId: PathSafeRepositoryIdV1;
+    readonly taskId: string;
+    readonly worktreeId: PathSafeWorktreeIdV1;
+  }>;
 }
 
 export interface SafeGitDescriptorBoundBootstrapCandidateV1 {
@@ -298,6 +410,298 @@ interface BoundNodeV1 {
 
 const CAPABILITIES_V1 = new WeakSet<object>();
 
+const SAFE_GIT_READ_COMMAND_KEYS_V1 = Object.freeze([
+  "acceptedExitCodes",
+  "outputFraming",
+  "request",
+  "stderrLimitBytes",
+  "stdoutLimitBytes",
+] as const);
+const SAFE_GIT_LEASE_REQUEST_KEYS_V1 = Object.freeze([
+  "baselineSnapshotId",
+  "commit",
+  "expectedAbsent",
+  "markerContentDigest",
+  "markerNonce",
+  "taskId",
+] as const);
+const LOWER_HEX_32_V1 = /^[0-9a-f]{32}$/u;
+const LOWER_HEX_40_OR_64_V1 = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const CONTENT_DIGEST_V1 = /^sha256:[0-9a-f]{64}$/u;
+
+function sha256HexV1(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+/**
+ * Builds the one canonical marker that Artifact Store must durably publish
+ * before asking the descriptor-bound capability to create the Git lease.
+ */
+export function createSafeGitTaskBaselineLeaseIntentV1(input: Readonly<{
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly taskId: string;
+  readonly baselineSnapshotId: string;
+  readonly objectFormat: "sha1" | "sha256";
+  readonly commit: string;
+  readonly markerNonce: string;
+}>): SafeGitTaskBaselineLeaseIntentV1 {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input) ||
+    utilTypes.isProxy(input) ||
+    (Object.getPrototypeOf(input) !== Object.prototype &&
+      Object.getPrototypeOf(input) !== null)
+  ) {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(input);
+  const keys = Reflect.ownKeys(input);
+  const expectedKeys = [
+    "baselineSnapshotId",
+    "commit",
+    "markerNonce",
+    "objectFormat",
+    "repositoryId",
+    "taskId",
+    "worktreeId",
+  ];
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    (keys as string[]).sort().join("\0") !== expectedKeys.join("\0") ||
+    expectedKeys.some((key) => {
+      const descriptor = descriptors[key];
+      return descriptor === undefined || !("value" in descriptor) ||
+        descriptor.get !== undefined || descriptor.set !== undefined;
+    })
+  ) {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  try {
+    const repositoryId = PathSafeRepositoryIdV1Schema.parse(
+      descriptors.repositoryId!.value,
+    );
+    const worktreeId = PathSafeWorktreeIdV1Schema.parse(
+      descriptors.worktreeId!.value,
+    );
+    const taskId = TaskIdSchema.parse(descriptors.taskId!.value);
+    const baselineSnapshotId = PathSafeRepositorySnapshotIdV1Schema.parse(
+      descriptors.baselineSnapshotId!.value,
+    );
+    const objectFormat = descriptors.objectFormat!.value;
+    const commit = descriptors.commit!.value;
+    const markerNonce = descriptors.markerNonce!.value;
+    if (
+      (objectFormat !== "sha1" && objectFormat !== "sha256") ||
+      typeof commit !== "string" ||
+      !LOWER_HEX_40_OR_64_V1.test(commit) ||
+      commit.length !== (objectFormat === "sha1" ? 40 : 64) ||
+      typeof markerNonce !== "string" ||
+      !LOWER_HEX_32_V1.test(markerNonce)
+    ) {
+      throw new Error("invalid lease identity input");
+    }
+    const leaseHex = sha256HexV1(
+      canonicalizeJson([
+        "git-lease-v1",
+        {
+          baselineSnapshotId,
+          commit,
+          objectFormat,
+          repositoryId,
+          taskId,
+          worktreeId,
+        },
+      ]),
+    ).slice(0, 22);
+    const leaseId = `git-lease:${leaseHex}` as const;
+    const refName =
+      `refs/understand-code/task-baselines/${leaseHex}-${markerNonce}` as const;
+    const expectedOldObjectId = "0".repeat(commit.length);
+    const reflogRelativePath = `logs/${refName}`;
+    const markerPayload = Object.freeze({
+      baselineSnapshotId,
+      commit,
+      expectedOldObjectId,
+      leaseId,
+      markerNonce,
+      objectFormat,
+      profile: "task_baseline_git_lease_plan_v1" as const,
+      refName,
+      refPreexisting: false as const,
+      reflogPreexisting: false as const,
+      reflogRelativePath,
+      repositoryId,
+      taskId,
+      worktreeId,
+    });
+    return Object.freeze({
+      ...markerPayload,
+      objectId: commit,
+      gitLease: markerPayload,
+      markerRelativePath:
+        `.understand-code/.recovery/task-baseline-transactions/${taskId}-${markerNonce}.json`,
+    });
+  } catch (error) {
+    if (error instanceof SafeGitBootstrapErrorV1) throw error;
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+}
+
+function safeGitLeaseRequestV1(
+  request: SafeGitTaskBaselineLeaseCreateRequestV1,
+): SafeGitTaskBaselineLeaseCreateRequestV1 {
+  if (
+    typeof request !== "object" ||
+    request === null ||
+    Array.isArray(request) ||
+    utilTypes.isProxy(request) ||
+    (Object.getPrototypeOf(request) !== Object.prototype &&
+      Object.getPrototypeOf(request) !== null)
+  ) {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  const keys = Reflect.ownKeys(request);
+  const descriptors = Object.getOwnPropertyDescriptors(request);
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    (keys as string[]).sort().join("\0") !==
+      SAFE_GIT_LEASE_REQUEST_KEYS_V1.join("\0") ||
+    SAFE_GIT_LEASE_REQUEST_KEYS_V1.some((key) => {
+      const descriptor = descriptors[key];
+      return descriptor === undefined || !("value" in descriptor) ||
+        descriptor.get !== undefined || descriptor.set !== undefined;
+    })
+  ) {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  const taskId = descriptors.taskId!.value;
+  const baselineSnapshotId = descriptors.baselineSnapshotId!.value;
+  const commit = descriptors.commit!.value;
+  const expectedAbsent = descriptors.expectedAbsent!.value;
+  const markerNonce = descriptors.markerNonce!.value;
+  const markerContentDigest = descriptors.markerContentDigest!.value;
+  let parsedTaskId: string;
+  let parsedBaselineSnapshotId: string;
+  try {
+    parsedTaskId = TaskIdSchema.parse(taskId);
+    parsedBaselineSnapshotId = PathSafeRepositorySnapshotIdV1Schema.parse(
+      baselineSnapshotId,
+    );
+  } catch {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  if (
+    typeof commit !== "string" ||
+    !LOWER_HEX_40_OR_64_V1.test(commit) ||
+    expectedAbsent !== true ||
+    typeof markerNonce !== "string" ||
+    !LOWER_HEX_32_V1.test(markerNonce) ||
+    typeof markerContentDigest !== "string" ||
+    !CONTENT_DIGEST_V1.test(markerContentDigest)
+  ) {
+    throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+  }
+  return Object.freeze({
+    taskId: parsedTaskId!,
+    baselineSnapshotId: parsedBaselineSnapshotId!,
+    commit,
+    expectedAbsent: true,
+    markerNonce,
+    markerContentDigest,
+  });
+}
+
+function safeGitReadRequestFromCommandV1(
+  command: SafeGitReadCommandV1,
+): SafeGitReadRequestV1 {
+  if (
+    typeof command !== "object" ||
+    command === null ||
+    Array.isArray(command) ||
+    utilTypes.isProxy(command)
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const prototype = Object.getPrototypeOf(command);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const keys = Reflect.ownKeys(command);
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    (keys as string[]).sort().join("\0") !==
+      SAFE_GIT_READ_COMMAND_KEYS_V1.join("\0")
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(command);
+  for (const key of SAFE_GIT_READ_COMMAND_KEYS_V1) {
+    const descriptor = descriptors[key];
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.get !== undefined ||
+      descriptor.set !== undefined
+    ) {
+      throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+    }
+  }
+  return descriptors.request!.value as SafeGitReadRequestV1;
+}
+
+function safeGitReadAbortSignalV1(
+  options: Readonly<{ readonly signal?: AbortSignal }> | undefined,
+): AbortSignal | undefined {
+  if (options === undefined) return undefined;
+  if (
+    typeof options !== "object" ||
+    options === null ||
+    Array.isArray(options) ||
+    utilTypes.isProxy(options)
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const prototype = Object.getPrototypeOf(options);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const keys = Reflect.ownKeys(options);
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    keys.length > 1 ||
+    (keys.length === 1 && keys[0] !== "signal")
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  if (keys.length === 0) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(options, "signal");
+  if (
+    descriptor === undefined ||
+    !("value" in descriptor) ||
+    descriptor.get !== undefined ||
+    descriptor.set !== undefined
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  const signal = descriptor.value;
+  if (signal === undefined) return undefined;
+  if (
+    typeof signal !== "object" ||
+    signal === null ||
+    utilTypes.isProxy(signal) ||
+    Object.getPrototypeOf(signal) !== AbortSignal.prototype
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  return signal as AbortSignal;
+}
+
+function isSafeGitReadAbortedV1(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
 class SafeGitBootstrapCapabilityInternalV1
   implements SafeGitDescriptorBoundCapabilityV1
 {
@@ -314,6 +718,8 @@ class SafeGitBootstrapCapabilityInternalV1
     >
     | undefined;
   #executableBound = false;
+  #gitVersion: NativeSafeGitVersionV1 | undefined;
+  #readExecutor: SafeGitReadExecutorV1 | undefined;
   #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -456,6 +862,242 @@ class SafeGitBootstrapCapabilityInternalV1
     }
   }
 
+  async executeGitVersion(): Promise<SafeGitVersionProbeInspectionV1> {
+    const binding = this.#binding;
+    if (
+      this.#closed || !this.#usable || binding === undefined ||
+      !this.#executableBound || this.#repositoryControl === undefined ||
+      this.#pathIdentity === undefined || this.#emptyHooksBinding === undefined
+    ) {
+      throw new SafeGitBootstrapErrorV1("version_execution_invalid");
+    }
+    try {
+      const version =
+        await executeProviderAcceptanceSafeGitVersionInternalV1(binding);
+      validateGitVersionV1(version);
+      this.#gitVersion = version;
+      return versionProbeInspectionV1(
+        this.#layout,
+        this.#repositoryControl,
+        this.#pathIdentity,
+        version,
+      );
+    } catch {
+      this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("version_execution_invalid");
+    }
+  }
+
+  createReadExecutor(): SafeGitReadExecutorV1 {
+    const binding = this.#binding;
+    if (
+      this.#closed || !this.#usable || binding === undefined ||
+      this.#gitVersion === undefined
+    ) {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+    }
+    if (this.#readExecutor !== undefined) return this.#readExecutor;
+    const executor = Object.freeze({
+      execute: (
+        command: SafeGitReadCommandV1,
+        options?: Readonly<{ readonly signal?: AbortSignal }>,
+      ) => this.#executeRead(command, options),
+    });
+    this.#readExecutor = executor;
+    return executor;
+  }
+
+  async executeGitObjectType(
+    objectId: string,
+  ): Promise<"blob" | "tree" | "commit"> {
+    const binding = this.#binding;
+    try {
+      if (
+        this.#closed || !this.#usable || binding === undefined ||
+        this.#gitVersion === undefined ||
+        typeof objectId !== "string" || !LOWER_HEX_40_OR_64_V1.test(objectId)
+      ) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
+      const command = classifySafeGitReadCommandV1([
+        "cat-file",
+        "-t",
+        "--",
+        objectId,
+      ]);
+      const result = await this.#executeRead(command);
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+        result.stdout,
+      );
+      if (result.exitCode !== 0 || !/^(?:blob|tree|commit)\n$/u.test(text)) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
+      return text.slice(0, -1) as "blob" | "tree" | "commit";
+    } catch {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+    }
+  }
+
+  async createTaskBaselineLease(
+    requestValue: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1> {
+    const binding = this.#binding;
+    try {
+      if (
+        this.#closed || !this.#usable || binding === undefined ||
+        this.#gitVersion === undefined || this.#repositoryControl === undefined ||
+        this.#pathIdentity === undefined
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      const request = safeGitLeaseRequestV1(requestValue);
+      const intent = createSafeGitTaskBaselineLeaseIntentV1({
+        repositoryId: this.#pathIdentity.repositoryId,
+        worktreeId: this.#pathIdentity.worktreeId,
+        taskId: request.taskId,
+        baselineSnapshotId: request.baselineSnapshotId,
+        objectFormat: this.#repositoryControl.objectFormat,
+        commit: request.commit,
+        markerNonce: request.markerNonce,
+      });
+      const created =
+        await createProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1(
+          binding,
+          request,
+        );
+      if (
+        created.leaseId !== intent.leaseId ||
+        created.refName !== intent.refName ||
+        created.objectId !== intent.objectId
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      return Object.freeze({ ...created });
+    } catch {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+    }
+  }
+
+  async recoverTaskBaselineLease(
+    requestValue: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1> {
+    const binding = this.#binding;
+    try {
+      if (
+        this.#closed || !this.#usable || binding === undefined ||
+        this.#gitVersion === undefined || this.#repositoryControl === undefined ||
+        this.#pathIdentity === undefined
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      const request = safeGitLeaseRequestV1(requestValue);
+      const intent = createSafeGitTaskBaselineLeaseIntentV1({
+        repositoryId: this.#pathIdentity.repositoryId,
+        worktreeId: this.#pathIdentity.worktreeId,
+        taskId: request.taskId,
+        baselineSnapshotId: request.baselineSnapshotId,
+        objectFormat: this.#repositoryControl.objectFormat,
+        commit: request.commit,
+        markerNonce: request.markerNonce,
+      });
+      const recovered =
+        await recoverProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1(
+          binding,
+          request,
+        );
+      if (
+        recovered.leaseId !== intent.leaseId ||
+        recovered.refName !== intent.refName ||
+        recovered.objectId !== intent.objectId ||
+        (recovered.resolution !== "created" &&
+          recovered.resolution !== "replayed")
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      return Object.freeze({ ...recovered });
+    } catch {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+    }
+  }
+
+  async rollbackTaskBaselineLease(
+    requestValue: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1> {
+    const binding = this.#binding;
+    try {
+      if (
+        this.#closed || !this.#usable || binding === undefined ||
+        this.#gitVersion === undefined || this.#repositoryControl === undefined ||
+        this.#pathIdentity === undefined
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      const request = safeGitLeaseRequestV1(requestValue);
+      const intent = createSafeGitTaskBaselineLeaseIntentV1({
+        repositoryId: this.#pathIdentity.repositoryId,
+        worktreeId: this.#pathIdentity.worktreeId,
+        taskId: request.taskId,
+        baselineSnapshotId: request.baselineSnapshotId,
+        objectFormat: this.#repositoryControl.objectFormat,
+        commit: request.commit,
+        markerNonce: request.markerNonce,
+      });
+      const rolledBack =
+        await rollbackProviderAcceptanceSafeGitTaskBaselineLeaseInternalV1(
+          binding,
+          request,
+        );
+      if (
+        rolledBack.leaseId !== intent.leaseId ||
+        rolledBack.refName !== intent.refName ||
+        rolledBack.objectId !== intent.objectId ||
+        (rolledBack.resolution !== "rolled_back" &&
+          rolledBack.resolution !== "replayed")
+      ) {
+        throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+      }
+      return Object.freeze({ ...rolledBack });
+    } catch {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("lease_execution_invalid");
+    }
+  }
+
+  async #executeRead(
+    command: SafeGitReadCommandV1,
+    options?: Readonly<{ readonly signal?: AbortSignal }>,
+  ) {
+    const binding = this.#binding;
+    try {
+      if (
+        this.#closed || !this.#usable || binding === undefined ||
+        this.#gitVersion === undefined
+      ) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
+      const request = safeGitReadRequestFromCommandV1(command);
+      const signal = safeGitReadAbortSignalV1(options);
+      if (isSafeGitReadAbortedV1(signal)) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
+      const result = await executeProviderAcceptanceSafeGitReadInternalV1(
+        binding,
+        request,
+      );
+      if (isSafeGitReadAbortedV1(signal)) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
+      return result;
+    } catch {
+      if (binding !== undefined) this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+    }
+  }
+
   async revalidate(): Promise<SafeGitDescriptorBoundInspectionV1> {
     const binding = this.#binding;
     if (this.#closed || !this.#usable || binding === undefined) {
@@ -472,10 +1114,18 @@ class SafeGitBootstrapCapabilityInternalV1
       ) {
         throw new SafeGitBootstrapErrorV1("binding_changed");
       }
-      return executableBindingInspectionV1(
+      const executable = executableBindingInspectionV1(
         this.#layout,
         this.#repositoryControl,
         this.#pathIdentity,
+      );
+      if (this.#gitVersion === undefined) return executable;
+      validateGitVersionV1(this.#gitVersion);
+      return versionProbeInspectionV1(
+        this.#layout,
+        this.#repositoryControl,
+        this.#pathIdentity,
+        this.#gitVersion,
       );
     } catch {
       this.#poisonBinding(binding);
@@ -998,6 +1648,42 @@ function executableBindingInspectionV1(
     gitVersion: "locked",
     requiredNext: SAFE_GIT_EXECUTABLE_BINDING_REQUIRED_NEXT_V1,
   });
+}
+
+function versionProbeInspectionV1(
+  layout: SafeGitVersionProbeInspectionV1["layout"],
+  control: NativeSafeGitRepositoryControlInspectionV1,
+  pathIdentity: NativeSafeGitPathIdentityV1,
+  gitVersion: NativeSafeGitVersionV1,
+): SafeGitVersionProbeInspectionV1 {
+  const executable = executableBindingInspectionV1(
+    layout,
+    control,
+    pathIdentity,
+  );
+  return Object.freeze({
+    ...executable,
+    profile: SAFE_GIT_VERSION_PROBE_PROFILE_V1,
+    gitVersion,
+    handleBoundExecution: "verified_version_probe",
+    osSandbox: "verified_version_probe",
+    requiredNext: SAFE_GIT_VERSION_PROBE_REQUIRED_NEXT_V1,
+  });
+}
+
+function validateGitVersionV1(version: NativeSafeGitVersionV1): void {
+  const keys = Object.keys(version).sort();
+  if (
+    (keys.join("\0") !== "major\0minor\0patch" &&
+      keys.join("\0") !== "major\0minor\0patch\0vendorSuffix") ||
+    ![version.major, version.minor, version.patch].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    ) ||
+    (version.vendorSuffix !== undefined &&
+      !/^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,63}$/u.test(version.vendorSuffix))
+  ) {
+    throw new SafeGitBootstrapErrorV1("version_execution_invalid");
+  }
 }
 
 function validatePathIdentityV1(

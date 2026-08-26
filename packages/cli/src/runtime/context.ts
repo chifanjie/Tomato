@@ -1,17 +1,35 @@
 import { createHash } from "node:crypto";
+import type { Stats } from "node:fs";
+import { lstat, readFile, statfs } from "node:fs/promises";
 
 import {
   ArtifactStore,
   ArtifactStoreError,
+  ArtifactStoreStrongChangeAuthorityV1,
+  type StrongChangeProviderAuthorityV1,
 } from "@understand-code/artifact-store";
 import {
   canonicalizeJson,
   type RepoPulseV1,
   type RepositorySnapshotV1,
 } from "@understand-code/contracts";
-import { getRepositorySnapshotDetailed } from "@understand-code/repository-state";
+import {
+  bootstrapSafeGitDescriptorBoundCandidateV1,
+  getRepositorySnapshotDetailed,
+  getRepositorySnapshotDetailedWithSafeGitCapabilityV1,
+  type SafeGitTaskBaselineLeaseCreateRequestV1,
+} from "@understand-code/repository-state";
+import {
+  openProviderProductionStrongObjectClientV1,
+  type ProviderProductionStrongObjectClientV1,
+} from "@understand-code/durable-object-provider-client";
+import {
+  ProviderRuntimeIpcFixedObjectLocatorV1Schema,
+  type ProviderRuntimeIpcJsonValueV1,
+} from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import {
   RepositoryTaskContextProvider,
+  RepositoryStrongChangeMaterialAuthorityV1,
   TaskEngine,
 } from "@understand-code/task-engine";
 
@@ -35,6 +53,7 @@ export class RuntimeBindingError extends Error {
 export interface RuntimeContext {
   readonly store: ArtifactStore;
   readonly taskEngine: TaskEngine;
+  readonly close?: () => Promise<void>;
 }
 
 export interface PublishedSnapshotContext {
@@ -67,6 +86,11 @@ function missingRepositoryContext(): ToolFailure {
   return new ToolFailure(strongStoreUnavailableFailure());
 }
 
+const PRODUCTION_SAFE_GIT_EXECUTABLE_V1 = "/opt/understand-code/bin/git";
+const PRODUCTION_SAFE_GIT_CGROUP_SUBGROUP_V1 =
+  "understand-code-safe-git-supervisor-v1";
+const LINUX_EXT4_SUPER_MAGIC_V1 = 0xef53;
+
 const AMBIENT_GIT_AUTHORITY_VARIABLES = Object.freeze([
   "GIT_DIR",
   "GIT_WORK_TREE",
@@ -76,33 +100,95 @@ const AMBIENT_GIT_AUTHORITY_VARIABLES = Object.freeze([
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 ] as const);
 
+function isErrnoV1(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" && error !== null && "code" in error &&
+    (error as { readonly code?: unknown }).code === code
+  );
+}
+
 async function withoutAmbientGitAuthority<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
-  const previous = new Map<string, string | undefined>();
-  for (const name of [
+  const names = [
     ...AMBIENT_GIT_AUTHORITY_VARIABLES,
     "GIT_OPTIONAL_LOCKS",
-  ] as const) {
-    previous.set(name, process.env[name]);
-  }
-  for (const name of AMBIENT_GIT_AUTHORITY_VARIABLES) {
-    delete process.env[name];
-  }
-  // Repository capture invokes read-only Git commands such as `status`.
-  // Suppress Git's optional index refresh so a read tool cannot mutate .git.
+  ] as const;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  for (const name of AMBIENT_GIT_AUTHORITY_VARIABLES) delete process.env[name];
   process.env.GIT_OPTIONAL_LOCKS = "0";
   try {
     return await operation();
   } finally {
-    for (const name of [
-      ...AMBIENT_GIT_AUTHORITY_VARIABLES,
-      "GIT_OPTIONAL_LOCKS",
-    ] as const) {
+    for (const name of names) {
       const value = previous.get(name);
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
+  }
+}
+
+async function useProductionSafeGitProfileV1(
+  canonicalRoot: string,
+): Promise<boolean> {
+  if (process.platform !== "linux") return false;
+
+  let executable: Stats | undefined;
+  try {
+    executable = await lstat(PRODUCTION_SAFE_GIT_EXECUTABLE_V1);
+  } catch (error) {
+    if (!isErrnoV1(error, "ENOENT")) throw error;
+  }
+  let delegated = false;
+  try {
+    const cgroup = await readFile("/proc/self/cgroup", "utf8");
+    delegated = cgroup
+      .trim()
+      .split("\n")
+      .some((line) =>
+        line.startsWith("0::/") &&
+        line.split("/").at(-1) === PRODUCTION_SAFE_GIT_CGROUP_SUBGROUP_V1
+      );
+  } catch {
+    delegated = false;
+  }
+
+  if (executable === undefined && !delegated) return false;
+  if (
+    executable === undefined || !delegated || !executable.isFile() ||
+    executable.isSymbolicLink() || executable.uid !== 0 || executable.gid !== 0 ||
+    executable.nlink !== 1 || (executable.mode & 0o7777) !== 0o755
+  ) {
+    throw new Error("installed SafeGit production profile is invalid");
+  }
+  const filesystem = await statfs(canonicalRoot);
+  if (filesystem.type !== LINUX_EXT4_SUPER_MAGIC_V1) {
+    throw new Error("installed SafeGit production filesystem is invalid");
+  }
+  return true;
+}
+
+async function openProductionSafeGitReadSessionV1(canonicalRoot: string) {
+  const candidate = await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
+  try {
+    await candidate.capability.bindRepositoryControl();
+    await candidate.capability.bindRepositoryIdentity();
+    await candidate.capability.bindEmptyHooksDirectory();
+    await candidate.capability.bindGitExecutable(PRODUCTION_SAFE_GIT_EXECUTABLE_V1);
+    await candidate.capability.executeGitVersion();
+    return {
+      executor: candidate.capability.createReadExecutor(),
+      executeGitObjectType: (objectId: string) =>
+        candidate.capability.executeGitObjectType(objectId),
+      createTaskBaselineLease: (request: SafeGitTaskBaselineLeaseCreateRequestV1) =>
+        candidate.capability.createTaskBaselineLease(request),
+      recoverTaskBaselineLease: (request: SafeGitTaskBaselineLeaseCreateRequestV1) =>
+        candidate.capability.recoverTaskBaselineLease(request),
+      close: () => candidate.capability.close(),
+    };
+  } catch (error) {
+    await candidate.capability.close().catch(() => undefined);
+    throw error;
   }
 }
 
@@ -115,18 +201,56 @@ async function withoutAmbientGitAuthority<T>(
 export async function captureBoundRepositorySnapshot(
   canonicalRoot: string,
 ) {
-  return withoutAmbientGitAuthority(() =>
-    getRepositorySnapshotDetailed(canonicalRoot),
-  );
+  if (!(await useProductionSafeGitProfileV1(canonicalRoot))) {
+    return withoutAmbientGitAuthority(() =>
+      getRepositorySnapshotDetailed(canonicalRoot),
+    );
+  }
+  const candidate =
+    await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
+  try {
+    await candidate.capability.bindRepositoryControl();
+    await candidate.capability.bindRepositoryIdentity();
+    await candidate.capability.bindEmptyHooksDirectory();
+    await candidate.capability.bindGitExecutable(
+      PRODUCTION_SAFE_GIT_EXECUTABLE_V1,
+    );
+    await candidate.capability.executeGitVersion();
+    return await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+      canonicalRoot,
+      candidate.capability,
+    );
+  } finally {
+    await candidate.capability.close();
+  }
 }
 
 export async function openRuntime(
   canonicalRoot: string,
+  options: Readonly<{ canonicalInstallationRoot?: string }> = {},
 ): Promise<RuntimeContext> {
-  // The explicit, frozen root is the only repository authority. Repository
-  // State currently inherits process.env for Git subprocesses, so strip the
-  // variables that could redirect Git to a different worktree or object set.
-  const capture = await captureBoundRepositorySnapshot(canonicalRoot);
+  // The explicit, frozen root and production-pinned Git executable are the
+  // only repository read authorities; no cwd, PATH, env, or raw argv enters
+  // the contained snapshot runner.
+  const strongSelector = options.canonicalInstallationRoot;
+  const capture = strongSelector === undefined
+    ? await captureBoundRepositorySnapshot(canonicalRoot)
+    : await (async () => {
+        const candidate = await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
+        try {
+          await candidate.capability.bindRepositoryControl();
+          await candidate.capability.bindRepositoryIdentity();
+          await candidate.capability.bindEmptyHooksDirectory();
+          await candidate.capability.bindGitExecutable(PRODUCTION_SAFE_GIT_EXECUTABLE_V1);
+          await candidate.capability.executeGitVersion();
+          return await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+            canonicalRoot,
+            candidate.capability,
+          );
+        } finally {
+          await candidate.capability.close();
+        }
+      })();
   if (
     capture.snapshot.captureStatus === "error" ||
     capture.canonicalRoot !== canonicalRoot
@@ -160,16 +284,79 @@ export async function openRuntime(
     throw error;
   }
 
+  let providerClient: ProviderProductionStrongObjectClientV1 | undefined;
+  let strongChangeAuthority: ArtifactStoreStrongChangeAuthorityV1 | undefined;
   const contextProvider = await RepositoryTaskContextProvider.open({
     canonicalRoot,
+    ...(strongSelector === undefined
+      ? {}
+      : { openStrongSafeGitReadSession: () => openProductionSafeGitReadSessionV1(canonicalRoot) }),
   });
+  if (strongSelector !== undefined) {
+    providerClient = await openProviderProductionStrongObjectClientV1({
+      canonicalInstallationRoot: strongSelector,
+    });
+    const provider: StrongChangeProviderAuthorityV1 = {
+      readExactObject: ({ locator }) => providerClient!.readExactObject(
+        ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locator),
+      ),
+      writeExactObject: (input) => providerClient!.writeExactObject({
+        ...input,
+        locator: ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(input.locator),
+      }),
+      compareCommit: async (input) => {
+        const result = await providerClient!.compareCommit({
+          ...input,
+          artifacts: input.artifacts as Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+        });
+        return {
+          resolution: result.resolution,
+          committedRevision: result.state.revision,
+          artifacts: result.state.artifacts,
+        };
+      },
+    };
+    const ownerKeyAuthority = {
+      provenance: "provider_installation_owner_v1" as const,
+      commit: (domain: "record-verification-full-input-v1" | "verification-detail-semantic-v1", canonicalValue: string) =>
+        providerClient!.commitOwnerOnlyState(domain, canonicalValue),
+    };
+    const materialAuthority = new RepositoryStrongChangeMaterialAuthorityV1({
+      store,
+      repositoryContextProvider: contextProvider,
+      provider,
+      providerId: providerClient.verifiedProviderId,
+      ownerKeyAuthority,
+    });
+    strongChangeAuthority = new ArtifactStoreStrongChangeAuthorityV1(store, {
+      provider,
+      materialAuthority,
+      providerId: providerClient.verifiedProviderId,
+    });
+  }
   return {
     store,
     taskEngine: new TaskEngine(store, {
       contextProvider,
       createScope: "mcp:build_task_brief:v1",
+      ...(strongChangeAuthority === undefined
+        ? {}
+        : { strongChangeAuthority }),
     }),
+    ...(providerClient === undefined
+      ? {}
+      : { close: async () => providerClient!.close() }),
   };
+}
+
+/** Explicit production composition entrypoint.  The installation selector is
+ * intentionally mandatory here; it is never inferred from cwd, PATH, or
+ * ambient environment. */
+export function openProductionRuntime(
+  canonicalRoot: string,
+  canonicalInstallationRoot: string,
+): Promise<RuntimeContext> {
+  return openRuntime(canonicalRoot, { canonicalInstallationRoot });
 }
 
 export async function readPublishedSnapshot(

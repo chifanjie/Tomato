@@ -4,6 +4,7 @@ import {
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
+  canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1,
   canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
   canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
   type ProviderRuntimeIpcAcceptanceIdentityProofV1,
@@ -53,6 +54,12 @@ import {
   type ProviderStrongMutationTrustVerificationSessionInternalV1,
   type ProviderStrongMutationVerificationCertificateInternalV1,
 } from "./strong-mutation-trust-verifier-core-internal.js";
+import {
+  assertProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  revalidateProviderStrongMutationExecutionFenceInternalV1,
+  type ProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  type ProviderStrongMutationExecutionLeaseCapabilityInternalV1,
+} from "./strong-mutation-execution-fence-internal.js";
 
 const GENESIS_CHAIN_V1 = "genesis" as const;
 const BROKER_SNAPSHOT_PROFILE_V1 =
@@ -102,8 +109,10 @@ interface ProviderStrongMutationBrokerIntentCommonInternalV1 {
   readonly principalAttestation: ProviderRuntimeIpcPrincipalAttestationV1;
   readonly grantVerification:
     typeof PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant;
-  readonly executionFence: "not_established";
-  readonly strongWrites: "locked";
+  readonly executionFence:
+    | "not_established"
+    | "established_linux_ext4_exact_object_dedicated_os_principal_v1";
+  readonly strongWrites: "locked" | "unlocked";
   readonly recordedAt: string;
 }
 
@@ -195,6 +204,9 @@ export type ProviderStrongMutationBrokerBeginResultInternalV1 =
       readonly resolution: "recorded";
       readonly disposition: "created" | "replayed";
       readonly intent: ProviderStrongMutationBrokerIntentInternalV1;
+      /** Transient only; deliberately absent from every durable snapshot. */
+      readonly executionAuthorization?:
+        ProviderStrongMutationExecutionLeaseCapabilityInternalV1;
     }>
   | Readonly<{
       readonly resolution: "request_rejected";
@@ -225,16 +237,29 @@ export type ProviderStrongMutationBrokerResolveResultInternalV1 =
 
 export interface ProviderStrongMutationBrokerStoreInternalV1 {
   readonly authority: "installation_owner_candidate";
-  readonly strongWrites: "locked";
+  readonly strongWrites: "locked" | "unlocked";
   readonly grantVerification:
     typeof PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant;
-  readonly executionFence: "not_established";
+  readonly executionFence:
+    | "not_established"
+    | "established_linux_ext4_exact_object_dedicated_os_principal_v1";
   readonly begin: (
     request: unknown,
+    principalAttestation?: unknown,
   ) => Promise<ProviderStrongMutationBrokerBeginResultInternalV1>;
   readonly resolve: (
     request: unknown,
   ) => Promise<ProviderStrongMutationBrokerResolveResultInternalV1>;
+}
+
+const brokerStoreCapabilitiesV1 = new WeakSet<object>();
+
+export function assertProviderStrongMutationBrokerStoreCapabilityInternalV1(
+  store: ProviderStrongMutationBrokerStoreInternalV1,
+): void {
+  if (!brokerStoreCapabilitiesV1.has(store as object)) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
 }
 
 export interface ProviderStrongMutationBrokerSnapshotInspectionInternalV1 {
@@ -583,8 +608,13 @@ function parseIntentV1(
       !isDigestV1(raw.bindingDigest) ||
       raw.grantVerification !==
         PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant ||
-      raw.executionFence !== "not_established" ||
-      raw.strongWrites !== "locked" ||
+      !(
+        (raw.executionFence === "not_established" &&
+          raw.strongWrites === "locked") ||
+        (raw.executionFence ===
+            "established_linux_ext4_exact_object_dedicated_os_principal_v1" &&
+          raw.strongWrites === "unlocked")
+      ) ||
       !isCanonicalTimestampV1(raw.recordedAt)
     ) {
       throw new ProviderAcceptanceAuthorityErrorV1("namespace_integrity_failed");
@@ -616,8 +646,10 @@ function parseIntentV1(
       principalAttestation,
       grantVerification:
         PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
-      executionFence: "not_established" as const,
-      strongWrites: "locked" as const,
+      executionFence: raw.executionFence as
+        | "not_established"
+        | "established_linux_ext4_exact_object_dedicated_os_principal_v1",
+      strongWrites: raw.strongWrites as "locked" | "unlocked",
       recordedAt: raw.recordedAt,
     };
     let intent: ProviderStrongMutationBrokerIntentInternalV1;
@@ -1188,6 +1220,7 @@ async function verifyBrokerTrustClosureV1(
         {
           acceptanceHistory,
           request: intent.request,
+          principalAttestation: intent.principalAttestation,
           verificationSession,
         },
       );
@@ -1224,6 +1257,41 @@ async function verifyBrokerTrustClosureV1(
     throw new ProviderAcceptanceAuthorityErrorV1(
       "namespace_integrity_failed",
     );
+  }
+}
+
+async function verifyBrokerExecutionFenceClosureV1(
+  snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined,
+  executionFenceCapability:
+    | ProviderStrongMutationExecutionFenceCapabilityInternalV1
+    | undefined,
+): Promise<void> {
+  if (snapshot === undefined) return;
+  for (const intent of snapshot.envelope.payload.intents) {
+    if (intent.executionFence === "not_established") {
+      if (intent.strongWrites !== "locked") {
+        throw new ProviderAcceptanceAuthorityErrorV1(
+          "namespace_integrity_failed",
+        );
+      }
+      continue;
+    }
+    if (
+      intent.strongWrites !== "unlocked" ||
+      executionFenceCapability === undefined ||
+      !await revalidateProviderStrongMutationExecutionFenceInternalV1(
+        executionFenceCapability,
+        {
+          request: intent.request,
+          principalAttestation: intent.principalAttestation,
+          acceptanceIdentity: intent.acceptanceIdentity,
+        },
+      )
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
   }
 }
 
@@ -1355,6 +1423,9 @@ async function withBrokerViewV1<T>(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
   verifierCapability:
     ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  executionFenceCapability:
+    | ProviderStrongMutationExecutionFenceCapabilityInternalV1
+    | undefined,
   options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
   callback: (
     view: ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1,
@@ -1387,39 +1458,72 @@ async function withBrokerViewV1<T>(
         verifierCapability,
         verificationSession,
       );
+      await verifyBrokerExecutionFenceClosureV1(
+        converged.snapshot,
+        executionFenceCapability,
+      );
       return callback(view, converged, verificationSession);
     },
   );
 }
 
-export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1(
+async function openProviderStrongMutationBrokerStoreCoreInternalV1(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
   verifierCapability:
     ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  executionFenceCapability:
+    | ProviderStrongMutationExecutionFenceCapabilityInternalV1
+    | undefined,
   options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
 ): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
   try {
     assertProviderStrongMutationTrustVerifierCapabilityInternalV1(
       verifierCapability,
     );
+    if (executionFenceCapability !== undefined) {
+      assertProviderStrongMutationExecutionFenceCapabilityInternalV1(
+        executionFenceCapability,
+      );
+    }
   } catch {
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
   }
   await withBrokerViewV1(
     layout,
     verifierCapability,
+    executionFenceCapability,
     options,
     () => undefined,
   );
 
   const begin = async (
     input: unknown,
+    principalAttestationInput?: unknown,
   ): Promise<ProviderStrongMutationBrokerBeginResultInternalV1> => {
     const request = parseStrongMutationRequestV1(input);
+    let principalAttestation: ProviderRuntimeIpcPrincipalAttestationV1 | undefined;
+    if (principalAttestationInput !== undefined) {
+      try {
+        principalAttestation =
+          ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+            principalAttestationInput,
+          );
+        if (
+          sha256DigestInternalV1(
+            canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1(
+              principalAttestation,
+            ),
+          ) !== request.principalAttestationDigest
+        ) throw new TypeError("principal attestation digest mismatch");
+      } catch {
+        throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+      }
+    }
     const requestBytes = canonicalAuthorityBytesInternalV1(request).byteLength;
     return withBrokerViewV1(
       layout,
       verifierCapability,
+      executionFenceCapability,
       options,
       async (view, converged, verificationSession) => {
         const existing = findIntentV1(
@@ -1434,10 +1538,45 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
               existingIntent: existing,
             });
           }
+          if (
+            principalAttestation !== undefined &&
+            !sameCanonicalV1(
+              principalAttestation,
+              existing.principalAttestation,
+            )
+          ) {
+            return Object.freeze({
+              resolution: "request_rejected" as const,
+              reason: "grant_request_mismatch" as const,
+              existingIntent: existing,
+            });
+          }
+          const executionAuthorization =
+            existing.state === "pending" &&
+              existing.executionFence ===
+                "established_linux_ext4_exact_object_dedicated_os_principal_v1" &&
+              executionFenceCapability !== undefined
+              ? await revalidateProviderStrongMutationExecutionFenceInternalV1(
+                executionFenceCapability,
+                {
+                  request: existing.request,
+                  principalAttestation: existing.principalAttestation,
+                  acceptanceIdentity: existing.acceptanceIdentity,
+                },
+              )
+              : undefined;
+          if (
+            existing.state === "pending" &&
+            existing.strongWrites === "unlocked" &&
+            executionAuthorization === undefined
+          ) throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
           return Object.freeze({
             resolution: "recorded" as const,
             disposition: "replayed" as const,
             intent: existing,
+            ...(executionAuthorization === undefined
+              ? {}
+              : { executionAuthorization }),
           });
         }
         const acceptanceIdentity = requireFreshCurrentAcceptanceJoinV1(
@@ -1466,10 +1605,30 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
                 generationEnvelopes: view.verifiedGenerationEnvelopes,
               }),
               request,
+              ...(principalAttestation === undefined
+                ? {}
+                : { principalAttestation }),
               verificationSession,
             },
           );
         } catch {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
+        const executionFenceEstablished = executionFenceCapability !== undefined;
+        const executionAuthorization = executionFenceCapability === undefined
+          ? undefined
+          : await revalidateProviderStrongMutationExecutionFenceInternalV1(
+            executionFenceCapability,
+            {
+              request,
+              principalAttestation: verified.principalAttestation,
+              acceptanceIdentity,
+            },
+          );
+        if (
+          executionFenceEstablished &&
+          executionAuthorization === undefined
+        ) {
           throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
         }
         const intent: ProviderStrongMutationBrokerPendingIntentInternalV1 =
@@ -1485,8 +1644,12 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
             principalAttestation: verified.principalAttestation,
             grantVerification:
               PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
-            executionFence: "not_established" as const,
-            strongWrites: "locked" as const,
+            executionFence: executionFenceEstablished
+              ? "established_linux_ext4_exact_object_dedicated_os_principal_v1" as const
+              : "not_established" as const,
+            strongWrites: executionFenceEstablished
+              ? "unlocked" as const
+              : "locked" as const,
             recordedAt: nowIsoV1(options.clock),
             state: "pending" as const,
           });
@@ -1515,6 +1678,9 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
           resolution: "recorded" as const,
           disposition: "created" as const,
           intent,
+          ...(executionAuthorization === undefined
+            ? {}
+            : { executionAuthorization }),
         });
       },
     );
@@ -1540,6 +1706,7 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
     return withBrokerViewV1(
       layout,
       verifierCapability,
+      executionFenceCapability,
       options,
       async (view, converged) => {
         const existing = findIntentV1(converged.snapshot, resolution.grantId);
@@ -1625,15 +1792,51 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
     );
   };
 
-  return Object.freeze({
+  const store: ProviderStrongMutationBrokerStoreInternalV1 = Object.freeze({
     authority: "installation_owner_candidate" as const,
-    strongWrites: "locked" as const,
+    strongWrites: executionFenceCapability === undefined
+      ? "locked" as const
+      : "unlocked" as const,
     grantVerification:
       PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
-    executionFence: "not_established" as const,
+    executionFence: executionFenceCapability === undefined
+      ? "not_established" as const
+      : "established_linux_ext4_exact_object_dedicated_os_principal_v1" as const,
     begin,
     resolve,
   });
+  brokerStoreCapabilitiesV1.add(store);
+  return store;
+}
+
+export function openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1(
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
+): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
+  return openProviderStrongMutationBrokerStoreCoreInternalV1(
+    layout,
+    verifierCapability,
+    undefined,
+    options,
+  );
+}
+
+export function openProviderStrongMutationBrokerStoreWithExecutionFenceAndLayoutCoreInternalV1(
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  executionFenceCapability:
+    ProviderStrongMutationExecutionFenceCapabilityInternalV1,
+  options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
+): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
+  return openProviderStrongMutationBrokerStoreCoreInternalV1(
+    layout,
+    verifierCapability,
+    executionFenceCapability,
+    options,
+  );
 }
 
 export async function inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1(
@@ -1651,6 +1854,7 @@ export async function inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreI
   return withBrokerViewV1(
     layout,
     verifierCapability,
+    undefined,
     {},
     (_view, converged) => {
       const accounting = converged.snapshot?.envelope.payload.accounting;

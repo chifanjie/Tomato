@@ -7,19 +7,35 @@ import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefResultV1Schema,
   CheckChangeInputV1Schema,
+  ContextGenerationDependencyPinV1Schema,
+  ContextGenerationInputV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefResultV1Schema,
   IdempotencyRecordV1Schema,
+  PathSafeRepositorySnapshotIdV1Schema,
   RecordVerificationInputV1Schema,
+  ResolvedContextBuildSpecV1Schema,
+  StrongCheckChangesInputV1Schema,
+  StrongRecordVerificationInputV1Schema,
+  StrongTaskBaselineCaptureInputV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   UpdateTaskInputV1Schema,
   type BuildTaskBriefInputV1,
   type BuildTaskBriefResultV1,
+  type ContextGenerationDependencyPinV1,
   type GetTaskBriefInputV1,
   type IdempotencyRecordV1,
   type RepoPulseV1,
-  type RepositorySnapshotV1,
+  type RepoPulsePersistedPayloadV1,
+  type RepositorySnapshotPersistedPayloadV1,
+  type ResolvedContextBuildSpecV1,
+  type StrongTaskBaselineCaptureOutcomeV1,
+  type StrongChangeIntelligenceAuthorityV1,
+  type StrongChangeCheckMutationOutcomeV1,
+  type StrongCheckChangesInputV1,
+  type StrongRecordVerificationInputV1,
+  type StrongVerificationMutationOutcomeV1,
   type TaskBriefPageItemV1,
   type TaskManifestV1,
   type TaskOperationReceiptV1,
@@ -37,6 +53,10 @@ import {
   type ChangeCheckMutationOutcome,
   type VerificationMutationOutcome,
 } from "./change-intelligence.js";
+import {
+  executeStrongChangeCheckV1,
+  executeStrongVerificationRecordV1,
+} from "./strong-change-intelligence.js";
 import { buildContextDraft } from "./context-builder.js";
 import type {
   AuthorizationContext,
@@ -74,8 +94,12 @@ export const TASK_ENGINE_CAPABILITIES: TaskEngineCapabilities = Object.freeze({
 });
 
 interface RepositoryContext {
-  snapshot: RepositorySnapshotV1;
-  pulse?: RepoPulseV1;
+  snapshot: RepositorySnapshotPersistedPayloadV1;
+  snapshotArtifactId: string;
+  snapshotContentDigest: string;
+  pulse?: RepoPulsePersistedPayloadV1;
+  pulseArtifactId?: string;
+  pulseContentDigest?: string;
 }
 
 interface PageCursor {
@@ -84,6 +108,109 @@ interface PageCursor {
   revision: number;
   section: GetTaskBriefInputV1["section"];
   offset: number;
+}
+
+interface StrongTaskCreationState {
+  readonly baselineCapture: StrongTaskBaselineCaptureOutcomeV1;
+  readonly contextBuildSpec: ResolvedContextBuildSpecV1;
+}
+
+function isStrongRepositorySnapshot(
+  snapshot: RepositorySnapshotPersistedPayloadV1,
+): snapshot is Extract<
+  RepositorySnapshotPersistedPayloadV1,
+  { profile: "repository_snapshot_path_safe_v1" }
+> {
+  return (
+    "profile" in snapshot &&
+    snapshot.profile === "repository_snapshot_path_safe_v1"
+  );
+}
+
+function resolvedContextBuildSpec(
+  input: BuildTaskBriefInputV1,
+): ResolvedContextBuildSpecV1 {
+  return ResolvedContextBuildSpecV1Schema.parse({
+    version: "context-build-spec-v1",
+    scope: [...new Set(input.scope ?? [])].sort((left, right) =>
+      Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"))
+    ),
+    tokenBudget: input.tokenBudget ?? 8_000,
+    maxCandidates: input.maxCandidates ?? 20,
+    maxImpactDepth: input.maxImpactDepth ?? 4,
+    ...(input.baseRef === undefined ? {} : { baseRef: input.baseRef }),
+  });
+}
+
+interface StrongTaskCreationRecovery {
+  readonly snapshotId: string;
+  readonly snapshotContentDigest: string;
+  readonly contextBuildSpec: ResolvedContextBuildSpecV1;
+}
+
+function parseStrongTaskCreationRecovery(
+  marker: Readonly<Record<string, unknown>>,
+  taskId: string,
+  input: BuildTaskBriefInputV1,
+  requestDigest: string,
+): StrongTaskCreationRecovery {
+  if (
+    marker.taskId !== taskId ||
+    marker.idempotencyKey !== input.idempotencyKey ||
+    marker.actor !== input.actor ||
+    marker.requestDigest !== requestDigest ||
+    typeof marker.snapshotId !== "string" ||
+    typeof marker.snapshotContentDigest !== "string"
+  ) {
+    throw new TaskEngineError(
+      "idempotency_conflict",
+      "A strong Task creation recovery marker belongs to a different request.",
+      {
+        taskId,
+        idempotencyKey: input.idempotencyKey,
+        requestDigest,
+      },
+    );
+  }
+  try {
+    return {
+      snapshotId: PathSafeRepositorySnapshotIdV1Schema.parse(marker.snapshotId),
+      snapshotContentDigest: marker.snapshotContentDigest,
+      contextBuildSpec: ResolvedContextBuildSpecV1Schema.parse(
+        marker.contextBuildSpec,
+      ),
+    };
+  } catch (error) {
+    throw new TaskEngineError(
+      "context_build_failed",
+      "A strong Task creation recovery marker is corrupt or unsupported.",
+      {
+        taskId,
+        stage: "strong_creation_recovery",
+        reason: "recovery_marker_invalid",
+      },
+      { cause: error },
+    );
+  }
+}
+
+function contextDependencyPinKey(
+  pin: ContextGenerationDependencyPinV1,
+): string {
+  switch (pin.pinKind) {
+    case "artifact":
+      return [
+        "0",
+        pin.role,
+        pin.artifactId,
+        pin.contentDigest,
+        pin.sourceSnapshotId,
+      ].join("\0");
+    case "artifact_absence":
+      return ["1", pin.role, pin.reasonCode].join("\0");
+    case "policy":
+      return ["2", pin.role, pin.policyKind, pin.contentDigest].join("\0");
+  }
 }
 
 function nextClockTimestamp(previous: string, clock: () => Date): string {
@@ -147,6 +274,7 @@ export class TaskEngine {
   readonly #contextProvider: TaskEngineOptions["contextProvider"];
   readonly #clock: () => Date;
   readonly #createScope: string;
+  readonly #strongChangeAuthority?: StrongChangeIntelligenceAuthorityV1;
 
   constructor(store: ArtifactStore, options: TaskEngineOptions) {
     if (
@@ -166,6 +294,7 @@ export class TaskEngine {
     this.#contextProvider = options.contextProvider;
     this.#clock = options.clock ?? (() => new Date());
     this.#createScope = options.createScope ?? DEFAULT_CREATE_SCOPE;
+    this.#strongChangeAuthority = options.strongChangeAuthority;
   }
 
   getCapabilities(): TaskEngineCapabilities {
@@ -199,9 +328,24 @@ export class TaskEngine {
 
   async #repositoryContext(
     requirePulse: boolean,
+    expectedSnapshotId?: string,
   ): Promise<RepositoryContext> {
     const manifest = await this.#store.readManifest();
-    const snapshotId = manifest.latestSnapshotId;
+    const snapshotId = expectedSnapshotId ?? manifest.latestSnapshotId;
+    if (
+      expectedSnapshotId !== undefined &&
+      manifest.latestSnapshotId !== expectedSnapshotId
+    ) {
+      throw new TaskEngineError(
+        "artifact_unavailable",
+        "The published Repository Snapshot advanced while a strong Task creation was recoverable.",
+        {
+          reason: "snapshot_mismatch",
+          expectedSnapshotId,
+          actualSnapshotId: manifest.latestSnapshotId,
+        },
+      );
+    }
     if (snapshotId === undefined) {
       throw new TaskEngineError(
         "artifact_unavailable",
@@ -220,25 +364,28 @@ export class TaskEngine {
         { reason: "corrupt", artifactType: "repository_snapshot" },
       );
     }
-    if ("profile" in snapshotRead.artifact.payload) {
-      throw new TaskEngineError(
-        "artifact_unavailable",
-        "The legacy Task engine cannot consume a strong Repository Snapshot.",
-        { reason: "unsupported_schema", artifactType: "repository_snapshot" },
-      );
-    }
-    let pulse: RepoPulseV1 | undefined;
+    let pulse: RepoPulsePersistedPayloadV1 | undefined;
+    let pulseArtifactId: string | undefined;
+    let pulseContentDigest: string | undefined;
     try {
       const pulseRead = await this.#store.readArtifact("repo_pulse");
       if (pulseRead.artifact.artifactType === "repo_pulse") {
-        if ("profile" in pulseRead.artifact.payload) {
+        if (pulseRead.artifact.sourceSnapshotId === snapshotId) {
+          pulse = pulseRead.artifact.payload;
+          pulseArtifactId = pulseRead.artifact.artifactId;
+          pulseContentDigest = pulseRead.artifact.contentDigest;
+        } else if (requirePulse) {
           throw new TaskEngineError(
             "artifact_unavailable",
-            "The legacy Task engine cannot consume a strong Repo Pulse.",
-            { reason: "unsupported_schema", artifactType: "repo_pulse" },
+            "Repo Pulse is not bound to the immutable Snapshot required for Task recovery.",
+            {
+              reason: "snapshot_mismatch",
+              artifactType: "repo_pulse",
+              expectedSnapshotId: snapshotId,
+              actualSnapshotId: pulseRead.artifact.sourceSnapshotId,
+            },
           );
         }
-        pulse = pulseRead.artifact.payload;
       }
     } catch (error) {
       if (error instanceof TaskEngineError) throw error;
@@ -251,7 +398,18 @@ export class TaskEngine {
         );
       }
     }
-    return { snapshot: snapshotRead.artifact.payload, ...(pulse === undefined ? {} : { pulse }) };
+    return {
+      snapshot: snapshotRead.artifact.payload,
+      snapshotArtifactId: snapshotRead.artifact.artifactId,
+      snapshotContentDigest: snapshotRead.artifact.contentDigest,
+      ...(pulse === undefined
+        ? {}
+        : {
+            pulse,
+            pulseArtifactId,
+            pulseContentDigest,
+          }),
+    };
   }
 
   async #readExistingTask(
@@ -369,10 +527,12 @@ export class TaskEngine {
     input: BuildTaskBriefInputV1,
     requestDigest: string,
     initial: RepositoryContext,
+    strongCreation?: StrongTaskCreationState,
   ): Promise<ReadTaskBundleResult> {
     const createdAt = this.#clock().toISOString();
-    const baselineSnapshotId =
-      initial.pulse?.baselineSnapshotId ?? initial.snapshot.snapshotId;
+    const baselineSnapshotId = strongCreation === undefined
+      ? initial.pulse?.baselineSnapshotId ?? initial.snapshot.snapshotId
+      : strongCreation.baselineCapture.baseline.captureSnapshotId;
     const task = TaskManifestV1Schema.parse({
       schemaVersion: 1,
       taskId,
@@ -387,6 +547,14 @@ export class TaskEngine {
       updatedAt: createdAt,
       producerVersion: this.#store.producerVersion,
       revision: 1,
+      ...(strongCreation === undefined
+        ? {}
+        : {
+            taskProfile: "agent_task_v1",
+            taskBaselineArtifactId:
+              strongCreation.baselineCapture.baseline.artifactId,
+            contextBuildSpec: strongCreation.contextBuildSpec,
+          }),
     });
     const internalKey = stableId("idempotency:task-created", {
       worktreeId: this.#store.worktreeId,
@@ -455,6 +623,20 @@ export class TaskEngine {
           requestDigest: internalDigest,
         },
       );
+      if (strongCreation !== undefined) {
+        await this.#store.completeStrongBaselineTransactionIntent(taskId).catch(() => {
+          // The committed Task is authoritative; a leftover marker remains
+          // recoverable and is cleaned by the next replay/startup pass.
+        });
+      }
+      // The durable creation intent is only cleared after the Task bundle is
+      // the commit point.  If this process dies before that point, the next
+      // identical request finds the marker and deterministically replays the
+      // same baseline cut instead of creating an untracked Provider object.
+      await this.#store.completeStrongTaskCreationIntent(taskId).catch(() => {
+        // Cleanup is recoverable: a committed Task is authoritative and a
+        // later replay/startup can remove a leftover recovery marker.
+      });
     } catch (error) {
       const raced = await this.#readExistingTask(taskId).catch(() => undefined);
       if (raced !== undefined) return raced;
@@ -475,8 +657,15 @@ export class TaskEngine {
       createScope: this.#createScope,
       idempotencyKey: input.idempotencyKey,
     });
+    let strongCreation: StrongTaskCreationState | undefined;
     let current = await this.#readExistingTask(taskId);
     if (current !== undefined) {
+      // A crash may have occurred after the Task bundle commit but before
+      // recovery-marker cleanup.  Once the bundle exists it is authoritative;
+      // remove only that task-scoped marker and continue normal replay.
+      await this.#store.completeStrongTaskCreationIntent(taskId).catch(() => {
+        // Leave a recoverable marker if its directory is temporarily busy.
+      });
       const completed = this.#matchingReceipt(
         current,
         this.#createScope,
@@ -488,12 +677,107 @@ export class TaskEngine {
         return this.#replayedBuildResult(completed);
       }
     } else {
-      const initial = await this.#repositoryContext(false);
+      const persistedIntent = await this.#store.readStrongTaskCreationIntent(taskId);
+      const recovery = persistedIntent === undefined
+        ? undefined
+        : parseStrongTaskCreationRecovery(
+            persistedIntent,
+            taskId,
+            input,
+            requestDigest,
+          );
+      let initial: RepositoryContext;
+      try {
+        initial = await this.#repositoryContext(
+          false,
+          recovery?.snapshotId,
+        );
+      } catch (error) {
+        if (recovery === undefined) throw error;
+        throw new TaskEngineError(
+          "context_build_failed",
+          "A strong Task creation recovery marker exists, but its immutable Snapshot cut is unavailable.",
+          {
+            taskId,
+            stage: "strong_creation_recovery",
+            reason: "strong_task_creation_recovery_required",
+            snapshotId: recovery.snapshotId,
+          },
+          { cause: error },
+        );
+      }
+      if (
+        recovery !== undefined &&
+        initial.snapshotContentDigest !== recovery.snapshotContentDigest
+      ) {
+        throw new TaskEngineError(
+          "context_build_failed",
+          "A strong Task creation recovery Snapshot failed its content-digest fence.",
+          {
+            taskId,
+            stage: "strong_creation_recovery",
+            reason: "snapshot_content_digest_mismatch",
+            snapshotId: recovery.snapshotId,
+          },
+        );
+      }
+      if (
+        initial.pulse !== undefined &&
+        isStrongRepositorySnapshot(initial.snapshot) !==
+          ("profile" in initial.pulse &&
+            initial.pulse.profile === "repo_pulse_path_safe_v1")
+      ) {
+        throw new TaskEngineError(
+          "artifact_unavailable",
+          "Repository Snapshot and Repo Pulse profiles do not form one trusted context cut.",
+          { reason: "unsupported_schema", artifactType: "repo_pulse" },
+        );
+      }
+      if (isStrongRepositorySnapshot(initial.snapshot)) {
+        if (this.#strongChangeAuthority === undefined) {
+          throw new TaskEngineError(
+            "capability_unavailable",
+            "Strong Task creation requires the Provider baseline authority.",
+            { taskId, reason: "strong_change_authority_unavailable" },
+          );
+        }
+        const contextBuildSpec =
+          recovery?.contextBuildSpec ?? resolvedContextBuildSpec(input);
+        // Reserve a durable creation marker before the baseline authority can
+        // create a Git lease or Provider-private object.  The marker binds
+        // the request and exact Snapshot bytes; a crash before Task commit is
+        // therefore replayable and cannot silently retarget a new Snapshot.
+        await this.#store.persistStrongTaskCreationIntent({
+          taskId,
+          idempotencyKey: input.idempotencyKey,
+          actor: input.actor,
+          requestDigest,
+          snapshotId: initial.snapshot.snapshotId,
+          snapshotContentDigest: initial.snapshotContentDigest,
+          contextBuildSpec,
+        });
+        const baselineCapture = await this.#strongChangeAuthority
+          .captureTaskBaseline(
+            StrongTaskBaselineCaptureInputV1Schema.parse({
+              profile: "capture_task_baseline_strong_v1",
+              taskId,
+              snapshotId: initial.snapshot.snapshotId,
+              contextBuildSpec,
+              idempotencyKey: stableId("task-baseline-capture", {
+                taskId,
+                createIdempotencyKey: input.idempotencyKey,
+              }),
+              actor: input.actor,
+            }),
+          );
+        strongCreation = { baselineCapture, contextBuildSpec };
+      }
       current = await this.#commitCreatedStage(
         taskId,
         input,
         requestDigest,
         initial,
+        strongCreation,
       );
     }
     this.#requireCreatedReceipt(current, input, requestDigest);
@@ -518,7 +802,42 @@ export class TaskEngine {
       );
     }
 
-    const repository = await this.#repositoryContext(true);
+    if (current.bundle.manifest.taskProfile === "agent_task_v1") {
+      if (
+        this.#strongChangeAuthority === undefined ||
+        current.bundle.manifest.contextBuildSpec === undefined
+      ) {
+        throw new TaskEngineError(
+          "capability_unavailable",
+          "The strong Task cannot resume without its Provider baseline authority.",
+          { taskId, reason: "strong_change_authority_unavailable" },
+        );
+      }
+      if (strongCreation === undefined) {
+        strongCreation = {
+          contextBuildSpec: current.bundle.manifest.contextBuildSpec,
+          baselineCapture: await this.#strongChangeAuthority
+            .captureTaskBaseline(
+              StrongTaskBaselineCaptureInputV1Schema.parse({
+                profile: "capture_task_baseline_strong_v1",
+                taskId,
+                snapshotId: current.bundle.manifest.baselineSnapshotId,
+                contextBuildSpec: current.bundle.manifest.contextBuildSpec,
+                idempotencyKey: stableId("task-baseline-capture", {
+                  taskId,
+                  createIdempotencyKey: input.idempotencyKey,
+                }),
+                actor: input.actor,
+              }),
+            ),
+        };
+      }
+    }
+
+    const repository = await this.#repositoryContext(
+      true,
+      strongCreation?.baselineCapture.snapshot.snapshotId,
+    );
     const pulse = repository.pulse!;
     if (
       ["not_ready", "unknown", "rebuilding", "error"].includes(
@@ -537,6 +856,27 @@ export class TaskEngine {
         },
       );
     }
+    if (strongCreation !== undefined) {
+      if (
+        !isStrongRepositorySnapshot(repository.snapshot) ||
+        !("profile" in pulse) ||
+        pulse.profile !== "repo_pulse_path_safe_v1" ||
+        pulse.evaluatedSnapshotId !== repository.snapshot.snapshotId ||
+        pulse.evaluatedSnapshotContentDigest !== repository.snapshotContentDigest
+      ) {
+        throw new TaskEngineError(
+          "task_gate_unsatisfied",
+          "Strong Task context requires an exact strong Snapshot and Repo Pulse cut.",
+          {
+            taskId,
+            targetStatus: "context_ready",
+            failedGuards: [
+              { code: "strong_context_cut_mismatch", resourceId: repository.snapshot.snapshotId },
+            ],
+          },
+        );
+      }
+    }
     let context: Awaited<
       ReturnType<TaskEngineOptions["contextProvider"]["loadTaskContext"]>
     >;
@@ -545,8 +885,12 @@ export class TaskEngine {
         intent: input.task,
         sourceSnapshotId: repository.snapshot.snapshotId,
         repositorySnapshot: repository.snapshot,
-        ...(input.scope === undefined ? {} : { scope: input.scope }),
-        ...(input.baseRef === undefined ? {} : { baseRef: input.baseRef }),
+        ...(strongCreation === undefined
+          ? input.scope === undefined ? {} : { scope: input.scope }
+          : { scope: strongCreation.contextBuildSpec.scope }),
+        ...((strongCreation?.contextBuildSpec.baseRef ?? input.baseRef) === undefined
+          ? {}
+          : { baseRef: strongCreation?.contextBuildSpec.baseRef ?? input.baseRef }),
       });
     } catch (error) {
       throw new TaskEngineError(
@@ -561,6 +905,152 @@ export class TaskEngine {
       this.#clock,
     );
     const contextRevision = current.bundle.manifest.revision + 1;
+    let contextGenerationId: string | undefined;
+    let draftContext = context;
+    if (strongCreation !== undefined) {
+      const artifactManifest = await this.#store.readManifest();
+      const descriptorFor = (artifactType: "graph" | "wiki_index") => {
+        const matching = artifactManifest.artifacts.filter(
+          (descriptor) =>
+            descriptor.artifactType === artifactType &&
+            descriptor.state === "current" &&
+            descriptor.freshness !== "invalid" &&
+            descriptor.sourceSnapshotId === repository.snapshot.snapshotId &&
+            descriptor.contentDigest !== undefined,
+        );
+        return matching.length === 1 ? matching[0] : undefined;
+      };
+      const graphDescriptor = descriptorFor("graph");
+      if (graphDescriptor === undefined && context.graph.nodes.length > 0) {
+        throw new TaskEngineError(
+          "task_gate_unsatisfied",
+          "Strong Task context requires one exact current Graph artifact pin.",
+          {
+            taskId,
+            targetStatus: "context_ready",
+            failedGuards: [
+              { code: "graph_pin_unavailable", resourceId: repository.snapshot.snapshotId },
+            ],
+          },
+        );
+      }
+      const wikiDescriptor = descriptorFor("wiki_index");
+      if (context.wiki !== undefined && wikiDescriptor === undefined) {
+        throw new TaskEngineError(
+          "task_gate_unsatisfied",
+          "Strong Task context cannot use Wiki data without one exact artifact pin.",
+          {
+            taskId,
+            targetStatus: "context_ready",
+            failedGuards: [
+              { code: "wiki_pin_unavailable", resourceId: repository.snapshot.snapshotId },
+            ],
+          },
+        );
+      }
+      const contextBuildSpecDigest = sha256CanonicalJson([
+        "context-build-spec-v1",
+        strongCreation.contextBuildSpec,
+      ]);
+      const targetSnapshotId = PathSafeRepositorySnapshotIdV1Schema.parse(
+        repository.snapshot.snapshotId,
+      );
+      const pins = [
+        {
+          pinKind: "artifact",
+          role: "repository_snapshot",
+          artifactId: targetSnapshotId,
+          contentDigest: repository.snapshotContentDigest,
+          sourceSnapshotId: targetSnapshotId,
+        },
+        {
+          pinKind: "artifact",
+          role: "repo_pulse",
+          artifactId: repository.pulseArtifactId!,
+          contentDigest: repository.pulseContentDigest!,
+          sourceSnapshotId: targetSnapshotId,
+        },
+        ...(graphDescriptor === undefined
+          ? [{
+              pinKind: "artifact_absence" as const,
+              role: "graph" as const,
+              reasonCode: "not_generated" as const,
+            }]
+          : [{
+              pinKind: "artifact" as const,
+              role: "graph" as const,
+              artifactId: graphDescriptor.artifactId,
+              contentDigest: graphDescriptor.contentDigest!,
+              sourceSnapshotId: targetSnapshotId,
+            }]),
+        ...(wikiDescriptor === undefined
+          ? [{
+              pinKind: "artifact_absence" as const,
+              role: "wiki" as const,
+              reasonCode: "not_generated" as const,
+            }]
+          : [{
+              pinKind: "artifact" as const,
+              role: "wiki" as const,
+              artifactId: wikiDescriptor.artifactId,
+              contentDigest: wikiDescriptor.contentDigest!,
+              sourceSnapshotId: targetSnapshotId,
+            }]),
+        {
+          pinKind: "artifact_absence",
+          role: "source_evidence",
+          reasonCode: "policy_excluded",
+        },
+        {
+          pinKind: "policy",
+          role: "policy",
+          policyKind: "context_build",
+          contentDigest: contextBuildSpecDigest,
+        },
+        {
+          pinKind: "policy",
+          role: "policy",
+          policyKind: "repository",
+          contentDigest:
+            strongCreation.baselineCapture.baseline.repositoryPolicyDigest,
+        },
+        {
+          pinKind: "policy",
+          role: "policy",
+          policyKind: "scanner",
+          contentDigest:
+            strongCreation.baselineCapture.baseline.scannerPolicyDigest,
+        },
+        {
+          pinKind: "policy",
+          role: "policy",
+          policyKind: "safe_git_execution",
+          contentDigest:
+            strongCreation.baselineCapture.baseline.safeGitExecutionDigest,
+        },
+      ].map((pin) => ContextGenerationDependencyPinV1Schema.parse(pin));
+      pins.sort((left, right) =>
+        Buffer.compare(
+          Buffer.from(contextDependencyPinKey(left), "utf8"),
+          Buffer.from(contextDependencyPinKey(right), "utf8"),
+        )
+      );
+      const generationInput = ContextGenerationInputV1Schema.parse({
+        version: "context-generation-input-v1",
+        taskId,
+        resultingRevision: contextRevision,
+        baselineSnapshotId: current.bundle.manifest.baselineSnapshotId,
+        targetSnapshotId: repository.snapshot.snapshotId,
+        contextBuildSpecDigest,
+        upstreamDependencyPins: pins,
+      });
+      contextGenerationId = stableId("context-generation", [
+        "context-generation-v1",
+        { input: generationInput },
+      ]);
+      const { sourceEvidence: _untrustedSourceEvidence, ...pinnedContext } = context;
+      draftContext = pinnedContext;
+    }
     let draft: ReturnType<typeof buildContextDraft>;
     try {
       draft = buildContextDraft({
@@ -570,17 +1060,20 @@ export class TaskEngine {
         createdAt: occurredAt,
         pulse,
         repositorySnapshot: repository.snapshot,
-        context,
-        ...(input.scope === undefined ? {} : { scope: input.scope }),
-        ...(input.tokenBudget === undefined
-          ? {}
-          : { tokenBudget: input.tokenBudget }),
-        ...(input.maxCandidates === undefined
-          ? {}
-          : { maxCandidates: input.maxCandidates }),
-        ...(input.maxImpactDepth === undefined
-          ? {}
-          : { maxImpactDepth: input.maxImpactDepth }),
+        context: draftContext,
+        ...(contextGenerationId === undefined ? {} : { contextGenerationId }),
+        ...(strongCreation === undefined
+          ? input.scope === undefined ? {} : { scope: input.scope }
+          : { scope: strongCreation.contextBuildSpec.scope }),
+        ...(strongCreation === undefined
+          ? input.tokenBudget === undefined ? {} : { tokenBudget: input.tokenBudget }
+          : { tokenBudget: strongCreation.contextBuildSpec.tokenBudget }),
+        ...(strongCreation === undefined
+          ? input.maxCandidates === undefined ? {} : { maxCandidates: input.maxCandidates }
+          : { maxCandidates: strongCreation.contextBuildSpec.maxCandidates }),
+        ...(strongCreation === undefined
+          ? input.maxImpactDepth === undefined ? {} : { maxImpactDepth: input.maxImpactDepth }
+          : { maxImpactDepth: strongCreation.contextBuildSpec.maxImpactDepth }),
       });
     } catch (error) {
       throw new TaskEngineError(
@@ -596,6 +1089,7 @@ export class TaskEngine {
       latestSnapshotId: repository.snapshot.snapshotId,
       updatedAt: occurredAt,
       revision: contextRevision,
+      ...(contextGenerationId === undefined ? {} : { contextGenerationId }),
     });
     const event = buildTaskEvent({
       manifest: task,
@@ -984,13 +1478,55 @@ export class TaskEngine {
   }
 
   /**
+   * Provider-gated evidence-backed Check. Public input contains only Task and
+   * Snapshot assertions; Delta, Hunk, Symbol, Basis and IDs are obtained from
+   * and revalidated against the strong authority.
+   */
+  async checkChanges(
+    inputValue: StrongCheckChangesInputV1,
+    auth: AuthorizationContext,
+  ): Promise<StrongChangeCheckMutationOutcomeV1> {
+    const input = StrongCheckChangesInputV1Schema.parse(inputValue);
+    this.#authorize(auth, input.actor, "task:update");
+    return executeStrongChangeCheckV1(
+      this.#strongChangeAuthority,
+      input,
+      this.#clock,
+    );
+  }
+
+  /**
    * Record an externally executed Verification result against the current
    * verification plan entry using the same durable Task mutation semantics.
    */
   async recordVerification(
     inputValue: import("@understand-code/contracts").RecordVerificationInputV1,
     auth: AuthorizationContext,
-  ): Promise<VerificationMutationOutcome> {
+  ): Promise<VerificationMutationOutcome>;
+  async recordVerification(
+    inputValue: StrongRecordVerificationInputV1,
+    auth: AuthorizationContext,
+  ): Promise<StrongVerificationMutationOutcomeV1>;
+  async recordVerification(
+    inputValue:
+      | import("@understand-code/contracts").RecordVerificationInputV1
+      | StrongRecordVerificationInputV1,
+    auth: AuthorizationContext,
+  ): Promise<VerificationMutationOutcome | StrongVerificationMutationOutcomeV1> {
+    if (
+      typeof inputValue === "object" &&
+      inputValue !== null &&
+      "profile" in inputValue &&
+      inputValue.profile === "record_verification_strong_v1"
+    ) {
+      const input = StrongRecordVerificationInputV1Schema.parse(inputValue);
+      this.#authorize(auth, input.actor, "task:update");
+      return executeStrongVerificationRecordV1(
+        this.#strongChangeAuthority,
+        input,
+        this.#clock,
+      );
+    }
     const input = RecordVerificationInputV1Schema.parse(inputValue);
     this.#authorize(auth, input.actor, "task:update");
     return recordTaskVerification(this.#store, input, this.#clock);

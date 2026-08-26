@@ -642,7 +642,9 @@ describe("self-host Task benchmark", () => {
     expect(unknownClaims.length).toBeGreaterThan(0);
     expect(
       unknownClaims
-        .map((claim) => claim.boundaryReason ?? "")
+        .map((claim) =>
+          "boundaryReason" in claim ? claim.boundaryReason ?? "" : ""
+        )
         .join(" "),
     ).toMatch(/Graph artifact is stale|Call Graph|dynamic call targets/iu);
     expect(first.markdown).toContain("## Unknowns");

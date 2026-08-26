@@ -3,10 +3,13 @@ import { createHash } from "node:crypto";
 import {
   canonicalTaskEventDigestJsonV1,
   parsePersistedArtifactV1,
+  StrongVerificationRecordV1Schema,
   TaskEventV1Schema,
   type ClaimV1,
   type ContentDigest,
   type EvidenceV1,
+  type PersistedClaimV1,
+  type PersistedEvidenceV1,
   type IdempotencyRecordV1,
   type ImpactPathV1,
   type MutationResultV1,
@@ -16,6 +19,7 @@ import {
   type TaskEventV1,
   type TaskManifestV1,
   type TaskOperationReceiptV1,
+  type StrongImpactConclusionV1,
 } from "@understand-code/contracts";
 
 import { sha256CanonicalJson } from "./ids.js";
@@ -26,9 +30,10 @@ const artifactId = (type: string, taskId: string): string =>
 export interface TaskArtifactBuildInput {
   manifest: TaskManifestV1;
   brief?: TaskBriefV1;
-  claims?: readonly ClaimV1[];
-  evidence?: readonly EvidenceV1[];
+  claims?: readonly (ClaimV1 | PersistedClaimV1)[];
+  evidence?: readonly (EvidenceV1 | PersistedEvidenceV1)[];
   impactPaths?: readonly ImpactPathV1[];
+  impactConclusion?: StrongImpactConclusionV1;
   changeCheck?: unknown;
   verificationRecords?: readonly unknown[];
   idempotencyRecords: readonly IdempotencyRecordV1[];
@@ -74,6 +79,9 @@ export function buildTaskArtifacts(
       }),
       envelope(input, "impact", {
         paths: [...(input.impactPaths ?? [])],
+        ...(input.impactConclusion === undefined
+          ? {}
+          : { conclusion: input.impactConclusion }),
       }),
     );
   }
@@ -87,9 +95,22 @@ export function buildTaskArtifacts(
     artifacts.push(envelope(input, "change_check", input.changeCheck));
   }
   if (input.verificationRecords !== undefined) {
+    const records = [...input.verificationRecords];
+    const strongRecords = records.filter((record) =>
+      StrongVerificationRecordV1Schema.safeParse(record).success
+    );
+    if (strongRecords.length !== 0 && strongRecords.length !== records.length) {
+      throw new Error("verification ledger cannot mix legacy and strong records");
+    }
     artifacts.push(
       envelope(input, "verification", {
-        records: [...input.verificationRecords],
+        ...(strongRecords.length === 0
+          ? { records }
+          : {
+              profile: "verification_ledger_strong_v1" as const,
+              records,
+              skipAcceptances: [],
+            }),
       }),
     );
   }
@@ -125,6 +146,15 @@ export function buildTaskEvent(input: TaskEventBuildInput): TaskEventV1 {
       ? {}
       : { previousStatus: input.previousManifest.status }),
     resultingStatus: input.manifest.status,
+    ...(input.previousManifest?.contextGenerationId === undefined
+      ? {}
+      : {
+          previousContextGenerationId:
+            input.previousManifest.contextGenerationId,
+        }),
+    ...(input.manifest.contextGenerationId === undefined
+      ? {}
+      : { resultingContextGenerationId: input.manifest.contextGenerationId }),
     action: input.action,
     ...(input.previousEvent === undefined
       ? {}

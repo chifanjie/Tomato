@@ -103,6 +103,11 @@
       "types": "./dist/acceptance-identity-token-current.d.ts",
       "import": "./dist/acceptance-identity-token-current.js",
       "default": "./dist/acceptance-identity-token-current.js"
+    },
+    "./provider-production-strong-client-trust-lifecycle": {
+      "types": "./dist/provider-production-strong-client-trust-lifecycle.d.ts",
+      "import": "./dist/provider-production-strong-client-trust-lifecycle.js",
+      "default": "./dist/provider-production-strong-client-trust-lifecycle.js"
     }
   },
   "scripts": {

@@ -104,6 +104,26 @@ export interface ContractJsonSchemaDocumentV1 {
   [keyword: string]: unknown;
 }
 
+function normalizeEmptyTupleSchemasV1(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) normalizeEmptyTupleSchemasV1(entry);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+
+  const schema = value as Record<string, unknown>;
+  const prefixItems = schema.prefixItems;
+  if (Array.isArray(prefixItems) && prefixItems.length === 0) {
+    delete schema.prefixItems;
+    schema.items = false;
+    schema.minItems = 0;
+    schema.maxItems = 0;
+  }
+  for (const entry of Object.values(schema)) {
+    normalizeEmptyTupleSchemasV1(entry);
+  }
+}
+
 function schemaDocument(
   name: ContractJsonSchemaNameV1,
   schema: z.ZodType,
@@ -112,6 +132,7 @@ function schemaDocument(
     target: "draft-2020-12",
     unrepresentable: "any",
   }) as unknown as Record<string, unknown>;
+  normalizeEmptyTupleSchemasV1(generated);
   return {
     $id: `urn:understand-code:schema:v1:${name}`,
     ...generated,

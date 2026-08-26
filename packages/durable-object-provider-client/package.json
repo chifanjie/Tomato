@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "understand-code-provider-strong-object-gateway": "dist/provider-production-strong-object-gateway-cli.js"
+  },
   "sideEffects": false,
   "exports": {
     ".": {
@@ -23,10 +26,11 @@
     "test": "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build && pnpm run build && vitest run"
   },
   "dependencies": {
-    "@understand-code/durable-object-provider-contracts": "workspace:*"
+    "@understand-code/durable-object-provider-contracts": "workspace:*",
+    "@understand-code/durable-object-provider-runtime": "workspace:*",
+    "@understand-code/native-kernel-bridge": "workspace:*"
   },
   "devDependencies": {
-    "@understand-code/durable-object-provider-runtime": "workspace:*",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"

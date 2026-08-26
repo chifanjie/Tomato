@@ -21,6 +21,11 @@ import {
   VerificationRecordIdSchema,
 } from "./primitives.js";
 import { VerificationMethodV1Schema } from "./task.js";
+import {
+  EvidenceBackedChangeCheckV1Schema,
+  StrongImpactConclusionV1Schema,
+  StrongVerificationRecordV1Schema,
+} from "./strong-change-intelligence.js";
 
 const uniqueValues = (
   values: readonly string[],
@@ -146,6 +151,7 @@ export type ImpactPathV1 = z.infer<typeof ImpactPathV1Schema>;
 
 export const ImpactPayloadV1Schema = z.strictObject({
   paths: z.array(ImpactPathV1Schema),
+  conclusion: StrongImpactConclusionV1Schema.optional(),
 }).superRefine((payload, context) => {
   uniqueValues(
     payload.paths.map((path) => path.id),
@@ -153,6 +159,17 @@ export const ImpactPayloadV1Schema = z.strictObject({
     ["paths"],
     "impact path ids",
   );
+  if (
+    payload.conclusion?.status === "paths_observed" &&
+    JSON.stringify([...payload.conclusion.impactPathIds].sort()) !==
+      JSON.stringify(payload.paths.map((path) => path.id).sort())
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "strong paths_observed conclusion must exact-cover the Impact payload",
+      path: ["conclusion", "impactPathIds"],
+    });
+  }
 });
 
 export type ImpactPayloadV1 = z.infer<typeof ImpactPayloadV1Schema>;
@@ -350,9 +367,14 @@ export function classifyChangeCheckV1(
   };
 }
 
+export const ChangeCheckPersistedPayloadV1Schema = z.union([
+  ChangeCheckV1Schema,
+  EvidenceBackedChangeCheckV1Schema,
+]);
+
 export const ChangeCheckArtifactV1Schema = createArtifactEnvelopeV1Schema(
   "change_check",
-  ChangeCheckV1Schema,
+  ChangeCheckPersistedPayloadV1Schema,
 ).superRefine((artifact, context) => {
   if (artifact.taskId !== artifact.payload.taskId) {
     context.addIssue({
@@ -517,7 +539,7 @@ export const VerificationRecordV1Schema = z.strictObject({
 
 export type VerificationRecordV1 = z.infer<typeof VerificationRecordV1Schema>;
 
-export const VerificationPayloadV1Schema = z.strictObject({
+export const LegacyVerificationPayloadV1Schema = z.strictObject({
   records: z.array(VerificationRecordV1Schema),
 }).superRefine((payload, context) => {
   uniqueValues(
@@ -527,6 +549,19 @@ export const VerificationPayloadV1Schema = z.strictObject({
     "verification record ids",
   );
 });
+
+export const StrongVerificationPayloadV1Schema = z.strictObject({
+  profile: z.literal("verification_ledger_strong_v1"),
+  records: z.array(StrongVerificationRecordV1Schema),
+  skipAcceptances: z.tuple([]),
+}).superRefine((payload, context) => {
+  uniqueValues(payload.records.map((record) => record.id), context, ["records"], "strong verification record ids");
+});
+
+export const VerificationPayloadV1Schema = z.union([
+  LegacyVerificationPayloadV1Schema,
+  StrongVerificationPayloadV1Schema,
+]);
 
 export type VerificationPayloadV1 = z.infer<
   typeof VerificationPayloadV1Schema

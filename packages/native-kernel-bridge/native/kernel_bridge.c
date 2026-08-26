@@ -21,10 +21,12 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <time.h>
+#include "safe_git_runner_internal.h"
 #if defined(__linux__)
 #include <linux/fs.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
+#include <sys/vfs.h>
 #include <sys/xattr.h>
 #elif defined(__APPLE__)
 #include <CoreServices/CoreServices.h>
@@ -36,6 +38,12 @@
 #undef __APPLE_API_UNSTABLE
 #endif
 #include <unistd.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define SAFE_GIT_MAYBE_UNUSED __attribute__((unused))
+#else
+#define SAFE_GIT_MAYBE_UNUSED
+#endif
 
 #define SAFE_GIT_POINTER_LIMIT ((size_t)4096)
 #define SAFE_GIT_PATH_LIMIT ((size_t)4096)
@@ -49,7 +57,13 @@
 #define SAFE_GIT_EXECUTABLE_BINARY_LIMIT ((uint64_t)536870912)
 #define SAFE_GIT_EXECUTABLE_NODE_LIMIT ((size_t)128)
 #define INSTALLATION_AUTHORITY_NODE_LIMIT ((size_t)128)
+#define PROVIDER_EXACT_OBJECT_NODE_LIMIT ((size_t)128)
+#define PROVIDER_EXACT_OBJECT_BYTES_LIMIT ((size_t)16777216)
 #define SAFE_GIT_EMPTY_HOOKS_DIRECTORY_NAME "safe-git-empty-hooks-v1"
+
+#if defined(__linux__) && !defined(EXT4_SUPER_MAGIC)
+#define EXT4_SUPER_MAGIC 0xEF53
+#endif
 
 struct safe_git_sha256_context {
   uint32_t state[8];
@@ -293,6 +307,9 @@ struct safe_git_descriptor_binding {
   int workspace_root_index;
   int git_directory_index;
   int common_directory_index;
+  int refs_directory_index;
+  int product_refs_directory_index;
+  int task_baseline_refs_directory_index;
   int repository_control_bound;
   int worktree_config_present;
   enum safe_git_object_format object_format;
@@ -308,6 +325,7 @@ struct safe_git_descriptor_binding {
   struct safe_git_installation_node
       empty_hooks_nodes[INSTALLATION_AUTHORITY_NODE_LIMIT];
   struct safe_git_executable_binding executable;
+  int version_executed;
 };
 
 #define INSTALLATION_IDENTITY_RECORD_LIMIT ((size_t)16384)
@@ -355,6 +373,35 @@ struct installation_initialization_lock {
   int file_descriptor;
 };
 
+struct provider_exact_object_node {
+  int file_descriptor;
+  char component[NAME_MAX + 1];
+  struct stat snapshot;
+};
+
+/*
+ * Process-local, non-serializable publication authority.  Every root-to-parent
+ * descriptor remains open for the lifetime of the object.  The canonical path
+ * is retained only inside the native addon so JavaScript cannot substitute a
+ * pathname at commit time.
+ */
+struct provider_exact_object_publisher {
+  int closed;
+  int test_parent_fsync_failure_armed;
+  uid_t expected_owner_uid;
+  gid_t expected_owner_gid;
+  size_t node_count;
+  struct provider_exact_object_node nodes[PROVIDER_EXACT_OBJECT_NODE_LIMIT];
+  char canonical_parent_path[PATH_MAX + 1];
+};
+
+struct provider_exact_object_source {
+  int closed;
+  int file_descriptor;
+  struct provider_exact_object_publisher *publisher;
+  struct stat snapshot;
+};
+
 static const napi_type_tag SAFE_GIT_BINDING_TYPE_TAG = {
     0x8d9cf154b42e43d1ULL,
     0x96f879dd91c7af0bULL,
@@ -368,6 +415,16 @@ static const napi_type_tag INSTALLATION_AUTHORITY_TYPE_TAG = {
 static const napi_type_tag INSTALLATION_LOCK_TYPE_TAG = {
     0xd142bb3978a94b50ULL,
     0xa4596b4a32c23577ULL,
+};
+
+static const napi_type_tag PROVIDER_EXACT_OBJECT_PUBLISHER_TYPE_TAG = {
+    0xa6484c944afe403bULL,
+    0x857a843cad2e7ad1ULL,
+};
+
+static const napi_type_tag PROVIDER_EXACT_OBJECT_SOURCE_TYPE_TAG = {
+    0x903e47e6958d4afbULL,
+    0xbadd1536463dc2f8ULL,
 };
 
 enum expected_file_kind {
@@ -417,6 +474,12 @@ static napi_value throw_installation_state_authority_unavailable(napi_env env) {
   return throw_coded_error(
       env, "ERR_NATIVE_KERNEL_BRIDGE_INSTALLATION_STATE_AUTHORITY_UNAVAILABLE",
       "native installation state authority is unavailable");
+}
+
+static napi_value throw_provider_exact_object_unavailable(napi_env env) {
+  return throw_coded_error(
+      env, "ERR_PROVIDER_RUNTIME_NATIVE_EXACT_OBJECT_UNAVAILABLE",
+      "native exact-object publication is unavailable");
 }
 
 static int read_file_descriptor_value(napi_env env, napi_value argument,
@@ -852,6 +915,9 @@ static void safe_git_release_binding(
   binding->node_count = 0;
   binding->repository_control_bound = 0;
   binding->object_format = SAFE_GIT_OBJECT_FORMAT_UNBOUND;
+  binding->refs_directory_index = -1;
+  binding->product_refs_directory_index = -1;
+  binding->task_baseline_refs_directory_index = -1;
   binding->closed = 1;
 }
 
@@ -2913,7 +2979,10 @@ static int safe_git_bind_repository_control(
     return 0;
   }
   (void)product_namespace_present;
-  (void)product_namespace_index;
+  binding->refs_directory_index = refs_index;
+  binding->product_refs_directory_index =
+      product_namespace_present ? product_namespace_index : -1;
+  binding->task_baseline_refs_directory_index = -1;
 
   if (packed_refs_present &&
       (!safe_git_read_and_pin_file(binding, packed_refs_index,
@@ -2959,6 +3028,90 @@ static int safe_git_bind_repository_control(
   return safe_git_revalidate_binding(binding);
 }
 
+static int safe_git_remove_exact_absence(
+    struct safe_git_descriptor_binding *binding, int parent_index,
+    const char *component);
+
+static int safe_git_lease_directory_is_exact(
+    const struct safe_git_descriptor_binding *binding, int index) {
+  struct stat metadata;
+  if (binding == NULL || index < 0 ||
+      (size_t)index >= binding->node_count ||
+      binding->nodes[index].kind != SAFE_GIT_BOUND_DIRECTORY ||
+      fstat(binding->nodes[index].file_descriptor, &metadata) != 0) {
+    return 0;
+  }
+  return metadata.st_uid == geteuid() && metadata.st_gid == getegid() &&
+         (metadata.st_mode & 07777U) == 0700U &&
+         safe_git_fd_is_owner_safe(binding->nodes[index].file_descriptor,
+                                   SAFE_GIT_BOUND_DIRECTORY, &metadata);
+}
+
+static SAFE_GIT_MAYBE_UNUSED int safe_git_bind_task_baseline_refs_directory(
+    struct safe_git_descriptor_binding *binding) {
+  struct stat observed;
+  int created_product = 0;
+  int created_baselines = 0;
+  int product_index;
+  int baseline_index;
+  if (binding == NULL || binding->closed ||
+      !binding->repository_control_bound ||
+      binding->refs_directory_index < 0 ||
+      (size_t)binding->refs_directory_index >= binding->node_count ||
+      !safe_git_revalidate_binding(binding)) {
+    return 0;
+  }
+  product_index = binding->product_refs_directory_index;
+  if (product_index < 0) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstatat(binding->nodes[binding->refs_directory_index].file_descriptor,
+                "understand-code", &observed, AT_SYMLINK_NOFOLLOW) == 0 ||
+        errno != ENOENT ||
+        mkdirat(binding->nodes[binding->refs_directory_index].file_descriptor,
+                "understand-code", 0700) != 0 ||
+        fsync(binding->nodes[binding->refs_directory_index].file_descriptor) !=
+            0 ||
+        !safe_git_open_child(binding, binding->refs_directory_index,
+                             "understand-code", SAFE_GIT_BOUND_DIRECTORY, 1,
+                             &product_index) ||
+        !safe_git_lease_directory_is_exact(binding, product_index) ||
+        !safe_git_remove_exact_absence(binding,
+                                       binding->refs_directory_index,
+                                       "understand-code")) {
+      return 0;
+    }
+    created_product = 1;
+    binding->product_refs_directory_index = product_index;
+  } else if (!safe_git_lease_directory_is_exact(binding, product_index)) {
+    return 0;
+  }
+  baseline_index = binding->task_baseline_refs_directory_index;
+  if (baseline_index < 0) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstatat(binding->nodes[product_index].file_descriptor,
+                "task-baselines", &observed, AT_SYMLINK_NOFOLLOW) != 0) {
+      if (errno != ENOENT ||
+          mkdirat(binding->nodes[product_index].file_descriptor,
+                  "task-baselines", 0700) != 0 ||
+          fsync(binding->nodes[product_index].file_descriptor) != 0) {
+        return 0;
+      }
+      created_baselines = 1;
+    }
+    if (!safe_git_open_child(binding, product_index, "task-baselines",
+                             SAFE_GIT_BOUND_DIRECTORY, 1, &baseline_index) ||
+        !safe_git_lease_directory_is_exact(binding, baseline_index)) {
+      return 0;
+    }
+    binding->task_baseline_refs_directory_index = baseline_index;
+  } else if (!safe_git_lease_directory_is_exact(binding, baseline_index)) {
+    return 0;
+  }
+  (void)created_product;
+  (void)created_baselines;
+  return safe_git_revalidate_binding(binding);
+}
+
 static int safe_git_add_absence(struct safe_git_descriptor_binding *binding,
                                 int parent_index, const char *component) {
   struct stat metadata;
@@ -2984,6 +3137,28 @@ static int safe_git_add_absence(struct safe_git_descriptor_binding *binding,
   memcpy(absence->component, component, length + 1);
   binding->absence_count += 1;
   return 1;
+}
+
+static int safe_git_remove_exact_absence(
+    struct safe_git_descriptor_binding *binding, int parent_index,
+    const char *component) {
+  size_t index;
+  if (binding == NULL || component == NULL) return 0;
+  for (index = 0; index < binding->absence_count; index += 1) {
+    if (binding->absences[index].parent_index == parent_index &&
+        strcmp(binding->absences[index].component, component) == 0) {
+      size_t remaining = binding->absence_count - index - 1;
+      if (remaining > 0) {
+        memmove(&binding->absences[index], &binding->absences[index + 1],
+                remaining * sizeof(binding->absences[0]));
+      }
+      binding->absence_count -= 1;
+      memset(&binding->absences[binding->absence_count], 0,
+             sizeof(binding->absences[0]));
+      return 1;
+    }
+  }
+  return 0;
 }
 
 static int safe_git_nodes_are_same(
@@ -3103,6 +3278,9 @@ static struct safe_git_descriptor_binding *safe_git_open_binding(
   binding->workspace_root_index = -1;
   binding->git_directory_index = -1;
   binding->common_directory_index = -1;
+  binding->refs_directory_index = -1;
+  binding->product_refs_directory_index = -1;
+  binding->task_baseline_refs_directory_index = -1;
   binding->empty_hooks_state_root_index = -1;
   binding->empty_hooks_directory_index = -1;
   binding->object_format = SAFE_GIT_OBJECT_FORMAT_UNBOUND;
@@ -5821,6 +5999,230 @@ static int safe_git_read_empty_hooks_arguments(
   return 1;
 }
 
+static int safe_git_read_command_request(
+    napi_env env, napi_value value,
+    struct safe_git_runner_read_request_v1 *request) {
+  bool is_buffer = false;
+  void *raw_bytes = NULL;
+  size_t length = 0;
+  const unsigned char *bytes;
+  size_t first_length;
+  size_t second_length;
+  size_t index;
+  memset(request, 0, sizeof(*request));
+  if (napi_is_buffer(env, value, &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, value, &raw_bytes, &length) != napi_ok ||
+      raw_bytes == NULL || length < 6) {
+    return 0;
+  }
+  bytes = (const unsigned char *)raw_bytes;
+  first_length = ((size_t)bytes[2] << 8U) | (size_t)bytes[3];
+  second_length = ((size_t)bytes[4] << 8U) | (size_t)bytes[5];
+  if (bytes[0] != 1 || bytes[1] < 1 || bytes[1] > 16 ||
+      first_length > SAFE_GIT_RUNNER_READ_REVISION_LIMIT_V1 ||
+      second_length > sizeof(request->parameter_two) - 1 ||
+      length != 6 + first_length + second_length) {
+    return 0;
+  }
+  request->profile = (enum safe_git_runner_read_profile_v1)bytes[1];
+  if (((request->profile >= SAFE_GIT_RUNNER_READ_REV_PARSE_SHOW_TOPLEVEL_V1 &&
+        request->profile <= SAFE_GIT_RUNNER_READ_LS_FILES_STAGE_V1) ||
+       request->profile == SAFE_GIT_RUNNER_READ_LS_IGNORE_FILES_V1 ||
+       request->profile ==
+           SAFE_GIT_RUNNER_READ_CONFIG_GLOBAL_EXCLUDES_FILE_V1) &&
+      (first_length != 0 || second_length != 0)) {
+    return 0;
+  }
+  if ((request->profile ==
+           SAFE_GIT_RUNNER_READ_REV_PARSE_BASELINE_COMMIT_V1 ||
+       request->profile == SAFE_GIT_RUNNER_READ_DIFF_STAGED_NAME_STATUS_V1 ||
+       request->profile == SAFE_GIT_RUNNER_READ_CAT_FILE_OBJECT_V1 ||
+       request->profile == SAFE_GIT_RUNNER_READ_CAT_FILE_TYPE_V1) &&
+      (first_length == 0 || second_length != 0)) {
+    return 0;
+  }
+  if ((request->profile == SAFE_GIT_RUNNER_READ_MERGE_BASE_V1 ||
+       request->profile == SAFE_GIT_RUNNER_READ_REV_LIST_AHEAD_BEHIND_V1 ||
+       request->profile ==
+           SAFE_GIT_RUNNER_READ_DIFF_COMMITTED_NAME_STATUS_V1) &&
+      (first_length == 0 || second_length == 0)) {
+    return 0;
+  }
+  for (index = 0; index < first_length + second_length; index += 1) {
+    if (bytes[6 + index] == 0) return 0;
+  }
+  memcpy(request->parameter_one, bytes + 6, first_length);
+  memcpy(request->parameter_two, bytes + 6 + first_length, second_length);
+  return 1;
+}
+
+static int safe_git_read_command_arguments(
+    napi_env env, napi_callback_info info,
+    struct safe_git_descriptor_binding **binding,
+    struct installation_state_authority **authority, unsigned char key[32],
+    struct safe_git_runner_read_request_v1 *request) {
+  size_t argument_count = 4;
+  napi_value arguments[4];
+  bool binding_tagged = false;
+  bool authority_tagged = false;
+  bool is_buffer = false;
+  void *key_bytes = NULL;
+  size_t key_length = 0;
+  if (binding == NULL || authority == NULL || request == NULL ||
+      napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 4 ||
+      napi_check_object_type_tag(env, arguments[0], &SAFE_GIT_BINDING_TYPE_TAG,
+                                 &binding_tagged) != napi_ok ||
+      !binding_tagged ||
+      napi_unwrap(env, arguments[0], (void **)binding) != napi_ok ||
+      *binding == NULL ||
+      napi_check_object_type_tag(env, arguments[1],
+                                 &INSTALLATION_AUTHORITY_TYPE_TAG,
+                                 &authority_tagged) != napi_ok ||
+      !authority_tagged ||
+      napi_unwrap(env, arguments[1], (void **)authority) != napi_ok ||
+      *authority == NULL ||
+      napi_is_buffer(env, arguments[2], &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, arguments[2], &key_bytes, &key_length) !=
+          napi_ok ||
+      key_bytes == NULL || key_length != 32 ||
+      !safe_git_read_command_request(env, arguments[3], request)) {
+    return 0;
+  }
+  memcpy(key, key_bytes, 32);
+  return 1;
+}
+
+struct safe_git_task_baseline_lease_create_request {
+  int operation;
+  char task_id[27];
+  char baseline_snapshot_id[74];
+  char commit[65];
+  char marker_nonce[33];
+  char marker_content_digest[72];
+};
+
+static int safe_git_bytes_are_lower_hex(const unsigned char *bytes,
+                                        size_t length) {
+  size_t index;
+  if (bytes == NULL || length == 0) return 0;
+  for (index = 0; index < length; index += 1) {
+    if (!((bytes[index] >= (unsigned char)'0' &&
+           bytes[index] <= (unsigned char)'9') ||
+          (bytes[index] >= (unsigned char)'a' &&
+           bytes[index] <= (unsigned char)'f'))) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_task_id_is_valid(const unsigned char *bytes,
+                                     size_t length) {
+  static const char alphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  size_t index;
+  if (bytes == NULL || length != 26) return 0;
+  for (index = 0; index < length; index += 1) {
+    if (strchr(alphabet, (int)bytes[index]) == NULL) return 0;
+  }
+  return 1;
+}
+
+static int safe_git_read_task_baseline_lease_create_request(
+    napi_env env, napi_value value,
+    struct safe_git_task_baseline_lease_create_request *request) {
+  bool is_buffer = false;
+  void *raw_bytes = NULL;
+  size_t length = 0;
+  const unsigned char *bytes;
+  size_t lengths[5];
+  size_t cursor = 12;
+  size_t index;
+  if (request == NULL ||
+      napi_is_buffer(env, value, &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, value, &raw_bytes, &length) != napi_ok ||
+      raw_bytes == NULL || length < 12) {
+    return 0;
+  }
+  memset(request, 0, sizeof(*request));
+  bytes = (const unsigned char *)raw_bytes;
+  if (bytes[0] != 1 || bytes[1] < 1 || bytes[1] > 3) return 0;
+  request->operation = (int)bytes[1];
+  for (index = 0; index < 5; index += 1) {
+    lengths[index] = ((size_t)bytes[2 + index * 2] << 8U) |
+                     (size_t)bytes[3 + index * 2];
+    if (lengths[index] > length - cursor) return 0;
+    cursor += lengths[index];
+  }
+  if (cursor != length || lengths[0] != 26 || lengths[1] != 73 ||
+      (lengths[2] != 40 && lengths[2] != 64) || lengths[3] != 32 ||
+      lengths[4] != 71) {
+    return 0;
+  }
+  cursor = 12;
+  if (!safe_git_task_id_is_valid(bytes + cursor, lengths[0])) return 0;
+  memcpy(request->task_id, bytes + cursor, lengths[0]);
+  cursor += lengths[0];
+  if (memcmp(bytes + cursor, "snapshot-", 9) != 0 ||
+      !safe_git_bytes_are_lower_hex(bytes + cursor + 9, 64)) {
+    return 0;
+  }
+  memcpy(request->baseline_snapshot_id, bytes + cursor, lengths[1]);
+  cursor += lengths[1];
+  if (!safe_git_bytes_are_lower_hex(bytes + cursor, lengths[2])) return 0;
+  memcpy(request->commit, bytes + cursor, lengths[2]);
+  cursor += lengths[2];
+  if (!safe_git_bytes_are_lower_hex(bytes + cursor, lengths[3])) return 0;
+  memcpy(request->marker_nonce, bytes + cursor, lengths[3]);
+  cursor += lengths[3];
+  if (memcmp(bytes + cursor, "sha256:", 7) != 0 ||
+      !safe_git_bytes_are_lower_hex(bytes + cursor + 7, 64)) {
+    return 0;
+  }
+  memcpy(request->marker_content_digest, bytes + cursor, lengths[4]);
+  return 1;
+}
+
+static int safe_git_read_task_baseline_lease_create_arguments(
+    napi_env env, napi_callback_info info,
+    struct safe_git_descriptor_binding **binding,
+    struct installation_state_authority **authority, unsigned char key[32],
+    struct safe_git_task_baseline_lease_create_request *request) {
+  size_t argument_count = 4;
+  napi_value arguments[4];
+  bool binding_tagged = false;
+  bool authority_tagged = false;
+  bool is_buffer = false;
+  void *key_bytes = NULL;
+  size_t key_length = 0;
+  if (binding == NULL || authority == NULL || request == NULL ||
+      napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 4 ||
+      napi_check_object_type_tag(env, arguments[0], &SAFE_GIT_BINDING_TYPE_TAG,
+                                 &binding_tagged) != napi_ok ||
+      !binding_tagged ||
+      napi_unwrap(env, arguments[0], (void **)binding) != napi_ok ||
+      *binding == NULL ||
+      napi_check_object_type_tag(env, arguments[1],
+                                 &INSTALLATION_AUTHORITY_TYPE_TAG,
+                                 &authority_tagged) != napi_ok ||
+      !authority_tagged ||
+      napi_unwrap(env, arguments[1], (void **)authority) != napi_ok ||
+      *authority == NULL ||
+      napi_is_buffer(env, arguments[2], &is_buffer) != napi_ok || !is_buffer ||
+      napi_get_buffer_info(env, arguments[2], &key_bytes, &key_length) !=
+          napi_ok ||
+      key_bytes == NULL || key_length != 32 ||
+      !safe_git_read_task_baseline_lease_create_request(env, arguments[3],
+                                                        request)) {
+    return 0;
+  }
+  memcpy(key, key_bytes, 32);
+  return 1;
+}
+
 static int safe_git_read_executable_arguments(
     napi_env env, napi_callback_info info,
     struct safe_git_descriptor_binding **binding,
@@ -6062,6 +6464,1165 @@ cleanup:
   return result;
 }
 
+#if defined(__linux__)
+static int safe_git_derive_repository_worktree_ids(
+    struct safe_git_descriptor_binding *binding, const unsigned char key[32],
+    char repository_id[75], char worktree_id[79]);
+
+struct safe_git_task_baseline_marker_pin {
+  int directories[3];
+  struct stat directory_snapshots[3];
+  int file_descriptor;
+  struct stat file_snapshot;
+  unsigned char *bytes;
+  size_t length;
+};
+
+static void safe_git_release_task_baseline_marker_pin(
+    struct safe_git_task_baseline_marker_pin *pin) {
+  size_t index;
+  if (pin == NULL) return;
+  if (pin->file_descriptor >= 0) (void)close(pin->file_descriptor);
+  for (index = 3; index > 0; index -= 1) {
+    if (pin->directories[index - 1] >= 0) {
+      (void)close(pin->directories[index - 1]);
+    }
+  }
+  if (pin->bytes != NULL) {
+    safe_git_secure_zero(pin->bytes, pin->length);
+    free(pin->bytes);
+  }
+  memset(pin, 0, sizeof(*pin));
+  pin->file_descriptor = -1;
+  for (index = 0; index < 3; index += 1) pin->directories[index] = -1;
+}
+
+static int safe_git_marker_node_is_exact(int descriptor,
+                                         const struct stat *metadata,
+                                         enum safe_git_bound_kind kind,
+                                         mode_t mode) {
+  return descriptor >= 0 && metadata != NULL &&
+         safe_git_kind_matches(metadata, kind) &&
+         metadata->st_uid == geteuid() && metadata->st_gid == getegid() &&
+         (metadata->st_mode & 07777U) == mode &&
+         (kind != SAFE_GIT_BOUND_REGULAR_FILE || metadata->st_nlink == 1) &&
+         safe_git_fd_is_owner_safe(descriptor, kind, metadata);
+}
+
+static int safe_git_open_marker_child_exact(
+    int parent, const char *component, enum safe_git_bound_kind kind,
+    mode_t mode, int *descriptor, struct stat *snapshot) {
+  struct stat before;
+  struct stat after;
+  int flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC;
+  int opened = -1;
+  memset(&before, 0, sizeof(before));
+  memset(&after, 0, sizeof(after));
+  if (parent < 0 || component == NULL || descriptor == NULL ||
+      snapshot == NULL ||
+      fstatat(parent, component, &before, AT_SYMLINK_NOFOLLOW) != 0 ||
+      !safe_git_kind_matches(&before, kind)) {
+    return 0;
+  }
+  if (kind == SAFE_GIT_BOUND_DIRECTORY) {
+    flags |= O_DIRECTORY;
+  } else {
+    flags |= O_NONBLOCK | O_NOCTTY;
+  }
+  opened = openat(parent, component, flags);
+  if (opened < 0 || fstat(opened, &after) != 0 ||
+      !stat_snapshot_matches(&before, &after) ||
+      !safe_git_marker_node_is_exact(opened, &after, kind, mode)) {
+    if (opened >= 0) (void)close(opened);
+    return 0;
+  }
+  *descriptor = opened;
+  *snapshot = after;
+  return 1;
+}
+
+static int safe_git_open_task_baseline_marker(
+    int workspace_root_fd, const char *task_id, const char *marker_nonce,
+    struct safe_git_task_baseline_marker_pin *pin) {
+  static const char *directories[3] = {
+      ".understand-code", ".recovery", "task-baseline-transactions"};
+  char marker_name[65];
+  struct stat after;
+  int parent = workspace_root_fd;
+  int formatted;
+  size_t index;
+  size_t consumed = 0;
+  ssize_t amount;
+  if (pin == NULL || task_id == NULL || marker_nonce == NULL) return 0;
+  memset(pin, 0, sizeof(*pin));
+  pin->file_descriptor = -1;
+  for (index = 0; index < 3; index += 1) pin->directories[index] = -1;
+  formatted = snprintf(marker_name, sizeof(marker_name), "%s-%s.json", task_id,
+                       marker_nonce);
+  if (formatted <= 0 || (size_t)formatted >= sizeof(marker_name)) return 0;
+  for (index = 0; index < 3; index += 1) {
+    if (!safe_git_open_marker_child_exact(
+            parent, directories[index], SAFE_GIT_BOUND_DIRECTORY, 0700,
+            &pin->directories[index], &pin->directory_snapshots[index])) {
+      safe_git_release_task_baseline_marker_pin(pin);
+      return 0;
+    }
+    parent = pin->directories[index];
+  }
+  if (!safe_git_open_marker_child_exact(
+          parent, marker_name, SAFE_GIT_BOUND_REGULAR_FILE, 0600,
+          &pin->file_descriptor, &pin->file_snapshot) ||
+      pin->file_snapshot.st_size <= 0 ||
+      (uint64_t)pin->file_snapshot.st_size > (uint64_t)(64U * 1024U * 1024U)) {
+    safe_git_release_task_baseline_marker_pin(pin);
+    return 0;
+  }
+  pin->length = (size_t)pin->file_snapshot.st_size;
+  pin->bytes = (unsigned char *)malloc(pin->length);
+  if (pin->bytes == NULL) {
+    safe_git_release_task_baseline_marker_pin(pin);
+    return 0;
+  }
+  while (consumed < pin->length) {
+    do {
+      amount = pread(pin->file_descriptor, pin->bytes + consumed,
+                     pin->length - consumed, (off_t)consumed);
+    } while (amount < 0 && errno == EINTR);
+    if (amount <= 0) {
+      safe_git_release_task_baseline_marker_pin(pin);
+      return 0;
+    }
+    consumed += (size_t)amount;
+  }
+  memset(&after, 0, sizeof(after));
+  if (fstat(pin->file_descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&pin->file_snapshot, &after)) {
+    safe_git_release_task_baseline_marker_pin(pin);
+    return 0;
+  }
+  return 1;
+}
+
+static int safe_git_revalidate_task_baseline_marker(
+    int workspace_root_fd, const char *task_id, const char *marker_nonce,
+    const struct safe_git_task_baseline_marker_pin *pin) {
+  static const char *directories[3] = {
+      ".understand-code", ".recovery", "task-baseline-transactions"};
+  char marker_name[65];
+  struct stat observed;
+  int parent = workspace_root_fd;
+  int formatted;
+  size_t index;
+  formatted = snprintf(marker_name, sizeof(marker_name), "%s-%s.json", task_id,
+                       marker_nonce);
+  if (pin == NULL || formatted <= 0 ||
+      (size_t)formatted >= sizeof(marker_name)) {
+    return 0;
+  }
+  for (index = 0; index < 3; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstat(pin->directories[index], &observed) != 0 ||
+        !stat_snapshot_matches(&pin->directory_snapshots[index], &observed) ||
+        fstatat(parent, directories[index], &observed,
+                AT_SYMLINK_NOFOLLOW) != 0 ||
+        !stat_snapshot_matches(&pin->directory_snapshots[index], &observed)) {
+      return 0;
+    }
+    parent = pin->directories[index];
+  }
+  memset(&observed, 0, sizeof(observed));
+  return fstat(pin->file_descriptor, &observed) == 0 &&
+         stat_snapshot_matches(&pin->file_snapshot, &observed) &&
+         fstatat(parent, marker_name, &observed, AT_SYMLINK_NOFOLLOW) == 0 &&
+         stat_snapshot_matches(&pin->file_snapshot, &observed);
+}
+
+static int safe_git_create_lease_plan(
+    struct safe_git_descriptor_binding *binding, const unsigned char key[32],
+    const struct safe_git_task_baseline_lease_create_request *request,
+    char lease_id[33], char ref_name[111], char zero_oid[65],
+    char **git_lease_json) {
+  char repository_id[75] = {0};
+  char worktree_id[79] = {0};
+  char preimage[640];
+  char digest_hex[65] = {0};
+  const char *object_format;
+  unsigned char digest[32] = {0};
+  int preimage_length;
+  int ref_length;
+  int json_length;
+  char *json = NULL;
+  int success = 0;
+  if (binding == NULL || request == NULL || lease_id == NULL ||
+      ref_name == NULL || zero_oid == NULL || git_lease_json == NULL ||
+      !safe_git_derive_repository_worktree_ids(binding, key, repository_id,
+                                               worktree_id)) {
+    goto cleanup;
+  }
+  if (binding->object_format == SAFE_GIT_OBJECT_FORMAT_SHA1 &&
+      strlen(request->commit) == 40) {
+    object_format = "sha1";
+  } else if (binding->object_format == SAFE_GIT_OBJECT_FORMAT_SHA256 &&
+             strlen(request->commit) == 64) {
+    object_format = "sha256";
+  } else {
+    goto cleanup;
+  }
+  preimage_length = snprintf(
+      preimage, sizeof(preimage),
+      "[\"git-lease-v1\",{\"baselineSnapshotId\":\"%s\",\"commit\":\"%s\",\"objectFormat\":\"%s\",\"repositoryId\":\"%s\",\"taskId\":\"%s\",\"worktreeId\":\"%s\"}]",
+      request->baseline_snapshot_id, request->commit, object_format,
+      repository_id, request->task_id, worktree_id);
+  if (preimage_length <= 0 || (size_t)preimage_length >= sizeof(preimage)) {
+    goto cleanup;
+  }
+  installation_sha256_bytes((const unsigned char *)preimage,
+                            (size_t)preimage_length, digest);
+  safe_git_digest_hex(digest, digest_hex);
+  if (snprintf(lease_id, 33, "git-lease:%.22s", digest_hex) != 32) {
+    goto cleanup;
+  }
+  ref_length = snprintf(
+      ref_name, 111, "refs/understand-code/task-baselines/%.22s-%s",
+      digest_hex, request->marker_nonce);
+  if (ref_length <= 0 || ref_length >= 111) goto cleanup;
+  memset(zero_oid, '0', strlen(request->commit));
+  zero_oid[strlen(request->commit)] = '\0';
+  json_length = snprintf(
+      NULL, 0,
+      "{\"baselineSnapshotId\":\"%s\",\"commit\":\"%s\",\"expectedOldObjectId\":\"%s\",\"leaseId\":\"%s\",\"markerNonce\":\"%s\",\"objectFormat\":\"%s\",\"profile\":\"task_baseline_git_lease_plan_v1\",\"refName\":\"%s\",\"refPreexisting\":false,\"reflogPreexisting\":false,\"reflogRelativePath\":\"logs/%s\",\"repositoryId\":\"%s\",\"taskId\":\"%s\",\"worktreeId\":\"%s\"}",
+      request->baseline_snapshot_id, request->commit, zero_oid, lease_id,
+      request->marker_nonce, object_format, ref_name, ref_name, repository_id,
+      request->task_id, worktree_id);
+  if (json_length <= 0 || json_length > 2048) goto cleanup;
+  json = (char *)malloc((size_t)json_length + 1);
+  if (json == NULL ||
+      snprintf(
+          json, (size_t)json_length + 1,
+          "{\"baselineSnapshotId\":\"%s\",\"commit\":\"%s\",\"expectedOldObjectId\":\"%s\",\"leaseId\":\"%s\",\"markerNonce\":\"%s\",\"objectFormat\":\"%s\",\"profile\":\"task_baseline_git_lease_plan_v1\",\"refName\":\"%s\",\"refPreexisting\":false,\"reflogPreexisting\":false,\"reflogRelativePath\":\"logs/%s\",\"repositoryId\":\"%s\",\"taskId\":\"%s\",\"worktreeId\":\"%s\"}",
+          request->baseline_snapshot_id, request->commit, zero_oid, lease_id,
+          request->marker_nonce, object_format, ref_name, ref_name,
+          repository_id, request->task_id, worktree_id) != json_length) {
+    goto cleanup;
+  }
+  *git_lease_json = json;
+  json = NULL;
+  success = 1;
+
+cleanup:
+  if (json != NULL) {
+    safe_git_secure_zero(json, strlen(json));
+    free(json);
+  }
+  safe_git_secure_zero(repository_id, sizeof(repository_id));
+  safe_git_secure_zero(worktree_id, sizeof(worktree_id));
+  safe_git_secure_zero(preimage, sizeof(preimage));
+  safe_git_secure_zero(digest_hex, sizeof(digest_hex));
+  safe_git_secure_zero(digest, sizeof(digest));
+  return success;
+}
+
+static int safe_git_marker_matches_lease_plan(
+    const struct safe_git_task_baseline_marker_pin *pin,
+    const char *git_lease_json, const char *expected_content_digest) {
+  static const char root_middle[] =
+      ",\"profile\":\"task_baseline_transaction_intent_v1\",\"providerPlan\":";
+  static const char root_suffix[] = ",\"schemaVersion\":1}";
+  unsigned char digest[32] = {0};
+  char digest_hex[65] = {0};
+  char *prefix = NULL;
+  size_t prefix_length;
+  size_t suffix_length = sizeof(root_suffix) - 1;
+  int prefix_size;
+  int success = 0;
+  if (pin == NULL || pin->bytes == NULL || git_lease_json == NULL ||
+      expected_content_digest == NULL) {
+    goto cleanup;
+  }
+  prefix_size = snprintf(NULL, 0, "{\"gitLease\":%s%s", git_lease_json,
+                         root_middle);
+  if (prefix_size <= 0 || prefix_size > 4096) goto cleanup;
+  prefix = (char *)malloc((size_t)prefix_size + 1);
+  if (prefix == NULL ||
+      snprintf(prefix, (size_t)prefix_size + 1, "{\"gitLease\":%s%s",
+               git_lease_json, root_middle) != prefix_size) {
+    goto cleanup;
+  }
+  prefix_length = (size_t)prefix_size;
+  installation_sha256_bytes(pin->bytes, pin->length, digest);
+  safe_git_digest_hex(digest, digest_hex);
+  if (strlen(expected_content_digest) != 71 ||
+      memcmp(expected_content_digest, "sha256:", 7) != 0 ||
+      !safe_git_constant_time_equal(
+          (const unsigned char *)expected_content_digest + 7,
+          (const unsigned char *)digest_hex, 64) ||
+      pin->length <= prefix_length + suffix_length + 1 ||
+      memcmp(pin->bytes, prefix, prefix_length) != 0 ||
+      pin->bytes[prefix_length] != (unsigned char)'{' ||
+      pin->bytes[pin->length - suffix_length - 1] != (unsigned char)'}' ||
+      memcmp(pin->bytes + pin->length - suffix_length, root_suffix,
+             suffix_length) != 0) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  if (prefix != NULL) {
+    safe_git_secure_zero(prefix, strlen(prefix));
+    free(prefix);
+  }
+  safe_git_secure_zero(digest, sizeof(digest));
+  safe_git_secure_zero(digest_hex, sizeof(digest_hex));
+  return success;
+}
+
+static const char *safe_git_lease_ref_component(const char *ref_name) {
+  static const char prefix[] = "refs/understand-code/task-baselines/";
+  const char *component;
+  if (ref_name == NULL || strncmp(ref_name, prefix, sizeof(prefix) - 1) != 0) {
+    return NULL;
+  }
+  component = ref_name + sizeof(prefix) - 1;
+  return strlen(component) == 55 ? component : NULL;
+}
+
+static int safe_git_lease_ref_is_absent(int baseline_directory_fd,
+                                        const char *ref_name) {
+  const char *component = safe_git_lease_ref_component(ref_name);
+  struct stat observed;
+  if (baseline_directory_fd < 0 || component == NULL) return 0;
+  memset(&observed, 0, sizeof(observed));
+  errno = 0;
+  return fstatat(baseline_directory_fd, component, &observed,
+                 AT_SYMLINK_NOFOLLOW) != 0 &&
+         errno == ENOENT;
+}
+
+static int safe_git_lease_reflog_is_absent(int common_directory_fd,
+                                           const char *ref_name) {
+  static const char *components[4] = {"logs", "refs", "understand-code",
+                                      "task-baselines"};
+  const char *final_component = safe_git_lease_ref_component(ref_name);
+  int opened[4] = {-1, -1, -1, -1};
+  int parent = common_directory_fd;
+  struct stat observed;
+  size_t index;
+  int absent = 0;
+  if (common_directory_fd < 0 || final_component == NULL) return 0;
+  for (index = 0; index < 4; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    errno = 0;
+    if (fstatat(parent, components[index], &observed,
+                AT_SYMLINK_NOFOLLOW) != 0) {
+      absent = errno == ENOENT;
+      goto cleanup;
+    }
+    if (!S_ISDIR(observed.st_mode)) goto cleanup;
+    opened[index] = openat(parent, components[index],
+                           O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (opened[index] < 0 || fstat(opened[index], &observed) != 0 ||
+        !safe_git_fd_is_owner_safe(opened[index], SAFE_GIT_BOUND_DIRECTORY,
+                                   &observed)) {
+      goto cleanup;
+    }
+    parent = opened[index];
+  }
+  memset(&observed, 0, sizeof(observed));
+  errno = 0;
+  absent = fstatat(parent, final_component, &observed,
+                   AT_SYMLINK_NOFOLLOW) != 0 &&
+           errno == ENOENT;
+
+cleanup:
+  for (index = 4; index > 0; index -= 1) {
+    if (opened[index - 1] >= 0) (void)close(opened[index - 1]);
+  }
+  return absent;
+}
+
+static int safe_git_lease_ref_equals(int baseline_directory_fd,
+                                     const char *ref_name,
+                                     const char *object_id) {
+  const char *component = safe_git_lease_ref_component(ref_name);
+  struct stat before;
+  struct stat after;
+  unsigned char bytes[66];
+  size_t oid_length = object_id == NULL ? 0 : strlen(object_id);
+  ssize_t amount;
+  int descriptor = -1;
+  int success = 0;
+  memset(&before, 0, sizeof(before));
+  memset(&after, 0, sizeof(after));
+  memset(bytes, 0, sizeof(bytes));
+  if (baseline_directory_fd < 0 || component == NULL ||
+      (oid_length != 40 && oid_length != 64) ||
+      fstatat(baseline_directory_fd, component, &before,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      !S_ISREG(before.st_mode) || before.st_nlink != 1 ||
+      before.st_size != (off_t)(oid_length + 1)) {
+    goto cleanup;
+  }
+  descriptor = openat(baseline_directory_fd, component,
+                      O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY |
+                          O_CLOEXEC);
+  if (descriptor < 0 || fstat(descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&before, &after) ||
+      !safe_git_fd_is_owner_safe(descriptor, SAFE_GIT_BOUND_REGULAR_FILE,
+                                 &after)) {
+    goto cleanup;
+  }
+  do {
+    amount = pread(descriptor, bytes, oid_length + 1, 0);
+  } while (amount < 0 && errno == EINTR);
+  if (amount != (ssize_t)(oid_length + 1) ||
+      memcmp(bytes, object_id, oid_length) != 0 || bytes[oid_length] != '\n' ||
+      fstat(descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&before, &after) ||
+      fstatat(baseline_directory_fd, component, &after,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      !stat_snapshot_matches(&before, &after)) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  if (descriptor >= 0) (void)close(descriptor);
+  safe_git_secure_zero(bytes, sizeof(bytes));
+  return success;
+}
+
+/*
+ * Deletes one transaction ref without asking Git to lock packed-refs. Git's
+ * delete path needs a common-directory lock even when packed-refs is absent,
+ * which is outside the exact lease namespace Landlock grants. We instead use
+ * a held descriptor, compare the expected OID, atomically exchange the entry
+ * with a private placeholder, re-check the moved inode/content, and only then
+ * unlink both names and fsync the retained parent. Any mismatch restores the
+ * exchange and leaves the target untouched.
+ */
+static int safe_git_delete_lease_ref_exact(
+    int baseline_directory_fd, const char *ref_name, const char *object_id,
+    const char *marker_nonce) {
+  const char *component = safe_git_lease_ref_component(ref_name);
+  char tombstone[128];
+  struct stat before;
+  struct stat original;
+  struct stat moved;
+  unsigned char bytes[66];
+  size_t oid_length = object_id == NULL ? 0 : strlen(object_id);
+  ssize_t amount;
+  int descriptor = -1;
+  int placeholder = -1;
+  int exchanged = 0;
+  int success = 0;
+  int attempt;
+  memset(tombstone, 0, sizeof(tombstone));
+  if (baseline_directory_fd < 0 || component == NULL ||
+      object_id == NULL || marker_nonce == NULL ||
+      (oid_length != 40 && oid_length != 64) ||
+      !safe_git_lease_ref_equals(baseline_directory_fd, ref_name, object_id)) {
+    return 0;
+  }
+  memset(&before, 0, sizeof(before));
+  memset(&original, 0, sizeof(original));
+  memset(&moved, 0, sizeof(moved));
+  memset(bytes, 0, sizeof(bytes));
+  descriptor = openat(baseline_directory_fd, component,
+                      O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY |
+                          O_CLOEXEC);
+  if (descriptor < 0 || fstat(descriptor, &before) != 0 ||
+      !S_ISREG(before.st_mode) || before.st_nlink != 1 ||
+      !safe_git_fd_is_owner_safe(descriptor, SAFE_GIT_BOUND_REGULAR_FILE,
+                                 &before) ||
+      flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+    goto cleanup;
+  }
+  do {
+    amount = pread(descriptor, bytes, oid_length + 1, 0);
+  } while (amount < 0 && errno == EINTR);
+  if (amount != (ssize_t)(oid_length + 1) ||
+      memcmp(bytes, object_id, oid_length) != 0 || bytes[oid_length] != '\n' ||
+      fstat(descriptor, &original) != 0 ||
+      !stat_snapshot_matches(&before, &original) ||
+      fstatat(baseline_directory_fd, component, &moved,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      !stat_snapshot_matches(&before, &moved)) {
+    goto cleanup;
+  }
+  for (attempt = 0; attempt < 8; attempt += 1) {
+    int formatted = snprintf(
+        tombstone, sizeof(tombstone), ".uc-lease-delete-%ld-%s-%d",
+        (long)getpid(), marker_nonce, attempt);
+    if (formatted <= 0 || (size_t)formatted >= sizeof(tombstone)) goto cleanup;
+    placeholder = openat(baseline_directory_fd, tombstone,
+                         O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                         0600);
+    if (placeholder >= 0) break;
+    if (errno != EEXIST) goto cleanup;
+  }
+  if (placeholder < 0 || fsync(placeholder) != 0 ||
+      close(placeholder) != 0) {
+    placeholder = -1;
+    goto cleanup;
+  }
+  placeholder = -1;
+#ifdef SYS_renameat2
+#ifdef RENAME_EXCHANGE
+  if (syscall(SYS_renameat2, baseline_directory_fd, component,
+              baseline_directory_fd, tombstone, RENAME_EXCHANGE) != 0) {
+    goto cleanup;
+  }
+  exchanged = 1;
+#else
+  goto cleanup;
+#endif
+#else
+  goto cleanup;
+#endif
+  if (fstatat(baseline_directory_fd, tombstone, &moved,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      original.st_dev != moved.st_dev || original.st_ino != moved.st_ino ||
+      original.st_mode != moved.st_mode || original.st_uid != moved.st_uid ||
+      original.st_gid != moved.st_gid || original.st_size != moved.st_size ||
+      original.st_nlink != moved.st_nlink ||
+      !S_ISREG(moved.st_mode) || moved.st_nlink != 1) {
+    goto restore;
+  }
+  descriptor = openat(baseline_directory_fd, tombstone,
+                      O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY |
+                          O_CLOEXEC);
+  if (descriptor < 0 || fstat(descriptor, &moved) != 0 ||
+      original.st_dev != moved.st_dev || original.st_ino != moved.st_ino ||
+      original.st_mode != moved.st_mode || original.st_uid != moved.st_uid ||
+      original.st_gid != moved.st_gid || original.st_size != moved.st_size ||
+      original.st_nlink != moved.st_nlink) {
+    goto restore;
+  }
+  memset(bytes, 0, sizeof(bytes));
+  do {
+    amount = pread(descriptor, bytes, oid_length + 1, 0);
+  } while (amount < 0 && errno == EINTR);
+  if (amount != (ssize_t)(oid_length + 1) ||
+      memcmp(bytes, object_id, oid_length) != 0 || bytes[oid_length] != '\n') {
+    goto restore;
+  }
+  (void)close(descriptor);
+  descriptor = -1;
+  if (unlinkat(baseline_directory_fd, tombstone, 0) != 0 ||
+      unlinkat(baseline_directory_fd, component, 0) != 0 ||
+      fsync(baseline_directory_fd) != 0 ||
+      !safe_git_lease_ref_is_absent(baseline_directory_fd, ref_name)) {
+    goto cleanup;
+  }
+  exchanged = 0;
+  success = 1;
+  goto cleanup;
+
+restore:
+  if (descriptor >= 0) {
+    (void)close(descriptor);
+    descriptor = -1;
+  }
+  if (exchanged) {
+#ifdef SYS_renameat2
+#ifdef RENAME_EXCHANGE
+    (void)syscall(SYS_renameat2, baseline_directory_fd, component,
+                  baseline_directory_fd, tombstone, RENAME_EXCHANGE);
+#endif
+#endif
+    exchanged = 0;
+  }
+  (void)unlinkat(baseline_directory_fd, tombstone, 0);
+
+cleanup:
+  if (descriptor >= 0) (void)close(descriptor);
+  if (placeholder >= 0) (void)close(placeholder);
+  if (!success && !exchanged && tombstone[0] != '\0') {
+    (void)unlinkat(baseline_directory_fd, tombstone, 0);
+  }
+  safe_git_secure_zero(tombstone, sizeof(tombstone));
+  safe_git_secure_zero(bytes, sizeof(bytes));
+  return success;
+}
+
+static int safe_git_version_component_is_valid(const unsigned char *bytes,
+                                               size_t start, size_t end) {
+  size_t index;
+  if (end <= start || (end - start > 1 && bytes[start] == (unsigned char)'0')) {
+    return 0;
+  }
+  for (index = start; index < end; index += 1) {
+    if (bytes[index] < (unsigned char)'0' ||
+        bytes[index] > (unsigned char)'9') {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_version_suffix_byte_is_valid(unsigned char byte) {
+  return (byte >= (unsigned char)'A' && byte <= (unsigned char)'Z') ||
+         (byte >= (unsigned char)'a' && byte <= (unsigned char)'z') ||
+         (byte >= (unsigned char)'0' && byte <= (unsigned char)'9') ||
+         byte == (unsigned char)' ' || byte == (unsigned char)'.' ||
+         byte == (unsigned char)'_' || byte == (unsigned char)'(' ||
+         byte == (unsigned char)')' || byte == (unsigned char)'+' ||
+         byte == (unsigned char)'-';
+}
+
+static int safe_git_version_stdout_is_valid(const unsigned char *bytes,
+                                            size_t length) {
+  static const unsigned char prefix[] = "git version ";
+  size_t cursor = sizeof(prefix) - 1;
+  size_t component_start;
+  size_t suffix_start;
+  size_t suffix_end;
+  size_t index;
+  if (bytes == NULL || length <= cursor + 6 ||
+      length > SAFE_GIT_RUNNER_VERSION_STDOUT_LIMIT_V1 ||
+      bytes[length - 1] != (unsigned char)'\n' ||
+      memcmp(bytes, prefix, sizeof(prefix) - 1) != 0) {
+    return 0;
+  }
+  for (index = 0; index + 1 < length; index += 1) {
+    if (bytes[index] > 0x7fU || bytes[index] == 0 ||
+        bytes[index] == (unsigned char)'\r' ||
+        bytes[index] == (unsigned char)'\n') {
+      return 0;
+    }
+  }
+  for (index = 0; index < 3; index += 1) {
+    component_start = cursor;
+    while (cursor + 1 < length && bytes[cursor] >= (unsigned char)'0' &&
+           bytes[cursor] <= (unsigned char)'9') {
+      cursor += 1;
+    }
+    if (!safe_git_version_component_is_valid(bytes, component_start, cursor)) {
+      return 0;
+    }
+    if (index < 2) {
+      if (cursor + 1 >= length || bytes[cursor] != (unsigned char)'.') return 0;
+      cursor += 1;
+    }
+  }
+  if (cursor == length - 1) return 1;
+  if (bytes[cursor] == (unsigned char)'.') {
+    suffix_start = cursor + 1;
+    suffix_end = length - 1;
+  } else if (cursor + 3 < length && bytes[cursor] == (unsigned char)' ' &&
+             bytes[cursor + 1] == (unsigned char)'(' &&
+             bytes[length - 2] == (unsigned char)')') {
+    suffix_start = cursor + 2;
+    suffix_end = length - 2;
+  } else {
+    return 0;
+  }
+  if (suffix_end <= suffix_start || suffix_end - suffix_start > 64 ||
+      !((bytes[suffix_start] >= (unsigned char)'A' &&
+         bytes[suffix_start] <= (unsigned char)'Z') ||
+        (bytes[suffix_start] >= (unsigned char)'a' &&
+         bytes[suffix_start] <= (unsigned char)'z') ||
+        (bytes[suffix_start] >= (unsigned char)'0' &&
+         bytes[suffix_start] <= (unsigned char)'9'))) {
+    return 0;
+  }
+  for (index = suffix_start; index < suffix_end; index += 1) {
+    if (!safe_git_version_suffix_byte_is_valid(bytes[index])) return 0;
+  }
+  return 1;
+}
+#endif
+
+static napi_value execute_safe_git_version(napi_env env,
+                                           napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  unsigned char key[32] = {0};
+  unsigned char token[32] = {0};
+#if defined(__linux__)
+  struct safe_git_runner_version_result_v1 execution;
+  struct safe_git_executable_node *executable = NULL;
+  napi_value result = NULL;
+  int success = 0;
+
+  memset(&execution, 0, sizeof(execution));
+  if (!safe_git_read_empty_hooks_arguments(env, info, &binding, &authority,
+                                           key) ||
+      binding == NULL || authority == NULL || binding->closed ||
+      !binding->repository_control_bound ||
+      !binding->empty_hooks_bound || !binding->executable.bound ||
+      binding->executable.executable_index < 0 ||
+      (size_t)binding->executable.executable_index >=
+          binding->executable.node_count ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !safe_git_empty_hooks_authority_matches(binding, authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token,
+                                    binding->executable.binding_token,
+                                    sizeof(token)) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  executable = &binding->executable.nodes[
+      binding->executable.executable_index];
+  if (executable->kind != SAFE_GIT_BOUND_REGULAR_FILE ||
+      !safe_git_run_linux_version_v1(
+          executable->file_descriptor, binding->executable.canonical_path,
+          &execution) ||
+      execution.status != SAFE_GIT_RUNNER_STATUS_OK_V1 ||
+      execution.stdout_length == 0 ||
+      execution.stdout_length > SAFE_GIT_RUNNER_VERSION_STDOUT_LIMIT_V1 ||
+      !safe_git_version_stdout_is_valid(execution.stdout_bytes,
+                                        execution.stdout_length) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token,
+                                    binding->executable.binding_token,
+                                    sizeof(token)) ||
+      napi_create_buffer_copy(env, execution.stdout_length,
+                              execution.stdout_bytes, NULL, &result) !=
+          napi_ok ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  binding->version_executed = 1;
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(&execution, sizeof(execution));
+  if (!success) {
+    if (binding != NULL) safe_git_release_binding(binding);
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+#else
+  (void)authority;
+  if (safe_git_read_empty_hooks_arguments(env, info, &binding, &authority,
+                                          key) &&
+      binding != NULL) {
+    safe_git_release_binding(binding);
+  }
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  return throw_safe_git_unavailable(env);
+#endif
+}
+
+#if defined(__linux__)
+static int safe_git_read_request_matches_object_format(
+    const struct safe_git_descriptor_binding *binding,
+    const struct safe_git_runner_read_request_v1 *request) {
+  int first_oid = 0;
+  int second_oid = 0;
+  if (binding == NULL || request == NULL ||
+      (binding->object_format != SAFE_GIT_OBJECT_FORMAT_SHA1 &&
+       binding->object_format != SAFE_GIT_OBJECT_FORMAT_SHA256)) {
+    return 0;
+  }
+  switch (request->profile) {
+    case SAFE_GIT_RUNNER_READ_MERGE_BASE_V1:
+    case SAFE_GIT_RUNNER_READ_REV_LIST_AHEAD_BEHIND_V1:
+    case SAFE_GIT_RUNNER_READ_DIFF_COMMITTED_NAME_STATUS_V1:
+      first_oid = 1;
+      second_oid = 1;
+      break;
+    case SAFE_GIT_RUNNER_READ_DIFF_STAGED_NAME_STATUS_V1:
+    case SAFE_GIT_RUNNER_READ_CAT_FILE_OBJECT_V1:
+      first_oid = 1;
+      break;
+    default:
+      break;
+  }
+  return (!first_oid ||
+          safe_git_oid_bytes_are_valid(
+              (const unsigned char *)request->parameter_one,
+              strlen(request->parameter_one), binding->object_format)) &&
+         (!second_oid ||
+          safe_git_oid_bytes_are_valid(
+              (const unsigned char *)request->parameter_two,
+              strlen(request->parameter_two), binding->object_format));
+}
+
+static int safe_git_create_read_execution_result(
+    napi_env env, const struct safe_git_runner_read_result_v1 *execution,
+    napi_value *result) {
+  napi_value stdout_value;
+  napi_value stderr_value;
+  napi_value exit_code_value;
+  static const unsigned char empty = 0;
+  return execution != NULL && result != NULL &&
+         execution->status == SAFE_GIT_RUNNER_STATUS_OK_V1 &&
+         execution->stdout_bytes != NULL && execution->stdout_length <=
+             SAFE_GIT_RUNNER_READ_STDOUT_LIMIT_V1 &&
+         napi_create_buffer_copy(env, execution->stdout_length,
+                                 execution->stdout_bytes, NULL,
+                                 &stdout_value) == napi_ok &&
+         napi_create_buffer_copy(env, 0, &empty, NULL, &stderr_value) ==
+             napi_ok &&
+         napi_create_int32(env, execution->exit_code, &exit_code_value) ==
+             napi_ok &&
+         napi_create_object(env, result) == napi_ok &&
+         napi_set_named_property(env, *result, "stdout", stdout_value) ==
+             napi_ok &&
+         napi_set_named_property(env, *result, "stderr", stderr_value) ==
+             napi_ok &&
+         napi_set_named_property(env, *result, "exitCode", exit_code_value) ==
+             napi_ok;
+}
+#endif
+
+static napi_value execute_safe_git_read_profile(napi_env env,
+                                                napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  struct safe_git_runner_read_request_v1 request;
+  unsigned char key[32] = {0};
+  unsigned char token[32] = {0};
+#if defined(__linux__)
+  struct safe_git_runner_read_result_v1 execution;
+  struct safe_git_executable_node *executable = NULL;
+  napi_value result = NULL;
+  int success = 0;
+  int workspace_fd;
+  int git_directory_fd;
+  int common_directory_fd;
+  int empty_hooks_fd;
+
+  memset(&request, 0, sizeof(request));
+  memset(&execution, 0, sizeof(execution));
+  execution.status = SAFE_GIT_RUNNER_STATUS_UNAVAILABLE_V1;
+  execution.exit_code = -1;
+  if (!safe_git_read_command_arguments(env, info, &binding, &authority, key,
+                                       &request) ||
+      binding == NULL || authority == NULL || binding->closed ||
+      !binding->repository_control_bound || !binding->empty_hooks_bound ||
+      !binding->executable.bound || !binding->version_executed ||
+      binding->workspace_root_index < 0 ||
+      binding->git_directory_index < 0 || binding->common_directory_index < 0 ||
+      binding->empty_hooks_directory_index < 0 ||
+      binding->executable.executable_index < 0 ||
+      (size_t)binding->workspace_root_index >= binding->node_count ||
+      (size_t)binding->git_directory_index >= binding->node_count ||
+      (size_t)binding->common_directory_index >= binding->node_count ||
+      (size_t)binding->empty_hooks_directory_index >=
+          binding->empty_hooks_node_count ||
+      (size_t)binding->executable.executable_index >=
+          binding->executable.node_count ||
+      !safe_git_read_request_matches_object_format(binding, &request) ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !safe_git_empty_hooks_authority_matches(binding, authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token,
+                                    binding->executable.binding_token,
+                                    sizeof(token)) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  executable = &binding->executable.nodes[
+      binding->executable.executable_index];
+  workspace_fd = binding->nodes[binding->workspace_root_index].file_descriptor;
+  git_directory_fd =
+      binding->nodes[binding->git_directory_index].file_descriptor;
+  common_directory_fd =
+      binding->nodes[binding->common_directory_index].file_descriptor;
+  empty_hooks_fd =
+      binding->empty_hooks_nodes[binding->empty_hooks_directory_index]
+          .file_descriptor;
+  if (executable->kind != SAFE_GIT_BOUND_REGULAR_FILE ||
+      !safe_git_run_linux_read_v1(
+          executable->file_descriptor, binding->executable.canonical_path,
+          workspace_fd, git_directory_fd, common_directory_fd, empty_hooks_fd,
+          &request, &execution) ||
+      execution.status != SAFE_GIT_RUNNER_STATUS_OK_V1 ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token,
+                                    binding->executable.binding_token,
+                                    sizeof(token)) ||
+      !safe_git_create_read_execution_result(env, &execution, &result) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(&request, sizeof(request));
+  safe_git_release_linux_read_result_v1(&execution);
+  if (!success) {
+    if (binding != NULL) safe_git_release_binding(binding);
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+#else
+  (void)authority;
+  memset(&request, 0, sizeof(request));
+  if (safe_git_read_command_arguments(env, info, &binding, &authority, key,
+                                      &request) &&
+      binding != NULL) {
+    safe_git_release_binding(binding);
+  }
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(&request, sizeof(request));
+  return throw_safe_git_unavailable(env);
+#endif
+}
+
+static SAFE_GIT_MAYBE_UNUSED int safe_git_create_task_baseline_lease_result(
+    napi_env env, const char *lease_id, const char *ref_name,
+    const char *object_id, const char *resolution, napi_value *result) {
+  return result != NULL && napi_create_object(env, result) == napi_ok &&
+         safe_git_set_string_property(env, *result, "resolution",
+                                      resolution) &&
+         safe_git_set_string_property(env, *result, "leaseId", lease_id) &&
+         safe_git_set_string_property(env, *result, "refName", ref_name) &&
+         safe_git_set_string_property(env, *result, "objectId", object_id);
+}
+
+static napi_value create_safe_git_task_baseline_lease(
+    napi_env env, napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding = NULL;
+  struct installation_state_authority *authority = NULL;
+  struct safe_git_task_baseline_lease_create_request request;
+  unsigned char key[32] = {0};
+  unsigned char token[32] = {0};
+#if defined(__linux__)
+  struct safe_git_task_baseline_marker_pin marker;
+  struct safe_git_runner_read_request_v1 read_request;
+  struct safe_git_runner_read_result_v1 read_execution;
+  struct safe_git_runner_lease_request_v1 lease_request;
+  struct safe_git_runner_lease_result_v1 lease_execution;
+  struct safe_git_executable_node *executable = NULL;
+  char lease_id[33] = {0};
+  char ref_name[111] = {0};
+  char zero_oid[65] = {0};
+  char *git_lease_json = NULL;
+  napi_value result = NULL;
+  int workspace_fd;
+  int git_directory_fd;
+  int common_directory_fd;
+  int empty_hooks_fd;
+  int baseline_directory_fd;
+  int ref_absent;
+  int ref_equal;
+  int execute_mutation = 1;
+  int runner_ok = 1;
+  const char *resolution = "created";
+  int success = 0;
+  size_t commit_length;
+
+  memset(&request, 0, sizeof(request));
+  memset(&marker, 0, sizeof(marker));
+  marker.file_descriptor = -1;
+  marker.directories[0] = -1;
+  marker.directories[1] = -1;
+  marker.directories[2] = -1;
+  memset(&read_request, 0, sizeof(read_request));
+  memset(&read_execution, 0, sizeof(read_execution));
+  read_execution.status = SAFE_GIT_RUNNER_STATUS_UNAVAILABLE_V1;
+  read_execution.exit_code = -1;
+  memset(&lease_request, 0, sizeof(lease_request));
+  memset(&lease_execution, 0, sizeof(lease_execution));
+  lease_execution.status = SAFE_GIT_RUNNER_STATUS_UNAVAILABLE_V1;
+  lease_execution.exit_code = -1;
+  if (!safe_git_read_task_baseline_lease_create_arguments(
+          env, info, &binding, &authority, key, &request) ||
+      binding == NULL || authority == NULL || binding->closed ||
+      !binding->repository_control_bound || !binding->empty_hooks_bound ||
+      !binding->executable.bound || !binding->version_executed ||
+      binding->workspace_root_index < 0 ||
+      binding->git_directory_index < 0 || binding->common_directory_index < 0 ||
+      binding->empty_hooks_directory_index < 0 ||
+      binding->executable.executable_index < 0 ||
+      (size_t)binding->workspace_root_index >= binding->node_count ||
+      (size_t)binding->git_directory_index >= binding->node_count ||
+      (size_t)binding->common_directory_index >= binding->node_count ||
+      (size_t)binding->empty_hooks_directory_index >=
+          binding->empty_hooks_node_count ||
+      (size_t)binding->executable.executable_index >=
+          binding->executable.node_count ||
+      !installation_authority_separated_from_safe_git(authority, binding) ||
+      !safe_git_empty_hooks_authority_matches(binding, authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token,
+                                    binding->executable.binding_token,
+                                    sizeof(token)) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_lease_plan(binding, key, &request, lease_id, ref_name,
+                                  zero_oid, &git_lease_json)) {
+    goto cleanup;
+  }
+  executable = &binding->executable.nodes[
+      binding->executable.executable_index];
+  workspace_fd = binding->nodes[binding->workspace_root_index].file_descriptor;
+  git_directory_fd =
+      binding->nodes[binding->git_directory_index].file_descriptor;
+  common_directory_fd =
+      binding->nodes[binding->common_directory_index].file_descriptor;
+  empty_hooks_fd =
+      binding->empty_hooks_nodes[binding->empty_hooks_directory_index]
+          .file_descriptor;
+  if (executable->kind != SAFE_GIT_BOUND_REGULAR_FILE ||
+      !safe_git_open_task_baseline_marker(
+          workspace_fd, request.task_id, request.marker_nonce, &marker) ||
+      !safe_git_marker_matches_lease_plan(
+          &marker, git_lease_json, request.marker_content_digest) ||
+      !safe_git_lease_reflog_is_absent(common_directory_fd, ref_name)) {
+    goto cleanup;
+  }
+
+  read_request.profile = SAFE_GIT_RUNNER_READ_REV_PARSE_BASELINE_COMMIT_V1;
+  memcpy(read_request.parameter_one, request.commit, strlen(request.commit));
+  if (!safe_git_run_linux_read_v1(
+          executable->file_descriptor, binding->executable.canonical_path,
+          workspace_fd, git_directory_fd, common_directory_fd, empty_hooks_fd,
+          &read_request, &read_execution) ||
+      read_execution.status != SAFE_GIT_RUNNER_STATUS_OK_V1 ||
+      read_execution.exit_code != 0) {
+    goto cleanup;
+  }
+  commit_length = strlen(request.commit);
+  if (read_execution.stdout_length != commit_length + 1 ||
+      memcmp(read_execution.stdout_bytes, request.commit, commit_length) != 0 ||
+      read_execution.stdout_bytes[commit_length] != (unsigned char)'\n' ||
+      !safe_git_revalidate_task_baseline_marker(
+          workspace_fd, request.task_id, request.marker_nonce, &marker) ||
+      !safe_git_bind_task_baseline_refs_directory(binding) ||
+      binding->task_baseline_refs_directory_index < 0 ||
+      (size_t)binding->task_baseline_refs_directory_index >=
+          binding->node_count) {
+    goto cleanup;
+  }
+  baseline_directory_fd =
+      binding->nodes[binding->task_baseline_refs_directory_index]
+          .file_descriptor;
+  ref_absent = safe_git_lease_ref_is_absent(baseline_directory_fd, ref_name);
+  ref_equal = ref_absent
+                  ? 0
+                  : safe_git_lease_ref_equals(baseline_directory_fd, ref_name,
+                                              request.commit);
+  if (!safe_git_lease_reflog_is_absent(common_directory_fd, ref_name) ||
+      !safe_git_revalidate_task_baseline_marker(
+          workspace_fd, request.task_id, request.marker_nonce, &marker)) {
+    goto cleanup;
+  }
+  if (request.operation == 1) {
+    if (!ref_absent) goto cleanup;
+  } else if (request.operation == 2) {
+    if (ref_equal) {
+      execute_mutation = 0;
+      resolution = "replayed";
+    } else if (!ref_absent) {
+      goto cleanup;
+    }
+  } else if (request.operation == 3) {
+    if (ref_absent) {
+      execute_mutation = 0;
+      resolution = "replayed";
+    } else if (ref_equal) {
+      resolution = "rolled_back";
+    } else {
+      goto cleanup;
+    }
+  } else {
+    goto cleanup;
+  }
+  memcpy(lease_request.ref_name, ref_name, strlen(ref_name));
+  memcpy(lease_request.object_id, request.commit, commit_length);
+  memcpy(lease_request.zero_object_id, zero_oid, commit_length);
+  lease_request.delete_ref = request.operation == 3;
+  if (execute_mutation) {
+    if (request.operation == 3) {
+      runner_ok = safe_git_delete_lease_ref_exact(
+          baseline_directory_fd, ref_name, request.commit,
+          request.marker_nonce);
+    } else {
+      runner_ok = safe_git_run_linux_create_lease_v1(
+          executable->file_descriptor, binding->executable.canonical_path,
+          workspace_fd, git_directory_fd, common_directory_fd, empty_hooks_fd,
+          baseline_directory_fd, &lease_request, &lease_execution) &&
+          lease_execution.status == SAFE_GIT_RUNNER_STATUS_OK_V1 &&
+          lease_execution.exit_code == 0;
+    }
+  }
+  if (execute_mutation && !runner_ok) {
+    goto cleanup;
+  }
+  if ((request.operation == 3
+           ? !safe_git_lease_ref_is_absent(baseline_directory_fd, ref_name)
+           : !safe_git_lease_ref_equals(baseline_directory_fd, ref_name,
+                                        request.commit)) ||
+      !safe_git_lease_reflog_is_absent(common_directory_fd, ref_name) ||
+      !safe_git_revalidate_task_baseline_marker(
+          workspace_fd, request.task_id, request.marker_nonce, &marker) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority) ||
+      !safe_git_create_executable_binding_token(&binding->executable, key,
+                                                token) ||
+      !safe_git_constant_time_equal(token, binding->executable.binding_token,
+                                    sizeof(token)) ||
+      !safe_git_create_task_baseline_lease_result(
+          env, lease_id, ref_name, request.commit, resolution, &result) ||
+      !safe_git_revalidate_task_baseline_marker(
+          workspace_fd, request.task_id, request.marker_nonce, &marker) ||
+      !safe_git_revalidate_binding(binding) ||
+      !installation_authority_revalidate(authority)) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(&request, sizeof(request));
+  safe_git_release_task_baseline_marker_pin(&marker);
+  safe_git_release_linux_read_result_v1(&read_execution);
+  safe_git_secure_zero(&read_request, sizeof(read_request));
+  safe_git_secure_zero(&lease_request, sizeof(lease_request));
+  safe_git_secure_zero(&lease_execution, sizeof(lease_execution));
+  safe_git_secure_zero(lease_id, sizeof(lease_id));
+  safe_git_secure_zero(ref_name, sizeof(ref_name));
+  safe_git_secure_zero(zero_oid, sizeof(zero_oid));
+  if (git_lease_json != NULL) {
+    safe_git_secure_zero(git_lease_json, strlen(git_lease_json));
+    free(git_lease_json);
+  }
+  if (!success) {
+    if (binding != NULL) safe_git_release_binding(binding);
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+#else
+  (void)authority;
+  memset(&request, 0, sizeof(request));
+  if (safe_git_read_task_baseline_lease_create_arguments(
+          env, info, &binding, &authority, key, &request) &&
+      binding != NULL) {
+    safe_git_release_binding(binding);
+  }
+  safe_git_secure_zero(key, sizeof(key));
+  safe_git_secure_zero(token, sizeof(token));
+  safe_git_secure_zero(&request, sizeof(request));
+  return throw_safe_git_unavailable(env);
+#endif
+}
+
 static int safe_git_create_path_identity_result(
     napi_env env, const char *repository_id, const char *worktree_id,
     const char *root_identity, napi_value *result) {
@@ -6073,6 +7634,69 @@ static int safe_git_create_path_identity_result(
          safe_git_set_string_property(env, *result, "worktreeId", worktree_id) &&
          safe_git_set_string_property(env, *result, "rootIdentity",
                                       root_identity);
+}
+
+static SAFE_GIT_MAYBE_UNUSED int safe_git_derive_repository_worktree_ids(
+    struct safe_git_descriptor_binding *binding, const unsigned char key[32],
+    char repository_id[75], char worktree_id[79]) {
+  unsigned char repository_digest[32] = {0};
+  unsigned char worktree_digest[32] = {0};
+  char repository_hex[65] = {0};
+  char worktree_hex[65] = {0};
+  char *canonical_common = NULL;
+  char *canonical_root = NULL;
+  char *canonical_git = NULL;
+  int success = 0;
+  if (binding == NULL || key == NULL || repository_id == NULL ||
+      worktree_id == NULL ||
+      !safe_git_create_canonical_locator(
+          binding, binding->common_directory_index, &canonical_common) ||
+      !safe_git_create_canonical_locator(binding, binding->workspace_root_index,
+                                         &canonical_root) ||
+      !safe_git_create_canonical_locator(binding, binding->git_directory_index,
+                                         &canonical_git) ||
+      !safe_git_hmac_message(
+          key,
+          "[\"repository-identity-v1\",{\"canonicalCommonGitDir\":\"%s\"}]",
+          canonical_common, NULL, NULL, repository_digest)) {
+    goto cleanup;
+  }
+  safe_git_digest_hex(repository_digest, repository_hex);
+  if (snprintf(repository_id, 75, "repo-hmac-%s", repository_hex) != 74 ||
+      !safe_git_hmac_message(
+          key,
+          "[\"worktree-identity-v1\",{\"canonicalGitDir\":\"%s\",\"canonicalRoot\":\"%s\",\"repositoryId\":\"%s\"}]",
+          canonical_git, canonical_root, repository_id, worktree_digest)) {
+    goto cleanup;
+  }
+  safe_git_digest_hex(worktree_digest, worktree_hex);
+  if (snprintf(worktree_id, 79, "worktree-hmac-%s", worktree_hex) != 78) {
+    goto cleanup;
+  }
+  success = 1;
+
+cleanup:
+  if (canonical_common != NULL) {
+    safe_git_secure_zero(canonical_common, strlen(canonical_common));
+    free(canonical_common);
+  }
+  if (canonical_root != NULL) {
+    safe_git_secure_zero(canonical_root, strlen(canonical_root));
+    free(canonical_root);
+  }
+  if (canonical_git != NULL) {
+    safe_git_secure_zero(canonical_git, strlen(canonical_git));
+    free(canonical_git);
+  }
+  safe_git_secure_zero(repository_digest, sizeof(repository_digest));
+  safe_git_secure_zero(worktree_digest, sizeof(worktree_digest));
+  safe_git_secure_zero(repository_hex, sizeof(repository_hex));
+  safe_git_secure_zero(worktree_hex, sizeof(worktree_hex));
+  if (!success) {
+    safe_git_secure_zero(repository_id, 75);
+    safe_git_secure_zero(worktree_id, 79);
+  }
+  return success;
 }
 
 static int safe_git_create_repository_control_result(
@@ -6353,6 +7977,695 @@ static napi_value close_safe_git_descriptor_bootstrap(
   return result;
 }
 
+static void provider_exact_object_publisher_release(
+    struct provider_exact_object_publisher *publisher) {
+  size_t index;
+  if (publisher == NULL || publisher->closed) return;
+  for (index = publisher->node_count; index > 0; index -= 1) {
+    if (publisher->nodes[index - 1].file_descriptor >= 0) {
+      (void)close(publisher->nodes[index - 1].file_descriptor);
+      publisher->nodes[index - 1].file_descriptor = -1;
+    }
+  }
+  publisher->node_count = 0;
+  safe_git_secure_zero(publisher->canonical_parent_path,
+                       sizeof(publisher->canonical_parent_path));
+  publisher->closed = 1;
+}
+
+static void provider_exact_object_publisher_finalizer(napi_env env, void *data,
+                                                       void *hint) {
+  struct provider_exact_object_publisher *publisher =
+      (struct provider_exact_object_publisher *)data;
+  (void)env;
+  (void)hint;
+  provider_exact_object_publisher_release(publisher);
+  free(publisher);
+}
+
+static void provider_exact_object_source_release(
+    struct provider_exact_object_source *source) {
+  if (source == NULL || source->closed) return;
+  if (source->file_descriptor >= 0) {
+    (void)close(source->file_descriptor);
+    source->file_descriptor = -1;
+  }
+  safe_git_secure_zero(&source->snapshot, sizeof(source->snapshot));
+  source->publisher = NULL;
+  source->closed = 1;
+}
+
+#if defined(__linux__)
+static void provider_exact_object_source_finalizer(napi_env env, void *data,
+                                                    void *hint) {
+  struct provider_exact_object_source *source =
+      (struct provider_exact_object_source *)data;
+  (void)env;
+  (void)hint;
+  provider_exact_object_source_release(source);
+  free(source);
+}
+
+static int provider_exact_object_directory_identity_matches(
+    const struct stat *expected, const struct stat *observed) {
+  return S_ISDIR(observed->st_mode) &&
+         expected->st_dev == observed->st_dev &&
+         expected->st_ino == observed->st_ino &&
+         expected->st_uid == observed->st_uid &&
+         expected->st_gid == observed->st_gid &&
+         expected->st_mode == observed->st_mode;
+}
+
+static int provider_exact_object_managed_parent_admitted(
+    struct provider_exact_object_publisher *publisher, int file_descriptor,
+    const struct stat *expected) {
+#if defined(__linux__)
+  struct stat observed;
+  struct statfs filesystem;
+  memset(&observed, 0, sizeof(observed));
+  memset(&filesystem, 0, sizeof(filesystem));
+  return publisher != NULL && !publisher->closed &&
+         S_ISDIR(expected->st_mode) &&
+         expected->st_uid == publisher->expected_owner_uid &&
+         expected->st_gid == publisher->expected_owner_gid &&
+         (((unsigned int)expected->st_mode) & 07777U) == 0700U &&
+         fstatfs(file_descriptor, &filesystem) == 0 &&
+         filesystem.f_type == (long)EXT4_SUPER_MAGIC &&
+         fd_has_no_extended_access_control(file_descriptor,
+                                           EXPECTED_FILE_KIND_DIRECTORY) &&
+         fstat(file_descriptor, &observed) == 0 &&
+         provider_exact_object_directory_identity_matches(expected,
+                                                          &observed);
+#else
+  (void)publisher;
+  (void)file_descriptor;
+  (void)expected;
+  return 0;
+#endif
+}
+#endif
+
+static int provider_exact_object_read_parent_path(
+    napi_env env, napi_value argument, char output[PATH_MAX + 1]) {
+  napi_valuetype argument_type;
+  size_t length = 0;
+  size_t copied = 0;
+  size_t index;
+  if (napi_typeof(env, argument, &argument_type) != napi_ok ||
+      argument_type != napi_string ||
+      napi_get_value_string_utf8(env, argument, NULL, 0, &length) != napi_ok ||
+      length < 2 || length > PATH_MAX ||
+      napi_get_value_string_utf8(env, argument, output, length + 1, &copied) !=
+          napi_ok ||
+      copied != length || output[0] != '/' || output[length - 1] == '/') {
+    return 0;
+  }
+  for (index = 1; index < length; index += 1) {
+    if (output[index] == '/' &&
+        (index == 1 || output[index - 1] == '/')) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int provider_exact_object_read_owner_id(napi_env env, napi_value value,
+                                               uint32_t *result) {
+  napi_valuetype value_type;
+  double numeric;
+  if (napi_typeof(env, value, &value_type) != napi_ok ||
+      value_type != napi_number ||
+      napi_get_value_double(env, value, &numeric) != napi_ok ||
+      !isfinite(numeric) || numeric < 0 || numeric > UINT32_MAX ||
+      trunc(numeric) != numeric) {
+    return 0;
+  }
+  *result = (uint32_t)numeric;
+  return numeric == (double)*result;
+}
+
+#if defined(__linux__)
+static int provider_exact_object_add_directory_node(
+    struct provider_exact_object_publisher *publisher, int file_descriptor,
+    const char *component) {
+  struct provider_exact_object_node *node;
+  struct stat metadata;
+  size_t component_length = component == NULL ? 0 : strlen(component);
+  memset(&metadata, 0, sizeof(metadata));
+  if (publisher == NULL || publisher->closed ||
+      publisher->node_count >= PROVIDER_EXACT_OBJECT_NODE_LIMIT ||
+      component_length > NAME_MAX ||
+      (component_length > 0 && !safe_git_component_is_valid(component)) ||
+      fstat(file_descriptor, &metadata) != 0 ||
+      !S_ISDIR(metadata.st_mode)) {
+    return 0;
+  }
+  node = &publisher->nodes[publisher->node_count];
+  memset(node, 0, sizeof(*node));
+  node->file_descriptor = file_descriptor;
+  node->snapshot = metadata;
+  if (component_length > 0) {
+    memcpy(node->component, component, component_length);
+  }
+  node->component[component_length] = '\0';
+  publisher->node_count += 1;
+  return 1;
+}
+#endif
+
+static int provider_exact_object_open_parent_chain(
+    struct provider_exact_object_publisher *publisher, const char *path) {
+#if defined(__linux__)
+  char component[NAME_MAX + 1];
+  size_t component_length = 0;
+  size_t index;
+  int root_descriptor;
+  int child_descriptor;
+  int parent_descriptor;
+  if (publisher == NULL || path == NULL) return 0;
+  root_descriptor = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (root_descriptor < 0 ||
+      !provider_exact_object_add_directory_node(publisher, root_descriptor,
+                                                "")) {
+    if (root_descriptor >= 0) (void)close(root_descriptor);
+    return 0;
+  }
+  parent_descriptor = root_descriptor;
+  for (index = 1;; index += 1) {
+    unsigned char byte = (unsigned char)path[index];
+    if (byte != '/' && byte != '\0') {
+      if (component_length >= NAME_MAX) return 0;
+      component[component_length++] = (char)byte;
+      continue;
+    }
+    component[component_length] = '\0';
+    if (!safe_git_component_is_valid(component)) return 0;
+    child_descriptor = openat(parent_descriptor, component,
+                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (child_descriptor < 0 ||
+        !provider_exact_object_add_directory_node(
+            publisher, child_descriptor, component)) {
+      if (child_descriptor >= 0) (void)close(child_descriptor);
+      return 0;
+    }
+    parent_descriptor = child_descriptor;
+    component_length = 0;
+    if (byte == '\0') break;
+  }
+  return publisher->node_count >= 2 &&
+         provider_exact_object_managed_parent_admitted(
+             publisher,
+             publisher->nodes[publisher->node_count - 1].file_descriptor,
+             &publisher->nodes[publisher->node_count - 1].snapshot);
+#else
+  (void)publisher;
+  (void)path;
+  return 0;
+#endif
+}
+
+/*
+ * Reopen the complete root-to-parent projection and compare every component
+ * with its retained descriptor.  This is a rejection-only observation: it
+ * never selects a replacement parent and the final link always uses the held
+ * parent descriptor.
+ */
+static int provider_exact_object_revalidate_parent_chain(
+    struct provider_exact_object_publisher *publisher) {
+#if defined(__linux__)
+  struct stat retained;
+  struct stat observed;
+  size_t index;
+  int current_descriptor = -1;
+  int next_descriptor = -1;
+  int result = 0;
+  if (publisher == NULL || publisher->closed || publisher->node_count < 2) {
+    return 0;
+  }
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&retained, 0, sizeof(retained));
+    if (fstat(publisher->nodes[index].file_descriptor, &retained) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &retained)) {
+      return 0;
+    }
+  }
+  current_descriptor =
+      open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (current_descriptor < 0 || fstat(current_descriptor, &observed) != 0 ||
+      !provider_exact_object_directory_identity_matches(
+          &publisher->nodes[0].snapshot, &observed)) {
+    goto cleanup;
+  }
+  for (index = 1; index < publisher->node_count; index += 1) {
+    next_descriptor = openat(current_descriptor,
+                             publisher->nodes[index].component,
+                             O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (next_descriptor < 0 || fstat(next_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed)) {
+      goto cleanup;
+    }
+    (void)close(current_descriptor);
+    current_descriptor = next_descriptor;
+    next_descriptor = -1;
+  }
+  result = provider_exact_object_managed_parent_admitted(
+      publisher,
+      publisher->nodes[publisher->node_count - 1].file_descriptor,
+      &publisher->nodes[publisher->node_count - 1].snapshot);
+
+cleanup:
+  if (next_descriptor >= 0) (void)close(next_descriptor);
+  if (current_descriptor >= 0) (void)close(current_descriptor);
+  return result;
+#else
+  (void)publisher;
+  return 0;
+#endif
+}
+
+static int provider_exact_object_unwrap_publisher(
+    napi_env env, napi_value value,
+    struct provider_exact_object_publisher **publisher) {
+  bool tagged = false;
+  return napi_check_object_type_tag(env, value,
+                                    &PROVIDER_EXACT_OBJECT_PUBLISHER_TYPE_TAG,
+                                    &tagged) == napi_ok &&
+         tagged && napi_unwrap(env, value, (void **)publisher) == napi_ok &&
+         *publisher != NULL;
+}
+
+static int provider_exact_object_unwrap_source(
+    napi_env env, napi_value value,
+    struct provider_exact_object_source **source) {
+  bool tagged = false;
+  return napi_check_object_type_tag(env, value,
+                                    &PROVIDER_EXACT_OBJECT_SOURCE_TYPE_TAG,
+                                    &tagged) == napi_ok &&
+         tagged && napi_unwrap(env, value, (void **)source) == napi_ok &&
+         *source != NULL;
+}
+
+static napi_value open_provider_exact_object_publisher(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 3;
+  napi_value arguments[3];
+  napi_value object;
+  struct provider_exact_object_publisher *publisher = NULL;
+  char path[PATH_MAX + 1];
+  uint32_t expected_owner_uid;
+  uint32_t expected_owner_gid;
+  memset(path, 0, sizeof(path));
+  if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 3 ||
+      !provider_exact_object_read_parent_path(env, arguments[0], path) ||
+      !provider_exact_object_read_owner_id(env, arguments[1],
+                                           &expected_owner_uid) ||
+      !provider_exact_object_read_owner_id(env, arguments[2],
+                                           &expected_owner_gid) ||
+      (geteuid() != 0 &&
+       (geteuid() != (uid_t)expected_owner_uid ||
+        getegid() != (gid_t)expected_owner_gid))) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  publisher = (struct provider_exact_object_publisher *)calloc(
+      1, sizeof(*publisher));
+  if (publisher == NULL) {
+    safe_git_secure_zero(path, sizeof(path));
+    return throw_provider_exact_object_unavailable(env);
+  }
+  publisher->expected_owner_uid = (uid_t)expected_owner_uid;
+  publisher->expected_owner_gid = (gid_t)expected_owner_gid;
+  for (argument_count = 0;
+       argument_count < PROVIDER_EXACT_OBJECT_NODE_LIMIT; argument_count += 1) {
+    publisher->nodes[argument_count].file_descriptor = -1;
+  }
+  memcpy(publisher->canonical_parent_path, path, strlen(path) + 1);
+  if (!provider_exact_object_open_parent_chain(publisher, path) ||
+      !provider_exact_object_revalidate_parent_chain(publisher) ||
+      napi_create_object(env, &object) != napi_ok ||
+      napi_wrap(env, object, publisher,
+                provider_exact_object_publisher_finalizer, NULL, NULL) !=
+          napi_ok) {
+    provider_exact_object_publisher_release(publisher);
+    free(publisher);
+    safe_git_secure_zero(path, sizeof(path));
+    return throw_provider_exact_object_unavailable(env);
+  }
+  if (napi_type_tag_object(env, object,
+                           &PROVIDER_EXACT_OBJECT_PUBLISHER_TYPE_TAG) !=
+      napi_ok) {
+    provider_exact_object_publisher_release(publisher);
+    safe_git_secure_zero(path, sizeof(path));
+    return throw_provider_exact_object_unavailable(env);
+  }
+  safe_git_secure_zero(path, sizeof(path));
+  return object;
+}
+
+#if defined(__linux__)
+static int provider_exact_object_source_admitted(
+    struct provider_exact_object_source *source) {
+#if defined(__linux__)
+  struct stat observed;
+  struct stat parent;
+  memset(&observed, 0, sizeof(observed));
+  memset(&parent, 0, sizeof(parent));
+  return source != NULL && !source->closed && source->file_descriptor >= 0 &&
+         source->publisher != NULL && !source->publisher->closed &&
+         fstat(source->file_descriptor, &observed) == 0 &&
+         stat_snapshot_matches(&source->snapshot, &observed) &&
+         S_ISREG(observed.st_mode) &&
+         observed.st_uid == source->publisher->expected_owner_uid &&
+         observed.st_gid == source->publisher->expected_owner_gid &&
+         (((unsigned int)observed.st_mode) & 07777U) == 0600U &&
+         observed.st_nlink == 0 &&
+         fd_has_no_extended_access_control(source->file_descriptor,
+                                           EXPECTED_FILE_KIND_REGULAR_FILE) &&
+         fstat(source->publisher
+                   ->nodes[source->publisher->node_count - 1]
+                   .file_descriptor,
+               &parent) == 0 &&
+         parent.st_dev == observed.st_dev;
+#else
+  (void)source;
+  return 0;
+#endif
+}
+#endif
+
+static napi_value stage_provider_exact_object(napi_env env,
+                                              napi_callback_info info) {
+  size_t argument_count = 2;
+  napi_value arguments[2];
+  napi_value object;
+  struct provider_exact_object_publisher *publisher = NULL;
+  struct provider_exact_object_source *source = NULL;
+  void *bytes = NULL;
+  size_t length = 0;
+  size_t offset = 0;
+  int file_descriptor = -1;
+#if defined(__linux__)
+  if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 2 ||
+      !provider_exact_object_unwrap_publisher(env, arguments[0], &publisher) ||
+      publisher->closed ||
+      geteuid() != publisher->expected_owner_uid ||
+      getegid() != publisher->expected_owner_gid ||
+      napi_get_buffer_info(env, arguments[1], &bytes, &length) != napi_ok ||
+      length > PROVIDER_EXACT_OBJECT_BYTES_LIMIT ||
+      !provider_exact_object_revalidate_parent_chain(publisher)) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  file_descriptor = openat(
+      publisher->nodes[publisher->node_count - 1].file_descriptor, ".",
+      O_TMPFILE | O_RDWR | O_CLOEXEC | O_NOCTTY, 0600);
+  if (file_descriptor < 0 || fchmod(file_descriptor, 0600) != 0) {
+    if (file_descriptor >= 0) (void)close(file_descriptor);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  while (offset < length) {
+    ssize_t written = write(file_descriptor,
+                            ((const unsigned char *)bytes) + offset,
+                            length - offset);
+    if (written < 0 && errno == EINTR) continue;
+    if (written <= 0) {
+      (void)close(file_descriptor);
+      return throw_provider_exact_object_unavailable(env);
+    }
+    offset += (size_t)written;
+  }
+  if (fsync(file_descriptor) != 0) {
+    (void)close(file_descriptor);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  source = (struct provider_exact_object_source *)calloc(1, sizeof(*source));
+  if (source == NULL) {
+    (void)close(file_descriptor);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  source->file_descriptor = file_descriptor;
+  source->publisher = publisher;
+  if (fstat(file_descriptor, &source->snapshot) != 0 ||
+      source->snapshot.st_size != (off_t)length ||
+      !provider_exact_object_source_admitted(source) ||
+      !provider_exact_object_revalidate_parent_chain(publisher) ||
+      napi_create_object(env, &object) != napi_ok ||
+      napi_wrap(env, object, source, provider_exact_object_source_finalizer,
+                NULL, NULL) != napi_ok) {
+    provider_exact_object_source_release(source);
+    free(source);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  if (napi_type_tag_object(env, object,
+                           &PROVIDER_EXACT_OBJECT_SOURCE_TYPE_TAG) != napi_ok) {
+    provider_exact_object_source_release(source);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  return object;
+#else
+  (void)argument_count;
+  (void)info;
+  (void)arguments;
+  (void)object;
+  (void)publisher;
+  (void)source;
+  (void)bytes;
+  (void)length;
+  (void)offset;
+  (void)file_descriptor;
+  return throw_provider_exact_object_unavailable(env);
+#endif
+}
+
+#if defined(__linux__)
+static int provider_exact_object_read_final_name(
+    napi_env env, napi_value argument, char output[NAME_MAX + 1]) {
+  napi_valuetype argument_type;
+  size_t length = 0;
+  size_t copied = 0;
+  size_t index;
+  if (napi_typeof(env, argument, &argument_type) != napi_ok ||
+      argument_type != napi_string ||
+      napi_get_value_string_utf8(env, argument, NULL, 0, &length) != napi_ok ||
+      length != 69 ||
+      napi_get_value_string_utf8(env, argument, output, length + 1, &copied) !=
+          napi_ok ||
+      copied != length || strcmp(output + 64, ".blob") != 0) {
+    return 0;
+  }
+  for (index = 0; index < 64; index += 1) {
+    if (!((output[index] >= '0' && output[index] <= '9') ||
+          (output[index] >= 'a' && output[index] <= 'f'))) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static napi_value provider_exact_object_commit_result(napi_env env,
+                                                       int committed,
+                                                       const char *reason) {
+  napi_value result;
+  napi_value status;
+  napi_value reason_value;
+  const char *status_text = committed > 0
+                                ? "committed"
+                                : committed < 0
+                                      ? "durability_indeterminate"
+                                      : "not_committed";
+  if (napi_create_object(env, &result) != napi_ok ||
+      napi_create_string_utf8(env, status_text, NAPI_AUTO_LENGTH, &status) !=
+          napi_ok ||
+      napi_set_named_property(env, result, "status", status) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  if (committed == 0 &&
+      (reason == NULL ||
+       napi_create_string_utf8(env, reason, NAPI_AUTO_LENGTH, &reason_value) !=
+           napi_ok ||
+       napi_set_named_property(env, result, "reason", reason_value) !=
+           napi_ok)) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  return result;
+}
+
+static int provider_exact_object_fsync_parent(
+    struct provider_exact_object_publisher *publisher,
+    int parent_descriptor) {
+  if (publisher->test_parent_fsync_failure_armed) {
+    publisher->test_parent_fsync_failure_armed = 0;
+    errno = EIO;
+    return 0;
+  }
+  return fsync(parent_descriptor) == 0;
+}
+#endif
+
+static napi_value commit_provider_exact_object(napi_env env,
+                                               napi_callback_info info) {
+  size_t argument_count = 3;
+  napi_value arguments[3];
+  struct provider_exact_object_publisher *publisher = NULL;
+  struct provider_exact_object_source *source = NULL;
+  char final_name[NAME_MAX + 1];
+  int source_admitted;
+  int parent_admitted;
+  int link_result;
+  int link_error;
+  int parent_descriptor;
+  memset(final_name, 0, sizeof(final_name));
+#if defined(__linux__)
+  if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 3 ||
+      !provider_exact_object_unwrap_publisher(env, arguments[0], &publisher) ||
+      !provider_exact_object_unwrap_source(env, arguments[1], &source) ||
+      !provider_exact_object_read_final_name(env, arguments[2], final_name) ||
+      publisher->closed || source->closed || source->publisher != publisher) {
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return throw_provider_exact_object_unavailable(env);
+  }
+  /* A source is a single-attempt capability, including rejected attempts. */
+  source_admitted = provider_exact_object_source_admitted(source);
+  parent_admitted = provider_exact_object_revalidate_parent_chain(publisher);
+  if (!source_admitted) {
+    provider_exact_object_source_release(source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return provider_exact_object_commit_result(
+        env, 0, "staging_authority_changed");
+  }
+  if (!parent_admitted) {
+    provider_exact_object_source_release(source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return provider_exact_object_commit_result(
+        env, 0, "parent_path_projection_changed");
+  }
+  parent_descriptor =
+      publisher->nodes[publisher->node_count - 1].file_descriptor;
+  errno = 0;
+  link_result = linkat(source->file_descriptor, "", parent_descriptor,
+                       final_name, AT_EMPTY_PATH);
+  link_error = errno;
+  if (link_result != 0) {
+    provider_exact_object_source_release(source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    if (link_error == EEXIST) {
+      /*
+       * EEXIST is also the recovery observation for a prior link whose parent
+       * fsync was indeterminate.  Do not report the collision as stable until
+       * the held parent descriptor has been durably synchronized.
+       */
+      if (!provider_exact_object_fsync_parent(publisher,
+                                              parent_descriptor)) {
+        return provider_exact_object_commit_result(env, -1, NULL);
+      }
+      return provider_exact_object_commit_result(env, 0, "final_collision");
+    }
+    return provider_exact_object_commit_result(env, 0,
+                                                "profile_unsupported");
+  }
+  if (!provider_exact_object_fsync_parent(publisher, parent_descriptor)) {
+    provider_exact_object_source_release(source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return provider_exact_object_commit_result(env, -1, NULL);
+  }
+  provider_exact_object_source_release(source);
+  safe_git_secure_zero(final_name, sizeof(final_name));
+  return provider_exact_object_commit_result(env, 1, NULL);
+#else
+  (void)argument_count;
+  (void)info;
+  (void)arguments;
+  (void)publisher;
+  (void)source;
+  (void)source_admitted;
+  (void)parent_admitted;
+  (void)link_result;
+  (void)link_error;
+  (void)parent_descriptor;
+  safe_git_secure_zero(final_name, sizeof(final_name));
+  return throw_provider_exact_object_unavailable(env);
+#endif
+}
+
+static napi_value arm_test_provider_exact_object_parent_fsync_failure(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 1;
+  napi_value argument;
+  napi_value result;
+  struct provider_exact_object_publisher *publisher = NULL;
+  if (napi_get_cb_info(env, info, &argument_count, &argument, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 1 ||
+      !provider_exact_object_unwrap_publisher(env, argument, &publisher) ||
+      publisher->closed || publisher->test_parent_fsync_failure_armed ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  publisher->test_parent_fsync_failure_armed = 1;
+  return result;
+}
+
+static napi_value revalidate_provider_exact_object_publisher(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 1;
+  napi_value argument;
+  napi_value result;
+  struct provider_exact_object_publisher *publisher = NULL;
+  if (napi_get_cb_info(env, info, &argument_count, &argument, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 1 ||
+      !provider_exact_object_unwrap_publisher(env, argument, &publisher) ||
+      !provider_exact_object_revalidate_parent_chain(publisher) ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  return result;
+}
+
+static napi_value close_provider_exact_object_source(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 1;
+  napi_value argument;
+  napi_value result;
+  struct provider_exact_object_source *source = NULL;
+  if (napi_get_cb_info(env, info, &argument_count, &argument, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 1 ||
+      !provider_exact_object_unwrap_source(env, argument, &source)) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  provider_exact_object_source_release(source);
+  if (napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  return result;
+}
+
+static napi_value close_provider_exact_object_publisher(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 1;
+  napi_value argument;
+  napi_value result;
+  struct provider_exact_object_publisher *publisher = NULL;
+  if (napi_get_cb_info(env, info, &argument_count, &argument, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 1 ||
+      !provider_exact_object_unwrap_publisher(env, argument, &publisher)) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  provider_exact_object_publisher_release(publisher);
+  if (napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  return result;
+}
+
 static napi_value get_kernel_bridge_profile(napi_env env,
                                             napi_callback_info info) {
   size_t argument_count = 1;
@@ -6537,6 +8850,25 @@ NAPI_MODULE_INIT() {
       {"assertFdHasNoExtendedAccessControl", NULL,
        assert_fd_has_no_extended_access_control, NULL, NULL, NULL, napi_default,
        NULL},
+      {"openProviderExactObjectPublisher", NULL,
+       open_provider_exact_object_publisher, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"revalidateProviderExactObjectPublisher", NULL,
+       revalidate_provider_exact_object_publisher, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"stageProviderExactObject", NULL, stage_provider_exact_object, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"commitProviderExactObject", NULL, commit_provider_exact_object, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"armTestProviderExactObjectParentFsyncFailure", NULL,
+       arm_test_provider_exact_object_parent_fsync_failure, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeProviderExactObjectSource", NULL,
+       close_provider_exact_object_source, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"closeProviderExactObjectPublisher", NULL,
+       close_provider_exact_object_publisher, NULL, NULL, NULL, napi_default,
+       NULL},
       {"openSafeGitDescriptorBootstrap", NULL,
        open_safe_git_descriptor_bootstrap, NULL, NULL, NULL, napi_default, NULL},
       {"revalidateSafeGitDescriptorBootstrap", NULL,
@@ -6555,6 +8887,19 @@ NAPI_MODULE_INIT() {
        NULL},
       {"bindSafeGitExecutable", NULL, bind_safe_git_executable, NULL, NULL,
        NULL, napi_default, NULL},
+      {"executeSafeGitVersion", NULL, execute_safe_git_version, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"executeSafeGitReadProfile", NULL, execute_safe_git_read_profile, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"createSafeGitTaskBaselineLease", NULL,
+       create_safe_git_task_baseline_lease, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"recoverSafeGitTaskBaselineLease", NULL,
+       create_safe_git_task_baseline_lease, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"rollbackSafeGitTaskBaselineLease", NULL,
+       create_safe_git_task_baseline_lease, NULL, NULL, NULL, napi_default,
+       NULL},
       {"deriveSafeGitPathIdentity", NULL, derive_safe_git_path_identity, NULL,
        NULL, NULL, napi_default, NULL},
       {"closeSafeGitDescriptorBootstrap", NULL,

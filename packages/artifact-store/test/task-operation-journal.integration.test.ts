@@ -1206,7 +1206,10 @@ describe("trusted Task operation journal integration", () => {
                 boundaryReason: _boundaryReason,
                 derivationPath: _derivationPath,
                 ...base
-              } = claim;
+              } = claim as typeof claim & {
+                boundaryReason?: string;
+                derivationPath?: readonly unknown[];
+              };
               return {
                 ...base,
                 epistemicStatus: "human_confirmed" as const,

@@ -8,6 +8,10 @@ import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
   CheckChangeInputV1Schema,
   RecordVerificationInputV1Schema,
+  StrongCheckChangesInputV1Schema,
+  StrongRecordVerificationInputV1Schema,
+  StrongRepoPulseV1Schema,
+  StrongRepositorySnapshotV1Schema,
   UpdateTaskInputV1Schema,
   classifyChangeCheckV1,
   type ChangeCheckV1,
@@ -28,6 +32,8 @@ import {
   RecordVerificationOutputV1Schema,
   SearchContextInputV1Schema,
   SearchContextOutputV1Schema,
+  StrongCheckChangeOutputV1Schema,
+  StrongRecordVerificationOutputV1Schema,
   TraceImpactInputV1Schema,
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
@@ -85,10 +91,81 @@ import {
   taskGateFailure,
 } from "../errors/tool-errors.js";
 import {
+  openProductionRuntime,
   openRuntime,
   readPublishedPulse,
   readPublishedSnapshot,
 } from "../runtime/context.js";
+
+export interface ToolRuntimeSelectionV1 {
+  readonly canonicalInstallationRoot?: string;
+}
+
+function requireProductionInstallationRootV1(
+  selection: ToolRuntimeSelectionV1,
+): string {
+  const root = selection.canonicalInstallationRoot;
+  if (root === undefined) {
+    failStrongStoreUnavailableV1();
+    throw new Error("unreachable strong runtime selector");
+  }
+  return root;
+}
+
+async function strongSuccessMetaV1(
+  runtime: Awaited<ReturnType<typeof openProductionRuntime>>,
+  snapshotId: string,
+  durationMs: number,
+  cacheHit: boolean,
+) {
+  const [snapshotRead, pulseRead] = await Promise.all([
+    runtime.store.readArtifact("repository_snapshot", { snapshotId }),
+    runtime.store.readArtifact("repo_pulse"),
+  ]);
+  if (
+    snapshotRead.artifact.artifactType !== "repository_snapshot" ||
+    pulseRead.artifact.artifactType !== "repo_pulse"
+  ) throw new Error("strong repository context projection is invalid");
+  const snapshot = StrongRepositorySnapshotV1Schema.parse(
+    snapshotRead.artifact.payload,
+  );
+  const pulse = StrongRepoPulseV1Schema.parse(pulseRead.artifact.payload);
+  return {
+    repositoryId: snapshot.repositoryId,
+    worktreeId: snapshot.worktreeId,
+    sourceSnapshotId: snapshot.snapshotId,
+    headCommit: snapshot.headState.kind === "commit"
+      ? snapshot.headState.commit
+      : null,
+    worktreeFingerprint: `sha256:${createHash("sha256")
+      .update(snapshot.repositoryStateToken, "utf8")
+      .digest("hex")}`,
+    freshness: pulse.evaluatedSnapshotId === snapshot.snapshotId
+      ? pulse.status
+      : "stale",
+    durationMs,
+    cacheHit,
+    truncated: false,
+    truncatedCategories: [],
+  };
+}
+
+async function assertStrongPublishedCutV1(
+  runtime: Awaited<ReturnType<typeof openProductionRuntime>>,
+): Promise<void> {
+  const pulseRead = await runtime.store.readArtifact("repo_pulse");
+  if (pulseRead.artifact.artifactType !== "repo_pulse") {
+    throw new Error("strong Repo Pulse is unavailable");
+  }
+  const pulse = StrongRepoPulseV1Schema.parse(pulseRead.artifact.payload);
+  const snapshotRead = await runtime.store.readArtifact("repository_snapshot", {
+    snapshotId: pulse.evaluatedSnapshotId,
+  });
+  if (snapshotRead.artifact.artifactType !== "repository_snapshot") {
+    throw new Error("strong Repository Snapshot is unavailable");
+  }
+  StrongRepositorySnapshotV1Schema.parse(snapshotRead.artifact.payload);
+}
 
 export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "get_repo_pulse",
@@ -660,37 +737,46 @@ async function getRepoPulse(argumentsValue: unknown, canonicalRoot: string) {
   });
 }
 
-async function buildTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
+async function buildTaskBrief(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = BuildTaskBriefInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
-  const result = await runtime.taskEngine.buildTaskBrief(parsed.data, {
-    actor: parsed.data.actor,
-    repositoryId: runtime.store.repositoryId,
-    worktreeId: runtime.store.worktreeId,
-    capabilities: ["task:create"],
-  });
-  const [snapshot, publishedPulse] = await Promise.all([
-    readPublishedSnapshot(runtime.store, result.task.latestSnapshotId),
-    readPublishedPulse(runtime.store),
-  ]);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId === result.task.latestSnapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
-  return BuildTaskBriefOutputV1Schema.parse({
-    isError: false,
-    content: [{ type: "text", text: "Task Brief is ready." }],
-    structuredContent: {
-      schemaVersion: 1,
-      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
-        cacheHit: result.mutation.idempotentReplay,
-      }),
-      result,
-    },
-  });
+  const runtime = await openProductionRuntime(
+    canonicalRoot,
+    requireProductionInstallationRootV1(selection),
+  );
+  try {
+    await assertStrongPublishedCutV1(runtime);
+    const result = await runtime.taskEngine.buildTaskBrief(parsed.data, {
+      actor: parsed.data.actor,
+      repositoryId: runtime.store.repositoryId,
+      worktreeId: runtime.store.worktreeId,
+      capabilities: ["task:create"],
+    });
+    if (result.task.taskProfile !== "agent_task_v1") {
+      throw new Error("production Task creation did not produce an agent_task_v1 Task");
+    }
+    return BuildTaskBriefOutputV1Schema.parse({
+      isError: false,
+      content: [{ type: "text", text: "Task Brief is ready." }],
+      structuredContent: {
+        schemaVersion: 1,
+        meta: await strongSuccessMetaV1(
+          runtime,
+          result.task.latestSnapshotId,
+          elapsed(startedAt),
+          result.mutation.idempotentReplay,
+        ),
+        result,
+      },
+    });
+  } finally {
+    await runtime.close?.();
+  }
 }
 
 async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
@@ -779,88 +865,94 @@ async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
   });
 }
 
-async function checkChange(argumentsValue: unknown, canonicalRoot: string) {
-  const parsed = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
-  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
+async function checkChange(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
+  const parsed = StrongCheckChangesInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) {
+    const legacy = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
+    if (legacy.success) failStrongStoreUnavailableV1();
+    throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  }
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
-  const result = await runtime.taskEngine.checkChange(
-    parsed.data,
-    {
+  const runtime = await openProductionRuntime(
+    canonicalRoot,
+    requireProductionInstallationRootV1(selection),
+  );
+  try {
+    await assertStrongPublishedCutV1(runtime);
+    const result = await runtime.taskEngine.checkChanges(parsed.data, {
       actor: parsed.data.actor,
       repositoryId: runtime.store.repositoryId,
       worktreeId: runtime.store.worktreeId,
       capabilities: ["task:update"],
-    },
-  );
-  const [snapshot, publishedPulse] = await Promise.all([
-    readPublishedSnapshot(runtime.store, result.changeCheck.actualSnapshotId),
-    readPublishedPulse(runtime.store),
-  ]);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId === result.changeCheck.actualSnapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
-  return CheckChangeOutputV1Schema.parse({
-    isError: false,
-    content: [{
-      type: "text",
-      text:
-        "Change Check recorded as a legacy summary; empty findings are not clean evidence.",
-    }],
-    structuredContent: {
-      schemaVersion: 1,
-      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
-        cacheHit: result.mutation.idempotentReplay,
-      }),
-      result,
-    },
-  });
+    });
+    return StrongCheckChangeOutputV1Schema.parse({
+      isError: false,
+      content: [{ type: "text", text: "Evidence-backed Change Check committed." }],
+      structuredContent: {
+        schemaVersion: 1,
+        meta: await strongSuccessMetaV1(
+          runtime,
+          result.changeCheck.actualSnapshotId,
+          elapsed(startedAt),
+          result.idempotentReplay,
+        ),
+        result,
+      },
+    });
+  } finally {
+    await runtime.close?.();
+  }
 }
 
 async function recordVerification(
   argumentsValue: unknown,
   canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
 ) {
-  const parsed = RecordVerificationInputV1Schema.safeParse(argumentsValue ?? {});
-  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
-  const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
-  const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
-  const latestSnapshotId = manifest.artifacts
-    .filter((descriptor) => descriptor.artifactType === "task_manifest")
-    .find((descriptor) => descriptor.taskId === parsed.data.taskId)
-    ?.sourceSnapshotId;
-  if (latestSnapshotId === undefined) {
-    throw new ToolFailure(resourceNotFoundFailure("task", parsed.data.taskId));
+  const parsed = StrongRecordVerificationInputV1Schema.safeParse(
+    argumentsValue ?? {},
+  );
+  if (!parsed.success) {
+    const legacy = RecordVerificationInputV1Schema.safeParse(
+      argumentsValue ?? {},
+    );
+    if (legacy.success) failStrongStoreUnavailableV1();
+    throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   }
-  const result = await runtime.taskEngine.recordVerification(parsed.data, {
-    actor: parsed.data.actor,
-    repositoryId: runtime.store.repositoryId,
-    worktreeId: runtime.store.worktreeId,
-    capabilities: ["task:update"],
-  });
-  const [snapshot, publishedPulse] = await Promise.all([
-    readPublishedSnapshot(runtime.store, result.verification.snapshotId),
-    readPublishedPulse(runtime.store),
-  ]);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId === result.verification.snapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
-  return RecordVerificationOutputV1Schema.parse({
-    isError: false,
-    content: [{ type: "text", text: "Verification record appended." }],
-    structuredContent: {
-      schemaVersion: 1,
-      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
-        cacheHit: result.mutation.idempotentReplay,
-      }),
-      result,
-    },
-  });
+  const startedAt = performance.now();
+  const runtime = await openProductionRuntime(
+    canonicalRoot,
+    requireProductionInstallationRootV1(selection),
+  );
+  try {
+    await assertStrongPublishedCutV1(runtime);
+    const result = await runtime.taskEngine.recordVerification(parsed.data, {
+      actor: parsed.data.actor,
+      repositoryId: runtime.store.repositoryId,
+      worktreeId: runtime.store.worktreeId,
+      capabilities: ["task:update"],
+    });
+    return StrongRecordVerificationOutputV1Schema.parse({
+      isError: false,
+      content: [{ type: "text", text: "Strong Verification record committed." }],
+      structuredContent: {
+        schemaVersion: 1,
+        meta: await strongSuccessMetaV1(
+          runtime,
+          result.verification.snapshotId,
+          elapsed(startedAt),
+          result.idempotentReplay,
+        ),
+        result,
+      },
+    });
+  } finally {
+    await runtime.close?.();
+  }
 }
 
 type PublishedJsonReadV1 =
@@ -2163,21 +2255,22 @@ export async function callImplementedTool(
   toolName: ImplementedToolName,
   argumentsValue: unknown,
   canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
 ): Promise<unknown> {
   try {
     switch (toolName) {
       case "get_repo_pulse":
         return await getRepoPulse(argumentsValue, canonicalRoot);
       case "build_task_brief":
-        return await buildTaskBrief(argumentsValue, canonicalRoot);
+        return await buildTaskBrief(argumentsValue, canonicalRoot, selection);
       case "get_task_brief":
         return await getTaskBrief(argumentsValue, canonicalRoot);
       case "update_task":
         return await updateTask(argumentsValue, canonicalRoot);
       case "check_change":
-        return await checkChange(argumentsValue, canonicalRoot);
+        return await checkChange(argumentsValue, canonicalRoot, selection);
       case "record_verification":
-        return await recordVerification(argumentsValue, canonicalRoot);
+        return await recordVerification(argumentsValue, canonicalRoot, selection);
       case "open_workbench":
         return await openWorkbench(argumentsValue, canonicalRoot);
       case "get_evidence":

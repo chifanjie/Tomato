@@ -1,4 +1,5 @@
 export * from "./git.js";
+export * from "./safe-git-read-command.js";
 export * from "./snapshot.js";
 export * from "./taxonomy.js";
 export * from "./freshness.js";

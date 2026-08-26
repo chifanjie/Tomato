@@ -20,11 +20,16 @@ import {
   SAFE_GIT_EXECUTABLE_BINDING_PROFILE_V1,
   SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
   SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
+  SAFE_GIT_VERSION_PROBE_PROFILE_V1,
   SafeGitBootstrapErrorV1,
   bootstrapSafeGitDescriptorBoundCandidateV1 as bootstrapSafeGitFilesystemCandidateV1,
   isSafeGitDescriptorBoundCapabilityV1 as isSafeGitBootstrapCapabilityV1,
 } from "../src/safe-git-bootstrap.js";
 import { withSafeGitBootstrapTestHooksInternalV1 } from "../src/safe-git-bootstrap-testing-internal.js";
+import {
+  classifySafeGitReadCommandV1,
+  type SafeGitReadCommandV1,
+} from "../src/safe-git-read-command.js";
 import {
   cleanupTemporaryDirectories,
   git,
@@ -44,6 +49,13 @@ const identityAuthorityTestStateV1 = vi.hoisted(() => ({
   executablePath: undefined as string | undefined,
 }));
 
+const safeGitExecutionTestStateV1 = vi.hoisted(() => ({
+  executions: 0,
+  reads: 0,
+  requests: [] as unknown[],
+  unavailable: false,
+}));
+
 vi.mock(
   "@understand-code/durable-object-provider-authority/internal/acceptance-store",
   async () => {
@@ -51,6 +63,25 @@ vi.mock(
       typeof import("@understand-code/native-kernel-bridge")
     >("@understand-code/native-kernel-bridge");
     return {
+      executeProviderAcceptanceSafeGitVersionInternalV1: async () => {
+        safeGitExecutionTestStateV1.executions += 1;
+        if (safeGitExecutionTestStateV1.unavailable) {
+          throw new Error("test SafeGit execution unavailable");
+        }
+        return Object.freeze({ major: 2, minor: 50, patch: 1 });
+      },
+      executeProviderAcceptanceSafeGitReadInternalV1: async (
+        _binding: NativeSafeGitDescriptorBindingV1,
+        request: unknown,
+      ) => {
+        safeGitExecutionTestStateV1.reads += 1;
+        safeGitExecutionTestStateV1.requests.push(request);
+        return Object.freeze({
+          stdout: Buffer.from("/descriptor-bound/repository\n", "utf8"),
+          stderr: Buffer.alloc(0),
+          exitCode: 0,
+        });
+      },
       bindProviderAcceptanceSafeGitExecutableInternalV1: async (
         _binding: NativeSafeGitDescriptorBindingV1,
         absoluteExecutablePath: string,
@@ -118,6 +149,10 @@ afterEach(() => {
   identityAuthorityTestStateV1.executableBindings = 0;
   identityAuthorityTestStateV1.executableUnavailable = false;
   identityAuthorityTestStateV1.executablePath = undefined;
+  safeGitExecutionTestStateV1.executions = 0;
+  safeGitExecutionTestStateV1.reads = 0;
+  safeGitExecutionTestStateV1.requests.length = 0;
+  safeGitExecutionTestStateV1.unavailable = false;
   cleanupTemporaryDirectories();
 });
 
@@ -540,6 +575,186 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
       expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
       identityAuthorityTestStateV1.executableUnavailable = false;
     }
+  });
+
+  it("promotes a real native version probe without accepting caller output", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-version-executable"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+
+    await expectBootstrapFailure(
+      result.capability.executeGitVersion(),
+      "version_execution_invalid",
+      root,
+    );
+    expect(result.capability.closed).toBe(false);
+    expect(safeGitExecutionTestStateV1.executions).toBe(0);
+
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    await result.capability.bindEmptyHooksDirectory();
+    await result.capability.bindGitExecutable(absoluteExecutablePath);
+    const version = await result.capability.executeGitVersion();
+
+    expect(version).toMatchObject({
+      profile: SAFE_GIT_VERSION_PROBE_PROFILE_V1,
+      gitVersion: { major: 2, minor: 50, patch: 1 },
+      handleBoundExecution: "verified_version_probe",
+      osSandbox: "verified_version_probe",
+      requiredNext: ["remaining_safe_git_commands", "strong_writer"],
+    });
+    expect(Object.isFrozen(version)).toBe(true);
+    expect(Object.isFrozen(version.gitVersion)).toBe(true);
+    expect(safeGitExecutionTestStateV1.executions).toBe(1);
+    await expect(result.capability.revalidate()).resolves.toEqual(version);
+    expect(safeGitExecutionTestStateV1.executions).toBe(1);
+    await result.capability.close();
+  });
+
+  it("mints the read executor only after the same capability completes its version probe", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-read-version-gate"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    await result.capability.bindEmptyHooksDirectory();
+    await result.capability.bindGitExecutable(absoluteExecutablePath);
+
+    expect(() => result.capability.createReadExecutor()).toThrowError(
+      expect.objectContaining({ code: "read_execution_invalid" }),
+    );
+    expect(result.capability.closed).toBe(true);
+
+    const readyRoot = initializeRepository();
+    const ready = await bootstrapSafeGitFilesystemCandidateV1(readyRoot);
+    await ready.capability.bindRepositoryControl();
+    await ready.capability.bindRepositoryIdentity();
+    await ready.capability.bindEmptyHooksDirectory();
+    await ready.capability.bindGitExecutable(absoluteExecutablePath);
+    await ready.capability.executeGitVersion();
+    const executor = ready.capability.createReadExecutor();
+    expect(ready.capability.createReadExecutor()).toBe(executor);
+    await expect(
+      executor.execute(
+        classifySafeGitReadCommandV1(["rev-parse", "--show-toplevel"]),
+      ),
+    ).resolves.toMatchObject({ exitCode: 0, stderr: Buffer.alloc(0) });
+    expect(safeGitExecutionTestStateV1.reads).toBe(1);
+    expect(safeGitExecutionTestStateV1.requests).toEqual([
+      { profile: "rev_parse_show_toplevel_v1" },
+    ]);
+    await ready.capability.close();
+  });
+
+  it("rejects accessor and Proxy command DTOs without invoking traps", async () => {
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-read-dto"),
+      "git",
+    );
+    const createReady = async () => {
+      const result = await bootstrapSafeGitFilesystemCandidateV1(
+        initializeRepository(),
+      );
+      await result.capability.bindRepositoryControl();
+      await result.capability.bindRepositoryIdentity();
+      await result.capability.bindEmptyHooksDirectory();
+      await result.capability.bindGitExecutable(absoluteExecutablePath);
+      await result.capability.executeGitVersion();
+      return result;
+    };
+
+    let getterExecutions = 0;
+    const accessorCommand = Object.create(null) as SafeGitReadCommandV1;
+    Object.defineProperties(accessorCommand, {
+      acceptedExitCodes: { value: Object.freeze([0]) },
+      outputFraming: { value: "text" },
+      request: {
+        get() {
+          getterExecutions += 1;
+          return { profile: "rev_parse_show_toplevel_v1" };
+        },
+      },
+      stderrLimitBytes: { value: 64 * 1_024 },
+      stdoutLimitBytes: { value: 4 * 1_024 },
+    });
+    const accessorReady = await createReady();
+    await expect(
+      accessorReady.capability.createReadExecutor().execute(accessorCommand),
+    ).rejects.toMatchObject({ code: "read_execution_invalid" });
+    expect(getterExecutions).toBe(0);
+    expect(accessorReady.capability.closed).toBe(true);
+
+    let proxyTrapExecutions = 0;
+    const validCommand = classifySafeGitReadCommandV1([
+      "rev-parse",
+      "--show-toplevel",
+    ]);
+    const proxyCommand = new Proxy(validCommand, {
+      get(target, property, receiver) {
+        proxyTrapExecutions += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const proxyReady = await createReady();
+    await expect(
+      proxyReady.capability.createReadExecutor().execute(proxyCommand),
+    ).rejects.toMatchObject({ code: "read_execution_invalid" });
+    expect(proxyTrapExecutions).toBe(0);
+    expect(proxyReady.capability.closed).toBe(true);
+    expect(safeGitExecutionTestStateV1.reads).toBe(0);
+  });
+
+  it("fails closed when a read is already aborted", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-read-abort"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    await result.capability.bindEmptyHooksDirectory();
+    await result.capability.bindGitExecutable(absoluteExecutablePath);
+    await result.capability.executeGitVersion();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      result.capability.createReadExecutor().execute(
+        classifySafeGitReadCommandV1(["rev-parse", "--show-toplevel"]),
+        { signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ code: "read_execution_invalid" });
+    expect(safeGitExecutionTestStateV1.reads).toBe(0);
+    expect(result.capability.closed).toBe(true);
+  });
+
+  it("redacts and poisons a failed native version execution", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-version-failure"),
+      "git",
+    );
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    await result.capability.bindEmptyHooksDirectory();
+    await result.capability.bindGitExecutable(absoluteExecutablePath);
+    safeGitExecutionTestStateV1.unavailable = true;
+
+    await expectBootstrapFailure(
+      result.capability.executeGitVersion(),
+      "version_execution_invalid",
+      [root, absoluteExecutablePath],
+    );
+    expect(safeGitExecutionTestStateV1.executions).toBe(1);
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
   });
 
   it("redacts executable custody errors and poisons the retained binding", async () => {

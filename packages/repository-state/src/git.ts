@@ -1,9 +1,14 @@
 import { execFile } from "node:child_process";
 import { TextDecoder } from "node:util";
+import {
+  SafeGitReadCommandShapeErrorV1,
+  classifySafeGitReadCommandV1,
+  type SafeGitReadExecutorV1,
+} from "./safe-git-read-command.js";
 
 const FATAL_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
-export interface GitExecutionOptions {
+export interface AmbientGitExecutionOptions {
   gitBinary: string;
   cwd: string;
   maxBufferBytes: number;
@@ -11,6 +16,19 @@ export interface GitExecutionOptions {
   environment?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
 }
+
+export interface SafeGitExecutionOptions {
+  readonly safeGitExecutor: SafeGitReadExecutorV1;
+  readonly maxBufferBytes: number;
+  readonly signal?: AbortSignal;
+  readonly gitBinary?: never;
+  readonly cwd?: never;
+  readonly environment?: never;
+}
+
+export type GitExecutionOptions =
+  | AmbientGitExecutionOptions
+  | SafeGitExecutionOptions;
 
 export interface GitCommandResult {
   stdout: Buffer;
@@ -74,6 +92,70 @@ export function executeGit(
   options: GitExecutionOptions,
   acceptedExitCodes: readonly number[] = [0],
 ): Promise<GitCommandResult> {
+  if ("safeGitExecutor" in options) {
+    let command;
+    try {
+      command = classifySafeGitReadCommandV1(args, acceptedExitCodes);
+    } catch (error) {
+      return Promise.reject(
+        new GitCommandError("Git command is outside the SafeGit profile", {
+          failureCode: "git_command_failed",
+          gitArguments: [],
+          cause: error,
+        }),
+      );
+    }
+    if (options.maxBufferBytes <= 0) {
+      return Promise.reject(
+        new GitCommandError("Git output limit is invalid", {
+          failureCode: "git_output_too_large",
+          gitArguments: [],
+        }),
+      );
+    }
+    return options.safeGitExecutor
+      .execute(command, {
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      })
+      .then((result) => {
+        const stdout = Buffer.from(result.stdout);
+        const stderr = Buffer.from(result.stderr);
+        const stdoutLimit = Math.min(
+          options.maxBufferBytes,
+          command.stdoutLimitBytes,
+        );
+        const stderrLimit = Math.min(
+          options.maxBufferBytes,
+          command.stderrLimitBytes,
+        );
+        if (stdout.length > stdoutLimit || stderr.length > stderrLimit) {
+          throw new GitCommandError("Git output exceeded the fixed limit", {
+            failureCode: "git_output_too_large",
+            gitArguments: [],
+            exitCode: result.exitCode,
+          });
+        }
+        if (!command.acceptedExitCodes.includes(result.exitCode)) {
+          throw new GitCommandError("SafeGit command failed", {
+            failureCode: "git_command_failed",
+            gitArguments: [],
+            exitCode: result.exitCode,
+          });
+        }
+        return { stdout, stderr, exitCode: result.exitCode };
+      })
+      .catch((error: unknown) => {
+        if (error instanceof GitCommandError) throw error;
+        throw new GitCommandError("SafeGit command failed", {
+          failureCode:
+            options.signal?.aborted === true
+              ? "git_command_aborted"
+              : "git_command_failed",
+          gitArguments: [],
+          cause: error,
+        });
+      });
+  }
   return new Promise((resolve, reject) => {
     execFile(
       options.gitBinary,
@@ -142,6 +224,8 @@ export function executeGit(
     );
   });
 }
+
+export { SafeGitReadCommandShapeErrorV1 };
 
 export function decodeGitText(output: Buffer): string {
   try {

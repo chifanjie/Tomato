@@ -19,6 +19,12 @@ export {
 };
 export type { ProviderAcceptanceAuthorityErrorCodeV1 };
 
+export {
+  openProviderProductionStrongAuthorityServiceV1,
+  type OpenProviderProductionStrongAuthorityServiceV1Input,
+  type ProviderProductionStrongAuthorityServiceV1,
+} from "./provider-production-strong-authority-service.js";
+
 export const PROVIDER_ACCEPTANCE_AUTHORITY_CANDIDATE_STATUS_V1 = Object.freeze({
   authority: "installation_owner_candidate" as const,
   strongWrites: "locked" as const,

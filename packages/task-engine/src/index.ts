@@ -1,6 +1,8 @@
 export * from "./artifacts.js";
 export * from "./context-builder.js";
 export * from "./change-intelligence.js";
+export * from "./strong-change-intelligence.js";
+export * from "./strong-verification-detail.js";
 export * from "./engine-types.js";
 export * from "./engine.js";
 export * from "./errors.js";
@@ -8,6 +10,7 @@ export * from "./ids.js";
 export * from "./impact.js";
 export * from "./ranking.js";
 export * from "./repository-context-provider.js";
+export * from "./repository-strong-change-material-authority.js";
 export * from "./renderer.js";
 export * from "./stable-order.js";
 export * from "./types.js";

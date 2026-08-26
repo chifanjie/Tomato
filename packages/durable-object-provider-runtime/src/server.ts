@@ -21,6 +21,8 @@ import {
 import { dirname, relative, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 
+import { canonicalizeJcsSafeIntegerV1 } from "@understand-code/durable-object-provider-contracts/jcs";
+
 import {
   PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1,
   PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
@@ -70,12 +72,16 @@ import {
 
 import {
   DurableObjectProviderRuntimeStoreV1,
+  ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1,
   ProviderRuntimeStorageErrorV1,
   type DurableObjectProviderRuntimeStoreOptionsV1,
 } from "./storage.js";
 import {
   consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1,
+  resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1,
+  takeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+  type ProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   type ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
 } from "./strong-mutation-session-authority-internal.js";
 
@@ -94,6 +100,16 @@ type ErrorCodeV1 = Extract<
   ProviderRuntimeIpcResponseV1,
   { readonly ok: false }
 >["error"]["code"];
+
+type StrongMutationResponseResultV1 =
+  | { readonly ok: true; readonly payload: unknown }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly code: ErrorCodeV1;
+        readonly message: string;
+      };
+    };
 
 interface ProviderRuntimePrincipalContinuationV1 {
   readonly state: ProviderRuntimeIpcJournalStateV1;
@@ -387,9 +403,12 @@ export class DurableObjectProviderRuntimeServerV1 {
     | ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1
     | undefined;
   readonly #connections = new Set<Socket>();
+  readonly #activeStrongMutations = new Set<Promise<void>>();
   readonly #mutationQueueWaiters: Array<() => void> = [];
   #mutationQueueActive = false;
   #server: Server | undefined;
+  #startPromise: Promise<DurableObjectProviderRuntimeServerAddressV1> | undefined;
+  #closePromise: Promise<void> | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
 
   constructor(options: DurableObjectProviderRuntimeServerOptionsV1) {
@@ -480,30 +499,62 @@ export class DurableObjectProviderRuntimeServerV1 {
     if (this.#server !== undefined) {
       throw new ProviderRuntimeServerErrorV1("runtime server was already started");
     }
+    if (this.#closePromise !== undefined) {
+      throw new ProviderRuntimeServerErrorV1("runtime server is closing");
+    }
+    if (this.#startPromise !== undefined) {
+      throw new ProviderRuntimeServerErrorV1("runtime server is starting");
+    }
+    const startup = this.#startInternalV1();
+    this.#startPromise = startup;
+    try {
+      return await startup;
+    } finally {
+      if (this.#startPromise === startup) this.#startPromise = undefined;
+    }
+  }
+
+  async #startInternalV1(): Promise<DurableObjectProviderRuntimeServerAddressV1> {
     if (process.platform === "win32") {
       throw new ProviderRuntimeServerErrorV1(
         "durable provider runtime v1 requires a Unix-domain socket host",
       );
     }
     await this.store.initialize();
-    if (dirname(this.socketPath) !== this.rootPath) {
-      throw new ProviderRuntimeServerErrorV1(
-        "runtime socket escaped the private runtime root",
-      );
-    }
-    await this.#prepareSocketPath();
-
-    const server = createServer((socket) => {
-      if (this.#connections.size >= this.#maxConnections) {
-        socket.destroy();
-        return;
-      }
-      this.#connections.add(socket);
-      socket.once("close", () => this.#connections.delete(socket));
-      void this.#serveConnection(socket);
-    });
-    this.#server = server;
     try {
+      if (this.#closePromise !== undefined) {
+        throw new ProviderRuntimeServerErrorV1("runtime server is closing");
+      }
+      if (this.#strongMutationAuthorityVerifier !== undefined) {
+        await this.store.establishStrongMutationExactObjectAuthorityV1();
+        if (this.#closePromise !== undefined) {
+          throw new ProviderRuntimeServerErrorV1("runtime server is closing");
+        }
+        await this.#recoverDurableStrongMutationOutcomesV1();
+      }
+      if (this.#closePromise !== undefined) {
+        throw new ProviderRuntimeServerErrorV1("runtime server is closing");
+      }
+      if (dirname(this.socketPath) !== this.rootPath) {
+        throw new ProviderRuntimeServerErrorV1(
+          "runtime socket escaped the private runtime root",
+        );
+      }
+      await this.#prepareSocketPath();
+      if (this.#closePromise !== undefined) {
+        throw new ProviderRuntimeServerErrorV1("runtime server is closing");
+      }
+
+      const server = createServer((socket) => {
+        if (this.#connections.size >= this.#maxConnections) {
+          socket.destroy();
+          return;
+        }
+        this.#connections.add(socket);
+        socket.once("close", () => this.#connections.delete(socket));
+        void this.#serveConnection(socket);
+      });
+      this.#server = server;
       await new Promise<void>((resolvePromise, rejectPromise) => {
         const onError = (error: Error): void => {
           server.off("listening", onListening);
@@ -517,9 +568,19 @@ export class DurableObjectProviderRuntimeServerV1 {
         server.once("listening", onListening);
         server.listen(this.socketPath);
       });
+      const created = await lstat(this.socketPath);
+      if (!created.isSocket() || created.isSymbolicLink()) {
+        throw new ProviderRuntimeServerErrorV1(
+          "runtime socket path is not a real Unix-domain socket",
+        );
+      }
+      this.#socketIdentity = { dev: created.dev, ino: created.ino };
       await chmod(this.socketPath, PROVIDER_RUNTIME_IPC_SOCKET_MODE_V1);
       const metadata = await lstat(this.socketPath);
-      if (!metadata.isSocket() || metadata.isSymbolicLink()) {
+      if (
+        !metadata.isSocket() || metadata.isSymbolicLink() ||
+        metadata.dev !== created.dev || metadata.ino !== created.ino
+      ) {
         throw new ProviderRuntimeServerErrorV1(
           "runtime socket path is not a real Unix-domain socket",
         );
@@ -529,24 +590,40 @@ export class DurableObjectProviderRuntimeServerV1 {
           "runtime socket grants group or other access",
         );
       }
-      this.#socketIdentity = { dev: metadata.dev, ino: metadata.ino };
       return {
         protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
         socketPath: this.socketPath,
       };
     } catch (error) {
-      await this.close();
+      // A concurrent close waits for this startup promise.  Calling the
+      // public close() here would form a cycle, so only perform local cleanup
+      // when no external close already owns the lifecycle transition.
+      if (this.#closePromise === undefined) {
+        await this.#closeInternalV1();
+      }
       throw error;
     }
   }
 
   async close(): Promise<void> {
+    if (this.#closePromise !== undefined) return this.#closePromise;
+    const startup = this.#startPromise;
+    this.#closePromise = (async () => {
+      // Do not let close race the asynchronous initialization/authority
+      // bootstrap.  Once startup settles, #closeInternalV1 observes the
+      // final server/FD state and can close it exactly once.
+      if (startup !== undefined) await startup.catch(() => undefined);
+      await this.#closeInternalV1();
+    })();
+    return this.#closePromise;
+  }
+
+  async #closeInternalV1(): Promise<void> {
     const server = this.#server;
     this.#server = undefined;
-    for (const connection of this.#connections) connection.destroy();
-    this.#connections.clear();
+    let serverClosed = Promise.resolve();
     if (server !== undefined) {
-      await new Promise<void>((resolvePromise) => {
+      serverClosed = new Promise<void>((resolvePromise) => {
         if (!server.listening) {
           resolvePromise();
           return;
@@ -554,6 +631,14 @@ export class DurableObjectProviderRuntimeServerV1 {
         server.close(() => resolvePromise());
       });
     }
+    // Stop admission first, but retain live sockets until every authorized
+    // mutation has durably resolved (or failed).  Destroying them earlier can
+    // strand a broker intent after its first side effect.
+    await Promise.allSettled([...this.#activeStrongMutations]);
+    for (const connection of this.#connections) connection.destroy();
+    this.#connections.clear();
+    await serverClosed;
+    await this.store.closeStrongMutationExactObjectAuthorityV1();
     const identity = this.#socketIdentity;
     this.#socketIdentity = undefined;
     if (identity !== undefined) {
@@ -865,28 +950,225 @@ export class DurableObjectProviderRuntimeServerV1 {
     request: ProviderRuntimeIpcStrongMutationRequestV1,
     principal: ProviderRuntimePrincipalContinuationV1 | undefined,
   ): Promise<void> {
+    // Preserve the same-socket head observation before waiting for another
+    // mutation already holding the local queue.  Authorization is repeated
+    // inside the queue, so this observation can never grant a stale request.
     try {
-      const payload = await this.#executeStrongMutationRequestV1(
-        request,
-        principal,
-      );
-      await this.#writeStrongMutationResponseV1(socket, request, {
-        ok: true,
-        payload,
-      });
+      this.#assertStrongMutationRequestPreconditionsV1(request, principal);
     } catch (error) {
-      const mapped = this.#mapError(error);
-      await this.#writeStrongMutationResponseV1(socket, request, {
-        ok: false,
-        error: mapped,
-      });
+      await writeFrameV1(
+        socket,
+        this.#createStrongMutationResponseV1(request, {
+          ok: false,
+          error: this.#mapError(error),
+        }),
+      );
+      return;
+    }
+    const active = this.#withMutationQueueV1(async () => {
+      let capability:
+        | ProviderRuntimeStrongMutationSessionCapabilityInternalV1
+        | undefined;
+      let response: ProviderRuntimeIpcStrongMutationResponseV1;
+      try {
+        capability = await this.#authorizeStrongMutationRequestV1(
+          request,
+          principal,
+        );
+        const transfer =
+          await takeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+            capability,
+            request.bindingDigest,
+          );
+        if (transfer === undefined) {
+          throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+        }
+        if (transfer.decision.disposition === "resolved") {
+          response = transfer.decision.response;
+        } else {
+          const authorization = transfer.authorization;
+          if (authorization === undefined) {
+            throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+          }
+          response = transfer.decision.disposition === "execute"
+            ? await this.store.executeStrongMutationDurablyV1(
+              request,
+              authorization,
+              (payload) => this.#createStrongMutationResponseV1(request, {
+                ok: true,
+                payload,
+              }),
+            )
+            : await this.store.recoverStrongMutationOutcomeV1(
+              request,
+              authorization,
+            );
+        }
+      } catch (error) {
+        if (
+          error instanceof
+            ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1
+        ) {
+          // No response is terminally signed or resolved across the post-link
+          // fsync cut.  Closing the transport forces the same binding through
+          // broker recovery, where EEXIST + parent fsync + exact read-back can
+          // establish a durable replay without executing a second namespace
+          // mutation.
+          socket.destroy();
+          return;
+        }
+        response = this.#createStrongMutationResponseV1(request, {
+          ok: false,
+          error: this.#mapError(error),
+        });
+      }
+
+      if (capability !== undefined) {
+        const resolved =
+          await resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+            capability,
+            request.bindingDigest,
+            response,
+          );
+        if (!resolved) {
+          // The durable prepared response remains the sole outcome authority.
+          // Failed broker resolution stays pending for exact recovery; an
+          // alternate signed failure would create a split-brain outcome.
+          socket.destroy();
+          return;
+        }
+      }
+      await writeFrameV1(socket, response);
+    });
+    this.#activeStrongMutations.add(active);
+    try {
+      await active;
+    } finally {
+      this.#activeStrongMutations.delete(active);
     }
   }
 
-  async #executeStrongMutationRequestV1(
+  async #authorizeStrongMutationRequestV1(
     request: ProviderRuntimeIpcStrongMutationRequestV1,
     principal: ProviderRuntimePrincipalContinuationV1 | undefined,
-  ): Promise<unknown> {
+  ): Promise<ProviderRuntimeStrongMutationSessionCapabilityInternalV1> {
+    const { verifier, acceptanceIdentity, continuation } =
+      this.#assertStrongMutationRequestPreconditionsV1(request, principal);
+    const capability =
+      await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+        verifier,
+        {
+          request,
+          providerId: DurableObjectIdentityProviderIdV1Schema.parse(
+            this.providerId,
+          ),
+          capabilityDigest: ContentDigestV1Schema.parse(
+            this.#authorizedCapabilityDigest,
+          ),
+          principalAttestationDigest: request.principalAttestationDigest,
+          bindingDigest: request.bindingDigest,
+          operation: request.operation,
+          operationNonce: request.operationNonce,
+          requestDigest: request.requestDigest,
+          authorityGrant: request.authorityGrant,
+          journalHead: {
+            revision: continuation.state.revision,
+            phase: continuation.state.phase,
+            mutationDigest: continuation.state.mutationDigest,
+          },
+          acceptanceIdentity,
+          principalAttestation: continuation.attestation,
+        },
+      );
+    if (
+      capability === undefined ||
+      !exactJournalHeadV1(continuation.state, this.store.inspectState()) ||
+      !consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        capability,
+        request.bindingDigest,
+      )
+    ) {
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
+    return capability;
+  }
+
+  async #recoverDurableStrongMutationOutcomesV1(): Promise<void> {
+    const verifier = this.#strongMutationAuthorityVerifier;
+    if (verifier === undefined) return;
+    const outcomes = await this.store.inspectStrongMutationOutcomesForRecoveryV1();
+    for (const outcome of outcomes) {
+      const request = outcome.request;
+      const grant = request.authorityGrant.payload;
+      const capability =
+        await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+          verifier,
+          {
+            request,
+            providerId: DurableObjectIdentityProviderIdV1Schema.parse(
+              this.providerId,
+            ),
+            capabilityDigest: ContentDigestV1Schema.parse(
+              this.#authorizedCapabilityDigest,
+            ),
+            principalAttestationDigest: request.principalAttestationDigest,
+            bindingDigest: request.bindingDigest,
+            operation: request.operation,
+            operationNonce: request.operationNonce,
+            requestDigest: request.requestDigest,
+            authorityGrant: request.authorityGrant,
+            journalHead: Object.freeze({ ...grant.journalHead }),
+            acceptanceIdentity: grant.acceptanceIdentity,
+          },
+        );
+      if (
+        capability === undefined ||
+        !consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+          capability,
+          request.bindingDigest,
+        )
+      ) throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+      const transfer =
+        await takeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+          capability,
+          request.bindingDigest,
+        );
+      if (transfer === undefined) {
+        throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+      }
+      let response: ProviderRuntimeIpcStrongMutationResponseV1;
+      if (transfer.decision.disposition === "resolved") {
+        response = transfer.decision.response;
+      } else {
+        if (
+          transfer.decision.disposition !== "recover" ||
+          transfer.authorization === undefined
+        ) throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+        response = await this.store.recoverStrongMutationOutcomeV1(
+          request,
+          transfer.authorization,
+        );
+      }
+      if (
+        canonicalizeJcsSafeIntegerV1(response) !==
+          canonicalizeJcsSafeIntegerV1(outcome.response) ||
+        !await resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+          capability,
+          request.bindingDigest,
+          response,
+        )
+      ) throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
+  }
+
+  #assertStrongMutationRequestPreconditionsV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    principal: ProviderRuntimePrincipalContinuationV1 | undefined,
+  ): Readonly<{
+    readonly verifier: ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1;
+    readonly acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1;
+    readonly continuation: ProviderRuntimePrincipalContinuationV1;
+  }> {
     const verifier = this.#strongMutationAuthorityVerifier;
     const acceptanceIdentity = principal?.acceptanceIdentity;
     if (
@@ -926,72 +1208,21 @@ export class DurableObjectProviderRuntimeServerV1 {
       throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
     }
 
-    return this.#withMutationQueueV1(async () => {
-      if (!exactJournalHeadV1(principal.state, this.store.inspectState())) {
-        throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
-      }
-      const capability =
-        await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
-          verifier,
-          {
-            providerId: DurableObjectIdentityProviderIdV1Schema.parse(
-              this.providerId,
-            ),
-            capabilityDigest: ContentDigestV1Schema.parse(
-              this.#authorizedCapabilityDigest,
-            ),
-            principalAttestationDigest: request.principalAttestationDigest,
-            bindingDigest: request.bindingDigest,
-            operation: request.operation,
-            operationNonce: request.operationNonce,
-            requestDigest: request.requestDigest,
-            authorityGrant: request.authorityGrant,
-            journalHead: {
-              revision: principal.state.revision,
-              phase: principal.state.phase,
-              mutationDigest: principal.state.mutationDigest,
-            },
-            acceptanceIdentity,
-          },
-        );
-      if (
-        capability === undefined ||
-        !exactJournalHeadV1(principal.state, this.store.inspectState()) ||
-        !consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
-          capability,
-          request.bindingDigest,
-        )
-      ) {
-        throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
-      }
-      if (request.operation === "write_object") {
-        const result = await this.store.writeFixedObject(
-          request.payload.locator,
-          request.payload.logicalBytes,
-          request.payload.bytes,
-        );
-        return { operation: "write_object" as const, ...result };
-      }
-      const result = await this.store.compareCommit(request.payload);
-      return { operation: "compare_commit" as const, ...result };
+    return Object.freeze({
+      verifier,
+      acceptanceIdentity,
+      continuation: principal,
     });
   }
 
-  async #writeStrongMutationResponseV1(
-    socket: Socket,
+  #createStrongMutationResponseV1(
     request: ProviderRuntimeIpcStrongMutationRequestV1,
-    result:
-      | { readonly ok: true; readonly payload: unknown }
-      | {
-          readonly ok: false;
-          readonly error: {
-            readonly code: ErrorCodeV1;
-            readonly message: string;
-          };
-        },
-  ): Promise<void> {
+    result: StrongMutationResponseResultV1,
+  ): ProviderRuntimeIpcStrongMutationResponseV1 {
     const principalAttestation = this.#principalAttestation;
-    if (principalAttestation === undefined) return;
+    if (principalAttestation === undefined) {
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
     const unsigned = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse({
       protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
       kind: "strong_mutation_response",
@@ -1014,7 +1245,7 @@ export class DurableObjectProviderRuntimeServerV1 {
         ...unsigned,
         signature: `base64url:${signature.toString("base64url")}`,
       });
-    await writeFrameV1(socket, response);
+    return response;
   }
 
   #parseRequest(frame: string): ProviderRuntimeIpcRequestV1 {

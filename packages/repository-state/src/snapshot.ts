@@ -23,6 +23,11 @@ import {
   type GitExecutionOptions,
   type GitFailureCode,
 } from "./git.js";
+import type { SafeGitReadExecutorV1 } from "./safe-git-read-command.js";
+import {
+  isSafeGitDescriptorBoundCapabilityV1,
+  type SafeGitDescriptorBoundCapabilityV1,
+} from "./safe-git-bootstrap.js";
 import {
   StableFileReadError,
   hashStableAbsoluteFile,
@@ -40,19 +45,38 @@ const SOURCE_ORDER: Readonly<Record<RepositoryChangeSourceV1, number>> = {
   conflict: 4,
 };
 
-export interface RepositorySnapshotOptions {
+interface RepositorySnapshotCommonOptions {
   /**
    * Commit-ish used for baseline..HEAD committed changes. When omitted, HEAD
    * is the baseline and only Index/Worktree/Untracked changes are reported.
    */
   baselineRef?: string;
-  gitBinary?: string;
   maxBufferBytes?: number;
-  /** Explicit environment for every Git child in this capture. */
-  environment?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   now?: () => Date;
 }
+
+export type RepositorySnapshotOptions = RepositorySnapshotCommonOptions &
+  (
+    | Readonly<{
+        /** Descriptor-bound production executor; no cwd/PATH/env crosses it. */
+        safeGitExecutor: SafeGitReadExecutorV1;
+        gitBinary?: never;
+        environment?: never;
+      }>
+    | Readonly<{
+        /** Legacy/test-only host execution path. */
+        safeGitExecutor?: never;
+        gitBinary?: string;
+        /** Explicit environment for legacy/test-only Git children. */
+        environment?: NodeJS.ProcessEnv;
+      }>
+  );
+
+/** Production options intentionally exclude raw executors, binaries and env. */
+export type SafeGitProductionSnapshotOptionsV1 = Readonly<
+  RepositorySnapshotCommonOptions
+>;
 
 export type RepositoryDiagnosticSeverity = "info" | "warning" | "error";
 
@@ -138,6 +162,24 @@ function digestRelevantIndex(output: Buffer): ContentDigest {
     offset = terminator + 1;
   }
   return `sha256:${hash.digest("hex")}`;
+}
+
+function indexContainsGitlink(output: Buffer): boolean {
+  const gitlinkPrefix = Buffer.from("160000 ", "ascii");
+  let offset = 0;
+  while (offset < output.length) {
+    const terminator = output.indexOf(0, offset);
+    const end = terminator < 0 ? output.length : terminator;
+    if (
+      end - offset >= gitlinkPrefix.length &&
+      output.subarray(offset, offset + gitlinkPrefix.length).equals(gitlinkPrefix)
+    ) {
+      return true;
+    }
+    if (terminator < 0) break;
+    offset = terminator + 1;
+  }
+  return false;
 }
 
 function opaqueId(prefix: string, value: unknown): string {
@@ -1100,7 +1142,6 @@ async function captureRepositorySnapshotDetailed(
   testHooks: SnapshotCaptureTestHooks = {},
 ): Promise<RepositorySnapshotCapture> {
   const now = options.now ?? (() => new Date());
-  const gitBinary = options.gitBinary ?? "git";
   const maxBufferBytes = options.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
 
   try {
@@ -1109,15 +1150,22 @@ async function captureRepositorySnapshotDetailed(
     if (!rootStat.isDirectory()) {
       throw new Error("Repository root is not a directory");
     }
-    const execution: GitExecutionOptions = {
-      gitBinary,
-      cwd: canonicalRoot,
-      maxBufferBytes,
-      ...(options.environment === undefined
-        ? {}
-        : { environment: options.environment }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    };
+    const execution: GitExecutionOptions =
+      options.safeGitExecutor === undefined
+        ? {
+            gitBinary: options.gitBinary ?? "git",
+            cwd: canonicalRoot,
+            maxBufferBytes,
+            ...(options.environment === undefined
+              ? {}
+              : { environment: options.environment }),
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          }
+        : {
+            safeGitExecutor: options.safeGitExecutor,
+            maxBufferBytes,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          };
 
     const topLevelResult = await executeGit(
       ["rev-parse", "--show-toplevel"],
@@ -1206,10 +1254,11 @@ async function captureRepositorySnapshotDetailed(
         executeGit(
           [
             "diff",
+            "--no-ext-diff",
+            "--no-textconv",
             "--name-status",
             "-z",
-            "--find-renames",
-            "--find-copies-harder",
+            "--no-renames",
             `${baselineCommit}..${headCommit}`,
             "--",
           ],
@@ -1219,10 +1268,11 @@ async function captureRepositorySnapshotDetailed(
           [
             "diff",
             "--cached",
+            "--no-ext-diff",
+            "--no-textconv",
             "--name-status",
             "-z",
-            "--find-renames",
-            "--find-copies-harder",
+            "--no-renames",
             headCommit,
             "--",
           ],
@@ -1335,11 +1385,13 @@ async function captureRepositorySnapshotDetailed(
         execution,
         testHooks.fileHooksForPath,
       ),
-      executeGit(
-        ["submodule", "status", "--recursive"],
-        execution,
-        [0, 1],
-      ),
+      options.safeGitExecutor === undefined
+        ? executeGit(
+            ["submodule", "status", "--recursive"],
+            execution,
+            [0, 1],
+          )
+        : Promise.resolve(undefined),
     ]);
     const parsedWorktreeAfter = parsePorcelainV2(statusAfterResult.stdout);
     const headCommitAfter = decodeGitText(headAfterResult.stdout);
@@ -1457,7 +1509,20 @@ async function captureRepositorySnapshotDetailed(
         message: "Git ignore configuration changed after its initial sample",
       });
     }
-    if (submoduleResult.exitCode !== 0) {
+    if (submoduleResult === undefined) {
+      if (indexContainsGitlink(indexResult.stdout)) {
+        limitations.push(
+          "recursive submodule content is outside the descriptor-bound snapshot boundary",
+        );
+        diagnostics.push({
+          code: "submodule_recursive_content_unknown",
+          severity: "warning",
+          scope: "submodule",
+          message:
+            "Gitlink mode and object identity are captured, but nested submodule content remains unknown",
+        });
+      }
+    } else if (submoduleResult.exitCode !== 0) {
       limitations.push("one or more submodules could not be inspected");
       diagnostics.push({
         code: "submodule_inspection_failed",
@@ -1595,6 +1660,39 @@ export async function getRepositorySnapshot(
   options: RepositorySnapshotOptions = {},
 ): Promise<RepositorySnapshotV1> {
   return (await getRepositorySnapshotDetailed(root, options)).snapshot;
+}
+
+/**
+ * Production snapshot composition. The executor can only be minted by the
+ * genuine descriptor capability after its contained version probe succeeds.
+ */
+export async function getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+  root: string,
+  capability: SafeGitDescriptorBoundCapabilityV1,
+  options: SafeGitProductionSnapshotOptionsV1 = {},
+): Promise<RepositorySnapshotCapture> {
+  if (!isSafeGitDescriptorBoundCapabilityV1(capability)) {
+    throw new Error("SafeGit descriptor capability is unavailable");
+  }
+  return captureRepositorySnapshotDetailed(root, {
+    ...options,
+    safeGitExecutor: capability.createReadExecutor(),
+  });
+}
+
+/** Contract-only form of the production descriptor-capability composition. */
+export async function getRepositorySnapshotWithSafeGitCapabilityV1(
+  root: string,
+  capability: SafeGitDescriptorBoundCapabilityV1,
+  options: SafeGitProductionSnapshotOptionsV1 = {},
+): Promise<RepositorySnapshotV1> {
+  return (
+    await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+      root,
+      capability,
+      options,
+    )
+  ).snapshot;
 }
 
 export const __testing = {

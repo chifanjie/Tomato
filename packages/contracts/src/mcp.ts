@@ -51,6 +51,12 @@ import {
   RepoPulseStatusV1Schema,
 } from "./repository.js";
 import {
+  StrongChangeCheckMutationOutcomeV1Schema,
+  StrongCheckChangesInputV1Schema,
+  StrongRecordVerificationInputV1Schema,
+  StrongVerificationMutationOutcomeV1Schema,
+} from "./strong-change-intelligence.js";
+import {
   MutationResultV1Schema,
   PlannedChangeV1Schema,
   ReadingPathEntryV1Schema,
@@ -1094,6 +1100,44 @@ export type RecordVerificationOutputV1 = z.output<
   typeof RecordVerificationOutputV1Schema
 >;
 
+export const StrongCheckChangeOutputV1Schema =
+  createMcpToolSuccessResultV1Schema(
+    StrongChangeCheckMutationOutcomeV1Schema,
+  ).superRefine((output, context) => {
+    const { meta, result } = output.structuredContent;
+    if (result.changeCheck.actualSnapshotId !== meta.sourceSnapshotId) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Strong Change Check and MCP meta Snapshot identities must match",
+        path: ["structuredContent", "result"],
+      });
+    }
+  });
+
+export type StrongCheckChangeOutputV1 = z.output<
+  typeof StrongCheckChangeOutputV1Schema
+>;
+
+export const StrongRecordVerificationOutputV1Schema =
+  createMcpToolSuccessResultV1Schema(
+    StrongVerificationMutationOutcomeV1Schema,
+  ).superRefine((output, context) => {
+    const { meta, result } = output.structuredContent;
+    if (result.verification.snapshotId !== meta.sourceSnapshotId) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Strong Verification and MCP meta Snapshot identities must match",
+        path: ["structuredContent", "result"],
+      });
+    }
+  });
+
+export type StrongRecordVerificationOutputV1 = z.output<
+  typeof StrongRecordVerificationOutputV1Schema
+>;
+
 export const WorkbenchRouteV1Schema = z
   .strictObject({
     view: z.enum(["tasks", "knowledge", "graph"]),
@@ -1417,12 +1461,21 @@ export const P0_MCP_TOOL_CONTRACTS_V1 = {
     output: TraceImpactOutputV1Schema,
   },
   check_change: {
-    input: CheckChangeInputV1Schema,
-    output: CheckChangeOutputV1Schema,
+    input: z.union([CheckChangeInputV1Schema, StrongCheckChangesInputV1Schema]),
+    output: z.union([
+      CheckChangeOutputV1Schema,
+      StrongCheckChangeOutputV1Schema,
+    ]),
   },
   record_verification: {
-    input: RecordVerificationInputV1Schema,
-    output: RecordVerificationOutputV1Schema,
+    input: z.union([
+      RecordVerificationInputV1Schema,
+      StrongRecordVerificationInputV1Schema,
+    ]),
+    output: z.union([
+      RecordVerificationOutputV1Schema,
+      StrongRecordVerificationOutputV1Schema,
+    ]),
   },
   open_workbench: {
     input: OpenWorkbenchInputV1Schema,

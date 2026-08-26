@@ -89,6 +89,14 @@
         "superseded"
       ]
     },
+    "previousContextGenerationId": {
+      "type": "string",
+      "pattern": "^context-generation:[0-9a-f]{22}$"
+    },
+    "resultingContextGenerationId": {
+      "type": "string",
+      "pattern": "^context-generation:[0-9a-f]{22}$"
+    },
     "action": {
       "oneOf": [
         {
@@ -102,6 +110,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "contextGenerationId": {
+              "type": "string",
+              "pattern": "^context-generation:[0-9a-f]{22}$"
             }
           },
           "required": [
@@ -125,6 +137,10 @@
                 "minLength": 1,
                 "maxLength": 256
               }
+            },
+            "contextGenerationId": {
+              "type": "string",
+              "pattern": "^context-generation:[0-9a-f]{22}$"
             }
           },
           "required": [
@@ -148,6 +164,10 @@
                 "minLength": 1,
                 "maxLength": 256
               }
+            },
+            "contextGenerationId": {
+              "type": "string",
+              "pattern": "^context-generation:[0-9a-f]{22}$"
             }
           },
           "required": [

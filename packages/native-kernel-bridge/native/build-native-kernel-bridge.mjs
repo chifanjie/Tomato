@@ -11,7 +11,13 @@ import { fileURLToPath } from "node:url";
 
 const nativeDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(nativeDirectory, "..");
-const sourcePath = join(nativeDirectory, "kernel_bridge.c");
+const sourcePaths = [join(nativeDirectory, "kernel_bridge.c")];
+if (process.platform === "linux") {
+  sourcePaths.push(
+    join(nativeDirectory, "safe_git_runner_linux.c"),
+    join(nativeDirectory, "safe_git_elf_closure_linux.c"),
+  );
+}
 const outputDirectory = join(
   packageDirectory,
   "dist",
@@ -53,7 +59,7 @@ const commonArguments = [
   "-Wextra",
   "-Werror",
   `-I${headerDirectory}`,
-  sourcePath,
+  ...sourcePaths,
   "-o",
   outputPath,
 ];

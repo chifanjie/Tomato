@@ -1,26 +1,140 @@
 {
   "$id": "urn:understand-code:schema:v1:record_verification-input",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "taskId": {
-      "type": "string",
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
-    },
-    "record": {
+  "anyOf": [
+    {
       "type": "object",
       "properties": {
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "record": {
+          "type": "object",
+          "properties": {
+            "verificationPlanEntryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "supersedesVerificationRecordId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "test",
+                "build",
+                "lint",
+                "manual",
+                "runtime"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "passed",
+                "failed",
+                "skipped",
+                "blocked",
+                "flaky"
+              ]
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "exitCode": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "outputDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "claimIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "snapshotId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "verificationPlanEntryId",
+            "kind",
+            "status",
+            "summary",
+            "claimIds",
+            "snapshotId"
+          ],
+          "additionalProperties": false
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "taskId",
+        "record",
+        "expectedRevision",
+        "idempotencyKey",
+        "actor"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "record_verification_strong_v1"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "snapshotId": {
+          "type": "string",
+          "pattern": "^snapshot-[0-9a-f]{64}$"
+        },
         "verificationPlanEntryId": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 256
+          "pattern": "^verification-plan:[0-9a-f]{22}$"
         },
-        "supersedesVerificationRecordId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "kind": {
+        "method": {
           "type": "string",
           "enum": [
             "test",
@@ -40,10 +154,54 @@
             "flaky"
           ]
         },
+        "claimIds": {
+          "minItems": 1,
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
         "command": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 8192
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "arguments": {
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              }
+            },
+            "workingDirectory": {
+              "type": "string",
+              "const": "repository_root"
+            },
+            "environmentKeys": {
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          },
+          "required": [
+            "executable",
+            "arguments",
+            "workingDirectory",
+            "environmentKeys"
+          ],
+          "additionalProperties": false
         },
         "exitCode": {
           "type": "integer",
@@ -52,64 +210,52 @@
         },
         "durationMs": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": -9007199254740991,
           "maximum": 9007199254740991
-        },
-        "outputDigest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "summary": {
           "type": "string",
           "minLength": 1,
           "maxLength": 16384
         },
-        "claimIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
+        "rawOutputBase64url": {
+          "type": "string",
+          "maxLength": 11184822,
+          "pattern": "^base64url:[A-Za-z0-9_-]*$"
         },
-        "snapshotId": {
+        "supersedesVerificationRecordId": {
+          "type": "string",
+          "pattern": "^verification-record:[0-9a-f]{22}$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "actor": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
         }
       },
       "required": [
+        "profile",
+        "taskId",
+        "snapshotId",
         "verificationPlanEntryId",
-        "kind",
+        "method",
         "status",
-        "summary",
         "claimIds",
-        "snapshotId"
+        "expectedRevision",
+        "idempotencyKey",
+        "actor"
       ],
       "additionalProperties": false
-    },
-    "expectedRevision": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "idempotencyKey": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
-    },
-    "actor": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
     }
-  },
-  "required": [
-    "taskId",
-    "record",
-    "expectedRevision",
-    "idempotencyKey",
-    "actor"
-  ],
-  "additionalProperties": false
+  ]
 }

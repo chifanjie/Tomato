@@ -409,21 +409,42 @@ function findHistoricalStrongReadyAcceptanceV1(
 function parseEvidenceV1(
   value: unknown,
   includeRegistryHistory: boolean,
+  principalAttestationInput?: ProviderRuntimeIpcPrincipalAttestationV1,
 ): ParsedProviderStrongMutationTrustEvidenceInternalV1 {
+  const callbackIncludesPrincipal =
+    typeof value === "object" && value !== null && !Array.isArray(value) &&
+    Object.hasOwn(value, "principalAttestation");
   const raw = exactDataRecordV1(
     value,
-    [
-      "bootstrapTrustBundle",
-      "rootMetadataHistory",
-      "registryManifestHistory",
-      "principalAttestation",
-    ],
+    principalAttestationInput === undefined || callbackIncludesPrincipal
+      ? [
+          "bootstrapTrustBundle",
+          "rootMetadataHistory",
+          "registryManifestHistory",
+          "principalAttestation",
+        ]
+      : [
+          "bootstrapTrustBundle",
+          "rootMetadataHistory",
+          "registryManifestHistory",
+        ],
     "evidence",
   );
   try {
+    if (
+      principalAttestationInput !== undefined && callbackIncludesPrincipal &&
+      canonicalizeJcsSafeIntegerV1(
+        ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+          snapshotJsonDataV1(raw.principalAttestation, "evidence"),
+        ),
+      ) !== canonicalizeJcsSafeIntegerV1(principalAttestationInput)
+    ) return failV1("evidence");
     const principalAttestation =
       ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
-        snapshotJsonDataV1(raw.principalAttestation, "evidence"),
+        snapshotJsonDataV1(
+          principalAttestationInput ?? raw.principalAttestation,
+          "evidence",
+        ),
       );
     if (!includeRegistryHistory) {
       return Object.freeze({ principalAttestation });
@@ -642,6 +663,8 @@ export async function verifyProviderStrongMutationBeginTrustInternalV1(
     readonly acceptanceHistory:
       ProviderStrongMutationVerifiedAcceptanceHistoryInternalV1;
     readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+    /** Kernel-authenticated runtime supplied this exact challenge transcript. */
+    readonly principalAttestation?: ProviderRuntimeIpcPrincipalAttestationV1;
     readonly verificationSession?:
       ProviderStrongMutationTrustVerificationSessionInternalV1;
   }>,
@@ -732,11 +755,11 @@ export async function verifyProviderStrongMutationBeginTrustInternalV1(
     });
   let evidence: ParsedProviderStrongMutationTrustEvidenceInternalV1;
   try {
-    evidence = parseEvidenceV1(await Reflect.apply(
-      state.readEvidence,
-      undefined,
-      [query],
-    ), cachedRegistryClosure === undefined);
+    evidence = parseEvidenceV1(
+      await Reflect.apply(state.readEvidence, undefined, [query]),
+      cachedRegistryClosure === undefined,
+      input.principalAttestation,
+    );
   } catch (error) {
     if (error instanceof ProviderStrongMutationTrustVerificationErrorInternalV1) {
       throw error;

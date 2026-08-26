@@ -209,6 +209,28 @@ async function stopCliProcessV1(child: ChildProcess): Promise<void> {
 }
 
 describe("durable object provider OS-process runtime", () => {
+  it("serializes close against asynchronous startup", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "provider-runtime-close-start-"));
+    const key = randomBytes(32);
+    const server = new DurableObjectProviderRuntimeServerV1({
+      rootPath,
+      socketPath: join(rootPath, "runtime.sock"),
+      providerId: PROVIDER_ID,
+      authKey: key,
+      authorizedCapabilityDigest: CAPABILITY_DIGEST,
+    });
+    servers.add(server);
+
+    const startup = server.start();
+    await server.close();
+    await expect(startup).rejects.toMatchObject({
+      message: "runtime server is closing",
+    });
+    await expect(lstat(join(rootPath, "runtime.sock"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("persists a CLI-process commit and recovers it in a second OS process", async () => {
     const rootPath = await mkdtemp(join(tmpdir(), "provider-runtime-cli-"));
     const key = randomBytes(32);
@@ -365,6 +387,25 @@ describe("durable object provider OS-process runtime", () => {
         },
       },
     });
+    const advanced = await callV1(
+      server.socketPath,
+      key,
+      "compare_commit",
+      {
+        expectedRevision: 1,
+        operationNonce: "3".repeat(32),
+        phase: "later_commit",
+        artifacts: { later: true },
+      },
+    );
+    expect(advanced).toMatchObject({
+      ok: true,
+      payload: {
+        operation: "compare_commit",
+        resolution: "committed",
+        state: { revision: 2, artifacts: { later: true } },
+      },
+    });
     const replayed = await callV1(
       server.socketPath,
       key,
@@ -373,7 +414,16 @@ describe("durable object provider OS-process runtime", () => {
     );
     expect(replayed).toMatchObject({
       ok: true,
-      payload: { operation: "compare_commit", resolution: "replayed" },
+      payload: {
+        operation: "compare_commit",
+        resolution: "replayed",
+        state: {
+          revision: 1,
+          phase: "objects_published",
+          operationNonce: mutation.operationNonce,
+          artifacts: mutation.artifacts,
+        },
+      },
     });
     const stale = await callV1(server.socketPath, key, "compare_commit", {
       ...mutation,
@@ -384,7 +434,7 @@ describe("durable object provider OS-process runtime", () => {
       payload: {
         operation: "compare_commit",
         resolution: "stale",
-        state: { revision: 1 },
+        state: { revision: 2 },
       },
     });
 

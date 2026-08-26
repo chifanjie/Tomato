@@ -3,6 +3,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   writeFile,
@@ -17,7 +18,9 @@ import {
 import {
   ChangeCheckV1Schema,
   ClaimV1Schema,
+  EvidenceV1Schema,
   IdempotencyRecordV1Schema,
+  InternalTaskBaselineV1Schema,
   KeyedStateTokenV1Schema,
   PathSafeRepositoryIdV1Schema,
   PathSafeRootIdentityV1Schema,
@@ -25,10 +28,15 @@ import {
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
   StrongRepoPulseV1Schema,
+  StrongChangeCheckPreparationV1Schema,
+  StrongChangeTaskProjectionV1Schema,
   StrongRepositorySnapshotV1Schema,
+  StrongTaskBaselineCaptureOutcomeV1Schema,
+  StrongVerificationPreparationV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   VerificationRecordV1Schema,
+  VerificationPlanEntryIdV1Schema,
   canonicalizeJson,
   derivePathSafeRepositoryChangeIdV1,
   derivePathSafeRepositorySnapshotIdV1,
@@ -36,6 +44,7 @@ import {
   parseTrustedStrongRepoPulseV1,
   parseTrustedStrongRepositorySnapshotV1,
   type PersistedArtifactV1,
+  type StrongChangeIntelligenceAuthorityV1,
   type StrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
 import type {
@@ -53,8 +62,11 @@ import {
 import {
   buildTaskArtifacts,
   buildTaskEvent,
+  deterministicTaskId,
   mutationResult,
   sha256CanonicalJson,
+  executeStrongChangeCheckV1,
+  executeStrongVerificationRecordV1,
   TaskEngine,
   type AuthorizationContext,
   type TaskContextProvider,
@@ -414,6 +426,127 @@ function strongPulseArtifact(snapshot: StrongRepositorySnapshotV1) {
   });
 }
 
+function strongCreationAuthority(
+  snapshot: StrongRepositorySnapshotV1,
+  onCapture: () => void | Promise<void>,
+): StrongChangeIntelligenceAuthorityV1 {
+  return {
+    async captureTaskBaseline(input) {
+      await onCapture();
+      const artifactId = `task-baseline:${"a".repeat(22)}`;
+      const baseline = InternalTaskBaselineV1Schema.parse({
+        profile: "task_baseline_v1",
+        artifactId,
+        materializationVersion: 1,
+        taskId: input.taskId,
+        repositoryId: snapshot.repositoryId,
+        worktreeId: snapshot.worktreeId,
+        captureSnapshotId: snapshot.snapshotId,
+        baselineHead: snapshot.headState.kind === "commit"
+          ? {
+              status: "present",
+              commit: snapshot.headState.commit,
+              treeObjectId: "2".repeat(40),
+              gitLease: {
+                status: "pinned",
+                leaseId: "lease:strong-task-creation",
+                refName:
+                  `refs/understand-code/task-baselines/${"a".repeat(22)}-${"b".repeat(32)}`,
+                objectId: snapshot.headState.commit,
+              },
+            }
+          : {
+              status: "unborn",
+              emptyTreeObjectId: snapshot.headState.emptyTreeObjectId,
+            },
+        repositoryStateToken: snapshot.repositoryStateToken,
+        attributesDigest: `sha256:${"1".repeat(64)}`,
+        scannerPolicyDigest: snapshot.securityScanPolicyDigest,
+        repositoryPolicyDigest: `sha256:${"2".repeat(64)}`,
+        safeGitExecutionDigest: snapshot.safeGitExecutionDigest,
+        baselineMaterializationBudgetDigest: `sha256:${"3".repeat(64)}`,
+        privateStoreQuotaPolicyDigest: `sha256:${"4".repeat(64)}`,
+        captureStatus: "complete",
+        paths: [],
+        redactedUnits: { count: 0, boundaryIds: [] },
+        boundaries: [],
+      });
+      return StrongTaskBaselineCaptureOutcomeV1Schema.parse({
+        profile: "task_baseline_capture_outcome_v1",
+        baseline,
+        baselineSemanticDigest: `sha256:${"5".repeat(64)}`,
+        baselineContentDigest: sha256CanonicalJson(baseline),
+        snapshot,
+        snapshotArtifactId:
+          `artifact:repository-snapshot:${snapshot.snapshotId}`,
+        snapshotContentDigest: sha256CanonicalJson(snapshot),
+        idempotentReplay: false,
+      });
+    },
+    async prepareCheck() {
+      throw new Error("not used by strong Task creation");
+    },
+    async commitCheck() {
+      throw new Error("not used by strong Task creation");
+    },
+    async prepareVerification() {
+      throw new Error("not used by strong Task creation");
+    },
+    async commitVerification() {
+      throw new Error("not used by strong Task creation");
+    },
+  };
+}
+
+function strongAnalysisBudgetFixture() {
+  return {
+    version: "change-analysis-budget-v1" as const,
+    maxChangedFiles: 10,
+    maxBytesPerFile: 10_000,
+    maxTotalBytes: 100_000,
+    maxLinesPerFile: 1_000,
+    maxTotalLines: 10_000,
+    maxEditWorkUnits: 100_000,
+    maxHunksPerFile: 100,
+    maxTotalHunks: 1_000,
+    maxParserNodesPerFile: 10_000,
+    maxTotalParserNodes: 100_000,
+    maxMatchingWorkUnits: 100_000,
+    maxImpactNodes: 1_000,
+    maxImpactEdges: 10_000,
+    maxImpactTraversalWorkUnits: 100_000,
+    maxImpactPaths: 1_000,
+    maxExcerptCharsPerEvidence: 1,
+    maxTotalExcerptChars: 1,
+    maxActualChanges: 1_000,
+    maxEvidenceItems: 2_000,
+    maxSymbolRefs: 2_000,
+    maxSerializedArtifactBytes: 10_000_000,
+  };
+}
+
+function strongAnalysisUsageFixture() {
+  return {
+    changedFiles: 0,
+    analyzedFiles: 0,
+    bytes: 0,
+    lines: 0,
+    editWorkUnits: 0,
+    hunks: 0,
+    parserNodes: 0,
+    matchingWorkUnits: 0,
+    impactNodes: 0,
+    impactEdges: 0,
+    impactTraversalWorkUnits: 0,
+    impactPaths: 0,
+    excerptChars: 0 as const,
+    actualChanges: 0,
+    evidenceItems: 0,
+    symbolRefs: 0,
+    serializedArtifactBytes: 0,
+  };
+}
+
 async function openEmptyBoundStore(
   repositoryId: string,
   worktreeId: string,
@@ -612,12 +745,12 @@ function legacyContextRecoveryIntegrityHarness(
         return {
           snapshotId,
           brief: current.bundle.brief,
-          claims: current.bundle.claims.map((claim) => ({
+          claims: current.bundle.claims.map((claim) => ClaimV1Schema.parse(claim)).map((claim) => ({
             ...claim,
             freshness: "current" as const,
             sourceSnapshotId: snapshotId,
           })),
-          evidence: current.bundle.evidence.map((evidence) => ({
+          evidence: current.bundle.evidence.map((evidence) => EvidenceV1Schema.parse(evidence)).map((evidence) => ({
             ...evidence,
             freshness: "current" as const,
             observedAtSnapshotId: snapshotId,
@@ -1032,7 +1165,7 @@ async function appendTrustedVerification(
   });
   const records = [...current.bundle.idempotencyRecords, record];
   const receipts = [...current.receipts, receipt];
-  const claims = current.bundle.claims.map((claim) =>
+  const claims = current.bundle.claims.map((claim) => ClaimV1Schema.parse(claim)).map((claim) =>
     claim.id === verificationClaimId
       ? {
           ...claim,
@@ -1086,7 +1219,398 @@ describe("TaskEngine persistent integration", () => {
     expect(TaskEnginePackage).not.toHaveProperty("applyTaskUpdate");
   });
 
-  it("rejects a trusted strong Snapshot before loading context or writing a Task", async () => {
+  it("publishes a real strong Task baseline and Context Generation from the production create path", async () => {
+    const snapshot = strongSnapshotFixture();
+    const { store } = await openEmptyBoundStore(
+      snapshot.repositoryId,
+      snapshot.worktreeId,
+    );
+    await store.persistArtifact(strongSnapshotArtifact(snapshot));
+    await store.persistArtifact(strongPulseArtifact(snapshot));
+    let captureCount = 0;
+    let markerObservedBeforeCapture = false;
+    const authority = strongCreationAuthority(snapshot, async () => {
+      captureCount += 1;
+      const markers = await readdir(path.join(
+        store.layout.worktreeRoot,
+        ".understand-code/.recovery/task-creation-intents",
+      ));
+      markerObservedBeforeCapture = markers.length === 1;
+    });
+    const taskEngine = new TaskEngine(store, {
+      contextProvider: bindContextProvider(store, {
+        async loadTaskContext() {
+          return {
+            graph: { ...graphFixture(), nodes: [], edges: [] },
+            existingFilePaths: [],
+          };
+        },
+      }),
+      strongChangeAuthority: authority,
+      clock: () => FIXED_NOW,
+    });
+
+    const result = await taskEngine.buildTaskBrief(
+      buildInput("strong-production-create-path"),
+      authForStore(store, ["task:create"]),
+    );
+
+    expect(captureCount).toBe(1);
+    expect(markerObservedBeforeCapture).toBe(true);
+    expect(result.task).toMatchObject({
+      taskProfile: "agent_task_v1",
+      taskBaselineArtifactId: `task-baseline:${"a".repeat(22)}`,
+      baselineSnapshotId: snapshot.snapshotId,
+      latestSnapshotId: snapshot.snapshotId,
+      contextBuildSpec: {
+        version: "context-build-spec-v1",
+        scope: [],
+        tokenBudget: 8_000,
+        maxCandidates: 20,
+        maxImpactDepth: 4,
+      },
+    });
+    expect(result.task.contextGenerationId).toMatch(
+      /^context-generation:[0-9a-f]{22}$/u,
+    );
+    expect(result.brief.contextGenerationId).toBe(
+      result.task.contextGenerationId,
+    );
+    expect(result.brief.verificationPlan[0]?.id).toMatch(
+      /^verification-plan:[0-9a-f]{22}$/u,
+    );
+    const persisted = await store.readTaskBundle(result.task.taskId);
+    expect(
+      await store.readStrongTaskCreationIntent(result.task.taskId),
+    ).toBeUndefined();
+    expect(persisted.bundle.events.at(-1)).toMatchObject({
+      resultingContextGenerationId: result.task.contextGenerationId,
+    });
+  });
+
+  it("fails closed when a strong creation marker's Snapshot has drifted", async () => {
+    const snapshot = strongSnapshotFixture();
+    const { store } = await openEmptyBoundStore(
+      snapshot.repositoryId,
+      snapshot.worktreeId,
+    );
+    await store.persistArtifact(strongSnapshotArtifact(snapshot));
+    await store.persistArtifact(strongPulseArtifact(snapshot));
+
+    const input = buildInput("strong-recovery-snapshot-drift");
+    const taskId = deterministicTaskId({
+      worktreeId: store.worktreeId,
+      createScope: "build_task_brief",
+      idempotencyKey: input.idempotencyKey,
+    });
+    const contextBuildSpec = {
+      version: "context-build-spec-v1" as const,
+      scope: [],
+      tokenBudget: 8_000,
+      maxCandidates: 20,
+      maxImpactDepth: 4,
+    };
+    await store.persistStrongTaskCreationIntent({
+      taskId,
+      idempotencyKey: input.idempotencyKey,
+      actor: input.actor,
+      requestDigest: sha256CanonicalJson(input),
+      snapshotId: snapshot.snapshotId,
+      snapshotContentDigest: sha256CanonicalJson(snapshot),
+      contextBuildSpec,
+    });
+
+    const driftDraft = StrongRepositorySnapshotV1Schema.parse({
+      ...snapshot,
+      headState: { kind: "commit", commit: "3".repeat(40) },
+      createdAt: "2026-07-29T08:32:00Z",
+    });
+    const driftSnapshot = parseTrustedStrongRepositorySnapshotV1(
+      {
+        ...driftDraft,
+        snapshotId: derivePathSafeRepositorySnapshotIdV1(
+          driftDraft,
+          digestCanonicalJson,
+        ),
+      },
+      digestCanonicalJson,
+    );
+    await store.persistArtifact(strongSnapshotArtifact(driftSnapshot));
+
+    let captureCount = 0;
+    const taskEngine = new TaskEngine(store, {
+      contextProvider: bindContextProvider(store, {
+        async loadTaskContext() {
+          return { graph: { ...graphFixture(), nodes: [], edges: [] }, existingFilePaths: [] };
+        },
+      }),
+      strongChangeAuthority: strongCreationAuthority(snapshot, () => {
+        captureCount += 1;
+      }),
+      clock: () => FIXED_NOW,
+    });
+
+    await expect(
+      taskEngine.buildTaskBrief(input, authForStore(store, ["task:create"])),
+    ).rejects.toMatchObject({
+      code: "context_build_failed",
+      message: expect.stringMatching(/recovery/i),
+    });
+    expect(captureCount).toBe(0);
+    expect(await store.readStrongTaskCreationIntent(taskId)).toBeDefined();
+  });
+
+  it("runs the strong TaskBaseline to Delta to Check to Verification vertical", async () => {
+    const snapshot = strongSnapshotFixture();
+    const creation = strongCreationAuthority(snapshot, () => undefined);
+    const contextBuildSpec = {
+      version: "context-build-spec-v1" as const,
+      scope: [],
+      tokenBudget: 8_000,
+      maxCandidates: 20,
+      maxImpactDepth: 4,
+    };
+    const captured = await creation.captureTaskBaseline({
+      profile: "capture_task_baseline_strong_v1",
+      taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      snapshotId: snapshot.snapshotId,
+      contextBuildSpec,
+      idempotencyKey: "capture-baseline-once",
+      actor: ACTOR,
+    });
+    const contextGenerationId = `context-generation:${"c".repeat(22)}`;
+    const verificationPlanEntryId = VerificationPlanEntryIdV1Schema.parse(
+      `verification-plan:${"d".repeat(22)}`,
+    );
+    const checkManifest = TaskManifestV1Schema.parse({
+      schemaVersion: 1,
+      taskId: captured.baseline.taskId,
+      title: "Strong full vertical",
+      originalIntent: "Run the full strong Change Intelligence vertical",
+      status: "check_required",
+      repositoryId: snapshot.repositoryId,
+      worktreeId: snapshot.worktreeId,
+      baselineSnapshotId: snapshot.snapshotId,
+      latestSnapshotId: snapshot.snapshotId,
+      taskProfile: "agent_task_v1",
+      taskBaselineArtifactId: captured.baseline.artifactId,
+      contextBuildSpec,
+      contextGenerationId,
+      createdAt: "2026-08-25T00:00:00.000Z",
+      updatedAt: "2026-08-25T00:00:05.000Z",
+      producerVersion: PRODUCER_VERSION,
+      revision: 5,
+    });
+    const planEntry = {
+      verificationPlanEntryId,
+      acceptanceClaimIds: ["claim:acceptance"],
+      method: "test" as const,
+      required: true,
+    };
+    const checkTask = StrongChangeTaskProjectionV1Schema.parse({
+      manifest: checkManifest,
+      acceptanceClaimIds: ["claim:acceptance"],
+      impactPathIds: [],
+      confirmedObligations: [],
+      verificationPlan: [planEntry],
+    });
+    const basis = {
+      recordId: `repository-basis-record:${"e".repeat(22)}`,
+      recordContentDigest: `sha256:${"1".repeat(64)}`,
+      basisDigest: `sha256:${"2".repeat(64)}`,
+      readSetDigest: `sha256:${"3".repeat(64)}`,
+      baselineSnapshotArtifactId:
+        `artifact:repository-snapshot:${snapshot.snapshotId}`,
+      baselineSnapshotContentDigest: sha256CanonicalJson(snapshot),
+      actualSnapshotArtifactId:
+        `artifact:repository-snapshot:${snapshot.snapshotId}`,
+      actualSnapshotContentDigest: sha256CanonicalJson(snapshot),
+      taskBaselineArtifactId: captured.baseline.artifactId,
+      taskBaselineContentDigest: captured.baselineContentDigest,
+      graphArtifactId: "artifact:graph-fixture",
+      graphContentDigest: `sha256:${"d".repeat(64)}`,
+      graphSourceSnapshotId: snapshot.snapshotId,
+    };
+    const checkPreparation = StrongChangeCheckPreparationV1Schema.parse({
+      profile: "strong_change_check_preparation_v1",
+      task: checkTask,
+      baseline: captured.baseline,
+      baselineSnapshot: snapshot,
+      actualSnapshot: snapshot,
+      basis,
+      rulesetVersion: PRODUCER_VERSION,
+      budget: strongAnalysisBudgetFixture(),
+      usage: strongAnalysisUsageFixture(),
+      repositoryDelta: {
+        profile: "final-tree-delta-v1",
+        taskId: checkManifest.taskId,
+        baselineSnapshotId: snapshot.snapshotId,
+        actualSnapshotId: snapshot.snapshotId,
+        paths: [],
+        redactedAggregates: [],
+        status: "complete",
+        boundaryIds: [],
+      },
+      analyzedHunks: [],
+      boundaries: [],
+      authorityToken: `hmac-sha256:${"4".repeat(64)}`,
+    });
+    let committedCheck:
+      | Awaited<ReturnType<typeof executeStrongChangeCheckV1>>
+      | undefined;
+    const authority: StrongChangeIntelligenceAuthorityV1 = {
+      captureTaskBaseline: creation.captureTaskBaseline,
+      async prepareCheck() {
+        return checkPreparation;
+      },
+      async commitCheck(request) {
+        committedCheck = {
+          profile: "strong_change_check_outcome_v1",
+          changeCheck: request.changeCheck,
+          findingClaims: request.findingClaims,
+          evidence: request.evidence,
+          impactConclusion: request.impactConclusion,
+          commitEvidence: request.commitEvidence,
+          committedRevision: 6,
+          idempotentReplay: false,
+        };
+        return committedCheck;
+      },
+      async scanVerificationInput() {
+        return {
+          sensitiveRequestScanPolicyDigest: sha256CanonicalJson({
+            fixture: "sensitive-request-scan-policy",
+          }),
+          fullInputEqualityTag: KeyedStateTokenV1Schema.parse(
+            `hmac-sha256:${"7".repeat(64)}`,
+          ),
+          ownerOnlyDetailCommitment: KeyedStateTokenV1Schema.parse(
+            `hmac-sha256:${"8".repeat(64)}`,
+          ),
+          ownerOnlyDetail: {
+            command: {
+              executable: "pnpm",
+              arguments: ["test"],
+              workingDirectory: "repository_root",
+              environmentKeys: [],
+            },
+          },
+          detail: { status: "stored" as const },
+          detailFields: ["command" as const],
+        };
+      },
+      async prepareVerification() {
+        if (committedCheck === undefined) throw new Error("Check was not committed");
+        const verificationManifest = TaskManifestV1Schema.parse({
+          ...checkManifest,
+          status: "verification_required",
+          currentChangeCheckId: committedCheck.changeCheck.id,
+          currentChangeCheckRevision: committedCheck.changeCheck.taskRevision,
+          updatedAt: "2026-08-25T00:00:06.000Z",
+          revision: 6,
+        });
+        return StrongVerificationPreparationV1Schema.parse({
+          profile: "strong_verification_preparation_v1",
+          task: {
+            ...checkTask,
+            manifest: verificationManifest,
+          },
+          planEntry,
+          changeCheckArtifactId:
+            `artifact:change-check:${verificationManifest.taskId}`,
+          changeCheckContentDigest: sha256CanonicalJson(
+            committedCheck.changeCheck,
+          ),
+          changeCheck: committedCheck.changeCheck,
+          priorRecords: [],
+          basis,
+          sensitiveRequestScanPolicyDigest: sha256CanonicalJson({
+            fixture: "sensitive-request-scan-policy",
+          }),
+          fullInputEqualityTag: `hmac-sha256:${"7".repeat(64)}`,
+          ownerOnlyDetailCommitment: `hmac-sha256:${"8".repeat(64)}`,
+          ownerOnlyDetail: {
+            command: {
+              executable: "pnpm",
+              arguments: ["test"],
+              workingDirectory: "repository_root",
+              environmentKeys: [],
+            },
+          },
+          detail: { status: "stored" },
+          detailFields: ["command"],
+          authorityToken: `hmac-sha256:${"5".repeat(64)}`,
+        });
+      },
+      async commitVerification(request) {
+        return {
+          profile: "strong_verification_outcome_v1",
+          verification: request.verification,
+          commitEvidence: request.commitEvidence,
+          committedRevision: 7,
+          idempotentReplay: false,
+        };
+      },
+    };
+
+    const check = await executeStrongChangeCheckV1(
+      authority,
+      {
+        profile: "check_changes_strong_v1",
+        taskId: checkManifest.taskId,
+        actualSnapshotId: snapshot.snapshotId,
+        includeWorktree: true,
+        expectedRevision: 5,
+        idempotencyKey: "strong-check-once",
+        actor: ACTOR,
+      },
+      () => new Date("2026-08-25T00:00:06.000Z"),
+    );
+    expect(check.changeCheck.analysis).toMatchObject({
+      profile: "evidence_backed_v1",
+      repositoryDelta: { profile: "final-tree-delta-v1" },
+      completeness: { overall: "complete" },
+    });
+    const verification = await executeStrongVerificationRecordV1(
+      authority,
+      {
+        profile: "record_verification_strong_v1",
+        taskId: checkManifest.taskId,
+        snapshotId: snapshot.snapshotId,
+        verificationPlanEntryId,
+        method: "test",
+        status: "passed",
+        claimIds: ["claim:acceptance"],
+        command: {
+          executable: "pnpm",
+          arguments: ["test"],
+          workingDirectory: "repository_root",
+          environmentKeys: [],
+        },
+        expectedRevision: 6,
+        idempotencyKey: "strong-verification-once",
+        actor: ACTOR,
+      },
+      () => new Date("2026-08-25T00:00:07.000Z"),
+    );
+    expect(verification.verification).toMatchObject({
+      profile: "verification_record_strong_v1",
+      contextGenerationId,
+      status: "passed",
+      publicResultCode: "verification_passed",
+    });
+    expect(verification.commitEvidence).toMatchObject({
+      recovery: { attemptChainValidated: true, idempotencyReplaySafe: true },
+      security: { rawExecutionPersisted: false },
+      readSet: { finalValidation: "provider_exact_cut_v1" },
+      provenance: {
+        taskBaselineArtifactId: captured.baseline.artifactId,
+        contextGenerationId,
+      },
+    });
+  });
+
+  it("requires Provider baseline authority for a trusted strong Snapshot before loading context or writing a Task", async () => {
     const snapshot = strongSnapshotFixture();
     const { store } = await openEmptyBoundStore(
       snapshot.repositoryId,
@@ -1108,10 +1632,9 @@ describe("TaskEngine persistent integration", () => {
         authForStore(store, ["task:create"]),
       ),
     ).rejects.toMatchObject({
-      code: "artifact_unavailable",
+      code: "capability_unavailable",
       details: {
-        reason: "unsupported_schema",
-        artifactType: "repository_snapshot",
+        reason: "strong_change_authority_unavailable",
       },
     });
 
@@ -2161,8 +2684,9 @@ describe("TaskEngine persistent integration", () => {
     expect(
       persisted.bundle.claims.every(
         (claim) =>
-          !claim.findingIds.includes(previousFindingId) &&
-          !claim.verificationRecordIds.includes(previousVerificationId),
+          !(claim.findingIds as readonly string[]).includes(previousFindingId) &&
+          (!("verificationRecordIds" in claim) ||
+            !(claim.verificationRecordIds as readonly string[]).includes(previousVerificationId)),
       ),
     ).toBe(true);
     expect(
@@ -3191,7 +3715,9 @@ describe("TaskEngine persistent integration", () => {
       persisted.bundle.changeChecks[0]!.findings[0]!.resolution,
     ).toMatchObject({ kind: "accepted", actor: ACTOR });
     expect(
-      persisted.bundle.verificationRecords.at(-1)!.skipAcceptance,
+      VerificationRecordV1Schema.parse(
+        persisted.bundle.verificationRecords.at(-1),
+      ).skipAcceptance,
     ).toMatchObject({ actor: ACTOR });
     expect(persisted.bundle.events.map((event) => event.action.type)).toEqual(
       expect.arrayContaining([
@@ -3491,12 +4017,13 @@ describe("TaskEngine persistent integration", () => {
       verifiedProjection.bundle.changeChecks[0]!.findings[0]!.id;
     expect(
       verifiedProjection.bundle.claims.some((claim) =>
+        "verificationRecordIds" in claim &&
         claim.verificationRecordIds.includes(verificationId)
       ),
     ).toBe(true);
     expect(
       verifiedProjection.bundle.claims.some((claim) =>
-        claim.findingIds.includes(findingId)
+        (claim.findingIds as readonly string[]).includes(findingId)
       ),
     ).toBe(true);
 
@@ -3552,8 +4079,9 @@ describe("TaskEngine persistent integration", () => {
     expect(
       transitionClaims.payload.claims.every(
         (claim) =>
-          !claim.findingIds.includes(findingId) &&
-          !claim.verificationRecordIds.includes(verificationId),
+          !(claim.findingIds as readonly string[]).includes(findingId) &&
+          (!("verificationRecordIds" in claim) ||
+            !claim.verificationRecordIds.includes(verificationId)),
       ),
     ).toBe(true);
 
@@ -3589,12 +4117,14 @@ describe("TaskEngine persistent integration", () => {
     expect(persisted.bundle.verificationRecords).toEqual([]);
     expect(
       persisted.bundle.claims.every(
-        (claim) => !claim.verificationRecordIds.includes(verificationId),
+        (claim) =>
+          !("verificationRecordIds" in claim) ||
+          !claim.verificationRecordIds.includes(verificationId),
       ),
     ).toBe(true);
     expect(
       persisted.bundle.claims.every(
-        (claim) => !claim.findingIds.includes(findingId),
+        (claim) => !(claim.findingIds as readonly string[]).includes(findingId),
       ),
     ).toBe(true);
     expect(persisted.receipts.map((receipt) => receipt.operation)).toEqual(
@@ -4075,6 +4605,8 @@ describe("TaskEngine persistent integration", () => {
       bundle: {
         ...current.bundle,
         verificationRecords: current.bundle.verificationRecords.map((record) =>
+          VerificationRecordV1Schema.parse(record)
+        ).map((record) =>
           record.id === passed.verification.id
             ? {
                 ...record,
@@ -4774,7 +5306,7 @@ describe("TaskEngine persistent integration", () => {
       (claim) =>
         claim.kind === "finding" &&
         unplannedDeletion.claimIds.includes(claim.id) &&
-        claim.findingIds.includes(unplannedDeletion.id),
+        (claim.findingIds as readonly string[]).includes(unplannedDeletion.id),
     );
     expect(deletionFindingClaims).toHaveLength(1);
     const deletionFindingClaim = deletionFindingClaims[0];

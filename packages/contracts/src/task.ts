@@ -7,6 +7,7 @@ import {
   ArtifactIdSchema,
   ClaimIdSchema,
   ContentDigestSchema,
+  ContextGenerationIdV1Schema,
   EventIdSchema,
   EvidenceIdSchema,
   FindingIdSchema,
@@ -17,14 +18,18 @@ import {
   OpaqueIdentifierSchema,
   PlannedChangeIdSchema,
   ProducerVersionSchema,
+  PathSafeRepositorySnapshotIdV1Schema,
+  PathSafeRepositoryRelativePathV1Schema,
   RepositoryIdSchema,
   RepositoryRelativePathSchema,
   RevisionSchema,
   SchemaVersionV1Schema,
   SnapshotIdSchema,
   TaskIdSchema,
+  TaskBaselineArtifactIdV1Schema,
   VerificationRecordIdSchema,
   WorktreeIdSchema,
+  isUnicodeScalarStringV1,
   type ContentDigest,
 } from "./primitives.js";
 
@@ -42,6 +47,24 @@ const uniqueValues = (
     });
   }
 };
+
+function compareUtf8BytesV1(left: string, right: string): number {
+  // For Unicode scalar sequences, code-point order is identical to UTF-8 byte
+  // order. Avoid TextEncoder here: the packed Contracts package intentionally
+  // compiles without DOM or Node globals, and strong inputs reject lone
+  // surrogates before this ordering can become authoritative.
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftCodePoint = left.codePointAt(leftIndex)!;
+    const rightCodePoint = right.codePointAt(rightIndex)!;
+    const difference = leftCodePoint - rightCodePoint;
+    if (difference !== 0) return difference;
+    leftIndex += leftCodePoint > 0xffff ? 2 : 1;
+    rightIndex += rightCodePoint > 0xffff ? 2 : 1;
+  }
+  return leftIndex < left.length ? 1 : rightIndex < right.length ? -1 : 0;
+}
 
 const chronological = (
   earlier: string,
@@ -171,6 +194,213 @@ export const TaskSupersessionV1Schema = z.strictObject({
 
 export type TaskSupersessionV1 = z.infer<typeof TaskSupersessionV1Schema>;
 
+export const ResolvedContextBuildSpecV1Schema = z.strictObject({
+  version: z.literal("context-build-spec-v1"),
+  scope: z.array(PathSafeRepositoryRelativePathV1Schema),
+  tokenBudget: z.number().int().positive(),
+  maxCandidates: z.number().int().positive(),
+  maxImpactDepth: z.number().int().nonnegative(),
+  baseRef: NonEmptyStringSchema.optional(),
+}).superRefine((spec, context) => {
+  uniqueValues(spec.scope, context, ["scope"], "context scope paths");
+  for (let index = 1; index < spec.scope.length; index += 1) {
+    if (compareUtf8BytesV1(spec.scope[index - 1]!, spec.scope[index]!) >= 0) {
+      context.addIssue({
+        code: "custom",
+        message: "context scope paths must use strict UTF-8-byte-compatible order",
+        path: ["scope", index],
+      });
+    }
+  }
+});
+
+export type ResolvedContextBuildSpecV1 = z.infer<
+  typeof ResolvedContextBuildSpecV1Schema
+>;
+
+const ContextGenerationArtifactRoleV1Schema = z.enum([
+  "repo_pulse",
+  "graph",
+  "wiki",
+  "source_evidence",
+]);
+
+export const ContextGenerationDependencyPinV1Schema = z.union(
+  [
+    z.strictObject({
+      pinKind: z.literal("artifact"),
+      role: z.literal("repository_snapshot"),
+      artifactId: PathSafeRepositorySnapshotIdV1Schema,
+      contentDigest: ContentDigestSchema,
+      sourceSnapshotId: PathSafeRepositorySnapshotIdV1Schema,
+    }),
+    z.strictObject({
+      pinKind: z.literal("artifact"),
+      role: ContextGenerationArtifactRoleV1Schema,
+      artifactId: ArtifactIdSchema,
+      contentDigest: ContentDigestSchema,
+      sourceSnapshotId: PathSafeRepositorySnapshotIdV1Schema,
+    }),
+    z.strictObject({
+      pinKind: z.literal("artifact_absence"),
+      role: z.enum(["graph", "wiki", "source_evidence"]),
+      reasonCode: z.enum([
+        "not_generated",
+        "not_available",
+        "policy_excluded",
+        "integrity_unavailable",
+      ]),
+    }),
+    z.strictObject({
+      pinKind: z.literal("policy"),
+      role: z.literal("policy"),
+      policyKind: z.enum([
+        "context_build",
+        "repository",
+        "scanner",
+        "safe_git_execution",
+      ]),
+      contentDigest: ContentDigestSchema,
+    }),
+  ],
+);
+
+export type ContextGenerationDependencyPinV1 = z.infer<
+  typeof ContextGenerationDependencyPinV1Schema
+>;
+
+function contextGenerationPinKeyV1(
+  pin: ContextGenerationDependencyPinV1,
+): string {
+  switch (pin.pinKind) {
+    case "artifact":
+      return [
+        "0",
+        pin.role,
+        pin.artifactId,
+        pin.contentDigest,
+        pin.sourceSnapshotId,
+      ].join("\0");
+    case "artifact_absence":
+      return ["1", pin.role, pin.reasonCode].join("\0");
+    case "policy":
+      return ["2", pin.role, pin.policyKind, pin.contentDigest].join("\0");
+  }
+}
+
+export const ContextGenerationInputV1Schema = z.strictObject({
+  version: z.literal("context-generation-input-v1"),
+  taskId: TaskIdSchema,
+  resultingRevision: RevisionSchema,
+  previousContextGenerationId: ContextGenerationIdV1Schema.optional(),
+  baselineSnapshotId: PathSafeRepositorySnapshotIdV1Schema,
+  targetSnapshotId: PathSafeRepositorySnapshotIdV1Schema,
+  contextBuildSpecDigest: ContentDigestSchema,
+  upstreamDependencyPins: z.array(ContextGenerationDependencyPinV1Schema),
+}).superRefine((input, context) => {
+  const pins = input.upstreamDependencyPins;
+  const keys = pins.map(contextGenerationPinKeyV1);
+  keys.forEach((key, index) => {
+    if (!isUnicodeScalarStringV1(key)) {
+      context.addIssue({
+        code: "custom",
+        message: "context dependency pins must contain only Unicode scalar values",
+        path: ["upstreamDependencyPins", index],
+      });
+    }
+  });
+  uniqueValues(keys, context, ["upstreamDependencyPins"], "context dependency pins");
+  for (let index = 1; index < keys.length; index += 1) {
+    if (compareUtf8BytesV1(keys[index - 1]!, keys[index]!) >= 0) {
+      context.addIssue({
+        code: "custom",
+        message: "context dependency pins must use the frozen tuple order",
+        path: ["upstreamDependencyPins", index],
+      });
+      break;
+    }
+  }
+
+  const artifactPins = pins.filter((pin) => pin.pinKind === "artifact");
+  const snapshotPins = artifactPins.filter(
+    (pin) => pin.role === "repository_snapshot",
+  );
+  if (
+    snapshotPins.length !== 1 ||
+    snapshotPins[0]?.artifactId !== input.targetSnapshotId ||
+    snapshotPins[0]?.sourceSnapshotId !== input.targetSnapshotId
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "one exact target Repository Snapshot pin is required",
+      path: ["upstreamDependencyPins"],
+    });
+  }
+  const pulsePins = artifactPins.filter((pin) => pin.role === "repo_pulse");
+  if (
+    pulsePins.length !== 1 ||
+    pulsePins[0]?.sourceSnapshotId !== input.targetSnapshotId
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "one target-bound Repo Pulse pin is required",
+      path: ["upstreamDependencyPins"],
+    });
+  }
+  for (const role of ["graph", "wiki", "source_evidence"] as const) {
+    if (pins.filter((pin) => pin.role === role).length !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: `${role} requires exactly one present-or-absence pin`,
+        path: ["upstreamDependencyPins"],
+      });
+    }
+    for (const pin of artifactPins.filter((candidate) => candidate.role === role)) {
+      if (pin.sourceSnapshotId !== input.targetSnapshotId) {
+        context.addIssue({
+          code: "custom",
+          message: `${role} artifact pins must target the current Snapshot`,
+          path: ["upstreamDependencyPins"],
+        });
+      }
+    }
+  }
+  for (
+    const policyKind of [
+      "context_build",
+      "repository",
+      "scanner",
+      "safe_git_execution",
+    ] as const
+  ) {
+    const matches = pins.filter(
+      (pin) => pin.pinKind === "policy" && pin.policyKind === policyKind,
+    );
+    if (matches.length !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: `${policyKind} requires exactly one policy pin`,
+        path: ["upstreamDependencyPins"],
+      });
+    }
+    if (
+      policyKind === "context_build" &&
+      (matches[0]?.pinKind !== "policy" ||
+        matches[0].contentDigest !== input.contextBuildSpecDigest)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "context-build policy pin must equal contextBuildSpecDigest",
+        path: ["contextBuildSpecDigest"],
+      });
+    }
+  }
+});
+
+export type ContextGenerationInputV1 = z.infer<
+  typeof ContextGenerationInputV1Schema
+>;
+
 export const TaskManifestV1Schema = z.strictObject({
   schemaVersion: SchemaVersionV1Schema,
   taskId: TaskIdSchema,
@@ -182,6 +412,10 @@ export const TaskManifestV1Schema = z.strictObject({
   worktreeId: WorktreeIdSchema,
   baselineSnapshotId: SnapshotIdSchema,
   latestSnapshotId: SnapshotIdSchema,
+  taskProfile: z.literal("agent_task_v1").optional(),
+  taskBaselineArtifactId: TaskBaselineArtifactIdV1Schema.optional(),
+  contextBuildSpec: ResolvedContextBuildSpecV1Schema.optional(),
+  contextGenerationId: ContextGenerationIdV1Schema.optional(),
   currentChangeCheckId: OpaqueIdentifierSchema.optional(),
   currentChangeCheckRevision: RevisionSchema.optional(),
   blockedState: BlockedTaskStateV1Schema.optional(),
@@ -192,6 +426,45 @@ export const TaskManifestV1Schema = z.strictObject({
   producerVersion: ProducerVersionSchema,
   revision: RevisionSchema,
 }).superRefine((task, context) => {
+  const strongFields = [
+    task.taskBaselineArtifactId,
+    task.contextBuildSpec,
+    task.contextGenerationId,
+  ];
+  if (task.taskProfile === "agent_task_v1") {
+    if (task.taskBaselineArtifactId === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "strong Tasks require an exact Task Baseline artifact pin",
+        path: ["taskBaselineArtifactId"],
+      });
+    }
+    if (task.contextBuildSpec === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "strong Tasks require the resolved context build specification",
+        path: ["contextBuildSpec"],
+      });
+    }
+    const generationRequired = !(
+      task.status === "created" ||
+      (task.status === "blocked" && task.blockedState?.resumeStatus === "created") ||
+      (task.status === "stale" && task.staleState?.staleFromStatus === "created")
+    );
+    if (generationRequired && task.contextGenerationId === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "a strong contextual Task requires its current Context Generation",
+        path: ["contextGenerationId"],
+      });
+    }
+  } else if (strongFields.some((value) => value !== undefined)) {
+    context.addIssue({
+      code: "custom",
+      message: "strong Task fields require taskProfile=agent_task_v1",
+      path: ["taskProfile"],
+    });
+  }
   if (task.parentTaskId === task.taskId) {
     context.addIssue({
       code: "custom",
@@ -443,6 +716,7 @@ export const VerificationPlanEntryV1Schema = z.strictObject({
 export type VerificationPlanEntryV1 = z.infer<typeof VerificationPlanEntryV1Schema>;
 
 export const TaskBriefV1Schema = z.strictObject({
+  contextGenerationId: ContextGenerationIdV1Schema.optional(),
   originalIntent: NonEmptyStringSchema,
   goalClaimId: ClaimIdSchema,
   nonGoalClaimIds: z.array(ClaimIdSchema),
@@ -518,16 +792,19 @@ export type OperationControlV1 = z.infer<typeof OperationControlV1Schema>;
 const ConfirmGoalActionV1Schema = z.strictObject({
   type: z.literal("confirm_goal"),
   claimId: ClaimIdSchema,
+  contextGenerationId: ContextGenerationIdV1Schema.optional(),
 });
 
 const ConfirmAcceptanceCriteriaActionV1Schema = z.strictObject({
   type: z.literal("confirm_acceptance_criteria"),
   claimIds: z.array(ClaimIdSchema).min(1),
+  contextGenerationId: ContextGenerationIdV1Schema.optional(),
 });
 
 const ConfirmPlanActionV1Schema = z.strictObject({
   type: z.literal("confirm_plan"),
   plannedChangeIds: z.array(PlannedChangeIdSchema).min(1),
+  contextGenerationId: ContextGenerationIdV1Schema.optional(),
 });
 
 const RecordAssumptionActionV1Schema = z.strictObject({
@@ -694,6 +971,8 @@ export const TaskEventV1Schema = z.strictObject({
   occurredAt: IsoTimestampSchema,
   previousStatus: TaskStatusV1Schema.optional(),
   resultingStatus: TaskStatusV1Schema,
+  previousContextGenerationId: ContextGenerationIdV1Schema.optional(),
+  resultingContextGenerationId: ContextGenerationIdV1Schema.optional(),
   action: TaskEventActionV1Schema,
   previousEventDigest: ContentDigestSchema.optional(),
   eventDigest: ContentDigestSchema,

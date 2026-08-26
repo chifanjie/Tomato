@@ -141,6 +141,12 @@ describe("provider service handoff", () => {
     expect(systemd.format).toBe("systemd_unit");
     expect(systemd.descriptor).toContain("NoNewPrivileges=true");
     expect(systemd.descriptor).toContain("ProtectSystem=strict");
+    expect(systemd.descriptor).toContain("Delegate=yes");
+    expect(systemd.descriptor).toContain(
+      "DelegateSubgroup=understand-code-safe-git-supervisor-v1",
+    );
+    expect(systemd.descriptor).toContain("MemoryAccounting=true");
+    expect(systemd.descriptor).toContain("TasksAccounting=true");
 
     expect(() =>
       verifyProviderServiceHandoffConfigV1(

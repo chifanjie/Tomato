@@ -55,6 +55,10 @@
     "payload": {
       "type": "object",
       "properties": {
+        "contextGenerationId": {
+          "type": "string",
+          "pattern": "^context-generation:[0-9a-f]{22}$"
+        },
         "originalIntent": {
           "type": "string",
           "minLength": 1,

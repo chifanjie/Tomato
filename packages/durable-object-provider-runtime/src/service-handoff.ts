@@ -319,11 +319,13 @@ function assertExactKeysV1(
   keys: readonly string[],
   label: string,
 ): void {
-  const actual = Object.keys(value);
-  if (
-    actual.length !== keys.length ||
-    actual.some((key, index) => key !== keys[index])
-  ) {
+  // Configs are persisted as JCS, whose object members are lexicographically
+  // ordered.  Validate exact membership independent of serialization order;
+  // requiring insertion order rejects every canonical on-disk config.
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length ||
+      actual.some((key, index) => key !== expected[index])) {
     throw new ProviderServiceHandoffErrorV1(
       "invalid_config",
       `${label} fields are not exact`,
@@ -861,6 +863,14 @@ export function renderProviderServiceDescriptorV1(
     `User=${systemdEscapeV1(payload.principal.name)}`,
     `Group=${systemdEscapeV1(payload.principal.name)}`,
     "UMask=0077",
+    // SafeGit creates one per-invocation child cgroup below this exact
+    // supervisor subgroup. DelegateSubgroup keeps the unit cgroup itself
+    // process-free so cgroup-v2 memory/pids controllers can be enabled for
+    // descendants without a migration race.
+    "Delegate=yes",
+    "DelegateSubgroup=understand-code-safe-git-supervisor-v1",
+    "MemoryAccounting=true",
+    "TasksAccounting=true",
     "NoNewPrivileges=true",
     "PrivateTmp=true",
     "ProtectSystem=strict",

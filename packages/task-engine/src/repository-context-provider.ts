@@ -19,8 +19,11 @@ import {
 } from "@understand-code/artifact-store/path-guard";
 import {
   RepositoryRelativePathSchema,
+  RepositorySnapshotPersistedPayloadV1Schema,
   RepositorySnapshotV1Schema,
+  StrongRepositorySnapshotV1Schema,
   type RepositorySnapshotV1,
+  type StrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
 import {
   KnowledgeGraphSchema,
@@ -34,7 +37,15 @@ import {
   type WikiIndexV2,
   type WikiSearchIndexV2,
 } from "@understand-code/core/knowledge-base";
-import { getRepositorySnapshotDetailed } from "@understand-code/repository-state";
+import {
+  classifySafeGitReadCommandV1,
+  createSafeGitTaskBaselineLeaseIntentV1,
+  getRepositorySnapshotDetailed,
+  type SafeGitTaskBaselineLeaseCreateRequestV1,
+  type SafeGitTaskBaselineLeaseIntentV1,
+  type SafeGitTaskBaselineLeaseV1,
+  type SafeGitReadExecutorV1,
+} from "@understand-code/repository-state";
 
 import type {
   SourceEvidenceRecord,
@@ -47,6 +58,9 @@ import type {
   TaskContextLoadInput,
   TaskContextProvider,
   TaskContextProviderBinding,
+  StrongRepositoryAnalysisMaterialV1,
+  StrongRepositoryContentMaterialV1,
+  StrongRepositoryGraphPinV1,
 } from "./engine-types.js";
 import {
   CHANGE_ANALYSIS_LIMITS,
@@ -130,6 +144,19 @@ export interface RepositoryTaskContextProviderOptions {
   maxGraphBytes?: number;
   maxWikiBytes?: number;
   maxSourceFileBytes?: number;
+  /** Required by the strong analyzer. Every operation owns and closes a fresh capability. */
+  openStrongSafeGitReadSession?: () => Promise<Readonly<{
+    executor: SafeGitReadExecutorV1;
+    /** Native fixed cat-file-type authority; optional for legacy test seams. */
+    executeGitObjectType?: (objectId: string) => Promise<"blob" | "tree" | "commit">;
+    createTaskBaselineLease(
+      request: SafeGitTaskBaselineLeaseCreateRequestV1,
+    ): Promise<SafeGitTaskBaselineLeaseV1>;
+    recoverTaskBaselineLease?(
+      request: SafeGitTaskBaselineLeaseCreateRequestV1,
+    ): Promise<SafeGitTaskBaselineLeaseV1>;
+    close(): Promise<void>;
+  }>>;
 }
 
 interface NormalizedOptions {
@@ -231,6 +258,250 @@ function readGitOutput(
       },
     );
   });
+}
+
+async function readStrongSafeGitOutput(
+  executor: SafeGitReadExecutorV1,
+  args: readonly string[],
+  maxBytes: number,
+  budgetMessage: string,
+): Promise<Buffer> {
+  const command = classifySafeGitReadCommandV1(args);
+  const result = await executor.execute(command);
+  if (result.exitCode !== 0 || result.stderr.byteLength !== 0) {
+    throw new RepositoryTaskContextProviderError(
+      "repository_file_unavailable",
+      "The fixed SafeGit read profile could not resolve strong analysis material.",
+    );
+  }
+  const bytes = Buffer.from(result.stdout);
+  if (bytes.byteLength > maxBytes) throw new RangeError(budgetMessage);
+  return bytes;
+}
+
+async function readStrongGitObject(
+  executor: SafeGitReadExecutorV1,
+  objectId: string,
+  maxBytes: number,
+  budgetMessage: string,
+  expectedType?: "blob" | "tree" | "commit",
+  objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+): Promise<Buffer> {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(objectId)) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_snapshot",
+      "A strong Git object identity is invalid.",
+    );
+  }
+  if (expectedType !== undefined) {
+    const actualType = objectTypeReader === undefined
+      ? await (async () => {
+          const typeResult = await executor.execute(
+            classifySafeGitReadCommandV1(["cat-file", "-t", "--", objectId]),
+          );
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(typeResult.stdout);
+          if (typeResult.exitCode !== 0 || typeResult.stderr.byteLength !== 0 || !/^(?:blob|tree|commit)\n$/u.test(text)) return undefined;
+          return text.slice(0, -1) as "blob" | "tree" | "commit";
+        })()
+      : await objectTypeReader(objectId);
+    if (actualType !== expectedType) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A pinned Git object has an unexpected actual type.",
+      );
+    }
+  }
+  return readStrongSafeGitOutput(
+    executor,
+    ["cat-file", "-p", objectId],
+    maxBytes,
+    budgetMessage,
+  );
+}
+
+async function readStrongCommitTreeObjectId(
+  executor: SafeGitReadExecutorV1,
+  commit: string,
+  objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+): Promise<string> {
+  const bytes = await readStrongGitObject(
+    executor,
+    commit,
+    64 * 1024 * 1024,
+    "Git commit object exceeds strong analysis budget",
+    "commit",
+    objectTypeReader,
+  );
+  const firstLineEnd = bytes.indexOf(0x0a);
+  const firstLine = bytes.subarray(0, firstLineEnd < 0 ? bytes.length : firstLineEnd)
+    .toString("ascii");
+  const match = /^tree ([0-9a-f]{40}|[0-9a-f]{64})$/u.exec(firstLine);
+  if (match === null) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_snapshot",
+      "The pinned commit does not expose one exact tree identity.",
+    );
+  }
+  const treeObjectId = match[1]!;
+  const treeType = objectTypeReader === undefined
+    ? await (async () => {
+        const result = await executor.execute(classifySafeGitReadCommandV1(["cat-file", "-t", "--", treeObjectId]));
+        return result.exitCode === 0 && result.stderr.byteLength === 0 && new TextDecoder("utf-8", { fatal: true }).decode(result.stdout) === "tree\n";
+      })()
+    : await objectTypeReader(treeObjectId) === "tree";
+  if (!treeType) throw new RepositoryTaskContextProviderError("invalid_snapshot", "A commit tree identity is not a tree object.");
+  return treeObjectId;
+}
+
+interface StrongTreeEntryV1 {
+  readonly kind: "blob" | "tree";
+  readonly mode: "040000" | "100644" | "100755";
+  readonly objectId: string;
+}
+
+function parseStrongTreeEntry(
+  bytes: Buffer,
+  component: string,
+): StrongTreeEntryV1 | undefined {
+  if (
+    component.length === 0 || component === "." || component === ".." ||
+    component.includes("/") || /[\\"\u0000-\u001f\u007f]/u.test(component)
+  ) {
+    throw new RepositoryTaskContextProviderError(
+      "unsafe_repository_path",
+      "A repository path component is not representable by the fixed tree reader.",
+    );
+  }
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const matches: StrongTreeEntryV1[] = [];
+  const foldedNames = new Set<string>();
+  for (const line of text.split("\n")) {
+    if (line.length === 0) continue;
+    const match = /^(040000|100644|100755) (tree|blob) ([0-9a-f]{40}|[0-9a-f]{64})\t([^\u0000\r\n]+)$/u.exec(line);
+    if (
+      match === null || match[4]!.length === 0 || match[4]!.includes("/") ||
+      /[\\"\u0000-\u001f\u007f]/u.test(match[4]!)
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A Git tree contains an unsupported or quoted entry.",
+      );
+    }
+    const folded = match[4]!.normalize("NFC").toLowerCase();
+    if (foldedNames.has(folded)) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A Git tree contains case-ambiguous path entries.",
+      );
+    }
+    foldedNames.add(folded);
+    const mode = match[1] as StrongTreeEntryV1["mode"];
+    const kind = match[2] as StrongTreeEntryV1["kind"];
+    if ((mode === "040000") !== (kind === "tree")) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A Git tree entry has an invalid mode/type pair.",
+      );
+    }
+    if (match[4] !== component) continue;
+    matches.push({ mode, kind, objectId: match[3]! });
+  }
+  if (matches.length > 1) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_snapshot",
+      "A Git tree contains an ambiguous path component.",
+    );
+  }
+  return matches[0];
+}
+
+async function readStrongTreeEntry(
+  executor: SafeGitReadExecutorV1,
+  rootTreeObjectId: string,
+  relativePath: string,
+  objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+): Promise<{ readonly mode: "100644" | "100755"; readonly objectId: string } | undefined> {
+  if (!safeChangeAnalysisPath(relativePath)) {
+    throw providerErrorForPath(
+      "unsafe_repository_path",
+      "A repository path is unsafe for fixed Git tree traversal.",
+      relativePath,
+    );
+  }
+  const components = relativePath.split("/");
+  let treeObjectId = rootTreeObjectId;
+  for (const [index, component] of components.entries()) {
+    const tree = await readStrongGitObject(
+      executor,
+      treeObjectId,
+      MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES,
+      "Git tree object exceeds strong analysis budget",
+      "tree",
+      objectTypeReader,
+    );
+    const entry = parseStrongTreeEntry(tree, component!);
+    if (entry === undefined) return undefined;
+    const final = index === components.length - 1;
+    if (!final) {
+      if (entry.kind !== "tree") return undefined;
+      treeObjectId = entry.objectId;
+      continue;
+    }
+    if (entry.kind !== "blob" || entry.mode === "040000") return undefined;
+    const blobType = objectTypeReader === undefined
+      ? await (async () => {
+          const result = await executor.execute(classifySafeGitReadCommandV1(["cat-file", "-t", "--", entry.objectId]));
+          return result.exitCode === 0 && result.stderr.byteLength === 0 && new TextDecoder("utf-8", { fatal: true }).decode(result.stdout) === "blob\n";
+        })()
+      : await objectTypeReader(entry.objectId) === "blob";
+    if (!blobType) throw new RepositoryTaskContextProviderError("invalid_snapshot", "A tree blob entry has a non-blob object identity.");
+    return { mode: entry.mode, objectId: entry.objectId };
+  }
+  return undefined;
+}
+
+async function readStrongIndexEntries(
+  executor: SafeGitReadExecutorV1,
+  objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+): Promise<ReadonlyMap<string, { readonly mode: "100644" | "100755"; readonly objectId: string }>> {
+  const bytes = await readStrongSafeGitOutput(
+    executor,
+    ["ls-files", "--stage", "-z"],
+    MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES,
+    "Git index entries exceed strong analysis budget",
+  );
+  const entries = new Map<string, { mode: "100644" | "100755"; objectId: string }>();
+  for (const record of bytes.subarray(0, Math.max(0, bytes.length - (bytes.at(-1) === 0 ? 1 : 0))).toString("utf8").split("\0")) {
+    if (record.length === 0) continue;
+    const match = /^(100644|100755) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t(.+)$/u.exec(record);
+    if (match === null || !safeChangeAnalysisPath(match[3]!)) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The fixed Git index projection contains an unsupported entry.",
+      );
+    }
+    if (entries.has(match[3]!)) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The fixed Git index projection contains a duplicate entry.",
+      );
+    }
+    entries.set(match[3]!, {
+      mode: match[1] as "100644" | "100755",
+      objectId: match[2]!,
+    });
+    if (objectTypeReader !== undefined) {
+      const actualType = await objectTypeReader(match[2]!);
+      if (actualType !== "blob") {
+        throw new RepositoryTaskContextProviderError(
+          "invalid_snapshot",
+          "A Git index entry does not point to a blob object.",
+          { path: match[3] },
+        );
+      }
+    }
+  }
+  return entries;
 }
 
 function safeChangeAnalysisPath(relativePath: string): boolean {
@@ -444,6 +715,63 @@ async function baselinePathIsAbsent(
   return false;
 }
 
+async function readGitTreeEntry(
+  canonicalRoot: string,
+  commit: string,
+  relativePath: string,
+): Promise<{ mode: "100644" | "100755"; objectId: string } | undefined> {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(commit) || !safeChangeAnalysisPath(relativePath)) {
+    throw providerErrorForPath("unsafe_repository_path", "A repository path is ambiguous for exact Git tree lookup.", relativePath);
+  }
+  const output = await readGitOutput(
+    canonicalRoot,
+    ["--literal-pathspecs", "ls-tree", "-z", "--full-tree", commit, "--", relativePath],
+    MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES,
+    "Git tree entry exceeds analysis budget",
+  );
+  if (output.byteLength === 0) return undefined;
+  const match = /^(100644|100755) blob ([0-9a-f]{40}|[0-9a-f]{64})\t[^\0]+\0$/u.exec(output.toString("utf8"));
+  if (match === null) throw new Error("unsupported Git tree entry");
+  return { mode: match[1] as "100644" | "100755", objectId: match[2]! };
+}
+
+async function readGitIndexEntry(
+  canonicalRoot: string,
+  relativePath: string,
+): Promise<{ mode: "100644" | "100755"; objectId: string } | undefined> {
+  if (!safeChangeAnalysisPath(relativePath)) {
+    throw providerErrorForPath("unsafe_repository_path", "A repository path is ambiguous for exact Git index lookup.", relativePath);
+  }
+  const output = await readGitOutput(
+    canonicalRoot,
+    ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", relativePath],
+    MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES * 4,
+    "Git index entry exceeds analysis budget",
+  );
+  if (output.byteLength === 0) return undefined;
+  const match = /^(100644|100755) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t[^\0]+\0$/u.exec(output.toString("utf8"));
+  if (match === null) throw new Error("unsupported Git index entry");
+  return { mode: match[1] as "100644" | "100755", objectId: match[2]! };
+}
+
+function contentMaterial(
+  pathValue: string,
+  domain: "git_object" | "index_blob" | "worktree_raw",
+  bytes: Buffer,
+  mode: "100644" | "100755",
+  objectId?: string,
+): StrongRepositoryContentMaterialV1 {
+  return {
+    status: "content",
+    path: pathValue,
+    domain,
+    ...(objectId === undefined ? {} : { objectId }),
+    mode,
+    bytes,
+    contentDigest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  };
+}
+
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
@@ -631,6 +959,28 @@ async function readRequiredJson(
     maxBytes,
   });
   return parseJson(file!.bytes!, relativePath);
+}
+
+async function readPinnedStrongGraph(
+  root: string,
+  relativePath: string,
+  maxBytes: number,
+  pin: StrongRepositoryGraphPinV1,
+): Promise<KnowledgeGraph> {
+  const file = await openVerifiedFile(root, relativePath, {
+    allowMissing: false,
+    readBytes: true,
+    maxBytes,
+  });
+  const bytes = file!.bytes!;
+  const observedDigest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  if (observedDigest !== pin.contentDigest) {
+    throw new RepositoryTaskContextProviderError(
+      "repository_file_changed",
+      "The Knowledge Graph bytes do not match the exact generation pin.",
+    );
+  }
+  return validateGraphArtifact(parseJson(bytes, relativePath), relativePath);
 }
 
 async function readOptionalJson(
@@ -1201,10 +1551,12 @@ implements TaskContextProvider {
   readonly binding: TaskContextProviderBinding;
   readonly #canonicalRoot: string;
   readonly #options: NormalizedOptions;
+  readonly #openStrongSafeGitReadSession?: RepositoryTaskContextProviderOptions["openStrongSafeGitReadSession"];
 
   private constructor(
     canonicalRoot: string,
     options: NormalizedOptions,
+    openStrongSafeGitReadSession?: RepositoryTaskContextProviderOptions["openStrongSafeGitReadSession"],
   ) {
     this.#canonicalRoot = canonicalRoot;
     this.binding = Object.freeze({
@@ -1213,6 +1565,7 @@ implements TaskContextProvider {
       canonicalRoot,
     });
     this.#options = options;
+    this.#openStrongSafeGitReadSession = openStrongSafeGitReadSession;
   }
 
   static async open(
@@ -1257,7 +1610,423 @@ implements TaskContextProvider {
         DEFAULT_MAX_SOURCE_BYTES,
         "maxSourceFileBytes",
       ),
-    });
+    }, options.openStrongSafeGitReadSession);
+  }
+
+  async readStrongBaselineTreeObjectId(
+    snapshotValue: StrongRepositorySnapshotV1,
+  ): Promise<string> {
+    const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotValue);
+    if (
+      snapshot.captureStatus !== "complete" ||
+      snapshot.headState.kind !== "commit" ||
+      snapshot.redactedChanges.length !== 0 ||
+      snapshot.unknownStates.length !== 0
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A complete path-safe commit Snapshot is required for baseline pinning.",
+      );
+    }
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_provider_option",
+        "Strong baseline pinning requires one descriptor-bound SafeGit session authority.",
+      );
+    }
+    const session = await openSession();
+    try {
+      return await readStrongCommitTreeObjectId(
+        session.executor,
+        snapshot.headState.commit,
+        session.executeGitObjectType,
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  /** Read one immutable HEAD path through the same descriptor-bound SafeGit
+   * session used by the strong analyzer.  This is intentionally narrow: it
+   * never accepts raw Git argv or an ambient repository root override. */
+  async readStrongBaselinePathMaterial(
+    snapshotValue: StrongRepositorySnapshotV1,
+    relativePath: string,
+  ): Promise<StrongRepositoryContentMaterialV1> {
+    const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotValue);
+    if (
+      snapshot.captureStatus !== "complete" ||
+      snapshot.headState.kind !== "commit" ||
+      snapshot.redactedChanges.length !== 0 ||
+      snapshot.unknownStates.length !== 0 ||
+      !safeChangeAnalysisPath(relativePath)
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A complete path-safe commit Snapshot and safe path are required.",
+      );
+    }
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_provider_option",
+        "Strong baseline path reads require one descriptor-bound SafeGit session authority.",
+      );
+    }
+    const session = await openSession();
+    try {
+      const treeObjectId = await readStrongCommitTreeObjectId(
+        session.executor,
+        snapshot.headState.commit,
+        session.executeGitObjectType,
+      );
+      const entry = await readStrongTreeEntry(
+        session.executor,
+        treeObjectId,
+        relativePath,
+        session.executeGitObjectType,
+      );
+      if (entry === undefined) return { status: "absent", path: relativePath };
+      return contentMaterial(
+        relativePath,
+        "git_object",
+        await readStrongGitObject(
+          session.executor,
+          entry.objectId,
+          CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+          "baseline Git blob exceeds analysis budget",
+          "blob",
+          session.executeGitObjectType,
+        ),
+        entry.mode,
+        entry.objectId,
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  /** Resolve the final bytes for one path at an actual Snapshot cut.  The
+   * source layer is selected from the persisted Snapshot (staged → unstaged
+   * → untracked/conflict), then read through one fresh SafeGit session. */
+  async readStrongActualPathMaterial(
+    snapshotValue: StrongRepositorySnapshotV1,
+    relativePath: string,
+  ): Promise<StrongRepositoryContentMaterialV1> {
+    const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotValue);
+    if (
+      snapshot.captureStatus !== "complete" ||
+      !safeChangeAnalysisPath(relativePath) ||
+      snapshot.headState.kind !== "commit" ||
+      snapshot.redactedChanges.length !== 0 ||
+      snapshot.unknownStates.length !== 0
+    ) throw new RepositoryTaskContextProviderError("invalid_snapshot", "A complete actual Snapshot is required.");
+    const sourceOrder: Readonly<Record<string, number>> = {
+      committed: 0,
+      staged: 1,
+      unstaged: 2,
+      untracked: 3,
+      conflict: 4,
+    };
+    const candidates = snapshot.changes
+      .filter((change) => change.path === relativePath || change.oldPath === relativePath)
+      .sort((left, right) => (sourceOrder[right.source] ?? -1) - (sourceOrder[left.source] ?? -1));
+    const selected = candidates[0];
+    if (selected?.oldPath === relativePath && selected.path !== relativePath) {
+      return { status: "absent", path: relativePath };
+    }
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) throw new RepositoryTaskContextProviderError("invalid_provider_option", "Strong actual path reads require SafeGit.");
+    const session = await openSession();
+    try {
+      if (selected?.kind === "deleted") return { status: "absent", path: relativePath };
+      if (selected?.source === "unstaged" || selected?.source === "untracked") {
+        const file = await openVerifiedFile(this.#canonicalRoot, relativePath, {
+          allowMissing: true,
+          readBytes: true,
+          maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+        });
+        if (file === undefined || file.bytes === undefined) return { status: "absent", path: relativePath };
+        const material = contentMaterial(relativePath, "worktree_raw", file.bytes, "100644");
+        if (selected.contentDigest !== undefined && material.contentDigest !== selected.contentDigest) {
+          throw new RepositoryTaskContextProviderError("snapshot_mismatch", "Actual worktree bytes do not match the Snapshot.", { relativePath });
+        }
+        return material;
+      }
+      if (selected?.source === "staged") {
+        const entries = await readStrongIndexEntries(session.executor, session.executeGitObjectType);
+        const entry = entries.get(relativePath);
+        if (entry === undefined) return { status: "absent", path: relativePath };
+        const material = contentMaterial(relativePath, "index_blob", await readStrongGitObject(session.executor, entry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual index blob exceeds analysis budget", "blob", session.executeGitObjectType), entry.mode, entry.objectId);
+        if (selected.contentDigest !== undefined && material.contentDigest !== selected.contentDigest) throw new RepositoryTaskContextProviderError("snapshot_mismatch", "Actual index bytes do not match the Snapshot.", { relativePath });
+        return material;
+      }
+      const treeObjectId = await readStrongCommitTreeObjectId(session.executor, snapshot.headState.commit, session.executeGitObjectType);
+      const entry = await readStrongTreeEntry(session.executor, treeObjectId, relativePath, session.executeGitObjectType);
+      if (entry === undefined) return { status: "absent", path: relativePath };
+      return contentMaterial(relativePath, "git_object", await readStrongGitObject(session.executor, entry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual Git blob exceeds analysis budget", "blob", session.executeGitObjectType), entry.mode, entry.objectId);
+    } finally {
+      await session.close();
+    }
+  }
+
+  createStrongBaselineLeaseIntent(input: Readonly<{
+    repositoryId: string;
+    worktreeId: string;
+    taskId: string;
+    baselineSnapshotId: string;
+    objectFormat: "sha1" | "sha256";
+    commit: string;
+    markerNonce: string;
+  }>): SafeGitTaskBaselineLeaseIntentV1 {
+    return createSafeGitTaskBaselineLeaseIntentV1(input);
+  }
+
+  async createStrongBaselineLease(
+    request: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1> {
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_provider_option",
+        "Strong baseline leasing requires one descriptor-bound SafeGit session authority.",
+      );
+    }
+    const session = await openSession();
+    try {
+      return await session.createTaskBaselineLease(request);
+    } finally {
+      await session.close();
+    }
+  }
+
+  async recoverStrongBaselineLease(
+    request: SafeGitTaskBaselineLeaseCreateRequestV1,
+  ): Promise<SafeGitTaskBaselineLeaseV1> {
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_provider_option",
+        "Strong baseline recovery requires one descriptor-bound SafeGit session authority.",
+      );
+    }
+    const session = await openSession();
+    try {
+      if (session.recoverTaskBaselineLease === undefined) {
+        throw new RepositoryTaskContextProviderError(
+          "invalid_provider_option",
+          "Strong baseline recovery is unavailable in this SafeGit session.",
+        );
+      }
+      return await session.recoverTaskBaselineLease(request);
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * Exact byte material for the strong deterministic analyzer. Callers never
+   * supply a diff: every side is read from the pinned Git object/Index or the
+   * verified current worktree and matched to the strong Snapshot digest.
+   */
+  async readStrongRepositoryAnalysisMaterial(
+    baselineValue: StrongRepositorySnapshotV1,
+    actualValue: StrongRepositorySnapshotV1,
+    graphPinValue: StrongRepositoryGraphPinV1,
+  ): Promise<StrongRepositoryAnalysisMaterialV1> {
+    const baseline = StrongRepositorySnapshotV1Schema.parse(baselineValue);
+    const actual = StrongRepositorySnapshotV1Schema.parse(actualValue);
+    if (
+      baseline.repositoryId !== actual.repositoryId ||
+      baseline.worktreeId !== actual.worktreeId ||
+      baseline.captureStatus !== "complete" ||
+      actual.captureStatus !== "complete" ||
+      baseline.headState.kind !== "commit" ||
+      actual.headState.kind !== "commit" ||
+      baseline.redactedChanges.length !== 0 ||
+      baseline.unknownStates.length !== 0 ||
+      actual.redactedChanges.length !== 0 ||
+      actual.unknownStates.length !== 0
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "Strong analysis requires one complete, path-safe repository cut.",
+      );
+    }
+    const openSession = this.#openStrongSafeGitReadSession;
+    if (openSession === undefined) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_provider_option",
+        "Strong repository analysis requires one descriptor-bound SafeGit session authority.",
+      );
+    }
+    const session = await openSession();
+    const executor = session.executor;
+    try {
+    const graphPin = {
+      artifactId: graphPinValue.artifactId,
+      contentDigest: graphPinValue.contentDigest,
+      sourceSnapshotId: graphPinValue.sourceSnapshotId,
+    } satisfies StrongRepositoryGraphPinV1;
+    if (graphPin.sourceSnapshotId !== actual.snapshotId) {
+      throw new RepositoryTaskContextProviderError(
+        "snapshot_mismatch",
+        "The Knowledge Graph pin does not target the actual strong Snapshot.",
+      );
+    }
+    const baselineTreeObjectId = await readStrongCommitTreeObjectId(
+      executor,
+      baseline.headState.commit,
+      session.executeGitObjectType,
+    );
+    const actualTreeObjectId = baseline.headState.commit === actual.headState.commit
+      ? baselineTreeObjectId
+      : await readStrongCommitTreeObjectId(executor, actual.headState.commit, session.executeGitObjectType);
+    const indexEntries = await readStrongIndexEntries(executor, session.executeGitObjectType);
+    const graph = await readPinnedStrongGraph(
+      this.#canonicalRoot,
+      this.#options.graphPath,
+      this.#options.maxGraphBytes,
+      graphPin,
+    );
+    const changes: StrongRepositoryAnalysisMaterialV1["changes"][number][] = [];
+    for (const change of actual.changes) {
+      if (change.source === "conflict") {
+        throw new RepositoryTaskContextProviderError(
+          "invalid_snapshot",
+          "Unresolved conflict bytes cannot enter strong text analysis.",
+        );
+      }
+      const beforePath = change.oldPath ?? change.path;
+      let before: StrongRepositoryContentMaterialV1;
+      if (change.kind === "added") {
+        before = { status: "absent", path: beforePath };
+      } else if (change.source === "unstaged") {
+        const entry = indexEntries.get(beforePath);
+        if (entry === undefined) {
+          before = { status: "absent", path: beforePath };
+        } else {
+          before = contentMaterial(
+            beforePath,
+            "index_blob",
+            await readStrongGitObject(
+              executor,
+              entry.objectId,
+              CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+              "Git index blob exceeds analysis budget",
+              "blob",
+              session.executeGitObjectType,
+            ),
+            entry.mode,
+            entry.objectId,
+          );
+        }
+      } else {
+        const entry = await readStrongTreeEntry(
+          executor,
+          baselineTreeObjectId,
+          beforePath,
+          session.executeGitObjectType,
+        );
+        if (entry === undefined) {
+          before = { status: "absent", path: beforePath };
+        } else {
+          before = contentMaterial(
+            beforePath,
+            "git_object",
+            await readStrongGitObject(
+              executor,
+              entry.objectId,
+              CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+              "baseline Git blob exceeds analysis budget",
+              "blob",
+              session.executeGitObjectType,
+            ),
+            entry.mode,
+            entry.objectId,
+          );
+        }
+      }
+      let after: StrongRepositoryContentMaterialV1;
+      if (change.kind === "deleted") {
+        after = { status: "absent", path: change.path };
+      } else if (change.source === "committed") {
+        const entry = await readStrongTreeEntry(
+          executor,
+          actualTreeObjectId,
+          change.path,
+          session.executeGitObjectType,
+        );
+        if (entry === undefined) throw new Error("committed change path is absent");
+        after = contentMaterial(
+          change.path,
+          "git_object",
+          await readStrongGitObject(
+            executor,
+            entry.objectId,
+            CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+            "actual Git blob exceeds analysis budget",
+            "blob",
+            session.executeGitObjectType,
+          ),
+          entry.mode,
+          entry.objectId,
+        );
+      } else if (change.source === "staged") {
+        const entry = indexEntries.get(change.path);
+        if (entry === undefined) throw new Error("staged change path is absent");
+        after = contentMaterial(
+          change.path,
+          "index_blob",
+          await readStrongGitObject(
+            executor,
+            entry.objectId,
+            CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+            "Git index blob exceeds analysis budget",
+            "blob",
+            session.executeGitObjectType,
+          ),
+          entry.mode,
+          entry.objectId,
+        );
+      } else {
+        const file = await openVerifiedFile(this.#canonicalRoot, change.path, {
+          allowMissing: false,
+          readBytes: true,
+          maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+        });
+        after = contentMaterial(
+          change.path,
+          "worktree_raw",
+          file!.bytes!,
+          "100644",
+        );
+      }
+      if (
+        (change.contentDigest !== undefined &&
+          after.contentDigest !== change.contentDigest) ||
+        (change.previousContentDigest !== undefined &&
+          before.contentDigest !== change.previousContentDigest)
+      ) {
+        throw new RepositoryTaskContextProviderError(
+          "snapshot_mismatch",
+          "Repository bytes no longer match the exact strong Snapshot.",
+          { relativePath: change.path },
+        );
+      }
+      changes.push({ change, before, after });
+    }
+    await readPinnedStrongGraph(
+      this.#canonicalRoot,
+      this.#options.graphPath,
+      this.#options.maxGraphBytes,
+      graphPin,
+    );
+      return { baselineTreeObjectId, graphPin, graph, changes };
+    } finally {
+      await session.close();
+    }
   }
 
   async analyzeTaskChanges(
@@ -2290,7 +3059,7 @@ implements TaskContextProvider {
   async loadTaskContext(
     input: TaskContextLoadInput,
   ): Promise<TaskContextData> {
-    const snapshot = RepositorySnapshotV1Schema.safeParse(
+    const snapshot = RepositorySnapshotPersistedPayloadV1Schema.safeParse(
       input.repositorySnapshot,
     );
     if (!snapshot.success) {

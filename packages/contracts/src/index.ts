@@ -9,6 +9,7 @@ export * from "./task.js";
 export * from "./operation-journal.js";
 export * from "./evidence.js";
 export * from "./change.js";
+export * from "./strong-change-intelligence.js";
 export * from "./invariants.js";
 export * from "./mcp.js";
 export * from "./json-schema.js";

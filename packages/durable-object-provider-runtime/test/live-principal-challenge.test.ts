@@ -4,6 +4,7 @@ import {
   createPublicKey,
   randomBytes,
   verify,
+  type KeyObject,
 } from "node:crypto";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
@@ -54,6 +55,7 @@ import {
   canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
   deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1,
   deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1,
+  type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 
 import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
@@ -119,6 +121,7 @@ async function fixtureV1(input?: {
   readonly config: ProviderServiceHandoffConfigV1;
   readonly server: DurableObjectProviderRuntimeServerV1;
   readonly authKey: Uint8Array;
+  readonly signingKey: KeyObject;
 }> {
   const root = await mkdtemp(join(tmpdir(), "uc-principal-live-"));
   roots.add(root);
@@ -171,7 +174,7 @@ async function fixtureV1(input?: {
   });
   await server.start();
   servers.add(server);
-  return { config, server, authKey };
+  return { config, server, authKey, signingKey: signing.privateKey };
 }
 
 function finalAcceptanceV1() {
@@ -759,11 +762,16 @@ describe("live provider principal challenge", () => {
   });
 
   it("executes one grant-consumed strong mutation without reading the service HMAC key", async () => {
+    const resolvedResponses: ProviderRuntimeIpcStrongMutationResponseV1[] = [];
     const verifierCapability =
       mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
         consumeGrant(context) {
           return context.authorityGrant.payload.providerId === PROVIDER_ID &&
             context.journalHead.phase === "final_strong_ready";
+        },
+        resolveGrant({ response }) {
+          resolvedResponses.push(response);
+          return true;
         },
       });
     const { config, server } = await fixtureV1({
@@ -814,10 +822,190 @@ describe("live provider principal challenge", () => {
       expect(verifyStrongResponseSignatureV1(config.publicKey, response)).toBe(
         true,
       );
+      expect(resolvedResponses).toEqual([response]);
     } finally {
       continuation.lines.close();
       continuation.socket.destroy();
     }
+  });
+
+  it("keeps a prepared success pending when completed-outcome persistence fails", async () => {
+    let pending = false;
+    const resolvedResponses: ProviderRuntimeIpcStrongMutationResponseV1[] = [];
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant() {
+          if (!pending) {
+            pending = true;
+            return { disposition: "execute" as const };
+          }
+          return { disposition: "recover" as const };
+        },
+        resolveGrant({ response }) {
+          resolvedResponses.push(response);
+          return true;
+        },
+      });
+    const verification = await identityVerificationCapabilityV1();
+    const { config, server, authKey, signingKey } = await fixtureV1({
+      acceptanceIdentityVerificationCapability: verification,
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "9".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    server.store.armTestStrongMutationCompletedOutcomePersistFailureOnceV1();
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    const bytes = Buffer.from("completed-outcome-persist-cut", "utf8");
+    const request = strongWriteRequestV1(continuation.attestation, bytes, "a");
+    if (request.operation !== "write_object") {
+      throw new Error("expected strong write request");
+    }
+    try {
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      await expect(continuation.iterator.next()).resolves.toMatchObject({
+        done: true,
+      });
+      expect(resolvedResponses).toEqual([]);
+      await expect(
+        server.store.readFixedObject(request.payload.locator),
+      ).resolves.toMatchObject({
+        logicalBytes: bytes.byteLength,
+        verifiedContentDigest: request.payload.locator.contentDigest,
+      });
+    } finally {
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
+
+    await server.close();
+    servers.delete(server);
+    const restarted = new DurableObjectProviderRuntimeServerV1({
+      rootPath: config.payload.runtimeRoot,
+      socketPath: config.payload.socketPath,
+      providerId: PROVIDER_ID,
+      authKey,
+      authorizedCapabilityDigest: CAPABILITY_DIGEST,
+      principalAttestation: {
+        privateKey: signingKey,
+        handoffPayloadDigest: config.payloadDigest,
+        publicKey: config.publicKey,
+      },
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const replayWrite = vi.spyOn(restarted.store, "writeFixedObject");
+    await restarted.start();
+    servers.add(restarted);
+    expect(replayWrite).toHaveBeenCalledTimes(1);
+    expect(resolvedResponses).toHaveLength(1);
+    expect(resolvedResponses[0]).toMatchObject({
+      ok: true,
+      bindingDigest: request.bindingDigest,
+      operation: "write_object",
+      payload: { operation: "write_object", resolution: "committed" },
+    });
+  });
+
+  it("recovers a durable signed outcome after resolve failure without executing the mutation again", async () => {
+    let pending = false;
+    let resolved = false;
+    let resolveCalls = 0;
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant() {
+          if (resolved) return false;
+          if (!pending) {
+            pending = true;
+            return { disposition: "execute" as const };
+          }
+          return { disposition: "recover" as const };
+        },
+        resolveGrant() {
+          resolveCalls += 1;
+          if (resolveCalls === 1) return false;
+          resolved = true;
+          return true;
+        },
+      });
+    const verification = await identityVerificationCapabilityV1();
+    const { config, server, authKey, signingKey } = await fixtureV1({
+      acceptanceIdentityVerificationCapability: verification,
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "2".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    const bytes = Buffer.from("durable resolve recovery", "utf8");
+    const request = strongWriteRequestV1(continuation.attestation, bytes, "3");
+    if (request.operation !== "write_object") {
+      throw new Error("expected strong write request");
+    }
+    const firstWrite = vi.spyOn(server.store, "writeFixedObject");
+    try {
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      await expect(continuation.iterator.next()).resolves.toMatchObject({
+        done: true,
+      });
+      expect(firstWrite).toHaveBeenCalledTimes(1);
+    } finally {
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
+
+    await server.close();
+    servers.delete(server);
+    const restarted = new DurableObjectProviderRuntimeServerV1({
+      rootPath: config.payload.runtimeRoot,
+      socketPath: config.payload.socketPath,
+      providerId: PROVIDER_ID,
+      authKey,
+      authorizedCapabilityDigest: CAPABILITY_DIGEST,
+      principalAttestation: {
+        privateKey: signingKey,
+        handoffPayloadDigest: config.payloadDigest,
+        publicKey: config.publicKey,
+      },
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const replayWrite = vi.spyOn(restarted.store, "writeFixedObject");
+    await restarted.start();
+    servers.add(restarted);
+    expect(resolveCalls).toBe(2);
+    expect(resolved).toBe(true);
+    expect(replayWrite).not.toHaveBeenCalled();
+    await expect(
+      restarted.store.readFixedObject(request.payload.locator),
+    ).resolves.toMatchObject({
+      logicalBytes: bytes.byteLength,
+      verifiedContentDigest: request.payload.locator.contentDigest,
+    });
   });
 
   it("binds an unconsumed exact request to its original continuation socket", async () => {

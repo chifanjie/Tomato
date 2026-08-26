@@ -27,6 +27,10 @@ export type DeterministicDiffResult =
         readonly id: string;
         readonly oldLineRange?: readonly [number, number];
         readonly newLineRange?: readonly [number, number];
+        readonly operations: readonly {
+          readonly op: "delete" | "insert";
+          readonly lineDigest: string;
+        }[];
       }[];
     }
   | { readonly ok: false; readonly code: DeterministicDiffFailure };
@@ -130,6 +134,10 @@ export function deterministicLineDiff(input: {
     id: string;
     oldLineRange?: readonly [number, number];
     newLineRange?: readonly [number, number];
+    operations: Array<{
+      op: "delete" | "insert";
+      lineDigest: string;
+    }>;
   }> = [];
   let editIndex = 0;
   let oldLine = 1;
@@ -174,6 +182,10 @@ export function deterministicLineDiff(input: {
       ...(newCount === 0
         ? {}
         : { newLineRange: [newStart, newLine - 1] as const }),
+      operations: operationDigests.map((operation) => ({
+        op: operation.op,
+        lineDigest: `sha256:${operation.digest}`,
+      })),
     });
     if (hunks.length > CHANGE_ANALYSIS_LIMITS.maxHunks) {
       return { ok: false, code: "budget_exhausted" };

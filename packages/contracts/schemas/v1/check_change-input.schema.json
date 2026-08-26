@@ -1,44 +1,94 @@
 {
   "$id": "urn:understand-code:schema:v1:check_change-input",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "taskId": {
-      "type": "string",
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "actualSnapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "includeWorktree": {
+          "type": "boolean",
+          "const": true
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "taskId",
+        "actualSnapshotId",
+        "includeWorktree",
+        "expectedRevision",
+        "idempotencyKey",
+        "actor"
+      ],
+      "additionalProperties": false
     },
-    "actualSnapshotId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
-    },
-    "includeWorktree": {
-      "type": "boolean",
-      "const": true
-    },
-    "expectedRevision": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "idempotencyKey": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
-    },
-    "actor": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
+    {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "check_changes_strong_v1"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "actualSnapshotId": {
+          "type": "string",
+          "pattern": "^snapshot-[0-9a-f]{64}$"
+        },
+        "includeWorktree": {
+          "type": "boolean",
+          "const": true
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "profile",
+        "taskId",
+        "actualSnapshotId",
+        "includeWorktree",
+        "expectedRevision",
+        "idempotencyKey",
+        "actor"
+      ],
+      "additionalProperties": false
     }
-  },
-  "required": [
-    "taskId",
-    "actualSnapshotId",
-    "includeWorktree",
-    "expectedRevision",
-    "idempotencyKey",
-    "actor"
-  ],
-  "additionalProperties": false
+  ]
 }

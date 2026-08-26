@@ -135,6 +135,83 @@ export const KeyedStateTokenV1Schema = z
   .regex(/^hmac-sha256:[0-9a-f]{64}$/u, "keyed state token must use hmac-sha256:<64 lowercase hex>")
   .brand<"KeyedStateTokenV1">();
 
+const lowerHex22Id = <Brand extends string>(
+  prefix: string,
+  brand: Brand,
+) => z
+  .string()
+  .regex(
+    new RegExp(`^${prefix}[0-9a-f]{22}$`, "u"),
+    `${brand} must use ${prefix}<22 lowercase hex>`,
+  )
+  .brand<Brand>();
+
+/** Frozen WP5 strong Change Intelligence identifier grammars. */
+export const AnalysisBoundaryIdV1Schema = lowerHex22Id(
+  "analysis-boundary:",
+  "AnalysisBoundaryIdV1",
+);
+export const RepositoryDeltaSegmentIdV1Schema = lowerHex22Id(
+  "repository-delta-segment:",
+  "RepositoryDeltaSegmentIdV1",
+);
+export const EffectiveRepositoryChangeIdV1Schema = lowerHex22Id(
+  "repository-effective-change:",
+  "EffectiveRepositoryChangeIdV1",
+);
+export const RepositoryPathDeltaIdV1Schema = lowerHex22Id(
+  "repository-path-delta:",
+  "RepositoryPathDeltaIdV1",
+);
+export const DiffHunkIdV1Schema = lowerHex22Id(
+  "diff-hunk:",
+  "DiffHunkIdV1",
+);
+export const SourceSymbolRefIdV1Schema = lowerHex22Id(
+  "source-symbol-ref:",
+  "SourceSymbolRefIdV1",
+);
+export const ActualChangeIdV1Schema = lowerHex22Id(
+  "actual-change:",
+  "ActualChangeIdV1",
+);
+export const DiffHunkEvidenceIdV1Schema = lowerHex22Id(
+  "diff-evidence:",
+  "DiffHunkEvidenceIdV1",
+);
+export const AnalysisBoundaryEvidenceIdV1Schema = lowerHex22Id(
+  "boundary-evidence:",
+  "AnalysisBoundaryEvidenceIdV1",
+);
+export const StrongFindingIdV1Schema = lowerHex22Id(
+  "change-finding:",
+  "StrongFindingIdV1",
+);
+export const StrongPlannedChangeIdV1Schema = lowerHex22Id(
+  "planned-change:",
+  "StrongPlannedChangeIdV1",
+);
+export const VerificationPlanEntryIdV1Schema = lowerHex22Id(
+  "verification-plan:",
+  "VerificationPlanEntryIdV1",
+);
+export const TaskBaselineArtifactIdV1Schema = lowerHex22Id(
+  "task-baseline:",
+  "TaskBaselineArtifactIdV1",
+);
+export const RepositoryBasisRecordIdV1Schema = lowerHex22Id(
+  "repository-basis-record:",
+  "RepositoryBasisRecordIdV1",
+);
+export const ContextGenerationIdV1Schema = lowerHex22Id(
+  "context-generation:",
+  "ContextGenerationIdV1",
+);
+export const StrongVerificationRecordIdV1Schema = lowerHex22Id(
+  "verification-record:",
+  "StrongVerificationRecordIdV1",
+);
+
 /** Host callbacks may return a full ContentDigest; strong ID helpers strip it. */
 export function lowerHex64FromContentDigestV1(value: string): string {
   const parsed = ContentDigestSchema.parse(value);
@@ -240,6 +317,44 @@ export type PathSafeRepositoryUnknownStateIdV1 = z.infer<
   typeof PathSafeRepositoryUnknownStateIdV1Schema
 >;
 export type KeyedStateTokenV1 = z.infer<typeof KeyedStateTokenV1Schema>;
+export type AnalysisBoundaryIdV1 = z.infer<typeof AnalysisBoundaryIdV1Schema>;
+export type RepositoryDeltaSegmentIdV1 = z.infer<
+  typeof RepositoryDeltaSegmentIdV1Schema
+>;
+export type EffectiveRepositoryChangeIdV1 = z.infer<
+  typeof EffectiveRepositoryChangeIdV1Schema
+>;
+export type RepositoryPathDeltaIdV1 = z.infer<
+  typeof RepositoryPathDeltaIdV1Schema
+>;
+export type DiffHunkIdV1 = z.infer<typeof DiffHunkIdV1Schema>;
+export type SourceSymbolRefIdV1 = z.infer<typeof SourceSymbolRefIdV1Schema>;
+export type ActualChangeIdV1 = z.infer<typeof ActualChangeIdV1Schema>;
+export type DiffHunkEvidenceIdV1 = z.infer<
+  typeof DiffHunkEvidenceIdV1Schema
+>;
+export type AnalysisBoundaryEvidenceIdV1 = z.infer<
+  typeof AnalysisBoundaryEvidenceIdV1Schema
+>;
+export type StrongFindingIdV1 = z.infer<typeof StrongFindingIdV1Schema>;
+export type StrongPlannedChangeIdV1 = z.infer<
+  typeof StrongPlannedChangeIdV1Schema
+>;
+export type VerificationPlanEntryIdV1 = z.infer<
+  typeof VerificationPlanEntryIdV1Schema
+>;
+export type TaskBaselineArtifactIdV1 = z.infer<
+  typeof TaskBaselineArtifactIdV1Schema
+>;
+export type RepositoryBasisRecordIdV1 = z.infer<
+  typeof RepositoryBasisRecordIdV1Schema
+>;
+export type ContextGenerationIdV1 = z.infer<
+  typeof ContextGenerationIdV1Schema
+>;
+export type StrongVerificationRecordIdV1 = z.infer<
+  typeof StrongVerificationRecordIdV1Schema
+>;
 export type PathSafeRepositoryRelativePathV1 = z.infer<
   typeof PathSafeRepositoryRelativePathV1Schema
 >;

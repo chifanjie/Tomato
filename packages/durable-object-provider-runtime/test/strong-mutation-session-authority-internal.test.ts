@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
   ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
   deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1,
   deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1,
+  type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import {
   ContentDigestV1Schema,
@@ -15,6 +18,7 @@ import {
   consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1,
   consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+  resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   type ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1,
 } from "../src/strong-mutation-session-authority-internal.js";
 
@@ -88,13 +92,34 @@ function contextV1(
         ),
       payload,
     });
+  const bindingDigest = ContentDigestV1Schema.parse(
+    `sha256:${bindingDigit.repeat(64)}`,
+  );
+  const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse({
+    protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+    kind: "strong_mutation_request",
+    requestId: "e".repeat(32),
+    principalAttestationDigest,
+    bindingDigest,
+    operation: "write_object",
+    operationNonce: "3".repeat(32),
+    requestDigest,
+    authorityGrant,
+    payload: {
+      locator: {
+        providerId,
+        contentDigest: `sha256:${"f".repeat(64)}`,
+      },
+      logicalBytes: 0,
+      bytes: "base64url:",
+    },
+  });
   return {
+    request,
     providerId,
     capabilityDigest,
     principalAttestationDigest,
-    bindingDigest: ContentDigestV1Schema.parse(
-      `sha256:${bindingDigit.repeat(64)}`,
-    ),
+    bindingDigest,
     operation: "write_object",
     operationNonce: "3".repeat(32),
     requestDigest,
@@ -174,5 +199,116 @@ describe("runtime-private strong mutation authority", () => {
       ),
     ).resolves.toBeDefined();
     expect(consumeCalls).toBe(2);
+  });
+
+  it("closes an authorized grant exactly once with the terminal signed response", async () => {
+    const resolutions: unknown[] = [];
+    const verifier =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant: () => true,
+        resolveGrant(resolution) {
+          resolutions.push(resolution);
+          return true;
+        },
+      });
+    const context = contextV1("c");
+    const session =
+      await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+        verifier,
+        context,
+      );
+    expect(session).toBeDefined();
+    expect(
+      consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+      ),
+    ).toBe(true);
+    const response = Object.freeze({ marker: "signed-response" }) as unknown as
+      ProviderRuntimeIpcStrongMutationResponseV1;
+    await expect(
+      resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+        response,
+      ),
+    ).resolves.toBe(true);
+    expect(resolutions).toEqual([{ context, response }]);
+    await expect(
+      resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+        response,
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("never calls terminal resolution before the local session is authorized", async () => {
+    let resolveCalls = 0;
+    const verifier =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant: () => true,
+        resolveGrant() {
+          resolveCalls += 1;
+          return true;
+        },
+      });
+    const context = contextV1("d");
+    const session =
+      await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+        verifier,
+        context,
+      );
+    expect(session).toBeDefined();
+    await expect(
+      resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+        Object.freeze({}) as ProviderRuntimeIpcStrongMutationResponseV1,
+      ),
+    ).resolves.toBe(false);
+    expect(resolveCalls).toBe(0);
+  });
+
+  it("burns the local capability when durable terminal resolution fails", async () => {
+    let resolveCalls = 0;
+    const verifier =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant: () => true,
+        resolveGrant() {
+          resolveCalls += 1;
+          return false;
+        },
+      });
+    const context = contextV1("e");
+    const session =
+      await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+        verifier,
+        context,
+      );
+    expect(session).toBeDefined();
+    expect(
+      consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+      ),
+    ).toBe(true);
+    const response = Object.freeze({}) as
+      ProviderRuntimeIpcStrongMutationResponseV1;
+    await expect(
+      resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+        response,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+        session!,
+        context.bindingDigest,
+        response,
+      ),
+    ).resolves.toBe(false);
+    expect(resolveCalls).toBe(1);
   });
 });

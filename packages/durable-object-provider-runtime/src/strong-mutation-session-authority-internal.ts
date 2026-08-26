@@ -6,9 +6,13 @@
  * one-shot session capability, and that capability is deleted before use.
  */
 
-import type {
-  ProviderRuntimeIpcAcceptanceIdentityProofV1,
-  ProviderRuntimeIpcStrongMutationRequestV1,
+import {
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  ProviderRuntimeIpcStrongMutationResponseV1Schema,
+  type ProviderRuntimeIpcAcceptanceIdentityProofV1,
+  type ProviderRuntimeIpcPrincipalAttestationV1,
+  type ProviderRuntimeIpcStrongMutationRequestV1,
+  type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import type {
   ContentDigestV1,
@@ -26,7 +30,27 @@ export interface ProviderRuntimeStrongMutationSessionCapabilityInternalV1 {
   readonly [providerRuntimeStrongMutationSessionBrandV1]: true;
 }
 
+declare const providerRuntimeStrongMutationExecutionAuthorizationBrandV1:
+  unique symbol;
+export interface ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1 {
+  readonly [providerRuntimeStrongMutationExecutionAuthorizationBrandV1]: true;
+}
+
+export type ProviderRuntimeStrongMutationGrantDecisionInternalV1 = Readonly<
+  | {
+      readonly disposition: "execute" | "recover";
+      readonly activateExecutionAuthorization?:
+        () => boolean | Promise<boolean>;
+    }
+  | {
+      readonly disposition: "resolved";
+      readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+    }
+>;
+
 export interface ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1 {
+  /** Exact parsed wire request; the durable broker binds and records these bytes. */
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
   readonly providerId: DurableObjectIdentityProviderIdV1;
   readonly capabilityDigest: ContentDigestV1;
   readonly principalAttestationDigest: ContentDigestV1;
@@ -43,6 +67,8 @@ export interface ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1 {
     readonly mutationDigest: ContentDigestV1 | "none";
   }>;
   readonly acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1;
+  /** Live challenge transcript; omitted only for durable prepared recovery. */
+  readonly principalAttestation?: ProviderRuntimeIpcPrincipalAttestationV1;
 }
 
 export interface MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input {
@@ -54,26 +80,125 @@ export interface MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInt
    */
   readonly consumeGrant: (
     context: ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1,
+  ) =>
+    | boolean
+    | ProviderRuntimeStrongMutationGrantDecisionInternalV1
+    | Promise<boolean | ProviderRuntimeStrongMutationGrantDecisionInternalV1>;
+  /**
+   * Persist the exact principal-signed terminal response before it is exposed
+   * to the caller.  Production authority composition must provide this hook so
+   * a durable pending intent can be closed (or safely replayed after a crash).
+   * It is optional only for the pre-existing locked/test verifier seam.
+   */
+  readonly resolveGrant?: (
+    resolution: ProviderRuntimeStrongMutationAuthorityGrantResolutionInternalV1,
   ) => boolean | Promise<boolean>;
+}
+
+export interface ProviderRuntimeStrongMutationAuthorityGrantResolutionInternalV1 {
+  readonly context: ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1;
+  readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
 }
 
 interface ProviderRuntimeStrongMutationAuthorityVerifierStateInternalV1 {
   readonly consumeGrant:
     MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["consumeGrant"];
   readonly pendingBindings: Set<ContentDigestV1>;
+  readonly resolveGrant:
+    | MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["resolveGrant"]
+    | undefined;
+}
+
+interface ProviderRuntimeStrongMutationSessionStateInternalV1 {
+  readonly bindingDigest: ContentDigestV1;
+  readonly context: ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1;
+  readonly resolveGrant:
+    | MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["resolveGrant"]
+    | undefined;
+  readonly decision: ProviderRuntimeStrongMutationGrantDecisionInternalV1;
+  executionAuthorization?:
+    ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1;
+  phase: "issued" | "authorized" | "executing";
+}
+
+interface ProviderRuntimeStrongMutationExecutionAuthorizationStateInternalV1 {
+  readonly bindingDigest: ContentDigestV1;
+  readonly requestDigest: ContentDigestV1;
+  readonly disposition: "execute" | "recover";
 }
 
 const verifierStatesV1 = new WeakMap<
   object,
   ProviderRuntimeStrongMutationAuthorityVerifierStateInternalV1
 >();
-const sessionStatesV1 = new WeakMap<object, ContentDigestV1>();
+const sessionStatesV1 = new WeakMap<
+  object,
+  ProviderRuntimeStrongMutationSessionStateInternalV1
+>();
+const executionAuthorizationStatesV1 = new WeakMap<
+  object,
+  ProviderRuntimeStrongMutationExecutionAuthorizationStateInternalV1
+>();
+
+function parseDecisionV1(
+  value: boolean | ProviderRuntimeStrongMutationGrantDecisionInternalV1,
+): ProviderRuntimeStrongMutationGrantDecisionInternalV1 | undefined {
+  if (value === true) return Object.freeze({ disposition: "execute" as const });
+  if (value === false || typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  if (value.disposition === "execute" || value.disposition === "recover") {
+    if (
+      value.activateExecutionAuthorization !== undefined &&
+      typeof value.activateExecutionAuthorization !== "function"
+    ) return undefined;
+    return Object.freeze({
+      disposition: value.disposition,
+      ...(value.activateExecutionAuthorization === undefined
+        ? {}
+        : {
+            activateExecutionAuthorization:
+              value.activateExecutionAuthorization,
+          }),
+    });
+  }
+  if (value.disposition === "resolved") {
+    try {
+      return Object.freeze({
+        disposition: "resolved" as const,
+        response: ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          structuredClone(value.response),
+        ),
+      });
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function freezeGrantContextV1(
+  context: ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1,
+): ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1 {
+  const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+    structuredClone(context.request),
+  );
+  return Object.freeze({
+    ...context,
+    request: Object.freeze(request),
+    journalHead: Object.freeze({ ...context.journalHead }),
+    acceptanceIdentity: Object.freeze({ ...context.acceptanceIdentity }),
+  });
+}
 
 /** Internal registration seam; it is intentionally absent from package exports. */
 export function mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1(
   input: MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input,
 ): ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1 {
-  if (typeof input.consumeGrant !== "function") {
+  if (
+    typeof input.consumeGrant !== "function" ||
+    (input.resolveGrant !== undefined && typeof input.resolveGrant !== "function")
+  ) {
     throw new TypeError("strong mutation authority verifier is invalid");
   }
   const capability = Object.freeze(Object.create(null)) as
@@ -81,6 +206,7 @@ export function mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInte
   verifierStatesV1.set(capability, {
     consumeGrant: input.consumeGrant,
     pendingBindings: new Set(),
+    resolveGrant: input.resolveGrant,
   });
   return capability;
 }
@@ -101,35 +227,144 @@ export async function consumeProviderRuntimeStrongMutationAuthorityGrantInternal
     return undefined;
   }
   state.pendingBindings.add(context.bindingDigest);
-  let consumed = false;
+  let consumed:
+    | boolean
+    | ProviderRuntimeStrongMutationGrantDecisionInternalV1 = false;
   try {
-    consumed = await state.consumeGrant(
-      Object.freeze({
-        ...context,
-        journalHead: Object.freeze({ ...context.journalHead }),
-        acceptanceIdentity: Object.freeze({
-          ...context.acceptanceIdentity,
-        }),
-      }),
-    );
+    consumed = await state.consumeGrant(freezeGrantContextV1(context));
   } catch {
     return undefined;
   } finally {
     state.pendingBindings.delete(context.bindingDigest);
   }
-  if (consumed !== true) return undefined;
+  const decision = parseDecisionV1(consumed);
+  if (decision === undefined) return undefined;
   const capability = Object.freeze(Object.create(null)) as
     ProviderRuntimeStrongMutationSessionCapabilityInternalV1;
-  sessionStatesV1.set(capability, context.bindingDigest);
+  sessionStatesV1.set(capability, {
+    bindingDigest: context.bindingDigest,
+    context: freezeGrantContextV1(context),
+    resolveGrant: state.resolveGrant,
+    decision,
+    phase: "issued",
+  });
   return capability;
 }
 
-/** Delete-before-return consumption; copied or reused handles always fail. */
+/** Authorize exactly once; copied or reused handles always fail. */
 export function consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
   capability: ProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   expectedBindingDigest: ContentDigestV1,
 ): boolean {
   const state = sessionStatesV1.get(capability as object);
+  if (
+    state === undefined ||
+    state.phase !== "issued" ||
+    state.bindingDigest !== expectedBindingDigest
+  ) {
+    return false;
+  }
+  state.phase = "authorized";
+  return true;
+}
+
+/**
+ * Transfers the broker-bound one-shot authority into the storage operation.
+ * A boolean admission result can no longer be used as execution authority.
+ */
+export async function takeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+  capability: ProviderRuntimeStrongMutationSessionCapabilityInternalV1,
+  expectedBindingDigest: ContentDigestV1,
+): Promise<Readonly<{
+  readonly decision: ProviderRuntimeStrongMutationGrantDecisionInternalV1;
+  readonly authorization?:
+    ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1;
+}> | undefined> {
+  const state = sessionStatesV1.get(capability as object);
+  if (
+    state === undefined ||
+    state.phase !== "authorized" ||
+    state.bindingDigest !== expectedBindingDigest
+  ) return undefined;
+  if (
+    state.decision.disposition !== "resolved" &&
+    state.decision.activateExecutionAuthorization !== undefined
+  ) {
+    try {
+      if (await state.decision.activateExecutionAuthorization() !== true) {
+        return undefined;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  let executionAuthorization:
+    | ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1
+    | undefined;
+  if (state.decision.disposition !== "resolved") {
+    executionAuthorization = Object.freeze(Object.create(null)) as
+      ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1;
+    executionAuthorizationStatesV1.set(executionAuthorization, {
+      bindingDigest: state.bindingDigest,
+      requestDigest: state.context.requestDigest,
+      disposition: state.decision.disposition,
+    });
+  }
+  state.executionAuthorization = executionAuthorization;
+  state.phase = "executing";
+  return Object.freeze({
+    decision: state.decision,
+    ...(state.executionAuthorization === undefined
+      ? {}
+      : { authorization: state.executionAuthorization }),
+  });
+}
+
+/** Delete-before-return exact consume at the first durable execution step. */
+export function consumeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1(
+  authorization:
+    ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+  expected: Readonly<{
+    readonly bindingDigest: ContentDigestV1;
+    readonly requestDigest: ContentDigestV1;
+    readonly disposition: "execute" | "recover";
+  }>,
+): boolean {
+  const state = executionAuthorizationStatesV1.get(authorization as object);
+  executionAuthorizationStatesV1.delete(authorization as object);
+  return state !== undefined &&
+    state.bindingDigest === expected.bindingDigest &&
+    state.requestDigest === expected.requestDigest &&
+    state.disposition === expected.disposition;
+}
+
+/**
+ * Delete-before-callback terminal resolution.  A failed callback leaves the
+ * external broker's durable pending record authoritative and this local
+ * capability unusable.  Recovery must close that exact intent from retained
+ * signed/native execution evidence; it must not authorize another execution.
+ */
+export async function resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+  capability: ProviderRuntimeStrongMutationSessionCapabilityInternalV1,
+  expectedBindingDigest: ContentDigestV1,
+  response: ProviderRuntimeIpcStrongMutationResponseV1,
+): Promise<boolean> {
+  const state = sessionStatesV1.get(capability as object);
   sessionStatesV1.delete(capability as object);
-  return state === expectedBindingDigest;
+  if (
+    state === undefined ||
+    (state.phase !== "authorized" && state.phase !== "executing") ||
+    state.bindingDigest !== expectedBindingDigest
+  ) {
+    return false;
+  }
+  if (state.resolveGrant === undefined) return true;
+  try {
+    return await state.resolveGrant(Object.freeze({
+      context: state.context,
+      response,
+    })) === true;
+  } catch {
+    return false;
+  }
 }

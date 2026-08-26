@@ -13,7 +13,14 @@ import {
   ClaimV1Schema,
   EvidenceLedgerArtifactV1Schema,
   EvidenceV1Schema,
+  PersistedClaimV1Schema,
+  PersistedEvidenceV1Schema,
 } from "./evidence.js";
+import {
+  EvidenceBackedChangeCheckV1Schema,
+  StrongImpactConclusionV1Schema,
+  StrongVerificationRecordV1Schema,
+} from "./strong-change-intelligence.js";
 import {
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
@@ -1305,6 +1312,191 @@ const FullTaskArtifactBundleV1Schema = z.strictObject({
   }
 });
 
+const StrongFullTaskArtifactBundleV1Schema = z.strictObject({
+  manifest: TaskManifestV1Schema,
+  brief: TaskBriefV1Schema,
+  claims: z.array(PersistedClaimV1Schema),
+  evidence: z.array(PersistedEvidenceV1Schema),
+  impactPaths: z.array(ImpactPathV1Schema),
+  impactConclusion: StrongImpactConclusionV1Schema,
+  changeChecks: z.array(EvidenceBackedChangeCheckV1Schema).min(1),
+  verificationRecords: z.array(StrongVerificationRecordV1Schema),
+  events: z.array(TaskEventV1Schema).min(1),
+  idempotencyRecords: z.array(IdempotencyRecordV1Schema).min(1),
+}).superRefine((bundle, context) => {
+  validateTaskEventGenesisV1(bundle.events, context);
+  validateTaskExceptionalLifecycleV1(bundle.events, context);
+  if (
+    bundle.manifest.taskProfile !== "agent_task_v1" ||
+    bundle.manifest.contextGenerationId === undefined ||
+    bundle.manifest.taskBaselineArtifactId === undefined
+  ) {
+    addIssue(context, ["manifest", "taskProfile"], "strong persisted projections require one agent_task_v1 authority");
+  }
+  const claims = indexUnique(bundle.claims, (claim) => claim.id, context, ["claims"], "claim ID");
+  const evidence = indexUnique(bundle.evidence, (item) => item.id, context, ["evidence"], "evidence ID");
+  const impactPaths = indexUnique(bundle.impactPaths, (path) => path.id, context, ["impactPaths"], "Impact Path ID");
+  const plans = indexUnique(bundle.brief.plannedChanges, (plan) => plan.id, context, ["brief", "plannedChanges"], "Planned Change ID");
+  const verificationPlan = indexUnique(bundle.brief.verificationPlan, (entry) => entry.id, context, ["brief", "verificationPlan"], "Verification Plan Entry ID");
+  const records = indexUnique(bundle.verificationRecords, (record) => record.id, context, ["verificationRecords"], "Verification Record ID");
+  const currentGenerationId = bundle.manifest.contextGenerationId!;
+  const confirmedPlanIds = new Set(
+    bundle.events
+      .filter((event) => event.action.type === "confirm_plan" && event.action.contextGenerationId === currentGenerationId)
+      .flatMap((event) => event.action.type === "confirm_plan" ? event.action.plannedChangeIds : []),
+  );
+  const requiredPlanIds = new Set(
+    bundle.brief.plannedChanges
+      .filter((plan) => confirmedPlanIds.has(plan.id) && plan.expectation === "required_change")
+      .map((plan) => plan.id),
+  );
+  const acceptanceClaimIds = new Set(bundle.brief.acceptanceClaimIds);
+
+  for (const [checkIndex, check] of bundle.changeChecks.entries()) {
+    if (
+      check.taskId !== bundle.manifest.taskId ||
+      check.baselineSnapshotId !== bundle.manifest.baselineSnapshotId ||
+      check.actualSnapshotId !== bundle.manifest.latestSnapshotId
+    ) {
+      addIssue(context, ["changeChecks", checkIndex], "strong Check authority pins must match the current Task");
+    }
+    const checkEvent = bundle.events.find(
+      (event) => event.action.type === "change_checked" && event.action.changeCheckId === check.id,
+    );
+    if (
+      checkEvent === undefined ||
+      checkEvent.revision !== check.taskRevision ||
+      checkEvent.sourceSnapshotId !== check.actualSnapshotId
+    ) {
+      addIssue(context, ["changeChecks", checkIndex, "id"], "strong Check requires one exact change_checked Event");
+    }
+
+    const actuals = indexUnique(check.analysis.actualChanges, (actual) => actual.id, context, ["changeChecks", checkIndex, "analysis", "actualChanges"], "Actual Change ID");
+    const pathDeltas = indexUnique(check.analysis.repositoryDelta.paths, (path) => path.id, context, ["changeChecks", checkIndex, "analysis", "repositoryDelta", "paths"], "Repository Path Delta ID");
+    const strongEvidence = new Map(
+      bundle.evidence
+        .filter((item) => "profile" in item && item.profile === "evidence_backed_v1")
+        .map((item) => [item.id, item]),
+    );
+    for (const [actualIndex, actual] of check.analysis.actualChanges.entries()) {
+      const pathDelta = pathDeltas.get(actual.repositoryPathDeltaId);
+      if (
+        pathDelta === undefined ||
+        pathDelta.effectiveChange?.id !== actual.effectiveChangeId ||
+        pathDelta.path !== actual.path ||
+        pathDelta.oldPath !== actual.oldPath ||
+        pathDelta.effectiveChange.kind !== actual.kind
+      ) {
+        addIssue(context, ["changeChecks", checkIndex, "analysis", "actualChanges", actualIndex], "Actual Change must resolve to its exact effective Path Delta");
+      } else {
+        const sources = [...new Set(pathDelta.effectiveChange.sourceSegmentIds.map((id) => pathDelta.segments.find((segment) => segment.id === id)?.source))].filter((value): value is (typeof actual.sourceLayers)[number] => value !== undefined);
+        if (JSON.stringify(sources) !== JSON.stringify(actual.sourceLayers)) {
+          addIssue(context, ["changeChecks", checkIndex, "analysis", "actualChanges", actualIndex, "sourceLayers"], "Actual source layers must exact-cover effective provenance");
+        }
+      }
+      for (const [referenceIndex, evidenceId] of actual.diffEvidenceIds.entries()) {
+        const item = strongEvidence.get(evidenceId);
+        if (item === undefined || item.kind !== "diff_hunk" || item.hunk.actualSnapshotId !== check.actualSnapshotId || item.hunk.path !== actual.path) {
+          addIssue(context, ["changeChecks", checkIndex, "analysis", "actualChanges", actualIndex, "diffEvidenceIds", referenceIndex], "Actual Diff Evidence must resolve to the exact Hunk/Snapshot/path");
+        }
+      }
+      for (const [referenceIndex, evidenceId] of actual.boundaryEvidenceIds.entries()) {
+        const item = strongEvidence.get(evidenceId);
+        if (item === undefined || item.kind !== "analysis_boundary") {
+          addIssue(context, ["changeChecks", checkIndex, "analysis", "actualChanges", actualIndex, "boundaryEvidenceIds", referenceIndex], "Actual Boundary Evidence must resolve to a structured Boundary");
+        }
+      }
+    }
+
+    const dimensions = new Map(check.analysis.completeness.dimensions.map((dimension) => [dimension.dimension, dimension]));
+    const exactDimension = (name: "planned_matching" | "impact_analysis" | "verification_coverage", expected: readonly string[]) => {
+      const actual = (dimensions.get(name)?.units ?? []).map((unit) => `${unit.unitKind}\0${unit.unitId}`).sort();
+      if (JSON.stringify(actual) !== JSON.stringify([...expected].sort())) {
+        addIssue(context, ["changeChecks", checkIndex, "analysis", "completeness"], `${name} must exact-cover the current generation universe`);
+      }
+    };
+    const actualUnitIds = [...actuals.keys()].map((id) => `actual_change\0${id}`);
+    const requiredUnitIds = [...requiredPlanIds].map((id) => `required_planned_change\0${id}`);
+    exactDimension("planned_matching", [...actualUnitIds, ...requiredUnitIds]);
+    exactDimension("impact_analysis", [...actualUnitIds, ...requiredUnitIds]);
+    exactDimension("verification_coverage", [...acceptanceClaimIds].map((id) => `acceptance_claim\0${id}`));
+
+    const actualPrimary = new Map<string, number>();
+    const requiredPrimary = new Map<string, number>();
+    for (const [findingIndex, finding] of check.findings.entries()) {
+      for (const [referenceIndex, claimId] of finding.claimIds.entries()) {
+        if (!claims.has(claimId)) addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "claimIds", referenceIndex], `dangling Claim reference: ${claimId}`);
+      }
+      for (const [referenceIndex, evidenceId] of finding.evidenceIds.entries()) {
+        if (!evidence.has(evidenceId)) addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "evidenceIds", referenceIndex], `dangling Evidence reference: ${evidenceId}`);
+      }
+      for (const [referenceIndex, impactPathId] of finding.impactPathIds.entries()) {
+        if (!impactPaths.has(impactPathId)) addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "impactPathIds", referenceIndex], `dangling Impact Path reference: ${impactPathId}`);
+      }
+      for (const [referenceIndex, planId] of finding.plannedChangeIds.entries()) {
+        if (!plans.has(planId) || !confirmedPlanIds.has(planId)) {
+          addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "plannedChangeIds", referenceIndex], "Finding Planned Change must be confirmed in the current generation");
+        }
+        if (finding.type === "possible_omission" && !requiredPlanIds.has(planId)) {
+          addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "plannedChangeIds", referenceIndex], "omission may reference only confirmed required changes");
+        }
+      }
+      const primary = finding.type !== "verification_gap";
+      if (primary) {
+        for (const actualId of finding.actualChangeIds) actualPrimary.set(actualId, (actualPrimary.get(actualId) ?? 0) + 1);
+        for (const planId of finding.plannedChangeIds) if (requiredPlanIds.has(planId)) requiredPrimary.set(planId, (requiredPrimary.get(planId) ?? 0) + 1);
+      }
+      if (finding.type === "possible_omission") {
+        for (const name of ["repository_delta", "semantic_classification", "planned_matching"] as const) {
+          if (dimensions.get(name)?.status !== "complete") addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex], "omission requires complete Delta/Semantic/Matching analysis");
+        }
+      }
+      if (finding.verificationGap !== undefined) {
+        for (const claimId of finding.verificationGap.uncoveredClaimIds) {
+          if (!acceptanceClaimIds.has(claimId)) addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "verificationGap"], "verification gap must reference current acceptance Claims");
+        }
+        for (const entryId of finding.verificationGap.verificationPlanEntryIds) {
+          if (!verificationPlan.has(entryId)) addIssue(context, ["changeChecks", checkIndex, "findings", findingIndex, "verificationGap"], "verification gap must reference current plan entries");
+        }
+      }
+    }
+    for (const actualId of actuals.keys()) if (actualPrimary.get(actualId) !== 1) addIssue(context, ["changeChecks", checkIndex, "findings"], `Actual ${actualId} requires exactly one primary disposition`);
+    for (const planId of requiredPlanIds) if (requiredPrimary.get(planId) !== 1) addIssue(context, ["changeChecks", checkIndex, "findings"], `required Planned Change ${planId} requires exactly one primary disposition`);
+
+    const impactDimension = dimensions.get("impact_analysis");
+    const impactBoundaryIds = impactDimension?.units.flatMap((unit) => unit.boundaryEvidenceIds) ?? [];
+    if (bundle.impactConclusion.status === "none_observed" && (bundle.impactPaths.length !== 0 || impactDimension?.status !== "complete")) {
+      addIssue(context, ["impactConclusion"], "none_observed requires zero paths and complete impact analysis");
+    }
+    if (bundle.impactConclusion.status === "paths_observed" && impactDimension?.status !== "complete") {
+      addIssue(context, ["impactConclusion"], "paths_observed requires complete impact analysis");
+    }
+    if ((bundle.impactConclusion.status === "partial" || bundle.impactConclusion.status === "unknown") && impactBoundaryIds.length === 0) {
+      addIssue(context, ["impactConclusion"], "incomplete impact conclusion requires a structured impact Boundary");
+    }
+  }
+
+  for (const [recordIndex, record] of bundle.verificationRecords.entries()) {
+    const plan = verificationPlan.get(record.verificationPlanEntryId);
+    if (
+      record.taskId !== bundle.manifest.taskId ||
+      record.contextGenerationId !== currentGenerationId ||
+      record.snapshotId !== bundle.manifest.latestSnapshotId ||
+      plan === undefined ||
+      record.method !== plan.method ||
+      record.claimIds.length === 0 ||
+      record.claimIds.some((claimId) => !plan.acceptanceClaimIds.includes(claimId))
+    ) {
+      addIssue(context, ["verificationRecords", recordIndex], "strong Verification must match the current Task/generation/Snapshot/Plan/Claim authority");
+    }
+    if (record.supersedesVerificationRecordId !== undefined && !records.has(record.supersedesVerificationRecordId)) {
+      addIssue(context, ["verificationRecords", recordIndex, "supersedesVerificationRecordId"], "strong Verification supersedes a missing record");
+    }
+    const event = bundle.events.find((candidate) => candidate.action.type === "verification_recorded" && candidate.action.verificationRecordId === record.id);
+    if (event === undefined) addIssue(context, ["verificationRecords", recordIndex, "id"], "strong Verification requires one typed Event");
+  }
+});
+
 const ContextlessTaskArtifactBundleV1Schema = z.strictObject({
   manifest: TaskManifestV1Schema,
   events: z.array(TaskEventV1Schema).min(1),
@@ -1438,6 +1630,7 @@ const ContextlessTaskArtifactBundleV1Schema = z.strictObject({
 });
 
 export const TaskArtifactBundleV1Schema = z.union([
+  StrongFullTaskArtifactBundleV1Schema,
   FullTaskArtifactBundleV1Schema,
   ContextlessTaskArtifactBundleV1Schema,
 ]);

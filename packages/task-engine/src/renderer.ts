@@ -76,7 +76,7 @@ export function renderTaskBriefMarkdown(
         ? `${id} — unavailable`
         : [
             `${claim.statement} _(${claim.epistemicStatus}, ${claim.freshness})_`,
-            claim.boundaryReason === undefined
+            !("boundaryReason" in claim) || claim.boundaryReason === undefined
               ? ""
               : ` — Boundary: ${claim.boundaryReason}`,
           ].join("");
@@ -114,9 +114,9 @@ export function renderTaskBriefMarkdown(
       (claim) =>
         claim?.statement ===
           "Impact coverage has an explicit analysis boundary." &&
-        claim.boundaryReason !== undefined,
+        "boundaryReason" in claim && claim.boundaryReason !== undefined,
     )
-    .map((claim) => claim!.boundaryReason!);
+    .map((claim) => "boundaryReason" in claim! ? claim!.boundaryReason! : "explicit analysis boundary");
 
   return redactAbsoluteHostPaths([
     ...header,

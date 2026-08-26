@@ -39,6 +39,7 @@ interface JsonRpcResponse {
 
 export interface StdioServerOptions {
   readonly initialBinding: InitialBinding;
+  readonly canonicalInstallationRoot?: string;
   readonly input?: Readable;
   readonly output?: Writable;
 }
@@ -141,6 +142,7 @@ function clientRootsCapability(value: unknown): { roots: boolean; listChanged: b
 export class McpStdioServer {
   readonly #binding: RootBindingSession;
   readonly #output: Writable;
+  readonly #canonicalInstallationRoot?: string;
   #lifecycle: "pre_initialize" | "initialize_responded" | "initialized" =
     "pre_initialize";
   #rootsListChanged = false;
@@ -150,9 +152,14 @@ export class McpStdioServer {
   #nextRequestId = 10_000;
   #transportFailed = false;
 
-  constructor(initialBinding: InitialBinding, output: Writable) {
+  constructor(
+    initialBinding: InitialBinding,
+    output: Writable,
+    canonicalInstallationRoot?: string,
+  ) {
     this.#binding = new RootBindingSession(initialBinding);
     this.#output = output;
+    this.#canonicalInstallationRoot = canonicalInstallationRoot;
     this.#output.on("error", () => {
       if (this.#transportFailed) return;
       this.#transportFailed = true;
@@ -288,6 +295,9 @@ export class McpStdioServer {
         message.params.name,
         message.params.arguments ?? {},
         binding.canonicalRoot,
+        this.#canonicalInstallationRoot === undefined
+          ? {}
+          : { canonicalInstallationRoot: this.#canonicalInstallationRoot },
       );
       this.#result(message.id, result);
     } catch (error) {
@@ -374,7 +384,11 @@ export class McpStdioServer {
 export async function runStdioServer(options: StdioServerOptions): Promise<void> {
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
-  const server = new McpStdioServer(options.initialBinding, output);
+  const server = new McpStdioServer(
+    options.initialBinding,
+    output,
+    options.canonicalInstallationRoot,
+  );
   input.setEncoding("utf8");
 
   let buffer = "";

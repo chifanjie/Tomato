@@ -17,6 +17,11 @@ import {
   TaskIdSchema,
   VerificationRecordIdSchema,
 } from "./primitives.js";
+import {
+  DiffHunkEvidenceV1Schema,
+  StrongFindingClaimV1Schema,
+  StructuredAnalysisBoundaryEvidenceV1Schema,
+} from "./strong-change-intelligence.js";
 
 const uniqueValues = (
   values: readonly string[],
@@ -379,8 +384,21 @@ export const EvidenceV1Schema = z.discriminatedUnion("kind", [
 
 export type EvidenceV1 = z.infer<typeof EvidenceV1Schema>;
 
+export const PersistedClaimV1Schema = z.union([
+  ClaimV1Schema,
+  StrongFindingClaimV1Schema,
+]);
+
+export const PersistedEvidenceV1Schema = z.union([
+  EvidenceV1Schema,
+  DiffHunkEvidenceV1Schema,
+  StructuredAnalysisBoundaryEvidenceV1Schema,
+]);
+export type PersistedClaimV1 = z.infer<typeof PersistedClaimV1Schema>;
+export type PersistedEvidenceV1 = z.infer<typeof PersistedEvidenceV1Schema>;
+
 export const ClaimLedgerPayloadV1Schema = z.strictObject({
-  claims: z.array(ClaimV1Schema),
+  claims: z.array(PersistedClaimV1Schema),
 }).superRefine((ledger, context) => {
   uniqueValues(
     ledger.claims.map((claim) => claim.id),
@@ -414,7 +432,7 @@ export type ClaimLedgerArtifactV1 = z.infer<
 >;
 
 export const EvidenceLedgerPayloadV1Schema = z.strictObject({
-  evidence: z.array(EvidenceV1Schema),
+  evidence: z.array(PersistedEvidenceV1Schema),
 }).superRefine((ledger, context) => {
   uniqueValues(
     ledger.evidence.map((item) => item.id),

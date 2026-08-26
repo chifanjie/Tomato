@@ -28,6 +28,10 @@ const PATTERN_SAMPLES = new Map<string, string>([
   ["^snapshot-[0-9a-f]{64}$", `snapshot-${"0".repeat(64)}`],
   ["^change-[0-9a-f]{64}$", `change-${"0".repeat(64)}`],
   [
+    "^repository-basis-record:[0-9a-f]{22}$",
+    `repository-basis-record:${"0".repeat(22)}`,
+  ],
+  [
     "^snapshot-redaction-[0-9a-f]{64}$",
     `snapshot-redaction-${"0".repeat(64)}`,
   ],

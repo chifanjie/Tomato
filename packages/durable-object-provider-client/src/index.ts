@@ -24,3 +24,15 @@ export {
   runProviderMigrationDurableExecutionWithTwoRuntimeClientsV1,
   type RunProviderMigrationDurableExecutionWithTwoRuntimeClientsInputV1,
 } from "./provider-migration-durable-execution-entrypoint.js";
+
+export {
+  openProviderProductionStrongObjectClientV1,
+  startProviderProductionStrongObjectGatewayServiceV1,
+  type ProviderProductionStrongObjectGatewayServiceV1,
+} from "./provider-production-strong-object-gateway.js";
+export type {
+  OpenProviderProductionStrongObjectClientV1Input,
+  ProviderProductionStrongCompareCommitV1Input,
+  ProviderProductionStrongObjectClientV1,
+  ProviderProductionStrongWriteExactObjectV1Input,
+} from "./provider-production-strong-object-client.js";

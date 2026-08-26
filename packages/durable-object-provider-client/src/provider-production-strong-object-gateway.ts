@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { chmod, chown, lstat, open, unlink } from "node:fs/promises";
+import { chmod, lstat, open, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname, isAbsolute, resolve } from "node:path";
 
@@ -385,6 +385,18 @@ class GatewayServerInternalV1 {
   }
 
   async start(): Promise<void> {
+    if (
+      process.geteuid?.() !== this.#host.servicePrincipal.uid ||
+      process.getegid?.() !== this.#host.servicePrincipal.gid
+    ) return unavailableV1();
+    const directory = await lstat(dirname(this.#host.gatewaySocketPath));
+    if (
+      !directory.isDirectory() || directory.isSymbolicLink() ||
+      directory.uid !== this.#host.servicePrincipal.uid ||
+      directory.gid !== this.#host.callerPrincipal.gid ||
+      (directory.mode & 0o777) !== 0o710 ||
+      (directory.mode & 0o2000) === 0
+    ) return unavailableV1();
     try {
       await lstat(this.#host.gatewaySocketPath);
       return unavailableV1();
@@ -403,6 +415,10 @@ class GatewayServerInternalV1 {
     });
     this.#server = server;
     try {
+      // start() is called only after the exact service drop. Mark the handler
+      // live before listen() so a caller cannot win the tiny accept/return
+      // race and receive a spurious closed connection.
+      this.#servicePrincipalActive = true;
       await new Promise<void>((resolvePromise, rejectPromise) => {
         const fail = (error: Error): void => rejectPromise(error);
         server.once("error", fail);
@@ -412,13 +428,12 @@ class GatewayServerInternalV1 {
         });
       });
       const created = await lstat(this.#host.gatewaySocketPath);
-      if (!created.isSocket() || created.isSymbolicLink()) return unavailableV1();
+      if (
+        !created.isSocket() || created.isSymbolicLink() ||
+        created.uid !== this.#host.servicePrincipal.uid ||
+        created.gid !== this.#host.callerPrincipal.gid
+      ) return unavailableV1();
       this.#identity = { dev: created.dev, ino: created.ino };
-      await chown(
-        this.#host.gatewaySocketPath,
-        this.#host.servicePrincipal.uid,
-        this.#host.callerPrincipal.gid,
-      );
       await chmod(this.#host.gatewaySocketPath, 0o660);
       const projected = await lstat(this.#host.gatewaySocketPath);
       if (
@@ -468,8 +483,8 @@ class GatewayServerInternalV1 {
   async #serve(socket: Socket): Promise<void> {
     socket.setTimeout(GATEWAY_TIMEOUT_MS_V1, () => socket.destroy());
     try {
-      // Listening begins while privileged only so the exact inode can be
-      // projected. No operation may cross that privilege-drop interval.
+      // The listener is created only after the exact service drop. This keeps
+      // Linux SO_PEERCRED bound to the service principal rather than root.
       if (!this.#servicePrincipalActive) return;
       const peer = readProviderRuntimeNativeKernelPeerCredentialsV1(socket);
       if (
@@ -541,8 +556,8 @@ class GatewayServerInternalV1 {
 
 /**
  * Root-only tracked composition. It verifies and retains the complete signed
- * closure, starts the peer-authenticated gateway, then irreversibly drops to
- * the signed dedicated service principal before returning.
+ * closure, irreversibly drops to the signed dedicated service principal, and
+ * creates the peer-authenticated gateway under that principal before returning.
  */
 export async function startProviderProductionStrongObjectGatewayServiceV1(
   input: OpenProviderProductionStrongObjectClientV1Input,
@@ -566,7 +581,6 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
   }
   const server = new GatewayServerInternalV1(host);
   try {
-    await server.start();
     if (
       typeof process.setgroups !== "function" ||
       typeof process.getgroups !== "function" ||
@@ -585,6 +599,7 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
       expectedUid: host.servicePrincipal.uid,
       expectedGid: host.servicePrincipal.gid,
     })) return unavailableV1();
+    await server.start();
     server.activateServicePrincipal();
   } catch (error) {
     await server.close().catch(() => undefined);

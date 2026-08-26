@@ -734,7 +734,10 @@ async function readTransactionV1(root: string): Promise<TransactionPayloadV1 | u
 async function ensureGatewayDirectoryV1(payload: TransactionPayloadV1): Promise<void> {
   let created = false;
   try {
-    await mkdir(payload.gatewayDirectoryPath, { mode: 0o710 });
+    // The setgid bit makes a socket created after the gateway drops to its
+    // service uid inherit the caller-facing group, while the gateway retains
+    // its service gid for SO_PEERCRED.
+    await mkdir(payload.gatewayDirectoryPath, { mode: 0o2710 });
     created = true;
   } catch (error) {
     if (
@@ -747,21 +750,21 @@ async function ensureGatewayDirectoryV1(payload: TransactionPayloadV1): Promise<
     !before.isDirectory() || before.isSymbolicLink() ||
     (!created && (
       before.uid !== payload.serviceUid || before.gid !== payload.callerGid ||
-      (before.mode & 0o777) !== 0o710
+      (before.mode & 0o777) !== 0o710 || (before.mode & 0o2000) === 0
     ))
   ) {
     failV1("production strong client gateway directory is invalid");
   }
   if (created) {
     await chown(payload.gatewayDirectoryPath, payload.serviceUid, payload.callerGid);
-    await chmod(payload.gatewayDirectoryPath, 0o710);
+    await chmod(payload.gatewayDirectoryPath, 0o2710);
   }
   const after = await lstat(payload.gatewayDirectoryPath);
   if (
     !after.isDirectory() || after.isSymbolicLink() ||
     after.dev !== before.dev || after.ino !== before.ino ||
     after.uid !== payload.serviceUid || after.gid !== payload.callerGid ||
-    (after.mode & 0o777) !== 0o710
+    (after.mode & 0o777) !== 0o710 || (after.mode & 0o2000) === 0
   ) failV1("production strong client gateway directory is invalid");
   await fsyncDirectoryV1(dirname(payload.gatewayDirectoryPath));
 }
@@ -833,7 +836,8 @@ async function convergeTransactionV1(
           !gatewayDirectory.isDirectory() || gatewayDirectory.isSymbolicLink() ||
           gatewayDirectory.uid !== payload.serviceUid ||
           gatewayDirectory.gid !== payload.callerGid ||
-          (gatewayDirectory.mode & 0o777) !== 0o710
+          (gatewayDirectory.mode & 0o777) !== 0o710 ||
+          (gatewayDirectory.mode & 0o2000) === 0
         ) failV1("production strong client gateway directory is invalid");
         await rmdir(payload.gatewayDirectoryPath);
         await fsyncDirectoryV1(dirname(payload.gatewayDirectoryPath));

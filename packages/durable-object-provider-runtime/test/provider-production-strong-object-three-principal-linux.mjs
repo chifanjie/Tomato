@@ -26,7 +26,6 @@ import {
   readFile,
   rm,
   statfs,
-  readdir,
   writeFile,
 } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -544,16 +543,31 @@ async function authorityRole(fixturePath) {
   // inode would correctly fail its create-only namespace bootstrap.
   const authorityRoot = join(fixture.authorityTmpRoot, "authority");
   const capability = createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(authorityRoot);
-  await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
-    installationIdentityGenerationId: fixture.installationIdentityGenerationId,
-    installationIdentityKey: IDENTITY_KEY,
-  });
+  let authorityAlreadyProvisioned = true;
+  try {
+    await access(authorityRoot);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    authorityAlreadyProvisioned = false;
+  }
+  if (!authorityAlreadyProvisioned) {
+    await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
+      installationIdentityGenerationId: fixture.installationIdentityGenerationId,
+      installationIdentityKey: IDENTITY_KEY,
+    });
+  }
   const acceptance = await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability);
-  await acceptance.compareAppend(fixture.acceptanceRequest);
+  if (!authorityAlreadyProvisioned) {
+    await acceptance.compareAppend(fixture.acceptanceRequest);
+  }
   const strict = await strictCryptoCapability();
   const verifier = mintProviderStrongMutationTrustVerifierForTestInternalV1({
     strictCryptoCapability: strict,
-    readEvidence: async () => fixture.registryHistory,
+    readEvidence: async () => ({
+      bootstrapTrustBundle: fixture.registryHistory.bootstrapTrustBundle,
+      rootMetadataHistory: fixture.registryHistory.rootMetadataHistory,
+      registryManifestHistory: fixture.registryHistory.registryManifestHistory,
+    }),
   });
   const fence = registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
     profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
@@ -586,7 +600,6 @@ async function authorityRole(fixturePath) {
     await waitForPath(stopPath, 24 * 60 * 60 * 1000);
   } finally {
     await server.close();
-    await rm(authorityRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -664,21 +677,9 @@ async function runtimeRole(fixturePath) {
 
 async function gatewayRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
-  let service;
-  try {
-    const directory = dirname(fixture.gatewaySocketPath);
-    const directoryStat = await (await import("node:fs/promises")).lstat(directory);
-    process.stderr.write(`gateway-preflight uid=${process.geteuid?.()} gid=${process.getegid?.()} dir=${directory} owner=${directoryStat.uid}:${directoryStat.gid} mode=${(directoryStat.mode & 0o777).toString(8)}\n`);
-    service = await startProviderProductionStrongObjectGatewayServiceV1({
-      canonicalInstallationRoot: fixture.installRoot,
-    });
-  } catch (error) {
-    const directory = dirname(fixture.gatewaySocketPath);
-    let entries = [];
-    try { entries = await readdir(directory); } catch {}
-    process.stderr.write(`gateway-start-debug path=${fixture.gatewaySocketPath} entries=${JSON.stringify(entries)}\n`);
-    throw error;
-  }
+  const service = await startProviderProductionStrongObjectGatewayServiceV1({
+    canonicalInstallationRoot: fixture.installRoot,
+  });
   const readyPath = join(dirname(fixture.gatewaySocketPath), ".gateway.ready");
   await writeFile(readyPath, "ready\n", { mode: 0o600 });
   const stopPath = join(dirname(fixture.gatewaySocketPath), ".gateway.stop");
@@ -721,8 +722,17 @@ async function callerRole(fixturePath, bad = false) {
     const compareResult = await client.compareCommit({
       expectedRevision: 1,
       operationNonce: "b".repeat(32),
-      phase: "caller_cas_committed",
+      phase: "final_strong_ready",
       artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: fixture.acceptance,
+          finalStrongReadyAcceptancePin: {
+            locatorProfile: "provider_acceptance_state_v1",
+            acceptanceOrdinal: fixture.acceptance.payload.acceptanceOrdinal,
+            generationId: fixture.acceptance.generationId,
+            contentDigest: fixture.acceptance.contentDigest,
+          },
+        },
         object: locator,
         owner: await client.commitOwnerOnlyState(
           "record-verification-full-input-v1",
@@ -747,16 +757,19 @@ async function orchestrate() {
   const fs = await statfs(ext4Mount, { bigint: true });
   if (fs.type !== 0xef53n) throw new Error("dedicated ext4 mount is unavailable");
   const work = await mkdtemp(join("/var/tmp", "uc-step15-three-principal-"));
+  // The descriptor is intentionally public (root-owned 0644) so the ordinary
+  // caller can discover the gateway; keep the enclosing test fixture
+  // traversable while retaining 0700 on installation/runtime/key directories.
+  await chmod(work, 0o755);
   const installRoot = join(work, "installation");
   const runtimeRoot = join(ext4Mount, `step15-three-principal-${process.pid}-${randomBytes(4).toString("hex")}`);
   const paths = {
     configPath: join(installRoot, "provider-service-config-v1.json"),
     grantKeyPath: join(runtimeRoot, "grant.pk8"),
     fixturePath: join(work, "fixture.json"),
-    // In the chroot smoke /var/tmp is on the same ext4 image while keeping
-    // the authority root outside the self-bind projection used for target
-    // paths.  Native authority still receives a dedicated, empty parent.
-    authorityTmpRoot: join("/var/tmp", `step15-authority-tmp-${process.pid}-${randomBytes(4).toString("hex")}`),
+    // Keep the native authority on the same real ext4 gate while retaining a
+    // dedicated, empty parent that is disjoint from the runtime target root.
+    authorityTmpRoot: join(ext4Mount, `step15-authority-tmp-${process.pid}-${randomBytes(4).toString("hex")}`),
   };
   const authorityReadyPath = join(work, "authority.ready");
   const authorityStopPath = join(work, "authority.stop");
@@ -800,7 +813,9 @@ async function orchestrate() {
       child.child.stdout?.setEncoding("utf8");
       child.child.stdout?.on("data", (chunk) => { out += chunk; });
       child.child.once("error", rejectPromise);
-      child.child.once("exit", (code) => code === 0 ? resolvePromise(out.trim()) : rejectPromise(new Error(`caller failed: ${code} ${child.stderr}`)));
+      child.child.once("exit", (code) => code === 0
+        ? resolvePromise(out.trim())
+        : rejectPromise(new Error(`caller failed: ${code} ${child.stderr}`)));
     });
     const denied = await new Promise((resolvePromise) => {
       const child = collect(start("bad-caller"));
@@ -833,7 +848,9 @@ async function orchestrate() {
       let out = "";
       child.child.stdout?.setEncoding("utf8");
       child.child.stdout?.on("data", (chunk) => { out += chunk; });
-      child.child.once("exit", (code) => code === 0 ? resolvePromise(out.trim()) : rejectPromise(new Error(`replay caller failed: ${code} ${child.stderr}`)));
+      child.child.once("exit", (code) => code === 0
+        ? resolvePromise(out.trim())
+        : rejectPromise(new Error(`replay caller failed: ${code} ${child.stderr}`)));
     });
     await writeFile(gatewayStopPath, "stop\n");
     await new Promise((resolvePromise) => gateway.child.once("exit", resolvePromise));

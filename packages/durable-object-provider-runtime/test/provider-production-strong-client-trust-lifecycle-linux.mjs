@@ -86,6 +86,7 @@ try {
   if (
     installed.status !== "installed" ||
     (directory.mode & 0o777) !== 0o710 ||
+    (directory.mode & 0o2000) === 0 ||
     directory.uid !== servicePrincipal.uid || directory.gid !== callerPrincipal.gid
   ) throw new Error("trust install projection failed");
 

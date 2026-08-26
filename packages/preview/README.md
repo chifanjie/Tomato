@@ -218,8 +218,10 @@ understand-code-claude --root /absolute/path/to/worktree
 
 Both entrypoints launch the bundled MCP executable and require one explicit absolute
 worktree root. They do not fall back to the process working directory or to an
-`UNDERSTAND_CODE_CLI` override. Codex and Claude can therefore resume the same
-persisted Task even when their working directories differ. Missing, relative, or
+`UNDERSTAND_CODE_CLI` override. When a Provider-backed strong Store is installed,
+Codex and Claude can resume the same persisted Task even when their working
+directories differ. This unsigned Alpha keeps that Store locked; legacy Task
+resume therefore fails closed with `provider_unavailable`. Missing, relative, or
 unexpanded placeholder roots fail with `workspace_root_required`; ending stdin
 stops the Host and MCP processes cleanly.
 
@@ -237,20 +239,25 @@ The MCP server advertises `get_repo_pulse`, `build_task_brief`, `get_task_brief`
 `update_task`, `check_change`, `record_verification`, `open_workbench`,
 `get_evidence`, `search_context`, `trace_impact`, and `refresh_index`. A full
 refresh can create the managed Graph/Wiki/Pulse artifacts for a real repository.
-Source changes remain external: Understand Code records and checks a change, but
-does not edit repository source files or unlock strong writes.
+The public read-only Pulse and refresh surfaces remain available; Task, Change
+Check, Verification, Evidence, Search, Impact, and Workbench operations require
+the accepted Provider-backed strong Store. Until that gate is installed, the
+legacy routes return the redacted `provider_unavailable` failure before reading
+private Task/Pulse state. Source changes remain external: Understand Code records
+and checks a change, but does not edit repository source files or unlock strong
+writes.
 Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
 
-`open_workbench` exchanges its one-time fragment token for an HttpOnly loopback
-session cookie and serves the exact precompiled React Dashboard carried by the
-installed CLI payload. From a Task Change Check, the installed-browser Alpha can
-open the Finding's own Evidence and guarded Source range, focus a stable Graph
-node associated with that Source, continue into Wiki, and return to the original
-Task/Finding context. A
-repository refresh leaves an older browser session pinned to its original
-Snapshot and shows a stale state instead of silently rebinding Source or overlays.
+`open_workbench` is present in the public contract but remains Provider-gated in
+this Alpha. Without an accepted strong Store it returns `provider_unavailable`,
+and the Preview Task endpoints return the same redacted 503 before reading any
+legacy Task, Change Check, Verification, or private Pulse payload. The
+same-tarball browser gate verifies this fail-closed state, absence of canary data,
+and clean process shutdown. The successful Finding → Evidence/Source → Graph →
+Wiki → Task interaction is reserved for the post-gate Workbench slice; it is not
+claimed by this locked Alpha.
 
 After `refresh_index` has published Graph, Wiki, Search, and Repo Pulse artifacts,
 run the installed-package Doctor from any directory inside that Git worktree:
@@ -303,12 +310,14 @@ lifecycle candidates, but this Alpha does not claim that they are ready for
 production use or that a live Provider execution path has been established.
 
 The Alpha's UI evidence includes a same-tarball, monorepo-external real-browser
-gate that drives the public MCP flow through Finding → Evidence/Source → Graph →
-Wiki → Task and verifies Snapshot drift handling. This does **not** close the
-formal Release, signed distribution, cross-platform, or Gold gates. The
-officially active Claude cache has been shown to keep its bundled MCP alive
-while opening the cookie-authenticated browser Workbench, but this is not yet a
-credentialed, model-selected tool call from a complete Codex or Claude chat.
+gate that drives the locked Task surface, proves `provider_unavailable` is
+redacted, checks legacy/strong canaries do not leak, and verifies clean process
+shutdown. It does **not** claim a successful Finding → Evidence/Source → Graph →
+Wiki → Task interaction until the Provider projection gate is closed. It also
+does not close the formal Release, signed distribution, cross-platform, or Gold
+gates. The officially active Claude cache has been shown to keep its bundled MCP
+alive while the browser gate runs, but this is not yet a credentialed,
+model-selected tool call from a complete Codex or Claude chat.
 
 ## Assemble an unsigned Alpha Candidate
 

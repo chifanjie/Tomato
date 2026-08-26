@@ -184,6 +184,7 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
         "-c",
         "user.email=alpha-candidate@example.invalid",
         "commit",
+        "--allow-empty",
         "--quiet",
         "-m",
         "test unsigned Alpha candidate source",

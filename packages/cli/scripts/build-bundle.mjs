@@ -84,6 +84,7 @@ const result = await build({
   platform: "node",
   format: "esm",
   target: "node22",
+  minify: true,
   treeShaking: true,
   legalComments: "none",
   sourcemap: false,

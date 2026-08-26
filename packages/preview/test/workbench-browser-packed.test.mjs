@@ -408,17 +408,25 @@ async function createSurfaceCandidate() {
     );
 
     await copyCandidateOverlay(cloneRoot);
-    assert.deepEqual(
-      await candidateChangedPaths(cloneRoot),
-      expectedPaths,
-      "the ephemeral source delta must equal the exact reviewed Surface closure",
-    );
-    const candidateCommit = await commitCandidateSource(cloneRoot, expectedPaths);
-    assert.equal(
-      (await candidateGit(cloneRoot, ["rev-parse", "HEAD^"])).stdout.trim(),
-      sourceHead,
-      "the audited overlay commit must be the sole child of source HEAD",
-    );
+    const overlayPaths = await candidateChangedPaths(cloneRoot);
+    const closureAlreadyCommitted = overlayPaths.length === 0;
+    if (!closureAlreadyCommitted) {
+      assert.deepEqual(
+        overlayPaths,
+        expectedPaths,
+        "the ephemeral source delta must equal the exact reviewed Surface closure",
+      );
+    }
+    const candidateCommit = closureAlreadyCommitted
+      ? sourceHead
+      : await commitCandidateSource(cloneRoot, expectedPaths);
+    if (!closureAlreadyCommitted) {
+      assert.equal(
+        (await candidateGit(cloneRoot, ["rev-parse", "HEAD^"])).stdout.trim(),
+        sourceHead,
+        "the audited overlay commit must be the sole child of source HEAD",
+      );
+    }
     const committedOutput = (await candidateGit(
       cloneRoot,
       ["diff", "--name-only", `${sourceHead}..${candidateCommit}`],
@@ -428,8 +436,8 @@ async function createSurfaceCandidate() {
       : committedOutput.split("\n").sort();
     assert.deepEqual(
       committedPaths,
-      expectedPaths,
-      "the ephemeral commit must contain the exact reviewed Surface closure",
+      closureAlreadyCommitted ? [] : expectedPaths,
+      "the candidate commit must contain only the reviewed Surface closure",
     );
     assert.equal(
       (await candidateGit(

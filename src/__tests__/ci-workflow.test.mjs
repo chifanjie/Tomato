@@ -25,9 +25,18 @@ function workflowJob(jobName, nextJobName) {
 
 describe("CI workflow contract", () => {
   it("runs every quality shard and aggregates them fail closed", () => {
+    const nativeKernelBridge = workflowJob("native_kernel_bridge", "provider_unit");
     const providerUnit = workflowJob("provider_unit", "provider_distribution");
     const providerDistribution = workflowJob(
       "provider_distribution",
+      "provider_aggregate",
+    );
+    const providerAggregate = workflowJob(
+      "provider_aggregate",
+      "provider_production_linux",
+    );
+    const providerProductionLinux = workflowJob(
+      "provider_production_linux",
       "workspace_quality",
     );
     const workspaceQuality = workflowJob(
@@ -38,7 +47,11 @@ describe("CI workflow contract", () => {
     const quality = workflowJob("quality");
 
     expect(workflow.match(/run: pnpm install --frozen-lockfile/g)).toHaveLength(
-      4,
+      7,
+    );
+
+    expect(nativeKernelBridge).toContain(
+      "pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match test",
     );
 
     expect(providerUnit).toContain("pnpm run build");
@@ -48,6 +61,13 @@ describe("CI workflow contract", () => {
     expect(providerDistribution).toContain("needs: provider_unit");
     expect(providerDistribution).toContain("pnpm run build");
     expect(providerDistribution).toContain("pnpm run test:distribution");
+
+    expect(providerAggregate).toContain("pnpm run test:c09-aggregate");
+
+    expect(providerProductionLinux).toContain("- provider_unit");
+    expect(providerProductionLinux).toContain("- provider_distribution");
+    expect(providerProductionLinux).toContain("run test:linux-exact-object");
+    expect(providerProductionLinux).toContain("RUN_STEP15_PROVIDER_E2E=1");
 
     expect(workspaceQuality).toContain("pnpm run build:all");
     expect(workspaceQuality).toContain("pnpm run typecheck");
@@ -89,7 +109,12 @@ describe("CI workflow contract", () => {
       ),
     );
 
-    expect(previewCandidate).toContain("needs: workspace_quality");
+    expect(previewCandidate).toContain("- native_kernel_bridge");
+    expect(previewCandidate).toContain("- provider_unit");
+    expect(previewCandidate).toContain("- provider_distribution");
+    expect(previewCandidate).toContain("- provider_aggregate");
+    expect(previewCandidate).toContain("- provider_production_linux");
+    expect(previewCandidate).toContain("- workspace_quality");
     expect(previewCandidate).toContain(
       "pnpm --filter @understand-code/preview --fail-if-no-match build",
     );
@@ -147,8 +172,11 @@ describe("CI workflow contract", () => {
     ).toBeLessThan(previewCandidate.indexOf("sha256sum --check"));
 
     expect(quality).toContain("if: ${{ always() }}");
+    expect(quality).toContain("- native_kernel_bridge");
     expect(quality).toContain("- provider_unit");
     expect(quality).toContain("- provider_distribution");
+    expect(quality).toContain("- provider_aggregate");
+    expect(quality).toContain("- provider_production_linux");
     expect(quality).toContain("- workspace_quality");
     expect(quality).toContain("- preview_candidate");
     expect(quality).toContain(
@@ -158,14 +186,25 @@ describe("CI workflow contract", () => {
       "PROVIDER_DISTRIBUTION_RESULT: ${{ needs.provider_distribution.result }}",
     );
     expect(quality).toContain(
+      "PROVIDER_AGGREGATE_RESULT: ${{ needs.provider_aggregate.result }}",
+    );
+    expect(quality).toContain(
+      "PROVIDER_PRODUCTION_LINUX_RESULT: ${{ needs.provider_production_linux.result }}",
+    );
+    expect(quality).toContain(
       "WORKSPACE_QUALITY_RESULT: ${{ needs.workspace_quality.result }}",
     );
     expect(quality).toContain(
       "PREVIEW_CANDIDATE_RESULT: ${{ needs.preview_candidate.result }}",
     );
+    expect(quality).toContain('test "$NATIVE_KERNEL_BRIDGE_RESULT" = "success"');
     expect(quality).toContain('test "$PROVIDER_UNIT_RESULT" = "success"');
     expect(quality).toContain(
       'test "$PROVIDER_DISTRIBUTION_RESULT" = "success"',
+    );
+    expect(quality).toContain('test "$PROVIDER_AGGREGATE_RESULT" = "success"');
+    expect(quality).toContain(
+      'test "$PROVIDER_PRODUCTION_LINUX_RESULT" = "success"',
     );
     expect(quality).toContain('test "$WORKSPACE_QUALITY_RESULT" = "success"');
     expect(quality).toContain('test "$PREVIEW_CANDIDATE_RESULT" = "success"');
@@ -190,7 +229,7 @@ describe("CI workflow contract", () => {
       [...workflow.matchAll(/timeout-minutes:\s*(\d+)/g)].map((match) =>
         Number(match[1]),
       ),
-    ).toEqual([45, 45, 45, 20, 5]);
+    ).toEqual([20, 45, 60, 90, 45, 45, 20, 5]);
     expect(workflow).toMatch(/on:\n\s+push:\n\s+pull_request:/);
   });
 });

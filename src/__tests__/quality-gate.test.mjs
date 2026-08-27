@@ -122,9 +122,7 @@ describe("root quality gate", () => {
     expect(providerScripts["verify:all"].split(" && ")).toEqual(
       verifierNames.map((name) => `npm run ${name}`),
     );
-    expect(providerScripts.test).toBe(
-      "pnpm run build && pnpm run typecheck && vitest run --maxWorkers=1 && pnpm run test:distribution",
-    );
+    expect(providerScripts.test).toBe("pnpm run test:c09-aggregate");
     expect(providerScripts.test).not.toContain("verify:");
     expect(providerDistributionScript).toMatch(
       /run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts=false"[\s\S]*?\],\s*\{\s*cwd: cleanPackageRoot,\s*env:\s*\{\s*NODE_OPTIONS:\s*C09_PACK_NODE_OPTIONS\s*\},\s*timeoutMs:\s*PACK_COMMAND_TIMEOUT_MS,?\s*\},\s*\);/,
@@ -136,9 +134,10 @@ describe("root quality gate", () => {
 
   it("cleans stale artifacts and builds foundation packages before their consumers", () => {
     const foundationBuildSteps = [
+      "pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match build",
       "pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build",
-      "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match build",
       "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build",
+      "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match build",
       "pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match build",
       "pnpm --filter @understand-code/host-adapters --fail-if-no-match build",
       "pnpm --filter @understand-code/contracts --fail-if-no-match build",
@@ -165,9 +164,10 @@ describe("root quality gate", () => {
     expect(scripts.typecheck).toBe(
       [
         ...foundationBuildSteps,
+        "pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match typecheck",
         "pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match typecheck",
-        "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match typecheck",
         "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match typecheck",
         "pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match typecheck",
         "pnpm --filter @understand-code/host-adapters --fail-if-no-match typecheck",
         "pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit",
@@ -188,6 +188,7 @@ describe("root quality gate", () => {
   it("removes orphaned build outputs from every fixed artifact target", async () => {
     expect(BUILD_ARTIFACT_PATHS).toEqual([
       "dist",
+      "packages/native-kernel-bridge/dist",
       "packages/durable-object-provider-contracts/dist",
       "packages/durable-object-provider-client/dist",
       "packages/durable-object-provider-runtime/dist",

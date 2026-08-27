@@ -1,12 +1,14 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { ThemePicker } from "./ThemePicker";
 
+export type ProductSurface = "tasks" | "wiki" | "graph";
+
 export interface DashboardHeaderProps {
   projectName: string;
-  activeSurface: "wiki" | "graph";
+  activeSurface: ProductSurface;
   searchButtonRef: RefObject<HTMLButtonElement | null>;
   themeInert: boolean;
-  onSelectSurface: (surface: "wiki" | "graph") => void;
+  onSelectSurface: (surface: ProductSurface) => void;
   onRequestSearch: () => void;
 }
 
@@ -35,14 +37,14 @@ export default function DashboardHeader({
         </section>
       </details>
       <nav aria-label="主要界面" className="uc-surface-switcher">
-        {(["wiki", "graph"] as const).map((surface) => (
+        {(["tasks", "wiki", "graph"] as const).map((surface) => (
           <button
             key={surface}
             type="button"
             aria-current={activeSurface === surface ? "page" : undefined}
             onClick={() => onSelectSurface(surface)}
           >
-            {surface === "wiki" ? "知识库" : "关系图谱"}
+            {surface === "tasks" ? "任务" : surface === "wiki" ? "知识库" : "关系图谱"}
           </button>
         ))}
       </nav>

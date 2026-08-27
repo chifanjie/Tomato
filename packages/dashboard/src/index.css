@@ -967,6 +967,27 @@ body {
   border-radius: var(--radius-panel);
 }
 
+.uc-task-workbench {
+  width: 100%;
+  max-width: 100%;
+}
+
+.uc-task-workbench .uc-panel,
+.uc-task-workbench nav,
+.uc-task-workbench section,
+.uc-task-workbench aside {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.uc-task-workbench p,
+.uc-task-workbench h1,
+.uc-task-workbench h2,
+.uc-task-workbench dd,
+.uc-task-workbench button {
+  overflow-wrap: anywhere;
+}
+
 .uc-panel-muted {
   background: color-mix(in srgb, var(--color-elevated) 86%, transparent 14%);
   border: 1px solid var(--color-border-subtle);
@@ -995,6 +1016,106 @@ body {
   background: var(--color-graph-canvas);
   border: 1px solid var(--color-graph-node-border);
   border-radius: var(--radius-panel);
+}
+
+.uc-mobile-graph-path {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding: 18px;
+  background: var(--color-graph-canvas);
+}
+
+.uc-mobile-graph-path > header > p:first-child {
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.uc-mobile-graph-path h2 {
+  margin-top: 4px;
+  color: var(--color-text-primary);
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.uc-mobile-graph-path > header > p:last-child {
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.uc-mobile-graph-path ol {
+  display: grid;
+  gap: 10px;
+}
+
+.uc-mobile-graph-path li,
+.uc-mobile-graph-path li > button {
+  min-width: 0;
+  width: 100%;
+}
+
+.uc-mobile-graph-path li > button {
+  display: grid;
+  min-height: 72px;
+  gap: 5px;
+  border: 1px solid var(--color-graph-node-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-graph-node-bg);
+  padding: 12px 14px;
+  color: var(--color-text-primary);
+  text-align: left;
+}
+
+.uc-mobile-graph-path li > button:focus-visible,
+.uc-mobile-graph-open-canvas:focus-visible,
+.uc-mobile-graph-return-path:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.uc-mobile-graph-path li > button span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.uc-mobile-graph-open-canvas {
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 48%, var(--color-border-medium));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  padding: 10px 14px;
+  color: var(--color-accent);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.uc-mobile-graph-return-path {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 24;
+  min-height: 44px;
+  border: 1px solid var(--color-graph-control-border);
+  background: var(--color-surface);
+  padding: 8px 12px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: var(--shadow-overlay);
 }
 
 .uc-semantic-canvas {
@@ -1655,6 +1776,25 @@ body {
 
   .uc-global-search-trigger kbd,
   .uc-theme-trigger-current { display: none; }
+
+  .uc-wiki-navigation,
+  .uc-wiki-evidence {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: min(78dvh, calc(100dvh - var(--uc-global-header-height)));
+    border: 1px solid var(--color-border-medium);
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    transform: translateY(105%);
+  }
+
+  .uc-wiki-navigation[data-open="true"],
+  .uc-wiki-evidence[data-open="true"] {
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

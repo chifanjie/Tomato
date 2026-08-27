@@ -51,6 +51,25 @@ function installMatchMedia(initialMatches: boolean): MediaController {
   };
 }
 
+function installViewportMatchMedia(width: number): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((query: string) => {
+      const maxWidth = Number.parseInt(query.match(/max-width:\s*(\d+)px/u)?.[1] ?? "0", 10);
+      return {
+        matches: width <= maxWidth,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: () => true,
+      } as unknown as MediaQueryList;
+    }),
+  });
+}
+
 function shellProps(withEvidence = true): {
   navigation: ReactNode;
   article: ReactNode;
@@ -195,6 +214,26 @@ describe("WikiResponsiveShell", () => {
     expect(document.activeElement).toBe(closeButton);
 
     await act(async () => root.unmount());
+  });
+
+  it("uses a side drawer on tablet and a modal sheet on phone", async () => {
+    installViewportMatchMedia(820);
+    const tablet = await mountShell();
+    await click(tablet.container.querySelector('[aria-label="打开知识目录"]'));
+    expect(tablet.container.querySelector("#wiki-navigation-drawer")?.getAttribute("data-presentation"))
+      .toBe("drawer");
+    expect(tablet.container.querySelector("#wiki-navigation-drawer")?.getAttribute("role"))
+      .toBe("dialog");
+    await act(async () => tablet.root.unmount());
+
+    installViewportMatchMedia(390);
+    const phone = await mountShell();
+    await click(phone.container.querySelector('[aria-label="打开知识目录"]'));
+    expect(phone.container.querySelector("#wiki-navigation-drawer")?.getAttribute("data-presentation"))
+      .toBe("sheet");
+    expect(phone.container.querySelector("#wiki-navigation-drawer")?.getAttribute("aria-modal"))
+      .toBe("true");
+    await act(async () => phone.root.unmount());
   });
 
   it("moves initial drawer focus after pointer activation and cancels the scheduled frame", async () => {

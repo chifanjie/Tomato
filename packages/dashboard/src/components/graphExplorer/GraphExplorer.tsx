@@ -7,6 +7,7 @@ import {
   type GraphExplorerDisplayMode,
   type GraphExplorerNavigation,
   type GraphHierarchyIndex,
+  type HierarchicalSemanticGraphNode,
 } from "../../graphExplorer/hierarchicalGraph";
 import {
   buildGraphQuickJumpItems,
@@ -43,7 +44,12 @@ const OVERVIEW_NAVIGATION: GraphExplorerNavigation = { level: "overview" };
 const MISSING_WIKI_FOCUS_NOTICE = "未找到可定位的图谱对象，已保留最近层级。";
 const GRAPH_INSPECTOR_WIDTH = 360;
 const GRAPH_INSPECTOR_SAFE_INSET = 384;
+const MOBILE_GRAPH_PATH_NODE_LIMIT = 24;
 let graphInstanceSequence = 0;
+
+export function boundMobileGraphPathNodes<T>(nodes: readonly T[]): readonly T[] {
+  return nodes.slice(0, MOBILE_GRAPH_PATH_NODE_LIMIT);
+}
 
 export interface PendingGraphNavigationRequest {
   requestId: number;
@@ -237,6 +243,7 @@ export default function GraphExplorer({
   const compact = useIsMobile(1024);
   const belowDesktop = useIsMobile(1280);
   const phone = useIsMobile(768);
+  const [mobileCanvasRequested, setMobileCanvasRequested] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [quickJumpOpenRequestId, setQuickJumpOpenRequestId] = useState(0);
   const [showMinimap, setShowMinimap] = useState(() => !belowDesktop);
@@ -572,6 +579,7 @@ export default function GraphExplorer({
     const intent = navigationIntentById.get(focusNodeId);
     if (intent) {
       lastAppliedTaskFocusRef.current = focusNodeId;
+      if (phone) setMobileCanvasRequested(true);
       applyNavigationIntent(intent);
       return;
     }
@@ -579,7 +587,7 @@ export default function GraphExplorer({
     lastAppliedTaskFocusRef.current = focusNodeId;
     setWikiFocusNotice("任务证据引用的图谱节点当前不可用。");
     selectNode(null);
-  }, [applyNavigationIntent, focusNodeId, graph, navigationIntentById, selectNode]);
+  }, [applyNavigationIntent, focusNodeId, graph, navigationIntentById, phone, selectNode]);
 
   useEffect(() => {
     if (focusNodeId) return;
@@ -769,6 +777,24 @@ export default function GraphExplorer({
     if (compact) setToolsOpen(true);
     setQuickJumpOpenRequestId((requestId) => requestId + 1);
   };
+  const mobilePathNodes = boundMobileGraphPathNodes(view.semanticGraph.nodes);
+  const openMobilePathNode = (node: HierarchicalSemanticGraphNode) => {
+    setMobileCanvasRequested(true);
+    if (node.kind === "scope" && node.scopeId) {
+      openScope(node.scopeId);
+      return;
+    }
+    if (node.kind === "cluster" && node.scopeId && node.clusterId) {
+      openCluster(node.scopeId, node.clusterId);
+      return;
+    }
+    if (node.rawType === "file" && node.scopeId && node.clusterId) {
+      openFile(node.scopeId, node.clusterId, node.id);
+      return;
+    }
+    selectVisibleNode(node.id);
+  };
+  const showCanvas = !phone || mobileCanvasRequested;
 
   return (
     <section
@@ -872,42 +898,101 @@ export default function GraphExplorer({
         </p>
       )}
 
-      <div className="uc-graph-frame" ref={frameRef}>
-        <SemanticGraphCanvas
-          frameRef={frameRef}
-          baseGraph={view.baseGraph}
-          semanticGraph={view.semanticGraph}
-          graphRevision={layoutRevision}
-          navigation={safeNavigation}
-          displayMode={effectiveMode}
-          explicitFocusRequest={explicitFocusRequest}
-          onBaseLayoutReady={handleBaseLayoutReady}
-          emptyNotice={notice}
-          onOpenScope={openScope}
-          onOpenCluster={openCluster}
-          onOpenFile={openFile}
-          onSelectNode={selectVisibleNode}
-          onClearSelection={clearSelection}
-          onFrameWidthChange={setRawFrameWidth}
-          onSelectedScreenBoundsChange={setSelectedScreenBounds}
-          showMinimap={showMinimap}
-          showControls={(!phone || toolsOpen) && !(compact && inspectorVisible)}
-          narrowViewport={phone}
-          fitViewportInsets={fitViewportInsets}
-        />
-        <GraphDetailsRail
-          view={view}
-          open={inspectorVisible}
-          side={inspectorSide}
-          onClose={closeInspector}
-          onSelectObject={selectVisibleNode}
-          onOpenScope={openScope}
-          onOpenCluster={openCluster}
-          onOpenFile={openFile}
-          onSelectWikiTarget={openSelectionWikiTarget}
-          onRequestGlobalSearch={onRequestGlobalSearch}
-          onRequestGraphQuickJump={requestGraphQuickJump}
-        />
+      <div
+        className="uc-graph-frame"
+        ref={frameRef}
+        data-mobile-presentation={phone ? (showCanvas ? "canvas" : "path") : undefined}
+      >
+        {!showCanvas ? (
+          <section
+            className="uc-mobile-graph-path"
+            aria-labelledby="mobile-graph-path-title"
+            data-testid="mobile-graph-path"
+          >
+            <header>
+              <p>移动端图谱</p>
+              <h2 id="mobile-graph-path-title">先按路径理解，再进入画布</h2>
+              <p>先查看当前层级的对象与说明；需要自由探索时再打开交互图谱。</p>
+            </header>
+            <ol aria-label="当前图谱路径对象">
+              {mobilePathNodes.map((node) => (
+                <li key={node.id}>
+                  <button
+                    type="button"
+                    onClick={() => openMobilePathNode(node)}
+                    data-testid="mobile-graph-path-node"
+                    data-graph-node-id={node.id}
+                  >
+                    <strong>{node.label}</strong>
+                    <span>{node.summary}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+            {view.semanticGraph.nodes.length > mobilePathNodes.length && (
+              <p className="uc-mobile-graph-path__limit" role="status">
+                当前层级对象较多，仅显示前 {MOBILE_GRAPH_PATH_NODE_LIMIT} 个；可进入交互图谱继续探索。
+              </p>
+            )}
+            <button
+              type="button"
+              className="uc-mobile-graph-open-canvas"
+              onClick={() => setMobileCanvasRequested(true)}
+            >
+              打开交互图谱
+            </button>
+          </section>
+        ) : (
+          <>
+            {phone && (
+              <button
+                type="button"
+                className="uc-mobile-graph-return-path"
+                onClick={() => {
+                  clearSelection();
+                  setMobileCanvasRequested(false);
+                }}
+              >
+                返回路径
+              </button>
+            )}
+            <SemanticGraphCanvas
+              frameRef={frameRef}
+              baseGraph={view.baseGraph}
+              semanticGraph={view.semanticGraph}
+              graphRevision={layoutRevision}
+              navigation={safeNavigation}
+              displayMode={effectiveMode}
+              explicitFocusRequest={explicitFocusRequest}
+              onBaseLayoutReady={handleBaseLayoutReady}
+              emptyNotice={notice}
+              onOpenScope={openScope}
+              onOpenCluster={openCluster}
+              onOpenFile={openFile}
+              onSelectNode={selectVisibleNode}
+              onClearSelection={clearSelection}
+              onFrameWidthChange={setRawFrameWidth}
+              onSelectedScreenBoundsChange={setSelectedScreenBounds}
+              showMinimap={showMinimap}
+              showControls={(!phone || toolsOpen) && !(compact && inspectorVisible)}
+              narrowViewport={phone}
+              fitViewportInsets={fitViewportInsets}
+            />
+            <GraphDetailsRail
+              view={view}
+              open={inspectorVisible}
+              side={inspectorSide}
+              onClose={closeInspector}
+              onSelectObject={selectVisibleNode}
+              onOpenScope={openScope}
+              onOpenCluster={openCluster}
+              onOpenFile={openFile}
+              onSelectWikiTarget={openSelectionWikiTarget}
+              onRequestGlobalSearch={onRequestGlobalSearch}
+              onRequestGraphQuickJump={requestGraphQuickJump}
+            />
+          </>
+        )}
       </div>
     </section>
   );

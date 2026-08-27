@@ -7,6 +7,7 @@ import {
   type RefObject,
   type ReactNode,
 } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 export type WikiDrawerState = "closed" | "navigation" | "evidence";
 
@@ -92,6 +93,7 @@ export default function WikiResponsiveShell({
   navigationRequestInitialFocusRef,
 }: WikiResponsiveShellProps) {
   const narrow = useNarrowWikiLayout();
+  const phone = useIsMobile(768);
   const [drawer, dispatch] = useReducer(reduceDrawerState, "closed");
   const [desktopEvidenceExpanded, setDesktopEvidenceExpanded] = useState(true);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
@@ -325,6 +327,7 @@ export default function WikiResponsiveShell({
         id="wiki-navigation-drawer"
         className="uc-wiki-navigation"
         data-open={navigationOpen ? "true" : "false"}
+        data-presentation={narrow ? (phone ? "sheet" : "drawer") : "rail"}
         role={navigationOpen ? "dialog" : undefined}
         aria-modal={navigationOpen ? true : undefined}
         aria-label={navigationOpen ? "知识目录" : undefined}
@@ -370,6 +373,7 @@ export default function WikiResponsiveShell({
           id="wiki-evidence-drawer"
           className="uc-wiki-evidence"
           data-open={evidenceOpen ? "true" : "false"}
+          data-presentation={narrow ? (phone ? "sheet" : "drawer") : "rail"}
           role={evidenceOpen ? "dialog" : undefined}
           aria-modal={evidenceOpen ? true : undefined}
           aria-label={evidenceOpen ? "源码证据" : undefined}

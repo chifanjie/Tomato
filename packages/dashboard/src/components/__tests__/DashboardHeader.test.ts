@@ -7,13 +7,13 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../../themes/ThemeContext";
-import DashboardHeader from "../DashboardHeader";
+import DashboardHeader, { type ProductSurface } from "../DashboardHeader";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const CSS = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
 
-function renderHeader(activeSurface: "wiki" | "graph" = "wiki"): string {
+function renderHeader(activeSurface: ProductSurface = "tasks"): string {
   return renderToStaticMarkup(createElement(
     ThemeProvider,
     { initialConfig: { presetId: "technical-document" } },
@@ -29,9 +29,10 @@ function renderHeader(activeSurface: "wiki" | "graph" = "wiki"): string {
 }
 
 describe("DashboardHeader", () => {
-  it("publishes only the Wiki-first global destinations and tools", () => {
+  it("publishes the unified Task, Knowledge, and Graph destinations and tools", () => {
     const html = renderHeader();
     expect(html).toContain('aria-label="主要界面"');
+    expect(html).toContain("任务");
     expect(html).toContain("知识库");
     expect(html).toContain("关系图谱");
     expect(html).toContain("搜索");

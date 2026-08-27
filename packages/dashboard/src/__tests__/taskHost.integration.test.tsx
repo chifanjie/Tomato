@@ -67,6 +67,25 @@ afterEach(() => {
 });
 
 describe("Task-first Preview host bridge", () => {
+  it("opens the unified shell on Tasks by default", async () => {
+    window.history.replaceState(null, "", "/?token=preview-token");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(createElement(App)));
+    await act(async () => Promise.resolve());
+
+    expect(container.querySelector('[data-testid="task-first-workbench"]')).not.toBeNull();
+    const current = container.querySelector<HTMLButtonElement>(
+      'nav[aria-label="主要界面"] button[aria-current="page"]',
+    );
+    expect(current?.textContent).toBe("任务");
+    expect(container.textContent).toContain("知识库");
+    expect(container.textContent).toContain("关系图谱");
+    await act(async () => root.unmount());
+  });
+
   it("renders the real persisted Task projection on a Task deep link", async () => {
     window.history.replaceState(null, "", `/tasks/${taskId}?token=preview-token`);
     vi.stubGlobal("fetch", vi.fn(async () => response(200, projection)));
@@ -79,7 +98,7 @@ describe("Task-first Preview host bridge", () => {
 
     expect(container.querySelector('[data-testid="task-first-workbench"]')).not.toBeNull();
     expect(container.textContent).toContain("Preserve evidence across Agent handoffs");
-    expect(container.textContent).toContain("Read-only");
+    expect(container.textContent).toContain("只读");
     await act(async () => root.unmount());
   });
 
@@ -94,7 +113,7 @@ describe("Task-first Preview host bridge", () => {
     await act(async () => Promise.resolve());
 
     expect(container.querySelector('[data-testid="task-first-workbench"]')).not.toBeNull();
-    expect(container.textContent).toContain("Unable to load Task Brief");
+    expect(container.textContent).toContain("任务简报加载失败");
     await act(async () => root.unmount());
   });
 });

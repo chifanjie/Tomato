@@ -18,6 +18,7 @@ import { quantizeGraphViewport } from "../../../utils/layoutAlgorithm.js";
 import { emptyWikiRuntimeIndex } from "../../../wiki/wikiIndex";
 import {
   buildCanvasViewKey,
+  boundMobileGraphPathNodes,
   consumeGraphFocusRevision,
   isGraphNavigationIntentValid,
   nearestValidNavigation,
@@ -175,6 +176,11 @@ vi.mock("../graphExplorerModel", async (importOriginal) => {
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("GraphExplorer progressive navigation helpers", () => {
+  it("bounds the phone path list to the current layer preview budget", () => {
+    expect(boundMobileGraphPathNodes(Array.from({ length: 100 }, (_, index) => index)))
+      .toEqual(Array.from({ length: 24 }, (_, index) => index));
+  });
+
   it("validates the full scope, cluster, and file ancestor chain", () => {
     const graph = workspaceHierarchyFixture();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -490,11 +496,12 @@ describe("GraphExplorer progressive navigation integration", () => {
     vi.restoreAllMocks();
   });
 
-  async function renderExplorer(strict = false): Promise<void> {
+  async function renderExplorer(strict = false, focusNodeId: string | null = null): Promise<void> {
     await act(async () => {
       const explorer = createElement(GraphExplorer, {
         onSelectWikiTarget: vi.fn(),
         onRequestGlobalSearch: vi.fn(),
+        focusNodeId,
       });
       root.render(strict ? createElement(StrictMode, null, explorer) : explorer);
       await Promise.resolve();
@@ -884,6 +891,68 @@ describe("GraphExplorer progressive navigation integration", () => {
     await act(async () => toggle.click());
     expect(latestCanvasProps().showMinimap).toBe(true);
     expect(tools.textContent).toContain("隐藏缩略图");
+  });
+
+  it("keeps the phone path-first and mounts Canvas only after an explicit action", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+      matches: [
+        "(max-width: 1279px)",
+        "(max-width: 1023px)",
+        "(max-width: 767px)",
+      ].includes(query),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    await renderExplorer();
+
+    expect(container.querySelector('[data-testid="mobile-graph-path"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).toBeNull();
+    expect(graphExplorerHarness.canvasProps).toHaveLength(0);
+
+    const pathNode = container.querySelector<HTMLButtonElement>(
+      '[data-testid="mobile-graph-path-node"]',
+    );
+    if (!pathNode) throw new Error("手机路径视图缺少可打开对象");
+    await act(async () => pathNode.click());
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).not.toBeNull();
+    expect(graphExplorerHarness.canvasProps.length).toBeGreaterThan(0);
+
+    const returnPath = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "返回路径");
+    await act(async () => returnPath?.click());
+    expect(container.querySelector('[data-testid="mobile-graph-path"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).toBeNull();
+  });
+
+  it("opens the phone Canvas when a valid deep-link focus arrives after mount", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+      matches: [
+        "(max-width: 1279px)",
+        "(max-width: 1023px)",
+        "(max-width: 767px)",
+      ].includes(query),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    await renderExplorer(false, null);
+    expect(container.querySelector('[data-testid="mobile-graph-path"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).toBeNull();
+
+    await renderExplorer(false, "file:src/a.ts");
+    expect(container.querySelector('[data-testid="mobile-graph-path"]')).toBeNull();
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).not.toBeNull();
+    const pending = latestCanvasProps().explicitFocusRequest;
+    expect(pending).toEqual({ requestId: 1, materializedNodeId: "file:src/a.ts" });
+
+    await act(async () => latestCanvasProps().onBaseLayoutReady({
+      requestId: pending!.requestId,
+      structureKey: "mobile-deep-link",
+      materializedNodeId: pending!.materializedNodeId,
+    }));
+    expect(useDashboardStore.getState().selectedNodeId).toBe("file:src/a.ts");
+    expect(container.querySelector('aside[aria-label="图谱详情"]')).not.toBeNull();
   });
 
   it("removes covered Canvas controls from compact Inspector focus order", async () => {

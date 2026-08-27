@@ -15,7 +15,7 @@ import { validateGraph } from "@understand-code/core/schema";
 import GlobalWikiSearch from "./components/wiki/GlobalWikiSearch";
 import KnowledgeConsole from "./components/wiki/KnowledgeConsole";
 import { GLOBAL_WIKI_SEARCH_REQUEST_EVENT } from "./components/wiki/WikiResponsiveShell";
-import DashboardHeader from "./components/DashboardHeader";
+import DashboardHeader, { type ProductSurface } from "./components/DashboardHeader";
 import TokenGate from "./components/TokenGate";
 import WarningBanner from "./components/WarningBanner";
 import TaskFirstWorkbench, {
@@ -519,6 +519,7 @@ function TaskFirstDashboard({
   readonly route: TaskFirstRoute;
   readonly surface: TaskLocalSurface;
 }) {
+  const taskSearchButtonRef = useRef<HTMLButtonElement>(null);
   const [loadState, setLoadState] = useState<{
     readonly loading: boolean;
     readonly result: TaskWorkbenchLoadResult | null;
@@ -611,7 +612,10 @@ function TaskFirstDashboard({
     route.focus && (!payload || stale),
   );
   const backToFinding = useCallback(() => {
-    if (!route.taskId) return;
+    if (!route.taskId) {
+      navigate({ view: "tasks", section: "summary" }, "task");
+      return;
+    }
     navigate({
       view: "tasks",
       taskId: route.taskId,
@@ -619,6 +623,18 @@ function TaskFirstDashboard({
       ...(route.findingId ? { findingId: route.findingId } : {}),
     }, "task");
   }, [navigate, route.findingId, route.taskId]);
+
+  const selectProductSurface = useCallback((nextSurface: ProductSurface) => {
+    if (nextSurface === "tasks") return;
+    navigateToSurface(nextSurface, route);
+  }, [navigateToSurface, route]);
+
+  const requestTaskSearch = useCallback(() => {
+    navigateToSurface("wiki", route);
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event(GLOBAL_WIKI_SEARCH_REQUEST_EVENT));
+    }, 0);
+  }, [navigateToSurface, route]);
 
   const taskContext = useMemo<TaskDashboardContext | null>(() => (
     surface === "task" ? null : {
@@ -645,30 +661,41 @@ function TaskFirstDashboard({
   }
 
   return (
-    <TaskFirstWorkbench
-      route={route}
-      page={payload}
-      pulse={payload?.pulse}
-      pulseStatus={pulseStatus}
-      loading={loadState.loading}
-      error={error}
-      stale={stale}
-      sourceSnapshotId={payload?.freshness.sourceSnapshotId}
-      changeCheck={payload?.changeCheck.value}
-      changeCheckStatus={payload?.changeCheck.status}
-      changeCheckMessage={payload?.changeCheck.message}
-      verificationRecords={payload?.verification.value}
-      verificationStatus={payload?.verification.status}
-      verificationMessage={payload?.verification.message}
-      evidence={payload?.evidence}
-      onRetry={load}
-      onSelectSection={selectSection}
-      onSelectFinding={selectFinding}
-      onOpenEvidence={openEvidence}
-      onOpenEvidenceGraph={(nodeId) => navigateToSurface("graph", route, nodeId)}
-      onOpenKnowledge={(nextRoute) => navigateToSurface("wiki", nextRoute)}
-      onOpenGraph={(nextRoute) => navigateToSurface("graph", nextRoute)}
-    />
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-root text-text-primary">
+      <DashboardHeader
+        projectName="代码理解工作台"
+        activeSurface="tasks"
+        searchButtonRef={taskSearchButtonRef}
+        themeInert={false}
+        onSelectSurface={selectProductSurface}
+        onRequestSearch={requestTaskSearch}
+      />
+      <TaskFirstWorkbench
+        route={route}
+        page={payload}
+        pulse={payload?.pulse}
+        pulseStatus={pulseStatus}
+        loading={loadState.loading}
+        error={error}
+        stale={stale}
+        sourceSnapshotId={payload?.freshness.sourceSnapshotId}
+        changeCheck={payload?.changeCheck.value}
+        changeCheckStatus={payload?.changeCheck.status}
+        changeCheckMessage={payload?.changeCheck.message}
+        verificationRecords={payload?.verification.value}
+        verificationStatus={payload?.verification.status}
+        verificationMessage={payload?.verification.message}
+        evidence={payload?.evidence}
+        onRetry={load}
+        onSelectSection={selectSection}
+        onSelectFinding={selectFinding}
+        onOpenEvidence={openEvidence}
+        onOpenEvidenceGraph={(nodeId) => navigateToSurface("graph", route, nodeId)}
+        onOpenKnowledge={(nextRoute) => navigateToSurface("wiki", nextRoute)}
+        onOpenGraph={(nextRoute) => navigateToSurface("graph", nextRoute)}
+        showSurfaceActions={false}
+      />
+    </div>
   );
 }
 
@@ -700,6 +727,12 @@ function App() {
   }, []);
 
   const taskLocation = useMemo(taskLocationState, [locationRevision]);
+  const defaultTaskLocation = useMemo<TaskFirstLocationState | null>(() => {
+    if (window.location.pathname !== "/") return null;
+    if (window.location.hash && window.location.hash !== "#tasks") return null;
+    return { route: { view: "tasks", section: "summary" }, surface: "task" };
+  }, [locationRevision]);
+  const activeTaskLocation = taskLocation ?? defaultTaskLocation;
 
   if (DEMO_MODE) {
     return <Dashboard accessToken="__demo__" onTokenInvalid={handleTokenInvalid} />;
@@ -715,14 +748,16 @@ function App() {
     );
   }
   if (accessToken === null) return <TokenGate onTokenValid={handleTokenValid} />;
-  if (taskLocation) {
+  if (activeTaskLocation) {
     return (
-      <TaskFirstDashboard
-        accessToken={accessToken}
-        onTokenInvalid={handleTokenInvalid}
-        route={taskLocation.route}
-        surface={taskLocation.surface}
-      />
+      <ThemeProvider>
+        <TaskFirstDashboard
+          accessToken={accessToken}
+          onTokenInvalid={handleTokenInvalid}
+          route={activeTaskLocation.route}
+          surface={activeTaskLocation.surface}
+        />
+      </ThemeProvider>
     );
   }
   return <Dashboard accessToken={accessToken} onTokenInvalid={handleTokenInvalid} />;
@@ -972,7 +1007,16 @@ function DashboardContent({
     if (routingController.selectWikiTarget(target)) setSearchOpen(false);
   }, [openWikiTarget, routingController, taskContext, wikiIndex]);
 
-  const selectSurface = useCallback((surface: "wiki" | "graph") => {
+  const selectSurface = useCallback((surface: ProductSurface) => {
+    if (surface === "tasks") {
+      if (taskContext) {
+        taskContext.onBackToFinding();
+        return;
+      }
+      window.history.pushState(null, "", "/tasks");
+      window.dispatchEvent(new Event("popstate"));
+      return;
+    }
     if (!taskContext) {
       routingController.selectSurface(surface);
       return;

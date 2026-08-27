@@ -80,6 +80,33 @@ const strongPulse = RepoPulseSurfaceResponseV1Schema.parse({
 afterEach(() => document.body.replaceChildren());
 
 describe("TaskFirstWorkbench", () => {
+  it("keeps ready, loading, empty, error, and stale states explicit and recoverable", async () => {
+    const htmlFor = (props: Record<string, unknown>) => renderToStaticMarkup(
+      createElement(TaskFirstWorkbench, { route, ...props }),
+    );
+    expect(htmlFor({ page })).toContain('data-state="ready"');
+    expect(htmlFor({ loading: true })).toContain('data-state="loading"');
+    expect(htmlFor({})).toContain('data-state="empty"');
+    expect(htmlFor({ error: "temporary failure", onRetry: vi.fn() })).toContain('data-state="error"');
+    expect(htmlFor({ page, stale: "snapshot changed", onRetry: vi.fn() })).toContain('data-state="stale"');
+
+    const onRetry = vi.fn();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TaskFirstWorkbench, {
+      route,
+      page,
+      stale: "snapshot changed",
+      onRetry,
+    })));
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "重新加载");
+    await act(async () => retry?.click());
+    expect(onRetry).toHaveBeenCalledOnce();
+    await act(async () => root.unmount());
+  });
+
   it("renders the read-only Task/Pulse surface and sends typed deep-link callbacks", async () => {
     const onOpenKnowledge = vi.fn();
     const onOpenGraph = vi.fn();
@@ -94,13 +121,13 @@ describe("TaskFirstWorkbench", () => {
       onSelectSection,
     }));
 
-    expect(html).toContain("Task / 任务");
-    expect(html).toContain("Pulse / 仓库状态");
-    for (const label of ["Summary", "Goals", "Reading", "Changes", "Verification", "Knowledge", "Graph"]) {
+    expect(html).toContain("任务");
+    expect(html).toContain("仓库状态");
+    for (const label of ["摘要", "目标", "阅读", "变更", "验证", "知识库", "关系图谱"]) {
       expect(html).toContain(label);
     }
     expect(html).toContain("The source snapshot changed.");
-    expect(html).toContain("Read-only");
+    expect(html).toContain("只读");
 
     const container = document.createElement("div");
     document.body.append(container);
@@ -115,9 +142,9 @@ describe("TaskFirstWorkbench", () => {
     })));
     const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
     await act(async () => {
-      buttons.find((button) => button.textContent?.includes("Knowledge"))?.click();
-      buttons.find((button) => button.textContent?.includes("Graph"))?.click();
-      buttons.find((button) => button.textContent?.includes("Goals"))?.click();
+      buttons.find((button) => button.textContent?.includes("知识库"))?.click();
+      buttons.find((button) => button.textContent?.includes("关系图谱"))?.click();
+      buttons.find((button) => button.textContent?.includes("目标"))?.click();
     });
 
     expect(onOpenKnowledge).toHaveBeenCalledWith(route);
@@ -158,7 +185,7 @@ describe("TaskFirstWorkbench", () => {
 
     expect(html).toContain(PATH_SAFE_SNAPSHOT_ID);
     expect(html).toContain("feature/path-safe-surface");
-    expect(html).toContain("7 safe · 2 redacted · 3 unknown");
+    expect(html).toContain("7 项安全 · 2 项已隐藏 · 3 项未知");
     expect(html).not.toContain("旧版详情已隐藏");
   });
 
@@ -210,7 +237,7 @@ describe("TaskFirstWorkbench", () => {
     expect(html).toContain('data-testid="task-change-check-classification"');
     expect(html).toContain('data-profile="legacy_summary"');
     expect(html).toContain('data-empty-findings-are-clean="false"');
-    expect(html).toContain("Empty findings are not clean evidence.");
+    expect(html).toContain("没有发现项不等于已经获得变更完全安全的证据。");
     const verificationHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
       route: { ...route, section: "verification_plan" },
       page: { ...page, section: "verification_plan" },

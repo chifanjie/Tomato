@@ -42,6 +42,7 @@ import {
   type ProviderRuntimeIpcCompareCommitResultV1,
   type ProviderRuntimeIpcFixedObjectLocatorV1,
   type ProviderRuntimeIpcJsonValueV1,
+  type ProviderRuntimeIpcJournalStateV1,
   type ProviderRuntimeIpcInspectStateResultV1,
   type ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1,
   type ProviderRuntimeIpcStrongMutationRequestClaimsV1,
@@ -175,6 +176,10 @@ const PRODUCTION_INSTALLATION_MANIFEST_DIGEST_DOMAIN_V1 =
 const PRODUCTION_STRONG_RUNTIME_PHASE_V1 = "final_strong_ready" as const;
 const PRODUCTION_STRONG_BUSINESS_UNINITIALIZED_PHASE_V1 =
   "provider_business_uninitialized_v1" as const;
+const PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_PROFILE_V1 =
+  "provider_production_strong_index_publication_authority_v1" as const;
+const PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1 =
+  "__understand_code_reserved_index_publication_authority_v1" as const;
 const MAX_PRODUCTION_ACCEPTANCE_HISTORY_GENERATIONS_V1 = 4_096;
 const MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 =
   256 * 1024 * 1024;
@@ -208,11 +213,48 @@ export interface ProviderProductionStrongCompareCommitV1Input {
   readonly artifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 }
 
+export interface ProviderProductionStrongIndexPublicationAuthorityV1 {
+  readonly profile:
+    typeof PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_PROFILE_V1;
+  readonly finalizedProviderRevision: number;
+  readonly generationId: `generation-${string}`;
+  readonly generationManifestDigest: ContentDigestV1;
+  readonly sourceInventoryDigest: ContentDigestV1;
+  readonly sourceSnapshotId: string;
+}
+
+export type ProviderProductionStrongIndexPublicationAuthorityInputV1 = Omit<
+  ProviderProductionStrongIndexPublicationAuthorityV1,
+  "finalizedProviderRevision"
+>;
+
+export interface ProviderProductionStrongCompareCommitIndexPublicationV1Input
+  extends ProviderProductionStrongCompareCommitV1Input {
+  readonly authority: ProviderProductionStrongIndexPublicationAuthorityInputV1;
+}
+
+export type ProviderProductionOwnerCommitmentDomainV1 =
+  | "record-verification-full-input-v1"
+  | "verification-detail-semantic-v1"
+  | "repository-index-state-v1"
+  | "repository-worktree-state-v1"
+  | "repository-untracked-state-v1"
+  | "repository-ignore-state-v1"
+  | "repository-state-semantic-v1";
+
+export type ProviderProductionStrongBusinessHeadV1 =
+  ProviderRuntimeIpcJournalStateV1;
+
 export interface ProviderProductionStrongObjectClientV1 {
   /** Read-only identity derived from the verified signed installation. */
   readonly verifiedProviderId: DurableObjectIdentityProviderIdV1;
   /** Minimal journal observation; artifacts never cross the public gateway. */
   inspectState(): Promise<Readonly<{ revision: number }>>;
+  /** Read-only, Acceptance-validated projection of the current business head. */
+  inspectBusinessHead(): Promise<ProviderProductionStrongBusinessHeadV1>;
+  inspectIndexPublicationAuthority(): Promise<
+    ProviderProductionStrongIndexPublicationAuthorityV1 | undefined
+  >;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -222,10 +264,11 @@ export interface ProviderProductionStrongObjectClientV1 {
   compareCommit(
     input: ProviderProductionStrongCompareCommitV1Input,
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
+  compareCommitIndexPublication(
+    input: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+  ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   commitOwnerOnlyState(
-    domain:
-      | "record-verification-full-input-v1"
-      | "verification-detail-semantic-v1",
+    domain: ProviderProductionOwnerCommitmentDomainV1,
     canonicalValue: string,
   ): Promise<KeyedStateTokenV1>;
   close(): void;
@@ -240,6 +283,10 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   readonly serviceConfigPayloadDigest: ContentDigestV1;
   readonly trustSnapshotDigest: ContentDigestV1;
   inspectState(): Promise<Readonly<{ revision: number }>>;
+  inspectBusinessHead(): Promise<ProviderProductionStrongBusinessHeadV1>;
+  inspectIndexPublicationAuthority(): Promise<
+    ProviderProductionStrongIndexPublicationAuthorityV1 | undefined
+  >;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -249,10 +296,11 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   compareCommit(
     input: ProviderProductionStrongCompareCommitV1Input,
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
+  compareCommitIndexPublication(
+    input: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+  ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   commitOwnerOnlyState(
-    domain:
-      | "record-verification-full-input-v1"
-      | "verification-detail-semantic-v1",
+    domain: ProviderProductionOwnerCommitmentDomainV1,
     canonicalValue: string,
   ): KeyedStateTokenV1;
   close(): void;
@@ -303,7 +351,10 @@ interface ProductionSelectionV1 {
 
 interface ProductionStrongBusinessHeadInternalV1 {
   readonly profile: typeof PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1;
-  readonly phase: "strong_change_check_v1" | "strong_verification_v1";
+  readonly phase:
+    | "strong_change_check_v1"
+    | "strong_verification_v1"
+    | "strong_refresh_index_v1";
   readonly artifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 }
 
@@ -410,6 +461,191 @@ function exactKeysV1(
   const expected = [...keys].sort();
   return actual.length === expected.length &&
     actual.every((key, index) => key === expected[index]);
+}
+
+function exactSnapshotIdV1(value: unknown): value is string {
+  return typeof value === "string" &&
+    value.length >= 1 && value.length <= 256 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+export function providerProductionStrongIndexPublicationAuthorityInternalV1(
+  value: unknown,
+): ProviderProductionStrongIndexPublicationAuthorityV1 {
+  const authority = dataRecordV1(
+    value,
+    "strong index publication authority",
+  );
+  if (
+    !exactKeysV1(authority, [
+      "profile",
+      "finalizedProviderRevision",
+      "generationId",
+      "generationManifestDigest",
+      "sourceInventoryDigest",
+      "sourceSnapshotId",
+    ]) ||
+    authority.profile !==
+      PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_PROFILE_V1 ||
+    !Number.isSafeInteger(authority.finalizedProviderRevision) ||
+    (authority.finalizedProviderRevision as number) < 1 ||
+    typeof authority.generationId !== "string" ||
+    !/^generation-[0-9a-f]{64}$/u.test(authority.generationId) ||
+    !exactSnapshotIdV1(authority.sourceSnapshotId)
+  ) return productionFailV1("strong index publication authority is invalid");
+  let generationManifestDigest: ContentDigestV1;
+  let sourceInventoryDigest: ContentDigestV1;
+  try {
+    generationManifestDigest = ContentDigestV1Schema.parse(
+      authority.generationManifestDigest,
+    );
+    sourceInventoryDigest = ContentDigestV1Schema.parse(
+      authority.sourceInventoryDigest,
+    );
+  } catch (error) {
+    return productionFailV1(
+      "strong index publication authority is invalid",
+      error,
+    );
+  }
+  return Object.freeze({
+    profile: PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_PROFILE_V1,
+    finalizedProviderRevision: authority.finalizedProviderRevision as number,
+    generationId: authority.generationId as `generation-${string}`,
+    generationManifestDigest,
+    sourceInventoryDigest,
+    sourceSnapshotId: authority.sourceSnapshotId,
+  });
+}
+
+function parseProductionStrongIndexPublicationAuthorityInputV1(
+  value: unknown,
+  finalizedProviderRevision: number,
+): ProviderProductionStrongIndexPublicationAuthorityV1 {
+  const authority = dataRecordV1(
+    value,
+    "strong index publication authority input",
+  );
+  if (
+    !exactKeysV1(authority, [
+      "profile",
+      "generationId",
+      "generationManifestDigest",
+      "sourceInventoryDigest",
+      "sourceSnapshotId",
+    ])
+  ) return productionFailV1("strong index publication authority input is invalid");
+  return providerProductionStrongIndexPublicationAuthorityInternalV1({
+    ...authority,
+    finalizedProviderRevision,
+  });
+}
+
+function projectProductionStrongBusinessArtifactsV1(
+  artifactsInput: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+): Readonly<{
+  publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+  authority?: ProviderProductionStrongIndexPublicationAuthorityV1;
+}> {
+  const artifacts = dataRecordV1(
+    artifactsInput,
+    "strong business head artifacts",
+  ) as Record<string, ProviderRuntimeIpcJsonValueV1>;
+  const reserved = artifacts[
+    PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1
+  ];
+  const publicArtifacts = Object.freeze(Object.fromEntries(
+    Object.entries(artifacts).filter(
+      ([key]) =>
+        key !== PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1,
+    ),
+  ));
+  if (reserved === undefined) return Object.freeze({ publicArtifacts });
+  return Object.freeze({
+    publicArtifacts,
+    authority:
+      providerProductionStrongIndexPublicationAuthorityInternalV1(reserved),
+  });
+}
+
+function createProductionStrongDurableBusinessArtifactsV1(
+  currentArtifacts:
+    | Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>
+    | undefined,
+  publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+  replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
+): Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>> {
+  const currentAuthority = currentArtifacts === undefined
+    ? undefined
+    : projectProductionStrongBusinessArtifactsV1(currentArtifacts).authority;
+  const authority = replacementAuthority ?? currentAuthority;
+  const durableAuthority: ProviderRuntimeIpcJsonValueV1 | undefined =
+    authority === undefined
+      ? undefined
+      : Object.freeze({
+          profile: authority.profile,
+          finalizedProviderRevision: authority.finalizedProviderRevision,
+          generationId: authority.generationId,
+          generationManifestDigest: authority.generationManifestDigest,
+          sourceInventoryDigest: authority.sourceInventoryDigest,
+          sourceSnapshotId: authority.sourceSnapshotId,
+        });
+  return Object.freeze({
+    ...publicArtifacts,
+    ...(durableAuthority === undefined
+      ? {}
+      : {
+          [PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1]:
+            durableAuthority,
+        }),
+  });
+}
+
+/** Focused-test seam; the reserved artifact key remains private. */
+export function providerProductionStrongIndexPublicationLaneInternalV1(
+  input: Readonly<{
+    currentArtifacts?: Readonly<
+      Record<string, ProviderRuntimeIpcJsonValueV1>
+    >;
+    publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+    replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1;
+    currentRevision: number;
+  }>,
+): Readonly<{
+  durableArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+  publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+  authority?: ProviderProductionStrongIndexPublicationAuthorityV1;
+}> {
+  const durableArtifacts = createProductionStrongDurableBusinessArtifactsV1(
+    input.currentArtifacts,
+    input.publicArtifacts,
+    input.replacementAuthority,
+  );
+  const projection = projectProductionStrongBusinessArtifactsV1(
+    durableArtifacts,
+  );
+  assertProductionStrongIndexPublicationRevisionV1(
+    projection.authority,
+    input.currentRevision,
+  );
+  return Object.freeze({
+    durableArtifacts,
+    publicArtifacts: projection.publicArtifacts,
+    ...(projection.authority === undefined
+      ? {}
+      : { authority: projection.authority }),
+  });
+}
+
+function assertProductionStrongIndexPublicationRevisionV1(
+  authority: ProviderProductionStrongIndexPublicationAuthorityV1 | undefined,
+  currentRevision: number,
+): void {
+  if (
+    authority !== undefined &&
+    authority.finalizedProviderRevision > currentRevision
+  ) productionFailV1("strong index publication authority revision is invalid");
 }
 
 async function readStableFileV1(input: {
@@ -1142,10 +1378,17 @@ function validateOwnerCommitmentInputV1(
   domain: string,
   canonicalValue: string,
 ): Buffer {
-  if (
-    domain !== "record-verification-full-input-v1" &&
-    domain !== "verification-detail-semantic-v1"
-  ) return productionFailV1("owner-only commitment domain is invalid");
+  if (![
+    "record-verification-full-input-v1",
+    "verification-detail-semantic-v1",
+    "repository-index-state-v1",
+    "repository-worktree-state-v1",
+    "repository-untracked-state-v1",
+    "repository-ignore-state-v1",
+    "repository-state-semantic-v1",
+  ].includes(domain)) {
+    return productionFailV1("owner-only commitment domain is invalid");
+  }
   if (
     typeof canonicalValue !== "string" ||
     Buffer.byteLength(canonicalValue, "utf8") > 16 * 1024 * 1024
@@ -1242,15 +1485,25 @@ function validateTrustedProductionStateV1(
   } catch {
     return productionFailV1("runtime current Acceptance binding is invalid");
   }
+  const businessHead = projected.businessHead === undefined
+    ? undefined
+    : projected.businessHead as unknown as
+      ProductionStrongBusinessHeadInternalV1;
+  if (businessHead !== undefined) {
+    const projection = projectProductionStrongBusinessArtifactsV1(
+      businessHead.artifacts,
+    );
+    assertProductionStrongIndexPublicationRevisionV1(
+      projection.authority,
+      inspected.state.revision,
+    );
+  }
   return Object.freeze({
     inspected,
     lifecycleArtifacts: projected.lifecycleArtifacts,
-    ...(projected.businessHead === undefined
+    ...(businessHead === undefined
       ? {}
-      : {
-          businessHead: projected.businessHead as unknown as
-            ProductionStrongBusinessHeadInternalV1,
-        }),
+      : { businessHead }),
   });
 }
 
@@ -1324,6 +1577,30 @@ async function inspectTrustedProductionStateV1(
   );
 }
 
+function projectTrustedProductionBusinessHeadV1(
+  trusted: ReturnType<typeof validateTrustedProductionStateV1>,
+): ProviderRuntimeIpcJournalStateV1 {
+  const businessHead = trusted.businessHead;
+  const artifacts = businessHead === undefined
+    ? {}
+    : projectProductionStrongBusinessArtifactsV1(
+        businessHead.artifacts,
+      ).publicArtifacts;
+  return {
+    profile: trusted.inspected.state.profile,
+    revision: trusted.inspected.state.revision,
+    phase: businessHead?.phase ??
+      PRODUCTION_STRONG_BUSINESS_UNINITIALIZED_PHASE_V1,
+    operationNonce: businessHead === undefined
+      ? "none"
+      : trusted.inspected.state.operationNonce,
+    mutationDigest: businessHead === undefined
+      ? "none"
+      : trusted.inspected.state.mutationDigest,
+    artifacts,
+  };
+}
+
 type ProductionStrongCompareClaimsInternalV1 = Extract<
   ProviderRuntimeIpcStrongMutationRequestClaimsV1,
   { readonly operation: "compare_commit" }
@@ -1332,6 +1609,15 @@ type ProductionStrongCompareClaimsInternalV1 = Extract<
 function parseProductionStrongBusinessCompareV1(
   input: ProviderProductionStrongCompareCommitV1Input,
 ): ProductionStrongCompareClaimsInternalV1 {
+  const inputRecord = dataRecordV1(input, "strong compare input");
+  if (
+    !exactKeysV1(inputRecord, [
+      "expectedRevision",
+      "operationNonce",
+      "phase",
+      "artifacts",
+    ])
+  ) return productionFailV1("strong compare input is invalid");
   const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
     operation: "compare_commit",
     operationNonce: input.operationNonce,
@@ -1354,15 +1640,98 @@ function parseProductionStrongBusinessCompareV1(
     Object.prototype.hasOwnProperty.call(
       request.payload.artifacts,
       PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1,
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      request.payload.artifacts,
+      PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1,
     )
   ) return productionFailV1("strong compare reserved authority is invalid");
   return request;
 }
 
+export function providerProductionStrongBusinessCompareInputInternalV1(
+  input: unknown,
+): ProviderProductionStrongCompareCommitV1Input {
+  const business = parseProductionStrongBusinessCompareV1(
+    input as ProviderProductionStrongCompareCommitV1Input,
+  );
+  return Object.freeze({
+    expectedRevision: business.payload.expectedRevision,
+    operationNonce: business.operationNonce,
+    phase: business.payload.phase,
+    artifacts: business.payload.artifacts,
+  });
+}
+
+function parseProductionStrongIndexPublicationCompareV1(
+  input: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+): Readonly<{
+  business: ProductionStrongCompareClaimsInternalV1;
+  authority: ProviderProductionStrongIndexPublicationAuthorityV1;
+}> {
+  const inputRecord = dataRecordV1(
+    input,
+    "strong index publication compare input",
+  );
+  if (
+    !exactKeysV1(inputRecord, [
+      "expectedRevision",
+      "operationNonce",
+      "phase",
+      "artifacts",
+      "authority",
+    ])
+  ) {
+    return productionFailV1(
+      "strong index publication compare input is invalid",
+    );
+  }
+  const business = parseProductionStrongBusinessCompareV1({
+    expectedRevision: input.expectedRevision,
+    operationNonce: input.operationNonce,
+    phase: input.phase,
+    artifacts: input.artifacts,
+  });
+  const authority = parseProductionStrongIndexPublicationAuthorityInputV1(
+    input.authority,
+    business.payload.expectedRevision + 1,
+  );
+  return Object.freeze({ business, authority });
+}
+
+export function providerProductionStrongIndexPublicationCompareInputInternalV1(
+  input: unknown,
+): ProviderProductionStrongCompareCommitIndexPublicationV1Input {
+  const { business, authority } =
+    parseProductionStrongIndexPublicationCompareV1(
+      input as ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+    );
+  return Object.freeze({
+    expectedRevision: business.payload.expectedRevision,
+    operationNonce: business.operationNonce,
+    phase: business.payload.phase,
+    artifacts: business.payload.artifacts,
+    authority: Object.freeze({
+      profile: authority.profile,
+      generationId: authority.generationId,
+      generationManifestDigest: authority.generationManifestDigest,
+      sourceInventoryDigest: authority.sourceInventoryDigest,
+      sourceSnapshotId: authority.sourceSnapshotId,
+    }),
+  });
+}
+
 function createProductionStrongRuntimeCompareV1(
   trusted: ReturnType<typeof validateTrustedProductionStateV1>,
   business: ProductionStrongCompareClaimsInternalV1,
+  replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
 ): ProductionStrongCompareClaimsInternalV1 {
+  const durableBusinessArtifacts =
+    createProductionStrongDurableBusinessArtifactsV1(
+      trusted.businessHead?.artifacts,
+      business.payload.artifacts,
+      replacementAuthority,
+    );
   const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
     operation: "compare_commit",
     operationNonce: business.operationNonce,
@@ -1375,7 +1744,7 @@ function createProductionStrongRuntimeCompareV1(
         [PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1]: {
           profile: PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1,
           phase: business.payload.phase,
-          artifacts: business.payload.artifacts,
+          artifacts: durableBusinessArtifacts,
         },
       },
     },
@@ -1403,6 +1772,11 @@ function projectProductionStrongCompareResultV1(
   );
   if (result.resolution === "stale") {
     const businessHead = trusted.businessHead;
+    const artifacts = businessHead === undefined
+      ? {}
+      : projectProductionStrongBusinessArtifactsV1(
+          businessHead.artifacts,
+        ).publicArtifacts;
     return ProviderRuntimeIpcCompareCommitResultV1Schema.parse({
       operation: "compare_commit",
       resolution: "stale",
@@ -1417,7 +1791,7 @@ function projectProductionStrongCompareResultV1(
         mutationDigest: businessHead === undefined
           ? "none"
           : trusted.inspected.state.mutationDigest,
-        artifacts: businessHead?.artifacts ?? {},
+        artifacts,
       },
     });
   }
@@ -1438,6 +1812,49 @@ function projectProductionStrongCompareResultV1(
       artifacts: business.payload.artifacts,
     },
   });
+}
+
+function projectTrustedProductionIndexPublicationAuthorityV1(
+  trusted: ReturnType<typeof validateTrustedProductionStateV1>,
+): ProviderProductionStrongIndexPublicationAuthorityV1 | undefined {
+  const authority = trusted.businessHead === undefined
+    ? undefined
+    : projectProductionStrongBusinessArtifactsV1(
+        trusted.businessHead.artifacts,
+      ).authority;
+  assertProductionStrongIndexPublicationRevisionV1(
+    authority,
+    trusted.inspected.state.revision,
+  );
+  return authority;
+}
+
+async function compareProductionStrongBusinessV1(
+  state: ProductionClientStateV1,
+  business: ProductionStrongCompareClaimsInternalV1,
+  replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
+): Promise<ProviderRuntimeIpcCompareCommitResultV1> {
+  let runtimeRequest: ProductionStrongCompareClaimsInternalV1 | undefined;
+  const result = await strongExchangeV1(
+    state,
+    (inspected) => {
+      runtimeRequest = createProductionStrongRuntimeCompareV1(
+        inspected,
+        business,
+        replacementAuthority,
+      );
+      return runtimeRequest;
+    },
+  );
+  if (runtimeRequest === undefined) {
+    return productionFailV1("strong compare runtime projection is unavailable");
+  }
+  return projectProductionStrongCompareResultV1(
+    result,
+    business,
+    runtimeRequest,
+    state.selection,
+  );
 }
 
 /**
@@ -1484,6 +1901,16 @@ export async function openProviderProductionStrongObjectHostInternalV1(
       );
       return { revision: inspected.inspected.state.revision };
     },
+    async inspectBusinessHead() {
+      return projectTrustedProductionBusinessHeadV1(
+        await inspectTrustedProductionStateV1(productionStateV1(client)),
+      );
+    },
+    async inspectIndexPublicationAuthority() {
+      return projectTrustedProductionIndexPublicationAuthorityV1(
+        await inspectTrustedProductionStateV1(productionStateV1(client)),
+      );
+    },
     async readExactObject(locatorInput: ProviderRuntimeIpcFixedObjectLocatorV1) {
       const state = productionStateV1(client);
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
@@ -1526,31 +1953,22 @@ export async function openProviderProductionStrongObjectHostInternalV1(
     async compareCommit(inputValue: ProviderProductionStrongCompareCommitV1Input) {
       const state = productionStateV1(client);
       const business = parseProductionStrongBusinessCompareV1(inputValue);
-      let runtimeRequest: ProductionStrongCompareClaimsInternalV1 | undefined;
-      const result = await strongExchangeV1(
+      return compareProductionStrongBusinessV1(state, business);
+    },
+    async compareCommitIndexPublication(
+      inputValue: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+    ) {
+      const state = productionStateV1(client);
+      const { business, authority } =
+        parseProductionStrongIndexPublicationCompareV1(inputValue);
+      return compareProductionStrongBusinessV1(
         state,
-        (inspected) => {
-          runtimeRequest = createProductionStrongRuntimeCompareV1(
-            inspected,
-            business,
-          );
-          return runtimeRequest;
-        },
-      );
-      if (runtimeRequest === undefined) {
-        return productionFailV1("strong compare runtime projection is unavailable");
-      }
-      return projectProductionStrongCompareResultV1(
-        result,
         business,
-        runtimeRequest,
-        state.selection,
+        authority,
       );
     },
     commitOwnerOnlyState(
-      domain:
-        | "record-verification-full-input-v1"
-        | "verification-detail-semantic-v1",
+      domain: ProviderProductionOwnerCommitmentDomainV1,
       canonicalValue: string,
     ) {
       const state = productionStateV1(client);

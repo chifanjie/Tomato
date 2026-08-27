@@ -28,6 +28,7 @@ const PROCESS_TIMEOUT_MS = 20_000;
 const EXTERNAL_TIMEOUT_MS = 60_000;
 const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
+const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const LIFECYCLE_V2_VERSION = "0.1.0-preview.2+codex.lifecycle-v2";
 const INITIAL_SOURCE = "export function alpha() { return true; }\n";
 const HOST_DOCTOR_CHECK_IDS = [
@@ -367,8 +368,9 @@ function collectMessages(child) {
     for (const waiter of waiters.splice(0)) waiter.reject(error);
   });
   child.once("exit", (code, signal) => {
+    const stderrText = stderr.join("");
     terminalError = new Error(
-      `MCP exited before the expected response (code=${code}, signal=${signal})`,
+      `MCP exited before the expected response (code=${code}, signal=${signal}, stderr=${JSON.stringify(stderrText)})`,
     );
     for (const waiter of waiters.splice(0)) waiter.reject(terminalError);
   });
@@ -943,6 +945,18 @@ async function writeJson(target, value) {
   await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function requiredStep16EvidencePath() {
+  const value = process.env.UNDERSTAND_CODE_STEP16_EVIDENCE_PATH;
+  assert.equal(
+    typeof value === "string" &&
+      path.isAbsolute(value) &&
+      !/[\u0000-\u001f\u007f]/u.test(value),
+    true,
+    "UNDERSTAND_CODE_STEP16_EVIDENCE_PATH must be an absolute safe path",
+  );
+  return value;
+}
+
 async function updateJson(target, update) {
   const value = JSON.parse(await readFile(target, "utf8"));
   update(value);
@@ -959,6 +973,10 @@ function releasePluginRoot(releaseRoot, host) {
 
 async function assertReleaseVersion(releaseRoot, version) {
   const topLevelCli = path.join(releaseRoot, "dist/understand-code.mjs");
+  const topLevelNative = path.join(
+    releaseRoot,
+    `dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+  );
   const hostCliPaths = ["codex", "claude"].map((host) =>
     path.join(
       releasePluginRoot(releaseRoot, host),
@@ -970,6 +988,16 @@ async function assertReleaseVersion(releaseRoot, version) {
       await readFile(hostCliPath),
       await readFile(topLevelCli),
       "both Host plugin payloads must embed the exact release CLI bytes",
+    );
+  }
+  for (const host of ["codex", "claude"]) {
+    assert.deepEqual(
+      await readFile(path.join(
+        releasePluginRoot(releaseRoot, host),
+        `plugins/understand-code/bin/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+      )),
+      await readFile(topLevelNative),
+      "both Host plugin payloads must embed the exact release native peer bytes",
     );
   }
   const codexManifest = JSON.parse(await readFile(
@@ -1121,6 +1149,7 @@ async function createLifecycleReleases(
       manifest,
       "plugins/understand-code/.mcp.json",
       "plugins/understand-code/bin/understand-code.mjs",
+      `plugins/understand-code/bin/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
     ]) {
       assert.deepEqual(
         await readFile(path.join(releasePluginRoot(v1Root, host), relativePath)),
@@ -1200,6 +1229,223 @@ async function assertMissing(target, label) {
   );
 }
 
+async function installPluginHostActivation({
+  installedRoot,
+  host,
+  providerInstallationRoot,
+  version,
+  cwd,
+  env,
+}) {
+  const installedCli = path.join(installedRoot, "bin/understand-code.mjs");
+  const activationRoot = path.join(installedRoot, ".understand-code-host");
+  const result = JSON.parse((await execBounded(
+    process.execPath,
+    [
+      installedCli,
+      "install",
+      "--root",
+      activationRoot,
+      "--host",
+      host,
+      "--provider-installation-root",
+      providerInstallationRoot,
+    ],
+    { cwd, env, encoding: "utf8" },
+  )).stdout);
+  assert.equal(result.ok, true, `${host} activation install must succeed`);
+  assert.match(
+    result.status,
+    /^(?:installed|already_installed|updated)$/u,
+    `${host} activation install must converge`,
+  );
+  const manifest = JSON.parse(await readFile(
+    path.join(activationRoot, "installation-manifest.json"),
+    "utf8",
+  ));
+  assert.deepEqual(
+    {
+      version: manifest.version,
+      root: manifest.root,
+      host: manifest.host,
+      providerInstallationRoot: manifest.providerInstallationRoot,
+    },
+    { version, root: activationRoot, host, providerInstallationRoot },
+    `${host} activation must bind the installed cache to the selected Provider`,
+  );
+  return activationRoot;
+}
+
+test(
+  "marketplace wrapper binds Provider only through its fixed owned activation",
+  async () => {
+    const sandbox = await realpath(
+      await mkdtemp(path.join(tmpdir(), "understand-code-plugin-activation-")),
+    );
+    try {
+      const poisonBin = path.join(sandbox, "poison-bin");
+      const poisonGitMarker = path.join(sandbox, "ambient-git-was-used");
+      await mkdir(poisonBin);
+      await writeFile(
+        path.join(poisonBin, "git"),
+        '#!/bin/sh\ntouch "$POISON_GIT_MARKER"\nexit 99\n',
+        { mode: 0o755 },
+      );
+      const { sanitizeEnvironment } = await import(
+        "../src/codex-plugin-bin.mjs"
+      );
+      const sanitized = sanitizeEnvironment({
+        PATH: poisonBin,
+        NODE_OPTIONS: "--require=/ambient/node-loader.cjs",
+        NODE_PATH: "/ambient/node-path",
+        LD_PRELOAD: "/ambient/ld-preload.so",
+        DYLD_INSERT_LIBRARIES: "/ambient/dyld-insert.dylib",
+        GIT_CONFIG_GLOBAL: "/ambient/gitconfig",
+        UNDERSTAND_CODE_HOST_INSTALLATION_ROOT: "/ambient/install-root",
+      });
+      for (const name of [
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "GIT_CONFIG_GLOBAL",
+        "UNDERSTAND_CODE_HOST_INSTALLATION_ROOT",
+      ]) {
+        assert.equal(Object.hasOwn(sanitized, name), false, `${name} must be removed`);
+      }
+      assert.equal(sanitized.PATH.includes(poisonBin), false);
+
+      const sourcePluginRoot = path.join(
+        packageRoot,
+        "dist/plugin-roots/codex/plugins/understand-code",
+      );
+      const installedRoot = path.join(sandbox, "codex-installed-plugin");
+      await cp(sourcePluginRoot, installedRoot, { recursive: true });
+      const installedCli = path.join(
+        installedRoot,
+        "bin/understand-code.mjs",
+      );
+      const activationRoot = path.join(
+        installedRoot,
+        ".understand-code-host",
+      );
+      const poisonActivationRoot = path.join(sandbox, "poison-activation");
+      const providerRoot = path.join(sandbox, "provider");
+      const poisonProviderRoot = path.join(sandbox, "poison-provider");
+      const repositoryRoot = await createRepository(
+        path.join(sandbox, "repository"),
+      );
+      await Promise.all([
+        mkdir(providerRoot),
+        mkdir(poisonProviderRoot),
+      ]);
+      for (const [root, selectedProviderRoot] of [
+        [activationRoot, providerRoot],
+        [poisonActivationRoot, poisonProviderRoot],
+      ]) {
+        const installed = JSON.parse((await execBounded(
+          process.execPath,
+          [
+            installedCli,
+            "install",
+            "--root",
+            root,
+            "--host",
+            "codex",
+            "--provider-installation-root",
+            selectedProviderRoot,
+          ],
+          { cwd: sandbox, encoding: "utf8" },
+        )).stdout);
+        assert.deepEqual(
+          { ok: installed.ok, status: installed.status },
+          { ok: true, status: "installed" },
+        );
+      }
+
+      const packageVersion = JSON.parse(
+        await readFile(path.join(packageRoot, "package.json"), "utf8"),
+      ).version;
+      const poisonedEnvironment = cleanHostEnvironment(
+        path.join(sandbox, "home"),
+        {
+          PATH: `${path.dirname(await realpath(process.execPath))}${path.delimiter}${poisonBin}`,
+          NODE_OPTIONS: "--no-warnings",
+          NODE_PATH: path.join(sandbox, "poison-node-path"),
+          GIT_CONFIG_GLOBAL: path.join(sandbox, "poison-gitconfig"),
+          POISON_GIT_MARKER: poisonGitMarker,
+          UNDERSTAND_CODE_CLI: path.join(sandbox, "poison-cli"),
+          UNDERSTAND_CODE_HOME: path.join(sandbox, "poison-home"),
+          UNDERSTAND_CODE_HOST_INSTALLATION_ROOT: poisonActivationRoot,
+          UNDERSTAND_CODE_INSTALL_ROOT: poisonActivationRoot,
+          UNDERSTAND_CODE_PROVIDER_INSTALLATION_ROOT: poisonProviderRoot,
+        },
+      );
+      const successful = await withInstalledMcp(
+        {
+          host: "codex",
+          installedRoot,
+          version: packageVersion,
+          repositoryRoot,
+          cwd: repositoryRoot,
+          env: poisonedEnvironment,
+          clientName: "codex-fixed-provider-activation",
+        },
+        async () => "initialized",
+      );
+      assert.equal(successful.result, "initialized");
+      await assert.rejects(access(poisonGitMarker), { code: "ENOENT" });
+
+      const activationConfigPath = path.join(
+        activationRoot,
+        "config/mcp.json",
+      );
+      const activationConfigBytes = await readFile(activationConfigPath);
+      const activationConfig = JSON.parse(
+        activationConfigBytes.toString("utf8"),
+      );
+      const server = await resolveMcpServer(installedRoot, "codex");
+      const assertActivationRejected = async (label) => {
+        const child = spawn(server.executable, server.args, {
+          cwd: repositoryRoot,
+          env: poisonedEnvironment,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        const stdout = [];
+        const stderr = [];
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => stdout.push(chunk));
+        child.stderr.on("data", (chunk) => stderr.push(chunk));
+        assert.deepEqual(await waitForExit(child, label, 10_000), [1, null]);
+        assert.equal(stdout.join(""), "");
+        assert.equal(
+          stderr.join(""),
+          "understand-code: internal_error\n",
+        );
+      };
+
+      activationConfig.providerInstallationRoot = poisonProviderRoot;
+      await writeJson(activationConfigPath, activationConfig);
+      await assertActivationRejected("tampered fixed activation config");
+      await writeFile(activationConfigPath, activationConfigBytes);
+
+      const activationManifestPath = path.join(
+        activationRoot,
+        "installation-manifest.json",
+      );
+      const activationManifest = JSON.parse(
+        await readFile(activationManifestPath, "utf8"),
+      );
+      activationManifest.providerInstallationRoot = poisonProviderRoot;
+      await writeJson(activationManifestPath, activationManifest);
+      await assertActivationRejected("tampered fixed activation manifest");
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  },
+);
+
 test(
   "real Codex and Claude plugin lifecycles preserve the public strong-writer lock",
   async (t) => {
@@ -1239,8 +1485,10 @@ test(
     const releasesRoot = path.join(sandbox, "releases");
     const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
     const differentCwd = path.join(sandbox, "not-the-repository");
+    const unavailableProviderRoot = path.join(sandbox, "provider-unavailable");
     let codexInstalledRoot = null;
     let claudeInstalledRoot = null;
+    let step16Evidence = null;
     try {
       const primaryRepositoryRoot = await createRepository(
         path.join(sandbox, "主仓库 primary with space"),
@@ -1332,7 +1580,24 @@ test(
         mkdir(releasesRoot, { recursive: true }),
         mkdir(marketplaceFacadeRoot, { recursive: true }),
         mkdir(differentCwd, { recursive: true }),
+        mkdir(unavailableProviderRoot, { recursive: true }),
       ]);
+      const activationProviderRoot =
+        process.env.RUN_STEP16_DUAL_HOST_E2E === "1"
+          ? process.env.UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT
+          : unavailableProviderRoot;
+      assert.equal(
+        typeof activationProviderRoot === "string" &&
+          path.isAbsolute(activationProviderRoot) &&
+          !/[\u0000-\u001f\u007f]/u.test(activationProviderRoot),
+        true,
+        "plugin activation requires one explicit Provider installation root",
+      );
+      assert.equal(
+        await realpath(activationProviderRoot),
+        activationProviderRoot,
+        "plugin activation Provider root must be canonical",
+      );
 
       assert.equal(
         process.env.UNDERSTAND_CODE_PREVIEW_TARBALL,
@@ -1515,6 +1780,14 @@ test(
         registeredCodexMcpDetail.transport,
         registeredCodexMcp.transport,
       );
+      await installPluginHostActivation({
+        installedRoot: codexInstalledRoot,
+        host: "codex",
+        providerInstallationRoot: activationProviderRoot,
+        version: v1Version,
+        cwd: differentCwd,
+        env: codexEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v1.root,
         host: "codex",
@@ -1612,6 +1885,14 @@ test(
         )),
         "authoritative Claude cache must contain exact v1 Dashboard manifest",
       );
+      await installPluginHostActivation({
+        installedRoot: claudeInstalledRoot,
+        host: "claude",
+        providerInstallationRoot: activationProviderRoot,
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v1.root,
         host: "claude",
@@ -1697,6 +1978,76 @@ test(
         "both v1 Host installations must execute exact same bundle bytes",
       );
 
+      if (process.env.RUN_STEP16_DUAL_HOST_E2E === "1") {
+        const required = (name) => {
+          const value = process.env[name];
+          assert.equal(
+            typeof value === "string" && path.isAbsolute(value),
+            true,
+            `${name} must be an absolute path for the Step16 Host gate`,
+          );
+          return value;
+        };
+        const { runStep16DualHostStrongAlphaV1 } = await import(
+          "../../durable-object-provider-runtime/test/step16-dual-host-strong-alpha-linux.mjs"
+        );
+        const poisonedProviderSelection = {
+          UNDERSTAND_CODE_CLI: path.join(sandbox, "poison-cli"),
+          UNDERSTAND_CODE_HOME: path.join(sandbox, "poison-home"),
+          UNDERSTAND_CODE_HOST_INSTALLATION_ROOT: path.join(
+            sandbox,
+            "poison-host-installation",
+          ),
+          UNDERSTAND_CODE_INSTALL_ROOT: path.join(
+            sandbox,
+            "poison-installation",
+          ),
+          UNDERSTAND_CODE_PROVIDER_INSTALLATION_ROOT: path.join(
+            sandbox,
+            "poison-provider",
+          ),
+        };
+        step16Evidence = await runStep16DualHostStrongAlphaV1({
+          callerUid: process.geteuid?.(),
+          providerInstallationRoot: required(
+            "UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT",
+          ),
+          repositoryRoot: required("UNDERSTAND_CODE_STEP16_REPOSITORY_ROOT"),
+          invalidRoot: required("UNDERSTAND_CODE_STEP16_INVALID_ROOT"),
+          corpusPath: required("UNDERSTAND_CODE_STEP16_CORPUS_PATH"),
+          actualHostPlugins: {
+            codex: {
+              ...codexV1.server,
+              cliPath: path.join(
+                codexInstalledRoot,
+                "bin/understand-code.mjs",
+              ),
+              installedRoot: codexInstalledRoot,
+              cwd: nestedCwd,
+              env: cleanHostEnvironment(codexUserHome, {
+                CODEX_HOME: codexHome,
+                ...poisonGitAuthority,
+                ...poisonedProviderSelection,
+              }),
+            },
+            claude: {
+              ...claudeV1.server,
+              cliPath: path.join(
+                claudeInstalledRoot,
+                "bin/understand-code.mjs",
+              ),
+              installedRoot: claudeInstalledRoot,
+              cwd: differentCwd,
+              env: cleanHostEnvironment(claudeUserHome, {
+                CLAUDE_CONFIG_DIR: claudeConfig,
+                ...poisonGitAuthority,
+                ...poisonedProviderSelection,
+              }),
+            },
+          },
+        });
+      }
+
       const claudeV1InstalledRoot = claudeInstalledRoot;
       await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v2);
       const codexV2Reinstall = JSON.parse(
@@ -1720,6 +2071,14 @@ test(
         ),
         releases.v2.cliSha256,
       );
+      await installPluginHostActivation({
+        installedRoot: codexInstalledRoot,
+        host: "codex",
+        providerInstallationRoot: activationProviderRoot,
+        version: releases.v2.version,
+        cwd: differentCwd,
+        env: codexEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v2.root,
         host: "codex",
@@ -1777,6 +2136,14 @@ test(
         claudeV1InstalledRoot,
         "Claude v1 cache may remain only as inert non-authoritative residual",
       );
+      await installPluginHostActivation({
+        installedRoot: claudeInstalledRoot,
+        host: "claude",
+        providerInstallationRoot: activationProviderRoot,
+        version: releases.v2.version,
+        cwd: differentCwd,
+        env: claudeEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v2.root,
         host: "claude",
@@ -1840,6 +2207,14 @@ test(
         ),
         releases.v1.cliSha256,
       );
+      await installPluginHostActivation({
+        installedRoot: codexInstalledRoot,
+        host: "codex",
+        providerInstallationRoot: activationProviderRoot,
+        version: v1Version,
+        cwd: differentCwd,
+        env: codexEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v1.root,
         host: "codex",
@@ -1912,6 +2287,14 @@ test(
         ),
         releases.v1.cliSha256,
       );
+      await installPluginHostActivation({
+        installedRoot: claudeInstalledRoot,
+        host: "claude",
+        providerInstallationRoot: activationProviderRoot,
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeEnv,
+      });
       await runInstalledHostDoctor({
         installedPackageRoot: releases.v1.root,
         host: "claude",
@@ -2030,6 +2413,20 @@ test(
         expectedStatus: "not_registered",
       });
       claudeInstalledRoot = null;
+
+      if (step16Evidence !== null) {
+        const { Step16DualHostEvidenceV1Schema } = await import(
+          "../../contracts/dist/alpha-gold.js"
+        );
+        await writeJson(
+          requiredStep16EvidencePath(),
+          Step16DualHostEvidenceV1Schema.parse({
+            ...step16Evidence,
+            lifecycle:
+              "marketplace_install_upgrade_reinstall_remove_doctor_clean_close",
+          }),
+        );
+      }
 
       for (const root of [
         primaryRepositoryRoot,

@@ -9,11 +9,17 @@ export type CliInvocation =
       readonly serviceConfig: string;
     }
   | {
+      /** Private verifier used by an installer-owned strong Host wrapper. */
+      readonly kind: "host_provider_selector";
+      readonly installationRoot: string;
+    }
+  | {
       readonly kind: "installation";
       readonly operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall";
       readonly root?: string;
       readonly home?: string;
       readonly host?: "codex" | "claude";
+      readonly providerInstallationRoot?: string;
       readonly provider?: true;
       /** Privileged Provider Service Handoff installation entrypoint. */
       readonly providerService?: true;
@@ -35,8 +41,8 @@ export type CliInvocation =
   | {
       readonly kind: "mcp";
       readonly rootCandidates: readonly string[];
-      /** Explicit Provider service installation selector for strong Tasks. */
-      readonly canonicalInstallationRoot?: string;
+      /** Installer-owned Host installation resolved in-process to a Provider. */
+      readonly hostInstallationRoot?: string;
     };
 
 export class CliArgumentError extends Error {
@@ -67,6 +73,20 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       throw new CliArgumentError();
     }
     return { kind: "provider_service_runtime", serviceConfig };
+  }
+  if (
+    values.length === 3 &&
+    values[0] === "__host-provider-selector" &&
+    values[1] === "--installation-root"
+  ) {
+    const installationRoot = values[2];
+    if (
+      !safePathArgument(installationRoot) ||
+      !pathIsAbsolute(installationRoot)
+    ) {
+      throw new CliArgumentError();
+    }
+    return { kind: "host_provider_selector", installationRoot };
   }
   if (values[0] === "__provider-runtime") {
     const parsed = new Map<string, string>();
@@ -127,6 +147,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     let root: string | undefined;
     let home: string | undefined;
     let host: "codex" | "claude" | undefined;
+    let providerInstallationRoot: string | undefined;
     let provider: true | undefined;
     let providerService: true | undefined;
     let serviceConfig: string | undefined;
@@ -210,6 +231,21 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         index += 1;
         continue;
       }
+      if (flag === "--provider-installation-root") {
+        if (
+          (operation !== "install" && operation !== "upgrade") ||
+          providerInstallationRoot !== undefined
+        ) {
+          throw new CliArgumentError();
+        }
+        const candidate = values[index + 1];
+        if (!safePathArgument(candidate) || !pathIsAbsolute(candidate)) {
+          throw new CliArgumentError();
+        }
+        providerInstallationRoot = candidate;
+        index += 1;
+        continue;
+      }
       if (flag !== "--root" && flag !== "--home") throw new CliArgumentError();
       const target = values[index + 1];
       if (!safePathArgument(target) || !pathIsAbsolute(target)) {
@@ -250,6 +286,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         root === undefined ||
         home !== undefined ||
         host !== undefined ||
+        providerInstallationRoot !== undefined ||
         provider === true ||
         serviceManifest === undefined ||
         serviceReadiness !== undefined ||
@@ -296,6 +333,9 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       ...(root === undefined ? {} : { root }),
       ...(home === undefined ? {} : { home }),
       ...(host === undefined ? {} : { host }),
+      ...(providerInstallationRoot === undefined
+        ? {}
+        : { providerInstallationRoot }),
       ...(provider === undefined ? {} : { provider }),
       ...(providerService === undefined ? {} : { providerService }),
       ...(serviceConfig === undefined ? {} : { serviceConfig }),
@@ -309,7 +349,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
 
   let stdio = false;
   const rootCandidates: string[] = [];
-  let canonicalInstallationRoot: string | undefined;
+  let hostInstallationRoot: string | undefined;
   for (let index = 1; index < values.length; index += 1) {
     const flag = values[index];
     if (flag === "--stdio") {
@@ -329,13 +369,13 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     if (flag === "--installation-root") {
       const installationRoot = values[index + 1];
       if (
-        canonicalInstallationRoot !== undefined ||
+        hostInstallationRoot !== undefined ||
         !safePathArgument(installationRoot) ||
         !pathIsAbsolute(installationRoot)
       ) {
         throw new CliArgumentError();
       }
-      canonicalInstallationRoot = installationRoot;
+      hostInstallationRoot = installationRoot;
       index += 1;
       continue;
     }
@@ -345,9 +385,9 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
   return {
     kind: "mcp",
     rootCandidates: Object.freeze(rootCandidates),
-    ...(canonicalInstallationRoot === undefined
+    ...(hostInstallationRoot === undefined
       ? {}
-      : { canonicalInstallationRoot }),
+      : { hostInstallationRoot }),
   };
 }
 
@@ -362,9 +402,9 @@ export function helpText(): string {
     "Understand Code",
     "",
     "Usage:",
-    "  understand-code mcp --stdio --root <absolute-worktree-path> [--installation-root <absolute-provider-service-installation-root>]",
-    "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
-    "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
+    "  understand-code mcp --stdio --root <absolute-worktree-path> [--installation-root <absolute-host-installation-root>]",
+    "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
+    "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor --host codex|claude",

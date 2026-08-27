@@ -24,17 +24,20 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   statfs,
+  symlink,
   writeFile,
 } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { constants as fsConstants, readFileSync } from "node:fs";
 import { execFile, spawn } from "node:child_process";
 import { userInfo } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -143,6 +146,14 @@ const FORMAL_PLAN_DIGEST = FORMAL_PLAN.contentDigest;
 const REGISTRY_FIXTURE_PATH = join(
   REPO_ROOT,
   "packages/durable-object-provider-contracts/fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+);
+const ALPHA_GOLD_CORPUS_PATH = join(
+  REPO_ROOT,
+  "packages/contracts/fixtures/v1/golden/alpha-gold-task-corpus-v1.json",
+);
+const PREVIEW_PLUGIN_E2E_PATH = join(
+  REPO_ROOT,
+  "packages/preview/test/plugin-clean-install.test.mjs",
 );
 const execFileAsync = promisify(execFile);
 
@@ -930,6 +941,12 @@ async function makeFixture(work, installRoot, runtimeRoot, paths) {
     brokerSocketPath: join(runtimeRoot, "strong-mutation-broker-v1.sock"),
     runtimeSocketPath: config.payload.socketPath,
     gatewaySocketPath: providerProductionStrongClientGatewaySocketPathV1(installRoot),
+    step16RepositoryRoot: paths.step16RepositoryRoot,
+    step16InvalidRoot: paths.step16InvalidRoot,
+    step16HostsRoot: paths.step16HostsRoot,
+    step16EvidencePath: paths.step16EvidencePath,
+    alphaGoldCorpusPath: ALPHA_GOLD_CORPUS_PATH,
+    previewPluginE2ePath: PREVIEW_PLUGIN_E2E_PATH,
   })}\n`, { mode: 0o644 });
   await chown(paths.fixturePath, 0, 0);
   authKey.fill(0);
@@ -1751,6 +1768,196 @@ async function callerRole(fixturePath, mode = "primary") {
   }
 }
 
+async function step16DualHostRole(fixturePath) {
+  const fixture = await readFixture(fixturePath);
+  dropTo(fixture.callerUid, fixture.callerGid);
+  await rm(fixture.step16EvidencePath, { force: true });
+  await execFileAsync(
+    process.execPath,
+    ["--test", fixture.previewPluginE2ePath],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RUN_STEP16_DUAL_HOST_E2E: "1",
+        TMPDIR: fixture.step16HostsRoot,
+        UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT:
+          fixture.installRoot,
+        UNDERSTAND_CODE_STEP16_REPOSITORY_ROOT:
+          fixture.step16RepositoryRoot,
+        UNDERSTAND_CODE_STEP16_INVALID_ROOT: fixture.step16InvalidRoot,
+        UNDERSTAND_CODE_STEP16_HOSTS_ROOT: fixture.step16HostsRoot,
+        UNDERSTAND_CODE_STEP16_CORPUS_PATH: fixture.alphaGoldCorpusPath,
+        UNDERSTAND_CODE_STEP16_EVIDENCE_PATH: fixture.step16EvidencePath,
+      },
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 25 * 60 * 1000,
+    },
+  );
+  let result;
+  try {
+    result = JSON.parse(await readFile(fixture.step16EvidencePath, "utf8"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    const { createStep16DualHostBlockedEvidenceV1 } = await import(
+      "./step16-dual-host-strong-alpha-linux.mjs"
+    );
+    result = await createStep16DualHostBlockedEvidenceV1({
+      corpusPath: fixture.alphaGoldCorpusPath,
+      blocker: "real_host_clis_unavailable",
+    });
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
+const STEP16_CLOSING_EVIDENCE_NAME_PATTERN =
+  /^step16-closing-evidence-[0-9a-f]{32}\.json$/u;
+
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function assertRootOwnedEvidenceDirectory(metadata) {
+  if (
+    !metadata.isDirectory() ||
+    metadata.uid !== 0n ||
+    Number(metadata.mode & 0o777n) !== 0o700 ||
+    metadata.nlink < 1n
+  ) {
+    throw new Error("Step16 closing evidence directory is not root-owned 0700");
+  }
+}
+
+function assertRootOwnedEvidenceFile(metadata) {
+  if (
+    !metadata.isFile() ||
+    metadata.uid !== 0n ||
+    metadata.nlink !== 1n ||
+    Number(metadata.mode & 0o777n) !== 0o600
+  ) {
+    throw new Error("Step16 closing evidence file identity is unsafe");
+  }
+}
+
+export async function writeStep16ClosingEvidenceV1(targetPath, evidence) {
+  if (
+    process.geteuid?.() !== 0 ||
+    typeof targetPath !== "string" ||
+    !isAbsolute(targetPath) ||
+    /[\u0000-\u001f\u007f]/u.test(targetPath) ||
+    !STEP16_CLOSING_EVIDENCE_NAME_PATTERN.test(basename(targetPath))
+  ) {
+    throw new Error("Step16 closing evidence path is unsafe");
+  }
+  const parentPath = dirname(targetPath);
+  if (join(parentPath, basename(targetPath)) !== targetPath) {
+    throw new Error("Step16 closing evidence path is not canonical");
+  }
+  const canonicalParentPath = await realpath(parentPath);
+  if (canonicalParentPath !== parentPath) {
+    throw new Error("Step16 closing evidence directory is not canonical");
+  }
+  const parentBefore = await lstat(parentPath, { bigint: true });
+  assertRootOwnedEvidenceDirectory(parentBefore);
+
+  const directoryHandle = await open(
+    parentPath,
+    fsConstants.O_RDONLY |
+      fsConstants.O_DIRECTORY |
+      fsConstants.O_NOFOLLOW,
+  );
+  let fileHandle;
+  let fileIdentity;
+  try {
+    const openedParent = await directoryHandle.stat({ bigint: true });
+    assertRootOwnedEvidenceDirectory(openedParent);
+    if (!sameIdentity(parentBefore, openedParent)) {
+      throw new Error("Step16 closing evidence directory changed before create");
+    }
+    fileHandle = await open(
+      targetPath,
+      fsConstants.O_WRONLY |
+        fsConstants.O_CREAT |
+        fsConstants.O_EXCL |
+        fsConstants.O_NOFOLLOW,
+      0o600,
+    );
+    await fileHandle.chmod(0o600);
+    fileIdentity = await fileHandle.stat({ bigint: true });
+    assertRootOwnedEvidenceFile(fileIdentity);
+    await fileHandle.writeFile(`${JSON.stringify(evidence, null, 2)}\n`);
+    await fileHandle.sync();
+    const fileAfterWrite = await fileHandle.stat({ bigint: true });
+    assertRootOwnedEvidenceFile(fileAfterWrite);
+    if (!sameIdentity(fileIdentity, fileAfterWrite)) {
+      throw new Error("Step16 closing evidence file changed while writing");
+    }
+    await directoryHandle.sync();
+  } finally {
+    await fileHandle?.close().catch(() => undefined);
+    await directoryHandle.close().catch(() => undefined);
+  }
+
+  const [parentAfter, pathAfter] = await Promise.all([
+    lstat(parentPath, { bigint: true }),
+    lstat(targetPath, { bigint: true }),
+  ]);
+  assertRootOwnedEvidenceDirectory(parentAfter);
+  assertRootOwnedEvidenceFile(pathAfter);
+  if (
+    !sameIdentity(parentBefore, parentAfter) ||
+    fileIdentity === undefined ||
+    !sameIdentity(fileIdentity, pathAfter)
+  ) {
+    throw new Error("Step16 closing evidence identity changed after fsync");
+  }
+}
+
+async function exerciseStep16ClosingEvidenceRejectionsV1(targetPath) {
+  const parentPath = dirname(targetPath);
+  const suffix = randomBytes(16).toString("hex");
+  const victimPath = join(parentPath, `nofollow-victim-${suffix}`);
+  const symlinkPath = join(
+    parentPath,
+    `step16-closing-evidence-${suffix}.json`,
+  );
+  await writeFile(victimPath, "unchanged\n", { mode: 0o600 });
+  await symlink(victimPath, symlinkPath);
+  let symlinkRejected = false;
+  try {
+    await writeStep16ClosingEvidenceV1(symlinkPath, { forged: true });
+  } catch {
+    symlinkRejected = true;
+  }
+  const victimBytes = await readFile(victimPath, "utf8");
+  await Promise.all([
+    rm(symlinkPath, { force: true }),
+    rm(victimPath, { force: true }),
+  ]);
+  if (!symlinkRejected || victimBytes !== "unchanged\n") {
+    throw new Error("Step16 closing evidence symlink was not rejected zero-write");
+  }
+
+  let unknownPathRejected = false;
+  try {
+    await writeStep16ClosingEvidenceV1(
+      join(parentPath, "unknown", `step16-closing-evidence-${suffix}.json`),
+      { forged: true },
+    );
+  } catch {
+    unknownPathRejected = true;
+  }
+  if (!unknownPathRejected) {
+    throw new Error("Step16 unknown closing evidence path was accepted");
+  }
+  return {
+    symlinkPreset: "rejected_zero_write",
+    unknownPath: "rejected_zero_write",
+    create: "exclusive_nofollow_root_owned_fsync",
+  };
+}
+
 async function orchestrate() {
   if (process.platform !== "linux" || process.geteuid?.() !== 0) throw new Error("three-principal smoke requires Linux root");
   const ext4Mount = "/var/mnt/uc-step15-ext4-root";
@@ -1772,6 +1979,10 @@ async function orchestrate() {
     // installation state.
     authorityHome: join(ext4Mount, `step15-authority-home-${process.pid}-${randomBytes(4).toString("hex")}`),
     nativeProbeRoot: join(ext4Mount, `step15-native-probe-${process.pid}-${randomBytes(4).toString("hex")}`),
+    step16RepositoryRoot: join(ext4Mount, `step16-dual-host-repository-${process.pid}-${randomBytes(4).toString("hex")}`),
+    step16InvalidRoot: join(ext4Mount, `step16-invalid-root-${process.pid}-${randomBytes(4).toString("hex")}`),
+    step16HostsRoot: join(work, "step16-hosts"),
+    step16EvidencePath: join(work, "step16-hosts", "step16-evidence.json"),
   };
   const authorityReadyPath = join(work, "authority.ready");
   const authorityStopPath = join(work, "authority.stop");
@@ -1790,11 +2001,22 @@ async function orchestrate() {
   await mkdir(paths.nativeProbeRoot, { recursive: true, mode: 0o700 });
   await chown(paths.nativeProbeRoot, SERVICE_UID, SERVICE_GID);
   await chmod(paths.nativeProbeRoot, 0o700);
+  for (const callerRoot of [
+    paths.step16RepositoryRoot,
+    paths.step16InvalidRoot,
+    paths.step16HostsRoot,
+  ]) {
+    await mkdir(callerRoot, { recursive: true, mode: 0o700 });
+    await chown(callerRoot, CALLER_UID, CALLER_GID);
+    await chmod(callerRoot, 0o700);
+  }
   let authority;
   let runtime;
   let gateway;
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH;
   const start = (role, env = {}) => spawn(process.execPath, [SCRIPT_PATH, "--role", role, "--fixture", paths.fixturePath], {
-    env: { ...process.env, ...env },
+    env: { ...childEnvironment, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const startAuthority = () => spawn("/usr/bin/unshare", [
@@ -1808,7 +2030,7 @@ async function orchestrate() {
     "--fixture",
     paths.fixturePath,
   ], {
-    env: { ...process.env },
+    env: childEnvironment,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const collect = (child) => {
@@ -2033,6 +2255,30 @@ async function orchestrate() {
             )));
       },
     );
+    const dualHost = process.env.RUN_STEP16_DUAL_HOST_E2E === "1"
+      ? await new Promise((resolvePromise, rejectPromise) => {
+          const child = collect(start("step16-dual-host"));
+          let out = "";
+          child.child.stdout?.setEncoding("utf8");
+          child.child.stdout?.on("data", (chunk) => { out += chunk; });
+          child.child.once("exit", (code) => code === 0
+            ? resolvePromise(JSON.parse(out.trim()))
+            : rejectPromise(new Error(
+                `Step16 dual-Host Alpha failed: ${code} ${child.stderr}`,
+              )));
+        })
+      : undefined;
+    const closingEvidencePath =
+      process.env.UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH;
+    let closingEvidenceSafety;
+    if (dualHost !== undefined) {
+      if (closingEvidencePath === undefined) {
+        throw new Error("Step16 closing evidence path is required");
+      }
+      closingEvidenceSafety =
+        await exerciseStep16ClosingEvidenceRejectionsV1(closingEvidencePath);
+      await writeStep16ClosingEvidenceV1(closingEvidencePath, dualHost);
+    }
     const rotatedGatewayExited = new Promise((resolvePromise) =>
       gateway.child.once("exit", resolvePromise)
     );
@@ -2054,10 +2300,11 @@ async function orchestrate() {
       join(runtimeRoot, ".runtime.durable-current.json"),
       "utf8",
     ));
+    const expectedDurableRevision = dualHost?.providerRevision ?? 4;
     if (
       durableCurrent.lifecycleArtifactCount !== 17 ||
       durableCurrent.businessHeadPresent !== true ||
-      durableCurrent.revision !== 4
+      durableCurrent.revision !== expectedDurableRevision
     ) {
       throw new Error("runtime durable-current did not preserve the exact lifecycle basis");
     }
@@ -2066,7 +2313,7 @@ async function orchestrate() {
     );
     await writeFile(authorityStopPath, "stop\n");
     await authorityExited;
-    process.stdout.write(`${JSON.stringify({ profile: "provider_production_strong_object_three_principal_linux_v1", status: "verified", ext4: true, nativeExactObject: JSON.parse(nativeExactObject), caller: JSON.parse(caller), foreignCallerRejected: denied, restartReplay: JSON.parse(replay), restartSockets: { retainedAfterSigkill: "verified", broker: "reclaimed", runtime: "reclaimed", gateway: "reclaimed", startOrder: "authority_runtime_gateway" }, lifecycleLease: { liveUninstall: "refused_zero_write", doubleStart: "rejected" }, casNonce: JSON.parse(cas), trustRotationReplay: JSON.parse(trustRotationReplay), durableCurrent, lifecycle, authorityUid: 0, runtimeUid: SERVICE_UID, callerUid: CALLER_UID })}\n`);
+    process.stdout.write(`${JSON.stringify({ profile: "provider_production_strong_object_three_principal_linux_v1", status: "verified", ext4: true, nativeExactObject: JSON.parse(nativeExactObject), caller: JSON.parse(caller), foreignCallerRejected: denied, restartReplay: JSON.parse(replay), restartSockets: { retainedAfterSigkill: "verified", broker: "reclaimed", runtime: "reclaimed", gateway: "reclaimed", startOrder: "authority_runtime_gateway" }, lifecycleLease: { liveUninstall: "refused_zero_write", doubleStart: "rejected" }, casNonce: JSON.parse(cas), trustRotationReplay: JSON.parse(trustRotationReplay), ...(dualHost === undefined ? {} : { dualHost, closingEvidenceSafety }), durableCurrent, lifecycle, authorityUid: 0, runtimeUid: SERVICE_UID, callerUid: CALLER_UID })}\n`);
   } finally {
     for (const child of [gateway?.child, runtime?.child, authority?.child]) {
       if (child && child.exitCode === null) child.kill("SIGTERM");
@@ -2075,6 +2322,9 @@ async function orchestrate() {
     await rm(runtimeRoot, { recursive: true, force: true }).catch(() => undefined);
     await rm(paths.authorityHome, { recursive: true, force: true }).catch(() => undefined);
     await rm(paths.nativeProbeRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(paths.step16RepositoryRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(paths.step16InvalidRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(paths.step16HostsRoot, { recursive: true, force: true }).catch(() => undefined);
     await rm(`${installRoot}.provider-production-strong-client-v1.json`, { force: true }).catch(() => undefined);
   }
 }
@@ -2094,6 +2344,7 @@ if (role === "--role") {
   else if (selected === "trust-rotation-replay") {
     await callerRole(fixturePath, "trust-rotation-replay");
   }
+  else if (selected === "step16-dual-host") await step16DualHostRole(fixturePath);
   else if (selected === "native-exact-object") await nativeExactObjectRole(fixturePath);
   else throw new Error(`unknown role ${selected}`);
 } else {

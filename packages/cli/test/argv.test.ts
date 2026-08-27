@@ -9,7 +9,7 @@ describe("CLI arguments", () => {
     ).toEqual({ kind: "mcp", rootCandidates: ["/tmp/repository"] });
   });
 
-  it("accepts one explicit absolute Provider service installation selector", () => {
+  it("accepts one explicit absolute Host installation selector", () => {
     expect(
       parseCliArguments([
         "mcp",
@@ -17,13 +17,13 @@ describe("CLI arguments", () => {
         "--root",
         "/tmp/repository",
         "--installation-root",
-        "/var/lib/understand-code/provider-authority",
+        "/opt/understand-code/codex-host",
       ]),
     ).toEqual({
       kind: "mcp",
       rootCandidates: ["/tmp/repository"],
-      canonicalInstallationRoot:
-        "/var/lib/understand-code/provider-authority",
+      hostInstallationRoot:
+        "/opt/understand-code/codex-host",
     });
     expect(() =>
       parseCliArguments([
@@ -42,6 +42,69 @@ describe("CLI arguments", () => {
         "--installation-root",
         "/var/lib/provider-b",
       ])
+    ).toThrow(CliArgumentError);
+  });
+
+  it("accepts one explicit Provider selector for a Host installation", () => {
+    expect(
+      parseCliArguments([
+        "install",
+        "--root",
+        "/opt/understand-code/codex",
+        "--host",
+        "codex",
+        "--provider-installation-root",
+        "/var/lib/understand-code/provider",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "install",
+      root: "/opt/understand-code/codex",
+      host: "codex",
+      providerInstallationRoot: "/var/lib/understand-code/provider",
+    });
+    expect(
+      parseCliArguments([
+        "upgrade",
+        "--root",
+        "/opt/understand-code/claude",
+        "--provider-installation-root",
+        "/var/lib/understand-code/provider-v2",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "upgrade",
+      root: "/opt/understand-code/claude",
+      providerInstallationRoot: "/var/lib/understand-code/provider-v2",
+    });
+  });
+
+  it("accepts only the exact private installed Host selector verifier", () => {
+    expect(
+      parseCliArguments([
+        "__host-provider-selector",
+        "--installation-root",
+        "/opt/understand-code/codex",
+      ]),
+    ).toEqual({
+      kind: "host_provider_selector",
+      installationRoot: "/opt/understand-code/codex",
+    });
+    expect(() =>
+      parseCliArguments([
+        "__host-provider-selector",
+        "--installation-root",
+        "relative-installation",
+      ]),
+    ).toThrow(CliArgumentError);
+    expect(() =>
+      parseCliArguments([
+        "__host-provider-selector",
+        "--installation-root",
+        "/opt/understand-code/codex",
+        "--root",
+        "/tmp/repository",
+      ]),
     ).toThrow(CliArgumentError);
   });
 
@@ -246,6 +309,9 @@ describe("CLI arguments", () => {
     ["doctor host with provider service", ["doctor", "--host", "claude", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json"]],
     ["host on rollback", ["rollback", "--host", "codex"]],
     ["host on uninstall", ["uninstall", "--host", "claude"]],
+    ["Provider installation root on doctor", ["doctor", "--provider-installation-root", "/tmp/provider"]],
+    ["relative Provider installation root", ["install", "--host", "codex", "--provider-installation-root", "relative"]],
+    ["duplicate Provider installation root", ["upgrade", "--provider-installation-root", "/tmp/provider-a", "--provider-installation-root", "/tmp/provider-b"]],
     ["provider on install", ["install", "--provider"]],
     ["provider service doctor without target", ["doctor", "--provider-service"]],
     ["provider service without manifest", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],

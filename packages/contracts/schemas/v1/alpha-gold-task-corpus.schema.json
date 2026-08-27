@@ -1,0 +1,213 @@
+{
+  "$id": "urn:understand-code:schema:v1:alpha-gold-task-corpus",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "alpha_gold_task_corpus_v1"
+    },
+    "corpusId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "taskCount": {
+      "type": "number",
+      "const": 24
+    },
+    "taskDefinitionStatus": {
+      "type": "string",
+      "const": "blocked_not_versioned"
+    },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "alphaA": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "string",
+              "const": "repository_commit_pin"
+            },
+            "repositoryKey": {
+              "type": "string",
+              "const": "understand-code"
+            },
+            "stratum": {
+              "type": "string",
+              "const": "typescript_self_host_and_ts"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "taskCount": {
+              "type": "number",
+              "const": 18
+            }
+          },
+          "required": [
+            "policy",
+            "repositoryKey",
+            "stratum",
+            "revision",
+            "taskCount"
+          ],
+          "additionalProperties": false
+        },
+        "alphaB": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "string",
+              "const": "authorized_local_only"
+            },
+            "stratum": {
+              "type": "string",
+              "const": "large_go_domain"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "taskCount": {
+              "type": "number",
+              "const": 6
+            },
+            "authorization": {
+              "type": "string",
+              "const": "explicit_repository_owner_authorization_required"
+            },
+            "retention": {
+              "type": "string",
+              "const": "never_copy_source_private_evidence_or_absolute_paths"
+            }
+          },
+          "required": [
+            "policy",
+            "stratum",
+            "revision",
+            "taskCount",
+            "authorization",
+            "retention"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "alphaA",
+        "alphaB"
+      ],
+      "additionalProperties": false
+    },
+    "coverageMinimums": {
+      "type": "object",
+      "properties": {
+        "crossFile": {
+          "type": "number",
+          "const": 8
+        },
+        "testImpact": {
+          "type": "number",
+          "const": 6
+        },
+        "unplannedChange": {
+          "type": "number",
+          "const": 4
+        },
+        "knownUnknownBoundary": {
+          "type": "number",
+          "const": 4
+        }
+      },
+      "required": [
+        "crossFile",
+        "testImpact",
+        "unplannedChange",
+        "knownUnknownBoundary"
+      ],
+      "additionalProperties": false
+    },
+    "annotationPolicy": {
+      "type": "string",
+      "const": "two_person_review_required"
+    },
+    "taskSlots": {
+      "minItems": 24,
+      "maxItems": 24,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "corpus": {
+            "type": "string",
+            "enum": [
+              "alpha-a",
+              "alpha-b"
+            ]
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18
+          },
+          "definitionStatus": {
+            "type": "string",
+            "const": "blocked_not_versioned"
+          },
+          "requiredStages": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "const": "repo_pulse"
+              },
+              {
+                "type": "string",
+                "const": "task_brief"
+              },
+              {
+                "type": "string",
+                "const": "change_check"
+              },
+              {
+                "type": "string",
+                "const": "verification"
+              }
+            ]
+          }
+        },
+        "required": [
+          "slotId",
+          "corpus",
+          "ordinal",
+          "definitionStatus",
+          "requiredStages"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "corpusId",
+    "taskCount",
+    "taskDefinitionStatus",
+    "sources",
+    "coverageMinimums",
+    "annotationPolicy",
+    "taskSlots"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "profile": "alpha_gold_runner_contract_v1",
+  "corpusProfile": "alpha_gold_task_corpus_v1",
+  "taskSelection": "versioned_two_person_reviewed_definitions_only",
+  "snapshotPolicy": "fresh_isolated_clean_commit_only_worktree_per_task",
+  "requiredStages": [
+    "repo_pulse",
+    "task_brief",
+    "change_check",
+    "verification"
+  ],
+  "g2": {
+    "minimumPassedTasksOnOneHost": 12,
+    "requiredHostCount": 1
+  },
+  "g3": {
+    "requiredTasksPerHost": 24,
+    "requiredHostCount": 2,
+    "requiredHostTaskExecutions": 48,
+    "requiredHosts": ["codex", "claude"],
+    "artifactTaskRevisionIdentity": "required"
+  },
+  "syntheticSubstitution": "forbidden",
+  "blockedEvidence": "machine_readable_required",
+  "alphaBHandling": "local_only_no_source_private_evidence_or_absolute_path_copy"
+}

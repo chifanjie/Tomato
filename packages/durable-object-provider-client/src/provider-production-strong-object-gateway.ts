@@ -14,6 +14,7 @@ import {
 import {
   ProviderRuntimeIpcCompareCommitResultV1Schema,
   ProviderRuntimeIpcFixedObjectLocatorV1Schema,
+  ProviderRuntimeIpcJournalStateV1Schema,
   ProviderRuntimeIpcReadObjectResultV1Schema,
   ProviderRuntimeIpcWriteObjectResultV1Schema,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
@@ -26,7 +27,10 @@ import { readProviderRuntimeNativeKernelPeerCredentialsV1 } from "@understand-co
 
 import {
   openProviderProductionStrongObjectHostInternalV1,
+  providerProductionStrongIndexPublicationAuthorityInternalV1,
+  providerProductionStrongIndexPublicationCompareInputInternalV1,
   type OpenProviderProductionStrongObjectClientV1Input,
+  type ProviderProductionStrongCompareCommitIndexPublicationV1Input,
   type ProviderProductionStrongCompareCommitV1Input,
   type ProviderProductionStrongObjectClientV1,
   type ProviderProductionStrongObjectHostInternalV1,
@@ -301,8 +305,44 @@ export function providerProductionStrongObjectPrivilegeDropIsExactInternalV1(
     input.supplementaryGroups.every((gid) => gid === input.expectedGid);
 }
 
+export const PROVIDER_PRODUCTION_STRONG_OBJECT_UNAVAILABLE_CODE_V1 =
+  "provider_production_strong_object_unavailable_v1" as const;
+
+export class ProviderProductionStrongObjectUnavailableErrorV1 extends TypeError {
+  readonly code = PROVIDER_PRODUCTION_STRONG_OBJECT_UNAVAILABLE_CODE_V1;
+
+  constructor(options?: ErrorOptions) {
+    super("production strong object gateway is unavailable", options);
+    this.name = "ProviderProductionStrongObjectUnavailableErrorV1";
+  }
+}
+
+export function isProviderProductionStrongObjectUnavailableErrorV1(
+  error: unknown,
+): error is ProviderProductionStrongObjectUnavailableErrorV1 {
+  return error instanceof ProviderProductionStrongObjectUnavailableErrorV1 ||
+    (
+      typeof error === "object" && error !== null &&
+      "name" in error &&
+      error.name === "ProviderProductionStrongObjectUnavailableErrorV1" &&
+      "code" in error &&
+      error.code === PROVIDER_PRODUCTION_STRONG_OBJECT_UNAVAILABLE_CODE_V1
+    );
+}
+
+export async function providerProductionStrongObjectUnavailableBoundaryInternalV1<
+  T,
+>(operation: () => T | Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isProviderProductionStrongObjectUnavailableErrorV1(error)) throw error;
+    throw new ProviderProductionStrongObjectUnavailableErrorV1({ cause: error });
+  }
+}
+
 function unavailableV1(): never {
-  throw new TypeError("production strong object gateway is unavailable");
+  throw new ProviderProductionStrongObjectUnavailableErrorV1();
 }
 
 function recordV1(value: unknown): Record<string, unknown> | undefined {
@@ -329,6 +369,20 @@ export function providerProductionStrongObjectRevisionProjectionInternalV1(
     (inspected.revision as number) < 0
   ) return unavailableV1();
   return Object.freeze({ revision: inspected.revision as number });
+}
+
+export function providerProductionStrongIndexPublicationGatewayRequestInternalV1(
+  value: unknown,
+): ProviderProductionStrongCompareCommitIndexPublicationV1Input {
+  return providerProductionStrongIndexPublicationCompareInputInternalV1(value);
+}
+
+export function providerProductionStrongIndexPublicationGatewayResponseInternalV1(
+  value: unknown,
+) {
+  return value === null
+    ? undefined
+    : providerProductionStrongIndexPublicationAuthorityInternalV1(value);
 }
 
 function exactPathV1(value: unknown): string {
@@ -567,8 +621,20 @@ export async function openProviderProductionStrongObjectClientV1(
   if (!exactKeysV1(input as unknown as Record<string, unknown>, ["canonicalInstallationRoot"])) {
     return unavailableV1();
   }
-  const descriptor = await readRootDescriptorV1(input.canonicalInstallationRoot);
-  const inspected = recordV1(await exchangeV1(descriptor, "inspect", {}));
+  const { descriptor, inspected } =
+    await providerProductionStrongObjectUnavailableBoundaryInternalV1(
+      async () => {
+        const verifiedDescriptor = await readRootDescriptorV1(
+          input.canonicalInstallationRoot,
+        );
+        return {
+          descriptor: verifiedDescriptor,
+          inspected: recordV1(
+            await exchangeV1(verifiedDescriptor, "inspect", {}),
+          ),
+        };
+      },
+    );
   if (
     inspected === undefined || !exactKeysV1(inspected, ["providerId"]) ||
     inspected.providerId !== descriptor.providerId
@@ -577,34 +643,81 @@ export async function openProviderProductionStrongObjectClientV1(
     verifiedProviderId: descriptor.providerId,
     async inspectState() {
       const current = stateV1(client).descriptor;
-      return providerProductionStrongObjectRevisionProjectionInternalV1(
-        await exchangeV1(current, "inspect_state", {}),
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => providerProductionStrongObjectRevisionProjectionInternalV1(
+          await exchangeV1(current, "inspect_state", {}),
+        ),
+      );
+    },
+    async inspectBusinessHead() {
+      const current = stateV1(client).descriptor;
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcJournalStateV1Schema.parse(
+          await exchangeV1(current, "inspect_business_head", {}),
+        ),
+      );
+    },
+    async inspectIndexPublicationAuthority() {
+      const current = stateV1(client).descriptor;
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => {
+          const authority = await exchangeV1(
+            current,
+            "inspect_index_publication_authority",
+            {},
+          );
+          return providerProductionStrongIndexPublicationGatewayResponseInternalV1(
+            authority,
+          );
+        },
       );
     },
     async readExactObject(locatorInput: Parameters<ProviderProductionStrongObjectClientV1["readExactObject"]>[0]) {
       const current = stateV1(client).descriptor;
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locatorInput);
       if (locator.providerId !== current.providerId) return unavailableV1();
-      return ProviderRuntimeIpcReadObjectResultV1Schema.parse(
-        await exchangeV1(current, "read", { locator }),
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcReadObjectResultV1Schema.parse(
+          await exchangeV1(current, "read", { locator }),
+        ),
       );
     },
     async writeExactObject(inputValue: ProviderProductionStrongWriteExactObjectV1Input) {
       const current = stateV1(client).descriptor;
-      return ProviderRuntimeIpcWriteObjectResultV1Schema.parse(
-        await exchangeV1(current, "write", inputValue),
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcWriteObjectResultV1Schema.parse(
+          await exchangeV1(current, "write", inputValue),
+        ),
       );
     },
     async compareCommit(inputValue: ProviderProductionStrongCompareCommitV1Input) {
       const current = stateV1(client).descriptor;
-      return ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
-        await exchangeV1(current, "compare", inputValue),
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
+          await exchangeV1(current, "compare", inputValue),
+        ),
+      );
+    },
+    async compareCommitIndexPublication(
+      inputValue: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+    ) {
+      const current = stateV1(client).descriptor;
+      const input =
+        providerProductionStrongIndexPublicationGatewayRequestInternalV1(
+          inputValue,
+        );
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
+          await exchangeV1(current, "compare_index_publication", input),
+        ),
       );
     },
     async commitOwnerOnlyState(domain: Parameters<ProviderProductionStrongObjectClientV1["commitOwnerOnlyState"]>[0], canonicalValue: string) {
       const current = stateV1(client).descriptor;
-      return KeyedStateTokenV1Schema.parse(
-        await exchangeV1(current, "commit_owner", { domain, canonicalValue }),
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => KeyedStateTokenV1Schema.parse(
+          await exchangeV1(current, "commit_owner", { domain, canonicalValue }),
+        ),
       );
     },
     close(): void {
@@ -773,6 +886,14 @@ class GatewayServerInternalV1 {
           if (payload === undefined || !exactKeysV1(payload, [])) return;
           result = await this.#host.inspectState();
           break;
+        case "inspect_business_head":
+          if (payload === undefined || !exactKeysV1(payload, [])) return;
+          result = await this.#host.inspectBusinessHead();
+          break;
+        case "inspect_index_publication_authority":
+          if (payload === undefined || !exactKeysV1(payload, [])) return;
+          result = (await this.#host.inspectIndexPublicationAuthority()) ?? null;
+          break;
         case "read": {
           if (payload === undefined || !exactKeysV1(payload, ["locator"])) return;
           result = await this.#host.readExactObject(
@@ -788,6 +909,16 @@ class GatewayServerInternalV1 {
         case "compare":
           result = await this.#host.compareCommit(
             payload as unknown as ProviderProductionStrongCompareCommitV1Input,
+          );
+          break;
+        case "compare_index_publication":
+          // The UDS admits only the configured mutation caller principal. This
+          // explicit operation is that principal's sole authority-lane surface;
+          // ordinary `compare` still rejects the reserved artifact key.
+          result = await this.#host.compareCommitIndexPublication(
+            providerProductionStrongIndexPublicationGatewayRequestInternalV1(
+              payload,
+            ),
           );
           break;
         case "commit_owner":

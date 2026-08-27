@@ -21,6 +21,11 @@ const PATTERN_SAMPLES = new Map<string, string>([
   ],
   ["^[0-9A-HJKMNP-TV-Z]{26}$", "01ARZ3NDEKTSV4RRFFQ69G5FAV"],
   ["^sha256:[0-9a-f]{64}$", `sha256:${"0".repeat(64)}`],
+  [
+    "^ed25519-spki-sha256:[0-9a-f]{64}$",
+    `ed25519-spki-sha256:${"0".repeat(64)}`,
+  ],
+  ["^ed25519:[0-9a-f]{128}$", `ed25519:${"0".repeat(128)}`],
   ["^hmac-sha256:[0-9a-f]{64}$", `hmac-sha256:${"0".repeat(64)}`],
   ["^repo-hmac-[0-9a-f]{64}$", `repo-hmac-${"0".repeat(64)}`],
   ["^worktree-hmac-[0-9a-f]{64}$", `worktree-hmac-${"0".repeat(64)}`],

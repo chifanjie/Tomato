@@ -1,6 +1,15 @@
 import { z } from "zod";
 
 import {
+  AlphaGoldGateEvidenceV1Schema,
+  AlphaGoldRunnerContractV1Schema,
+  AlphaGoldTaskCorpusV1Schema,
+  Step16DualHostBlockedEvidenceV1Schema,
+  Step16DualHostEligibleEvidenceV1Schema,
+  Step16DualHostEvidenceV1Schema,
+} from "./alpha-gold.js";
+
+import {
   ArtifactEnvelopeBaseV1Schema,
 } from "./artifact-envelope.js";
 import {
@@ -55,6 +64,12 @@ import {
 } from "./task.js";
 
 export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
+  "alpha-gold-task-corpus": AlphaGoldTaskCorpusV1Schema,
+  "alpha-gold-runner-contract": AlphaGoldRunnerContractV1Schema,
+  "alpha-gold-gate-evidence": AlphaGoldGateEvidenceV1Schema,
+  "step16-dual-host-blocked-evidence": Step16DualHostBlockedEvidenceV1Schema,
+  "step16-dual-host-eligible-evidence": Step16DualHostEligibleEvidenceV1Schema,
+  "step16-dual-host-evidence": Step16DualHostEvidenceV1Schema,
   "artifact-envelope": ArtifactEnvelopeBaseV1Schema,
   "artifact-descriptor": ArtifactDescriptorV1Schema,
   "artifact-manifest": ArtifactManifestV1Schema,
@@ -124,6 +139,229 @@ function normalizeEmptyTupleSchemasV1(value: unknown): void {
   }
 }
 
+function alphaGoldHostExecutionCountCasesV1(): Record<string, unknown> {
+  const branch = (
+    status: "passed" | "g2_subset_passed" | "failed" | "not_run" | "blocked",
+    passedTasks: number,
+    alphaAPassedTasks: number,
+    alphaBPassedTasks: number,
+  ) => ({
+    type: "object",
+    properties: {
+      status: { const: status },
+      passedTasks: { const: passedTasks },
+      alphaAPassedTasks: { const: alphaAPassedTasks },
+      alphaBPassedTasks: { const: alphaBPassedTasks },
+    },
+    required: [
+      "status",
+      "passedTasks",
+      "alphaAPassedTasks",
+      "alphaBPassedTasks",
+    ],
+  });
+  const cases: Array<Record<string, unknown>> = [
+    branch("passed", 24, 18, 6),
+    branch("not_run", 0, 0, 0),
+    branch("blocked", 0, 0, 0),
+  ];
+  for (let alphaA = 0; alphaA <= 18; alphaA += 1) {
+    for (let alphaB = 0; alphaB <= 6; alphaB += 1) {
+      const total = alphaA + alphaB;
+      if (total >= 1 && total <= 23) {
+        cases.push(branch("g2_subset_passed", total, alphaA, alphaB));
+      }
+      if (total <= 23) {
+        cases.push(branch("failed", total, alphaA, alphaB));
+      }
+    }
+  }
+  return { anyOf: cases };
+}
+
+function alphaGoldGateEvidenceTransportInvariantsV1(): Array<Record<string, unknown>> {
+  const exactPassedHost = {
+    type: "object",
+    properties: {
+      status: { const: "passed" },
+      passedTasks: { const: 24 },
+      alphaAPassedTasks: { const: 18 },
+      alphaBPassedTasks: { const: 6 },
+    },
+    required: [
+      "status",
+      "passedTasks",
+      "alphaAPassedTasks",
+      "alphaBPassedTasks",
+    ],
+  };
+  const qualifyingHost = {
+    anyOf: [
+      exactPassedHost,
+      {
+        type: "object",
+        properties: {
+          status: { const: "g2_subset_passed" },
+          passedTasks: { type: "integer", minimum: 12, maximum: 23 },
+        },
+        required: ["status", "passedTasks"],
+      },
+    ],
+  };
+  const availableGoldSources = {
+    type: "object",
+    properties: {
+      taskDefinitionStatus: { const: "versioned_two_person_reviewed" },
+      sources: {
+        type: "object",
+        properties: {
+          alphaA: {
+            type: "object",
+            properties: { materializableFromRepository: { const: true } },
+            required: ["materializableFromRepository"],
+          },
+          alphaB: {
+            type: "object",
+            properties: {
+              ownerAuthorizationObserved: { const: true },
+              localCorpusAvailable: { const: true },
+            },
+            required: ["ownerAuthorizationObserved", "localCorpusAvailable"],
+          },
+        },
+        required: ["alphaA", "alphaB"],
+      },
+    },
+    required: ["taskDefinitionStatus", "sources"],
+  };
+  const hostRunsWithQualifier = {
+    type: "object",
+    properties: {
+      hostRuns: {
+        type: "object",
+        anyOf: [
+          { properties: { codex: qualifyingHost }, required: ["codex"] },
+          { properties: { claude: qualifyingHost }, required: ["claude"] },
+        ],
+      },
+    },
+    required: ["hostRuns"],
+  };
+  const bothHostsPassed = {
+    type: "object",
+    properties: {
+      hostRuns: {
+        type: "object",
+        properties: { codex: exactPassedHost, claude: exactPassedHost },
+        required: ["codex", "claude"],
+      },
+    },
+    required: ["hostRuns"],
+  };
+  return [
+    {
+      properties: {
+        hostRuns: {
+          type: "object",
+          properties: {
+            codex: alphaGoldHostExecutionCountCasesV1(),
+            claude: alphaGoldHostExecutionCountCasesV1(),
+          },
+          required: ["codex", "claude"],
+        },
+      },
+      required: ["hostRuns"],
+    },
+    {
+      if: {
+        properties: {
+          g2: {
+            type: "object",
+            properties: { status: { const: "eligible" } },
+            required: ["status"],
+          },
+        },
+        required: ["g2"],
+      },
+      then: {
+        ...hostRunsWithQualifier,
+      },
+    },
+    {
+      if: { allOf: [availableGoldSources, hostRunsWithQualifier] },
+      then: {
+        properties: {
+          g2: {
+            type: "object",
+            properties: { status: { const: "eligible" } },
+            required: ["status"],
+          },
+        },
+        required: ["g2"],
+      },
+    },
+    {
+      if: {
+        properties: {
+          g3: {
+            type: "object",
+            properties: { status: { const: "eligible" } },
+            required: ["status"],
+          },
+        },
+        required: ["g3"],
+      },
+      then: {
+        allOf: [
+          bothHostsPassed,
+          {
+            properties: {
+          g2: {
+            type: "object",
+            properties: {
+              status: { const: "eligible" },
+            },
+            required: ["status"],
+          },
+            },
+            required: ["g2"],
+          },
+        ],
+      },
+    },
+    {
+      if: {
+        allOf: [
+          availableGoldSources,
+          bothHostsPassed,
+          {
+            properties: {
+              g3: {
+                type: "object",
+                properties: {
+                  artifactTaskRevisionIdentityMatched: { const: true },
+                },
+                required: ["artifactTaskRevisionIdentityMatched"],
+              },
+            },
+            required: ["g3"],
+          },
+        ],
+      },
+      then: {
+        properties: {
+          g3: {
+            type: "object",
+            properties: { status: { const: "eligible" } },
+            required: ["status"],
+          },
+        },
+        required: ["g3"],
+      },
+    },
+  ];
+}
+
 function schemaDocument(
   name: ContractJsonSchemaNameV1,
   schema: z.ZodType,
@@ -133,6 +371,9 @@ function schemaDocument(
     unrepresentable: "any",
   }) as unknown as Record<string, unknown>;
   normalizeEmptyTupleSchemasV1(generated);
+  if (name === "alpha-gold-gate-evidence") {
+    generated.allOf = alphaGoldGateEvidenceTransportInvariantsV1();
+  }
   return {
     $id: `urn:understand-code:schema:v1:${name}`,
     ...generated,

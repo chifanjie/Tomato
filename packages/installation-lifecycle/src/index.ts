@@ -93,6 +93,8 @@ export type InstallationOptionsV1 = InstallationTargetInputV1 &
     cliCommand?: string;
     /** Select a host-specific MCP config; omitted preserves legacy behavior. */
     host?: HostAdapterId;
+    /** Explicit Provider Service installation selected for strong Host tools. */
+    providerInstallationRoot?: string;
   }>;
 
 export type InstallationLifecycleErrorCodeV1 =
@@ -137,6 +139,9 @@ export type InstallationManifestV1 = Readonly<{
   marker: typeof INSTALLATION_MARKER;
   /** Absent on legacy installations that used the direct CLI config. */
   host?: HostAdapterId;
+  /** Absent keeps the installed Host on the read-only capability profile. */
+  providerInstallationRoot?: string;
+  providerInstallationIdentity?: Readonly<{ dev: string; ino: string }>;
   /** Explicitly identifies the UI inventory owned by this installation. */
   workbenchUi?:
     | typeof INSTALLATION_WORKBENCH_UI
@@ -370,6 +375,34 @@ export async function resolveInstallationTargetV1(
     throw new InstallationLifecycleError("io_error", "Unable to canonicalize installation root.", {
       root: requested,
     });
+  }
+}
+
+async function resolveProviderInstallationRootV1(
+  value: string,
+): Promise<string> {
+  const normalized = normalizedCandidate(value);
+  if (normalized === undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "Provider installation root must be an absolute, non-root path without control characters.",
+    );
+  }
+  try {
+    const metadata = await lstat(normalized);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new InstallationLifecycleError(
+        "invalid_target",
+        "Provider installation root must be a real directory, not a symlink or file.",
+      );
+    }
+    return await realCanonicalPath(normalized);
+  } catch (error) {
+    if (error instanceof InstallationLifecycleError) throw error;
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "Provider installation root is unavailable.",
+    );
   }
 }
 
@@ -919,6 +952,7 @@ function markerContent(installationId: string): string {
 function wrapperContent(
   installationId: string,
   host: HostAdapterId | undefined,
+  providerInstallationRoot: string | undefined,
 ): string {
   const lines = [
     "#!/bin/sh",
@@ -943,8 +977,14 @@ function wrapperContent(
       "  /*) ;;",
       "  *) echo workspace_root_required >&2; exit 2 ;;",
       "esac",
-      'exec "$cli" mcp --stdio --root "$2"',
     );
+    if (providerInstallationRoot === undefined) {
+      lines.push('exec "$cli" mcp --stdio --root "$2"');
+    } else {
+      lines.push(
+        'exec "$cli" mcp --stdio --root "$2" --installation-root "$install_root"',
+      );
+    }
   }
   lines.push("");
   return lines.join("\n");
@@ -955,6 +995,8 @@ function configContent(
   installationId: string,
   command: string,
   host: HostAdapterId | undefined,
+  providerInstallationRoot: string | undefined,
+  providerInstallationIdentity?: Readonly<{ dev: string; ino: string }>,
 ): string {
   const hostProjection =
     host === undefined
@@ -975,6 +1017,10 @@ function configContent(
     schemaVersion: INSTALLATION_SCHEMA_VERSION,
     marker: INSTALLATION_MARKER,
     installationId,
+    ...(providerInstallationRoot === undefined
+      ? {}
+      : { providerInstallationRoot }),
+    ...(providerInstallationIdentity === undefined ? {} : { providerInstallationIdentity }),
     ...(hostProjection === undefined
       ? {
           mcpServers: {
@@ -998,6 +1044,8 @@ function manifestFor(
     | typeof INSTALLATION_WORKBENCH_UI
     | typeof INSTALLATION_REACT_WORKBENCH_UI,
   host?: HostAdapterId,
+  providerInstallationRoot?: string,
+  providerInstallationIdentity?: Readonly<{ dev: string; ino: string }>,
   rollback?: InstallationRollbackDescriptorV1,
 ): InstallationManifestV1 {
   const dashboardPaths = [...fileBytes.keys()]
@@ -1016,6 +1064,10 @@ function manifestFor(
     installationId,
     marker: INSTALLATION_MARKER,
     ...(host === undefined ? {} : { host }),
+    ...(providerInstallationRoot === undefined
+      ? {}
+      : { providerInstallationRoot }),
+    ...(providerInstallationIdentity === undefined ? {} : { providerInstallationIdentity }),
     workbenchUi,
     files: ownedPaths.map((filePath) => ({
       path: filePath,
@@ -1082,6 +1134,32 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
         ? hostValue
         : undefined;
   if (hostValue !== undefined && parsedHost === undefined) return undefined;
+  const providerInstallationRootValue = candidate.providerInstallationRoot;
+  const parsedProviderInstallationRoot =
+    providerInstallationRootValue === undefined
+      ? undefined
+      : normalizedCandidate(providerInstallationRootValue);
+  const providerIdentityValue = candidate.providerInstallationIdentity;
+  const parsedProviderInstallationIdentity =
+    providerIdentityValue !== null && typeof providerIdentityValue === "object" &&
+    !Array.isArray(providerIdentityValue) &&
+    Object.keys(providerIdentityValue).sort().join("\u0000") === "dev\u0000ino" &&
+    typeof (providerIdentityValue as Record<string, unknown>).dev === "string" &&
+    /^\d+$/u.test((providerIdentityValue as Record<string, unknown>).dev as string) &&
+    typeof (providerIdentityValue as Record<string, unknown>).ino === "string" &&
+    /^\d+$/u.test((providerIdentityValue as Record<string, unknown>).ino as string)
+      ? { dev: (providerIdentityValue as Record<string, string>).dev!, ino: (providerIdentityValue as Record<string, string>).ino! }
+      : undefined;
+  if (
+    (providerInstallationRootValue !== undefined &&
+      (parsedProviderInstallationRoot === undefined ||
+        parsedProviderInstallationRoot !== providerInstallationRootValue)) ||
+    (parsedProviderInstallationRoot !== undefined && parsedHost === undefined) ||
+    (parsedProviderInstallationRoot !== undefined && parsedProviderInstallationIdentity === undefined) ||
+    (parsedProviderInstallationRoot === undefined && providerIdentityValue !== undefined)
+  ) {
+    return undefined;
+  }
   const workbenchUiValue = candidate.workbenchUi;
   if (
     workbenchUiValue !== undefined &&
@@ -1144,6 +1222,12 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     installationId: candidate.installationId,
     marker: INSTALLATION_MARKER,
     ...(parsedHost === undefined ? {} : { host: parsedHost }),
+    ...(parsedProviderInstallationRoot === undefined
+      ? {}
+      : { providerInstallationRoot: parsedProviderInstallationRoot }),
+    ...(parsedProviderInstallationIdentity === undefined ? {} : {
+      providerInstallationIdentity: parsedProviderInstallationIdentity,
+    }),
     ...(workbenchUiValue === INSTALLATION_WORKBENCH_UI
       ? { workbenchUi: INSTALLATION_WORKBENCH_UI }
       : workbenchUiValue === INSTALLATION_REACT_WORKBENCH_UI
@@ -1493,6 +1577,10 @@ async function hostConfigIsValid(
       parsed.marker === INSTALLATION_MARKER &&
       parsed.installationId === manifest.installationId &&
       parsed.installationRoot === root &&
+      parsed.providerInstallationRoot ===
+        manifest.providerInstallationRoot &&
+      JSON.stringify(parsed.providerInstallationIdentity) ===
+        JSON.stringify(manifest.providerInstallationIdentity) &&
       isHostMcpServerConfigV1(
         parsed,
         manifest.host,
@@ -1698,6 +1786,26 @@ async function inspectInstallation(
       };
     }
   }
+  if (manifest.providerInstallationRoot !== undefined) {
+    const configCheck = checks.find(
+      (check) => check.path === INSTALLATION_CONFIG_FILE,
+    );
+    let providerRootMatches = false;
+    try {
+      providerRootMatches =
+        (await resolveProviderInstallationRootV1(
+          manifest.providerInstallationRoot,
+        )) === manifest.providerInstallationRoot;
+    } catch {
+      providerRootMatches = false;
+    }
+    if (configCheck?.state === "ok" && !providerRootMatches) {
+      const index = checks.findIndex(
+        (check) => check.path === INSTALLATION_CONFIG_FILE,
+      );
+      checks[index] = { ...checks[index]!, state: "modified" };
+    }
+  }
   if (manifest.workbenchUi === INSTALLATION_REACT_WORKBENCH_UI) {
     let dashboardInventoryMatches = false;
     try {
@@ -1877,6 +1985,24 @@ export async function installInstallationV1(
     throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
   }
   const host = options.host ?? existingManifest?.host;
+  const providerInstallationRoot =
+    options.providerInstallationRoot === undefined
+      ? existingManifest?.providerInstallationRoot
+      : await resolveProviderInstallationRootV1(
+          options.providerInstallationRoot,
+        );
+  const providerInstallationIdentity = providerInstallationRoot === undefined
+    ? undefined
+    : await lstat(providerInstallationRoot).then((metadata) => ({
+        dev: String(metadata.dev),
+        ino: String(metadata.ino),
+      }));
+  if (providerInstallationRoot !== undefined && host === undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "A Provider installation root requires a selected Host adapter.",
+    );
+  }
   const cliCommand = options.cliCommand;
   if (host !== undefined && options.cliCommand !== undefined) {
     throw new InstallationLifecycleError(
@@ -1898,13 +2024,26 @@ export async function installInstallationV1(
   const cliAssets = await readCliBundle(options.cliBundlePath, version);
   const bytes = new Map<string, Uint8Array>([
     [INSTALLATION_OWNER_FILE, Buffer.from(markerContent(installationId), "utf8")],
-    [INSTALLATION_WRAPPER_FILE, Buffer.from(wrapperContent(installationId, host), "utf8")],
+    [
+      INSTALLATION_WRAPPER_FILE,
+      Buffer.from(
+        wrapperContent(installationId, host, providerInstallationRoot),
+        "utf8",
+      ),
+    ],
     [INSTALLATION_CLI_BUNDLE_FILE, cliAssets.cliBundle],
     [INSTALLATION_NATIVE_KERNEL_PEER_FILE, cliAssets.nativeKernelPeer],
     [
       INSTALLATION_CONFIG_FILE,
       Buffer.from(
-        configContent(root, installationId, configCommand, host),
+        configContent(
+          root,
+          installationId,
+          configCommand,
+          host,
+          providerInstallationRoot,
+          providerInstallationIdentity,
+        ),
         "utf8",
       ),
     ],
@@ -1917,6 +2056,8 @@ export async function installInstallationV1(
     bytes,
     cliAssets.workbenchUi,
     host,
+    providerInstallationRoot,
+    providerInstallationIdentity,
   );
   if (
     existingManifest === undefined &&
@@ -2087,6 +2228,26 @@ export async function upgradeInstallationV1(
     throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
   }
   const host = options.host ?? existingManifest.host;
+  const providerInstallationRoot =
+    options.providerInstallationRoot === undefined
+      ? existingManifest.providerInstallationRoot
+      : await resolveProviderInstallationRootV1(
+          options.providerInstallationRoot,
+        );
+  const providerInstallationIdentity = providerInstallationRoot === undefined
+    ? undefined
+    : options.providerInstallationRoot === undefined
+      ? existingManifest.providerInstallationIdentity
+      : await lstat(providerInstallationRoot).then((metadata) => ({
+          dev: String(metadata.dev),
+          ino: String(metadata.ino),
+        }));
+  if (providerInstallationRoot !== undefined && host === undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "A Provider installation root requires a selected Host adapter.",
+    );
+  }
   const cliCommand = options.cliCommand;
   if (host !== undefined && options.cliCommand !== undefined) {
     throw new InstallationLifecycleError(
@@ -2109,13 +2270,26 @@ export async function upgradeInstallationV1(
   const installationId = existingManifest.installationId;
   const bytes = new Map<string, Uint8Array>([
     [INSTALLATION_OWNER_FILE, Buffer.from(markerContent(installationId), "utf8")],
-    [INSTALLATION_WRAPPER_FILE, Buffer.from(wrapperContent(installationId, host), "utf8")],
+    [
+      INSTALLATION_WRAPPER_FILE,
+      Buffer.from(
+        wrapperContent(installationId, host, providerInstallationRoot),
+        "utf8",
+      ),
+    ],
     [INSTALLATION_CLI_BUNDLE_FILE, cliAssets.cliBundle],
     [INSTALLATION_NATIVE_KERNEL_PEER_FILE, cliAssets.nativeKernelPeer],
     [
       INSTALLATION_CONFIG_FILE,
       Buffer.from(
-        configContent(root, installationId, configCommand, host),
+        configContent(
+          root,
+          installationId,
+          configCommand,
+          host,
+          providerInstallationRoot,
+          providerInstallationIdentity,
+        ),
         "utf8",
       ),
     ],
@@ -2128,6 +2302,8 @@ export async function upgradeInstallationV1(
     bytes,
     cliAssets.workbenchUi,
     host,
+    providerInstallationRoot,
+    providerInstallationIdentity,
   );
   const currentMatches =
     existingManifest.version === version &&
@@ -2246,6 +2422,8 @@ export async function upgradeInstallationV1(
     bytes,
     cliAssets.workbenchUi,
     host,
+    providerInstallationRoot,
+    providerInstallationIdentity,
     rollback,
   );
   const written: string[] = [];
@@ -2463,6 +2641,98 @@ export async function doctorInstallationV1(
 ): Promise<DoctorResultV1> {
   const root = await resolveInstallationTargetV1(input, { create: false });
   return inspectInstallation(root);
+}
+
+/**
+ * Resolve the Provider selector only through one healthy, installer-owned Host
+ * installation. This is the runtime trust boundary used by strong wrappers.
+ */
+export async function resolveTrustedProviderInstallationRootV1(
+  input: InstallationTargetInputV1,
+): Promise<string> {
+  return (await resolveTrustedProductionInstallationSelectionV1(input))
+    .canonicalProviderInstallationRoot;
+}
+
+export async function resolveTrustedProductionInstallationSelectionV1(
+  input: InstallationTargetInputV1,
+): Promise<Readonly<{
+  canonicalHostInstallationRoot: string;
+  canonicalProviderInstallationRoot: string;
+}>> {
+  const root = await resolveInstallationTargetV1(input, { create: false });
+  const hostRootBefore = await lstat(root);
+  if (!hostRootBefore.isDirectory() || hostRootBefore.isSymbolicLink() ||
+    await realpath(root) !== root) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The Host installation root is unsafe.",
+    );
+  }
+  const before = await readManifestAt(root);
+  if (
+    before?.host === undefined ||
+    before.providerInstallationRoot === undefined
+  ) {
+    throw new InstallationLifecycleError(
+      "manifest_invalid",
+      "The Host installation does not select a Provider installation.",
+    );
+  }
+  const doctor = await inspectInstallation(root);
+  if (!doctor.ok || doctor.status !== "healthy") {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The Host installation cannot provide a trusted Provider selector.",
+    );
+  }
+  const after = await readManifestAt(root);
+  if (
+    after?.installationId !== before.installationId ||
+    after.version !== before.version ||
+    after.host !== before.host ||
+    after.providerInstallationRoot !== before.providerInstallationRoot
+    || JSON.stringify(after.providerInstallationIdentity) !==
+      JSON.stringify(before.providerInstallationIdentity)
+  ) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The Host installation changed while resolving its Provider selector.",
+    );
+  }
+  const canonicalProviderRoot = await resolveProviderInstallationRootV1(
+    after.providerInstallationRoot,
+  );
+  if (canonicalProviderRoot !== after.providerInstallationRoot) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The configured Provider installation root is no longer canonical.",
+    );
+  }
+  const providerMetadata = await lstat(canonicalProviderRoot);
+  if (
+    after.providerInstallationIdentity === undefined ||
+    String(providerMetadata.dev) !== after.providerInstallationIdentity.dev ||
+    String(providerMetadata.ino) !== after.providerInstallationIdentity.ino
+  ) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The configured Provider installation identity changed.",
+    );
+  }
+  const hostRootAfter = await lstat(root);
+  if (!hostRootAfter.isDirectory() || hostRootAfter.isSymbolicLink() ||
+    hostRootAfter.dev !== hostRootBefore.dev ||
+    hostRootAfter.ino !== hostRootBefore.ino || await realpath(root) !== root) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "The Host installation root changed while resolving production authority.",
+    );
+  }
+  return {
+    canonicalHostInstallationRoot: root,
+    canonicalProviderInstallationRoot: canonicalProviderRoot,
+  };
 }
 
 /**

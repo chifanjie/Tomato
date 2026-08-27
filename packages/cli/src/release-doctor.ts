@@ -13,6 +13,7 @@ import {
 } from "@understand-code/core/knowledge-base";
 
 import { PRODUCT_VERSION } from "./constants.js";
+import { openActiveRepositoryIndexV1 } from "./runtime/repository-indexer.js";
 
 export const RELEASE_DOCTOR_SCHEMA_VERSION =
   "understand-code-release-doctor-v1" as const;
@@ -90,6 +91,8 @@ type PluginReleaseReferenceV1 = Readonly<{
   entrypointSha256: string;
   cli: string;
   cliSha256: string;
+  native: string;
+  nativeSha256: string;
   dashboardRoot: string;
   dashboardManifest: string;
   dashboardManifestSha256: string;
@@ -375,6 +378,8 @@ const PLUGIN_PATHS = Object.freeze({
     entrypoint:
       "dist/plugin-roots/codex/plugins/understand-code/bin/understand-code-plugin.mjs",
     cli: "dist/plugin-roots/codex/plugins/understand-code/bin/understand-code.mjs",
+    native:
+      `dist/plugin-roots/codex/plugins/understand-code/bin/native/${process.platform}-${process.arch}/provider_kernel_peer.node`,
     dashboardRoot: "dist/plugin-roots/codex/plugins/understand-code/bin/dashboard",
     dashboardManifest:
       "dist/plugin-roots/codex/plugins/understand-code/bin/dashboard-manifest.json",
@@ -389,6 +394,8 @@ const PLUGIN_PATHS = Object.freeze({
     entrypoint:
       "dist/plugin-roots/claude/plugins/understand-code/bin/understand-code-plugin.mjs",
     cli: "dist/plugin-roots/claude/plugins/understand-code/bin/understand-code.mjs",
+    native:
+      `dist/plugin-roots/claude/plugins/understand-code/bin/native/${process.platform}-${process.arch}/provider_kernel_peer.node`,
     dashboardRoot: "dist/plugin-roots/claude/plugins/understand-code/bin/dashboard",
     dashboardManifest:
       "dist/plugin-roots/claude/plugins/understand-code/bin/dashboard-manifest.json",
@@ -414,6 +421,8 @@ function validPluginReference(
     isDigest(value.entrypointSha256) &&
     value.cli === expected.cli &&
     isDigest(value.cliSha256) &&
+    value.native === expected.native &&
+    isDigest(value.nativeSha256) &&
     value.dashboardRoot === expected.dashboardRoot &&
     value.dashboardManifest === expected.dashboardManifest &&
     isDigest(value.dashboardManifestSha256) &&
@@ -623,22 +632,11 @@ async function inspectArtifactSchemas(
     );
   }
   try {
+    const activeIndex = await openActiveRepositoryIndexV1(canonicalRoot);
     const [graphBytes, wikiBytes, searchBytes, pulseBytes] = await Promise.all([
-      readContainedRegularFile(
-        canonicalRoot,
-        ".understand-code/knowledge-graph.json",
-        MAX_JSON_BYTES,
-      ),
-      readContainedRegularFile(
-        canonicalRoot,
-        ".understand-code/knowledge-base/wiki-index.json",
-        MAX_JSON_BYTES,
-      ),
-      readContainedRegularFile(
-        canonicalRoot,
-        ".understand-code/knowledge-base/search-index.json",
-        MAX_JSON_BYTES,
-      ),
+      activeIndex.read("knowledge-graph.json"),
+      activeIndex.read("knowledge-base/wiki-index.json"),
+      activeIndex.read("knowledge-base/search-index.json"),
       readContainedRegularFile(
         canonicalRoot,
         ".understand-code/repo-pulse.json",
@@ -655,7 +653,9 @@ async function inspectArtifactSchemas(
       graph.issues.length > 0 ||
       !wiki.ok ||
       !search.ok ||
-      !pulse.success
+      !pulse.success ||
+      activeIndex.authority.sourceSnapshotId !==
+        pulse.data.payload.evaluatedSnapshotId
     ) {
       throw new Error("artifact_schema_invalid");
     }
@@ -1089,7 +1089,7 @@ async function inspectPluginPayload(
   if (packageRoot !== undefined && release !== undefined) {
     try {
       const reference = release.pluginRoots[host];
-      const [marketplace, manifest, mcp, entrypoint, cli, dashboardManifest,
+      const [marketplace, manifest, mcp, entrypoint, cli, native, dashboardManifest,
         dashboardInventory] = await Promise.all([
         readContainedRegularFile(
           packageRoot,
@@ -1100,6 +1100,7 @@ async function inspectPluginPayload(
         readContainedRegularFile(packageRoot, reference.mcp, MAX_METADATA_BYTES),
         readContainedRegularFile(packageRoot, reference.entrypoint, MAX_JSON_BYTES),
         readContainedRegularFile(packageRoot, reference.cli, MAX_JSON_BYTES),
+        readContainedRegularFile(packageRoot, reference.native, MAX_NATIVE_BYTES),
         readContainedRegularFile(
           packageRoot,
           reference.dashboardManifest,
@@ -1112,6 +1113,7 @@ async function inspectPluginPayload(
         mcpSha256: digest(mcp),
         entrypointSha256: digest(entrypoint),
         cliSha256: digest(cli),
+        nativeSha256: digest(native),
         dashboardManifestSha256: digest(dashboardManifest),
         dashboardInventorySha256: digest(
           Buffer.from(JSON.stringify(dashboardInventory), "utf8"),
@@ -1124,6 +1126,9 @@ async function inspectPluginPayload(
         payloadFiles.entrypointSha256 !== reference.entrypointSha256 ||
         payloadFiles.cliSha256 !== reference.cliSha256 ||
         payloadFiles.cliSha256 !== release.cli.sha256 ||
+        payloadFiles.nativeSha256 !== reference.nativeSha256 ||
+        payloadFiles.nativeSha256 !== release.native.sha256 ||
+        !nativeBinaryMatchesTuple(native) ||
         payloadFiles.dashboardManifestSha256 !== reference.dashboardManifestSha256 ||
         dashboardInventory.length !== reference.dashboardFileCount ||
         payloadFiles.dashboardInventorySha256 !== reference.dashboardInventorySha256 ||

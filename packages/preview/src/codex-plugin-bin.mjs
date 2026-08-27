@@ -1,19 +1,42 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const MAX_ROOT_BYTES = 4_096;
 const HOSTS = new Set(["codex", "claude"]);
+const HOST_ACTIVATION_DIRECTORY = ".understand-code-host";
+const FIXED_GIT_EXECUTABLE = process.platform === "linux"
+  ? "/opt/understand-code/bin/git"
+  : "/usr/bin/git";
+const FIXED_CHILD_PATH = [
+  path.dirname(realpathSync(process.execPath)),
+  ...(process.platform === "linux" ? ["/opt/understand-code/bin"] : []),
+  "/usr/bin",
+  "/bin",
+].join(path.delimiter);
 
 function sanitizeEnvironment(environment) {
   const sanitized = {};
   for (const [name, value] of Object.entries(environment)) {
-    if (name.toUpperCase().startsWith("GIT_")) continue;
+    const upperName = name.toUpperCase();
+    if (
+      upperName.startsWith("GIT_") ||
+      upperName.startsWith("UNDERSTAND_CODE_") ||
+      upperName.startsWith("DYLD_") ||
+      upperName === "NODE_OPTIONS" ||
+      upperName === "NODE_PATH" ||
+      upperName === "LD_PRELOAD" ||
+      upperName === "BASH_ENV" ||
+      upperName === "ENV" ||
+      upperName === "CDPATH" ||
+      upperName === "PATH"
+    ) continue;
     sanitized[name] = value;
   }
+  sanitized.PATH = FIXED_CHILD_PATH;
   sanitized.GIT_OPTIONAL_LOCKS = "0";
   sanitized.GIT_TERMINAL_PROMPT = "0";
   sanitized.LC_ALL = "C";
@@ -44,7 +67,7 @@ function validateRoot(root, environment = process.env) {
   try {
     canonicalRoot = realpathSync(root);
     gitTopLevel = execFileSync(
-      "git",
+      FIXED_GIT_EXECUTABLE,
       ["-C", canonicalRoot, "rev-parse", "--show-toplevel"],
       {
         encoding: "utf8",
@@ -81,6 +104,46 @@ function selectRoot(host, { env = process.env, cwd = process.cwd() } = {}) {
   throw new TypeError("host_required");
 }
 
+function validateAbsoluteCanonicalDirectory(root, errorCode) {
+  if (
+    typeof root !== "string" ||
+    root.length === 0 ||
+    Buffer.byteLength(root, "utf8") > MAX_ROOT_BYTES ||
+    /[\u0000-\u001f\u007f]/u.test(root) ||
+    root.startsWith("--") ||
+    root.includes("${") ||
+    !path.isAbsolute(root)
+  ) {
+    throw new TypeError(errorCode);
+  }
+  const canonicalRoot = realpathSync(root);
+  if (canonicalRoot !== root) throw new TypeError(errorCode);
+  return canonicalRoot;
+}
+
+function selectHostInstallationRoot(
+  modulePath = fileURLToPath(import.meta.url),
+) {
+  const canonicalModulePath = realpathSync(modulePath);
+  if (canonicalModulePath !== modulePath) {
+    throw new TypeError("provider_installation_root_unavailable");
+  }
+  const pluginRoot = realpathSync(path.dirname(path.dirname(modulePath)));
+  const installationRoot = path.join(pluginRoot, HOST_ACTIVATION_DIRECTORY);
+  try {
+    const metadata = lstatSync(installationRoot);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new TypeError("provider_installation_root_unavailable");
+    }
+  } catch {
+    throw new TypeError("provider_installation_root_unavailable");
+  }
+  return validateAbsoluteCanonicalDirectory(
+    installationRoot,
+    "provider_installation_root_unavailable",
+  );
+}
+
 function signalExitCode(signal) {
   if (signal === "SIGINT") return 130;
   if (signal === "SIGTERM") return 143;
@@ -100,10 +163,21 @@ async function run() {
   }
 
   const cliPath = fileURLToPath(new URL("./understand-code.mjs", import.meta.url));
+  let hostInstallationRoot;
+  try {
+    hostInstallationRoot = selectHostInstallationRoot(
+      fileURLToPath(import.meta.url),
+    );
+  } catch {
+    process.stderr.write("provider_installation_root_unavailable\n");
+    process.exitCode = 1;
+    return;
+  }
   let child;
   try {
     const childArguments = [cliPath, "mcp", "--stdio"];
     if (root !== undefined) childArguments.push("--root", root);
+    childArguments.push("--installation-root", hostInstallationRoot);
     child = spawn(
       process.execPath,
       childArguments,
@@ -145,6 +219,16 @@ async function run() {
   }
 }
 
-await run();
+const modulePath = realpathSync(fileURLToPath(import.meta.url));
+const argumentModulePath = process.argv[1] === undefined
+  ? undefined
+  : realpathSync(process.argv[1]);
+if (argumentModulePath === modulePath) await run();
 
-export { parseHost, sanitizeEnvironment, selectRoot, validateRoot };
+export {
+  parseHost,
+  sanitizeEnvironment,
+  selectHostInstallationRoot,
+  selectRoot,
+  validateRoot,
+};

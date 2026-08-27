@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "profile": "alpha_gold_task_corpus_v1",
+  "corpusId": "step16-alpha-gold-v1",
+  "taskCount": 24,
+  "taskDefinitionStatus": "blocked_not_versioned",
+  "sources": {
+    "alphaA": {
+      "policy": "repository_commit_pin",
+      "repositoryKey": "understand-code",
+      "stratum": "typescript_self_host_and_ts",
+      "revision": "34da354968a6071d914e4e4a4fca738e6c2d8a29",
+      "taskCount": 18
+    },
+    "alphaB": {
+      "policy": "authorized_local_only",
+      "stratum": "large_go_domain",
+      "revision": "01aa1dac22db7d30e92818486190cef6b342fc18",
+      "taskCount": 6,
+      "authorization": "explicit_repository_owner_authorization_required",
+      "retention": "never_copy_source_private_evidence_or_absolute_paths"
+    }
+  },
+  "coverageMinimums": {
+    "crossFile": 8,
+    "testImpact": 6,
+    "unplannedChange": 4,
+    "knownUnknownBoundary": 4
+  },
+  "annotationPolicy": "two_person_review_required",
+  "taskSlots": [
+    { "slotId": "alpha-a-slot-01", "corpus": "alpha-a", "ordinal": 1, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-02", "corpus": "alpha-a", "ordinal": 2, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-03", "corpus": "alpha-a", "ordinal": 3, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-04", "corpus": "alpha-a", "ordinal": 4, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-05", "corpus": "alpha-a", "ordinal": 5, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-06", "corpus": "alpha-a", "ordinal": 6, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-07", "corpus": "alpha-a", "ordinal": 7, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-08", "corpus": "alpha-a", "ordinal": 8, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-09", "corpus": "alpha-a", "ordinal": 9, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-10", "corpus": "alpha-a", "ordinal": 10, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-11", "corpus": "alpha-a", "ordinal": 11, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-12", "corpus": "alpha-a", "ordinal": 12, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-13", "corpus": "alpha-a", "ordinal": 13, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-14", "corpus": "alpha-a", "ordinal": 14, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-15", "corpus": "alpha-a", "ordinal": 15, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-16", "corpus": "alpha-a", "ordinal": 16, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-17", "corpus": "alpha-a", "ordinal": 17, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-a-slot-18", "corpus": "alpha-a", "ordinal": 18, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-01", "corpus": "alpha-b", "ordinal": 1, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-02", "corpus": "alpha-b", "ordinal": 2, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-03", "corpus": "alpha-b", "ordinal": 3, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-04", "corpus": "alpha-b", "ordinal": 4, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-05", "corpus": "alpha-b", "ordinal": 5, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] },
+    { "slotId": "alpha-b-slot-06", "corpus": "alpha-b", "ordinal": 6, "definitionStatus": "blocked_not_versioned", "requiredStages": ["repo_pulse", "task_brief", "change_check", "verification"] }
+  ]
+}

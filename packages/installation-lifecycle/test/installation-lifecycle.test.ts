@@ -4,8 +4,11 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
+  rename,
   rm,
   stat,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -29,6 +32,7 @@ import {
   doctorInstallationV1,
   installInstallationV1,
   managedLegacyWorkbenchUiAllowedV1,
+  resolveTrustedProviderInstallationRootV1,
   rollbackInstallationV1,
   uninstallInstallationV1,
   upgradeInstallationV1,
@@ -158,6 +162,31 @@ async function fakeCliBundle(
   return bundlePath;
 }
 
+async function fakeStrongHostCliBundle(
+  recordPath: string,
+  nativeRevision: number,
+): Promise<string> {
+  return fakeCliBundle(
+    `import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+const args = process.argv.slice(2);
+if (args[0] === "__host-provider-selector") {
+  const installationRoot = args[2];
+  const manifest = JSON.parse(await readFile(path.join(installationRoot, ${JSON.stringify(INSTALLATION_MANIFEST_FILE)}), "utf8"));
+  const configBytes = await readFile(path.join(installationRoot, ${JSON.stringify(INSTALLATION_CONFIG_FILE)}));
+  const configDigest = "sha256:" + createHash("sha256").update(configBytes).digest("hex");
+  const expected = manifest.files.find((file) => file.path === ${JSON.stringify(INSTALLATION_CONFIG_FILE)});
+  const config = JSON.parse(configBytes.toString("utf8"));
+  if (expected?.sha256 !== configDigest || config.providerInstallationRoot !== manifest.providerInstallationRoot) process.exit(2);
+  process.stdout.write(config.providerInstallationRoot + "\\n");
+} else {
+  await writeFile(${JSON.stringify(recordPath)}, JSON.stringify(args));
+}`,
+    nativeRevision,
+  );
+}
+
 describe("installation lifecycle", () => {
   it("installs owned files and Doctor reports a healthy installation", async () => {
     const root = await temporaryRoot();
@@ -268,6 +297,217 @@ describe("installation lifecycle", () => {
       "${WORKSPACE_ROOT}",
     ));
     expect((await doctorInstallationV1({ root })).status).toBe("tampered");
+  });
+
+  it("binds a strong Host wrapper only to its healthy owned Provider selector", async () => {
+    const root = await temporaryRoot();
+    const providerRoot = path.join(path.dirname(root), "provider");
+    const alternateProviderRoot = path.join(
+      path.dirname(root),
+      "alternate-provider",
+    );
+    await Promise.all([
+      mkdir(providerRoot),
+      mkdir(alternateProviderRoot),
+    ]);
+    const canonicalProviderRoot = await realpath(providerRoot);
+    const canonicalAlternateProviderRoot = await realpath(
+      alternateProviderRoot,
+    );
+    const recordPath = path.join(path.dirname(root), "strong-argv.json");
+    const cliBundlePath = await fakeStrongHostCliBundle(recordPath, 1);
+    const installed = await installInstallationV1({
+      root,
+      host: "codex",
+      providerInstallationRoot: providerRoot,
+      cliBundlePath,
+    });
+
+    expect(installed.status).toBe("installed");
+    const manifest = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_MANIFEST_FILE), "utf8"),
+    ) as { providerInstallationRoot?: string };
+    const configPath = path.join(root, INSTALLATION_CONFIG_FILE);
+    const originalConfigBytes = await readFile(configPath);
+    const config = JSON.parse(originalConfigBytes.toString("utf8")) as {
+      providerInstallationRoot?: string;
+    };
+    expect(manifest.providerInstallationRoot).toBe(canonicalProviderRoot);
+    expect(config.providerInstallationRoot).toBe(canonicalProviderRoot);
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).resolves.toBe(canonicalProviderRoot);
+
+    await execFile(
+      path.join(root, INSTALLATION_WRAPPER_FILE),
+      ["--root", root],
+      {
+        cwd: alternateProviderRoot,
+        env: {
+          PATH: process.env.PATH,
+          UNDERSTAND_CODE_CLI: "/untrusted/provider-selector",
+          UNDERSTAND_CODE_HOME: alternateProviderRoot,
+          UNDERSTAND_CODE_INSTALL_ROOT: alternateProviderRoot,
+        },
+      },
+    );
+    expect(JSON.parse(await readFile(recordPath, "utf8"))).toEqual([
+      "mcp",
+      "--stdio",
+      "--root",
+      root,
+      "--installation-root",
+      await realpath(root),
+    ]);
+
+    await writeFile(
+      configPath,
+      `${JSON.stringify({ ...config, providerInstallationRoot: canonicalAlternateProviderRoot })}\n`,
+    );
+    expect((await doctorInstallationV1({ root })).status).toBe("tampered");
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).rejects.toMatchObject({ code: "installation_tampered" });
+    // The wrapper never resolves or emits a raw Provider path. The installed
+    // binary revalidates this Host root in-process before starting MCP.
+
+    await writeFile(configPath, originalConfigBytes, { mode: 0o600 });
+    expect((await doctorInstallationV1({ root })).status).toBe("healthy");
+    await unlink(configPath);
+    expect((await doctorInstallationV1({ root })).status).toBe("tampered");
+  });
+
+  it("rejects a Provider directory replaced at the same pathname", async () => {
+    const root = await temporaryRoot();
+    const providerRoot = path.join(path.dirname(root), "provider-identity");
+    await mkdir(providerRoot);
+    const recordPath = path.join(path.dirname(root), "identity-argv.json");
+    await installInstallationV1({
+      root,
+      host: "codex",
+      providerInstallationRoot: providerRoot,
+      cliBundlePath: await fakeStrongHostCliBundle(recordPath, 1),
+    });
+    await rename(providerRoot, `${providerRoot}-old`);
+    await mkdir(providerRoot);
+    await expect(resolveTrustedProviderInstallationRootV1({ root }))
+      .rejects.toMatchObject({ code: "installation_tampered" });
+  });
+
+  it("preserves the strong Provider selector across upgrade, rollback, and uninstall", async () => {
+    const root = await temporaryRoot();
+    const providerRoot = path.join(path.dirname(root), "provider-a");
+    const alternateProviderRoot = path.join(path.dirname(root), "provider-b");
+    await Promise.all([
+      mkdir(providerRoot),
+      mkdir(alternateProviderRoot),
+    ]);
+    const canonicalProviderRoot = await realpath(providerRoot);
+    const canonicalAlternateProviderRoot = await realpath(
+      alternateProviderRoot,
+    );
+    const recordPath = path.join(path.dirname(root), "lifecycle-argv.json");
+    const firstBundle = await fakeStrongHostCliBundle(recordPath, 1);
+    const secondBundle = await fakeStrongHostCliBundle(recordPath, 2);
+    await installInstallationV1({
+      root,
+      version: "1.0.0",
+      host: "claude",
+      providerInstallationRoot: providerRoot,
+      cliBundlePath: firstBundle,
+    });
+
+    expect(
+      await upgradeInstallationV1({
+        root,
+        version: "2.0.0",
+        host: "claude",
+        cliBundlePath: secondBundle,
+      }),
+    ).toMatchObject({ status: "updated", rollbackAvailable: true });
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).resolves.toBe(canonicalProviderRoot);
+    expect(await rollbackInstallationV1({ root })).toMatchObject({
+      status: "rolled_back",
+      version: "1.0.0",
+    });
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).resolves.toBe(canonicalProviderRoot);
+
+    expect(
+      await upgradeInstallationV1({
+        root,
+        version: "2.0.0",
+        host: "claude",
+        providerInstallationRoot: alternateProviderRoot,
+        cliBundlePath: secondBundle,
+      }),
+    ).toMatchObject({ status: "updated", rollbackAvailable: true });
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).resolves.toBe(canonicalAlternateProviderRoot);
+    expect(await rollbackInstallationV1({ root })).toMatchObject({
+      status: "rolled_back",
+      version: "1.0.0",
+    });
+    await expect(
+      resolveTrustedProviderInstallationRootV1({ root }),
+    ).resolves.toBe(canonicalProviderRoot);
+
+    expect(await uninstallInstallationV1({ root })).toMatchObject({
+      status: "removed",
+      refusedPaths: [],
+    });
+    expect(await stat(providerRoot)).toBeDefined();
+    expect(await stat(alternateProviderRoot)).toBeDefined();
+  });
+
+  it("rejects missing or symlinked Provider installation roots", async () => {
+    const nonHostInstallRoot = await temporaryRoot();
+    const nonHostProviderRoot = path.join(
+      path.dirname(nonHostInstallRoot),
+      "non-host-provider",
+    );
+    await mkdir(nonHostProviderRoot);
+    await expect(
+      installInstallationV1({
+        root: nonHostInstallRoot,
+        providerInstallationRoot: nonHostProviderRoot,
+        cliBundlePath: await fakeCliBundle(),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_target" });
+
+    const missingInstallRoot = await temporaryRoot();
+    await expect(
+      installInstallationV1({
+        root: missingInstallRoot,
+        host: "codex",
+        providerInstallationRoot: path.join(
+          path.dirname(missingInstallRoot),
+          "missing-provider",
+        ),
+        cliBundlePath: await fakeCliBundle(),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_target" });
+
+    const symlinkInstallRoot = await temporaryRoot();
+    const providerRoot = path.join(path.dirname(symlinkInstallRoot), "provider");
+    const providerLink = path.join(
+      path.dirname(symlinkInstallRoot),
+      "provider-link",
+    );
+    await mkdir(providerRoot);
+    await symlink(providerRoot, providerLink, "dir");
+    await expect(
+      installInstallationV1({
+        root: symlinkInstallRoot,
+        host: "claude",
+        providerInstallationRoot: providerLink,
+        cliBundlePath: await fakeCliBundle(),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_target" });
   });
 
   it("refuses uninstall after an owned file is tampered with", async () => {

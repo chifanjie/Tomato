@@ -302,16 +302,19 @@ async function writeReleaseMetadata() {
     const mcp = `${definition.pluginRoot}/.mcp.json`;
     const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
     const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
+    const pluginNative =
+      `${definition.pluginRoot}/bin/native/${nativeTuple}/provider_kernel_peer.node`;
     const dashboardRoot = `${definition.pluginRoot}/bin/dashboard`;
     const dashboardManifest = `${definition.pluginRoot}/bin/dashboard-manifest.json`;
     const [marketplaceBytes, manifestBytes, mcpBytes, entrypointBytes, pluginCliBytes,
-      pluginDashboardManifestBytes, pluginDashboardInventory] =
+      pluginNativeBytes, pluginDashboardManifestBytes, pluginDashboardInventory] =
       await Promise.all([
         readFile(path.join(packageRoot, definition.marketplace)),
         readFile(path.join(packageRoot, definition.manifest)),
         readFile(path.join(packageRoot, mcp)),
         readFile(path.join(packageRoot, entrypoint)),
         readFile(path.join(packageRoot, pluginCli)),
+        readFile(path.join(packageRoot, pluginNative)),
         readFile(path.join(packageRoot, dashboardManifest)),
         buildDirectoryInventory(path.join(packageRoot, dashboardRoot)),
       ]);
@@ -319,11 +322,15 @@ async function writeReleaseMetadata() {
     if (pluginCliSha256 !== cli.sha256) {
       throw new Error(`${host} plugin CLI differs from the release CLI`);
     }
+    if (!pluginNativeBytes.equals(nativeBytes)) {
+      throw new Error(`${host} plugin native peer differs from the release native peer`);
+    }
     const payloadFiles = {
       manifestSha256: sha256(manifestBytes),
       mcpSha256: sha256(mcpBytes),
       entrypointSha256: sha256(entrypointBytes),
       cliSha256: pluginCliSha256,
+      nativeSha256: sha256(pluginNativeBytes),
       dashboardManifestSha256: sha256(pluginDashboardManifestBytes),
       dashboardInventorySha256: sha256(
         Buffer.from(JSON.stringify(pluginDashboardInventory), "utf8"),
@@ -349,6 +356,8 @@ async function writeReleaseMetadata() {
       entrypointSha256: payloadFiles.entrypointSha256,
       cli: pluginCli,
       cliSha256: payloadFiles.cliSha256,
+      native: pluginNative,
+      nativeSha256: payloadFiles.nativeSha256,
       dashboardRoot,
       dashboardManifest,
       dashboardManifestSha256: payloadFiles.dashboardManifestSha256,
@@ -446,6 +455,11 @@ async function buildPluginRoots() {
       cp(
         path.join(distRoot, "understand-code.mjs"),
         path.join(pluginBinRoot, "understand-code.mjs"),
+      ),
+      cp(
+        path.join(distRoot, "native"),
+        path.join(pluginBinRoot, "native"),
+        { recursive: true },
       ),
       cp(
         path.join(distRoot, "dashboard"),

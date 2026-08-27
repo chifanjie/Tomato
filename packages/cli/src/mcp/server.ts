@@ -40,6 +40,7 @@ interface JsonRpcResponse {
 export interface StdioServerOptions {
   readonly initialBinding: InitialBinding;
   readonly canonicalInstallationRoot?: string;
+  readonly canonicalHostInstallationRoot?: string;
   readonly input?: Readable;
   readonly output?: Writable;
 }
@@ -143,6 +144,7 @@ export class McpStdioServer {
   readonly #binding: RootBindingSession;
   readonly #output: Writable;
   readonly #canonicalInstallationRoot?: string;
+  readonly #canonicalHostInstallationRoot?: string;
   #lifecycle: "pre_initialize" | "initialize_responded" | "initialized" =
     "pre_initialize";
   #rootsListChanged = false;
@@ -156,10 +158,12 @@ export class McpStdioServer {
     initialBinding: InitialBinding,
     output: Writable,
     canonicalInstallationRoot?: string,
+    canonicalHostInstallationRoot?: string,
   ) {
     this.#binding = new RootBindingSession(initialBinding);
     this.#output = output;
     this.#canonicalInstallationRoot = canonicalInstallationRoot;
+    this.#canonicalHostInstallationRoot = canonicalHostInstallationRoot;
     this.#output.on("error", () => {
       if (this.#transportFailed) return;
       this.#transportFailed = true;
@@ -297,7 +301,12 @@ export class McpStdioServer {
         binding.canonicalRoot,
         this.#canonicalInstallationRoot === undefined
           ? {}
-          : { canonicalInstallationRoot: this.#canonicalInstallationRoot },
+          : {
+              canonicalInstallationRoot: this.#canonicalInstallationRoot,
+              ...(this.#canonicalHostInstallationRoot === undefined ? {} : {
+                canonicalHostInstallationRoot: this.#canonicalHostInstallationRoot,
+              }),
+            },
       );
       this.#result(message.id, result);
     } catch (error) {
@@ -388,6 +397,7 @@ export async function runStdioServer(options: StdioServerOptions): Promise<void>
     options.initialBinding,
     output,
     options.canonicalInstallationRoot,
+    options.canonicalHostInstallationRoot,
   );
   input.setEncoding("utf8");
 

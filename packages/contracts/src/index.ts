@@ -13,3 +13,4 @@ export * from "./strong-change-intelligence.js";
 export * from "./invariants.js";
 export * from "./mcp.js";
 export * from "./json-schema.js";
+export * from "./alpha-gold.js";

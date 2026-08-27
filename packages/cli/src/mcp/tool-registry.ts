@@ -137,25 +137,25 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   get_repo_pulse:
     "Read the current repository pulse through its strict redacted public Surface.",
   build_task_brief:
-    "Unavailable until the accepted strong Store can create a managed Task Brief.",
+    "Create or replay an evidence-backed managed Task Brief through the selected strong Store.",
   get_task_brief:
-    "Unavailable until the accepted strong Store can validate managed Task reads.",
+    "Read a paged section of a managed Task Brief from the selected strong Store.",
   update_task:
-    "Unavailable until the accepted strong Store can authorize managed Task mutations.",
+    "Apply an optimistic, idempotent lifecycle action to a managed Task.",
   check_change:
-    "Unavailable until the accepted strong Store can append a Change Check.",
+    "Compare a Task plan with an exact actual Snapshot and commit an evidence-backed Change Check.",
   record_verification:
-    "Unavailable until the accepted strong Store can append a Verification result.",
+    "Record a caller-executed Verification result without executing its command on the server.",
   open_workbench:
-    "Unavailable until the accepted strong Store can project a safe Task Workbench session.",
+    "Mint a one-time deep link to the Task-first Evidence Workbench.",
   get_evidence:
-    "Unavailable until the accepted strong Store can validate managed Evidence reads.",
+    "Read a bounded, paged projection of evidence attached to a managed Task.",
   search_context:
-    "Unavailable until the accepted strong Store can validate managed Task context reads.",
+    "Search the bounded Graph and Wiki context pinned to a managed Task.",
   trace_impact:
-    "Unavailable until the accepted strong Store can validate managed Task impact reads.",
+    "Read bounded, paged impact paths from a managed Task and its pinned Graph.",
   refresh_index:
-    "Unavailable until the accepted strong Store can capture and publish Repository state.",
+    "Capture and publish a path-safe Repository Snapshot and Repo Pulse through the selected strong Store.",
 };
 
 const inputSchemas = {

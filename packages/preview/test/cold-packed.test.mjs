@@ -32,7 +32,7 @@ const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 12 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 87;
+const EXPECTED_PACKED_FILE_COUNT = 89;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const PRODUCT_VERSION_PATTERN =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -64,6 +64,7 @@ const packedFileRules = [
   { label: "Codex plugin contracts", pattern: /^package\/dist\/plugin-roots\/codex\/(?:\.agents\/plugins\/marketplace\.json|plugins\/understand-code\/(?:\.codex-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
   { label: "Claude plugin contracts", pattern: /^package\/dist\/plugin-roots\/claude\/(?:\.claude-plugin\/marketplace\.json|plugins\/understand-code\/(?:\.claude-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
   { label: "self-contained plugin executables", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/(?:understand-code-plugin|understand-code)\.mjs$/u, count: 4, mode: 0o755 },
+  { label: "self-contained plugin native peers", pattern: new RegExp(`^package/dist/plugin-roots/(?:codex|claude)/plugins/understand-code/bin/native/${NATIVE_TUPLE}/provider_kernel_peer\\.node$`, "u"), count: 2, mode: 0o644 },
   { label: "self-contained plugin Dashboard manifests", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard-manifest\.json$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin Dashboard roots", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 10, mode: 0o644 },
   { label: "self-contained plugin Graph Explorer chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
@@ -831,19 +832,29 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       const mcp = `${definition.pluginRoot}/.mcp.json`;
       const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
       const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
+      const pluginNative =
+        `${definition.pluginRoot}/bin/native/${NATIVE_TUPLE}/provider_kernel_peer.node`;
       const dashboardRoot = `${definition.pluginRoot}/bin/dashboard`;
       const dashboardManifest = `${definition.pluginRoot}/bin/dashboard-manifest.json`;
       const [marketplaceBytes, pluginManifestBytes, mcpBytes, entrypointBytes, pluginCliBytes,
-        pluginDashboardManifestBytes] =
+        pluginNativeBytes, pluginDashboardManifestBytes] =
         await Promise.all([
           readFile(path.join(installedPackageRoot, definition.marketplace)),
           readFile(path.join(installedPackageRoot, definition.manifest)),
           readFile(path.join(installedPackageRoot, mcp)),
           readFile(path.join(installedPackageRoot, entrypoint)),
           readFile(path.join(installedPackageRoot, pluginCli)),
+          readFile(path.join(installedPackageRoot, pluginNative)),
           readFile(path.join(installedPackageRoot, dashboardManifest)),
         ]);
       assert.deepEqual(pluginCliBytes, bundleBytes, `${host} plugin must carry the exact release CLI bytes`);
+      assert.deepEqual(
+        pluginNativeBytes,
+        packedFiles.get(
+          `package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+        ),
+        `${host} plugin must carry the exact release native peer bytes`,
+      );
       const pluginDashboardPrefix = `package/${dashboardRoot}/`;
       const pluginDashboardInventory = [...packedFiles.entries()]
         .filter(([entryPath]) => entryPath.startsWith(pluginDashboardPrefix))
@@ -860,6 +871,7 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         mcpSha256: `sha256:${digest(mcpBytes)}`,
         entrypointSha256: `sha256:${digest(entrypointBytes)}`,
         cliSha256: `sha256:${digest(pluginCliBytes)}`,
+        nativeSha256: `sha256:${digest(pluginNativeBytes)}`,
         dashboardManifestSha256: `sha256:${digest(pluginDashboardManifestBytes)}`,
         dashboardInventorySha256: `sha256:${digest(
           Buffer.from(JSON.stringify(pluginDashboardInventory), "utf8"),
@@ -878,6 +890,8 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         entrypointSha256: payloadFiles.entrypointSha256,
         cli: pluginCli,
         cliSha256: payloadFiles.cliSha256,
+        native: pluginNative,
+        nativeSha256: payloadFiles.nativeSha256,
         dashboardRoot,
         dashboardManifest,
         dashboardManifestSha256: payloadFiles.dashboardManifestSha256,
@@ -891,6 +905,7 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         mcp,
         entrypoint,
         pluginCli,
+        pluginNative,
         dashboardManifest,
       ]) {
         assert.deepEqual(
@@ -1070,8 +1085,12 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
     assert.deepEqual(
       [...packedFiles.keys()].filter(
         (entry) => entry.includes("/dist/native/") || entry.endsWith("provider_kernel_peer.node"),
-      ),
-      [`package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`],
+      ).sort(),
+      [
+        `package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+        `package/dist/plugin-roots/claude/plugins/understand-code/bin/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+        `package/dist/plugin-roots/codex/plugins/understand-code/bin/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+      ].sort(),
       "the Alpha tgz must carry exactly the current platform native tuple",
     );
     const requestedInstallRoot = path.join(installDirectory, "managed-install");

@@ -10,9 +10,13 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 
 import {
+  providerProductionStrongBusinessCompareInputInternalV1,
   providerProductionStrongAcceptanceLimitsInternalV1,
   providerProductionStrongAcceptanceHistoryInternalV1,
   providerProductionStrongAcceptanceCanonicalBytesInternalV1,
+  providerProductionStrongIndexPublicationAuthorityInternalV1,
+  providerProductionStrongIndexPublicationCompareInputInternalV1,
+  providerProductionStrongIndexPublicationLaneInternalV1,
   providerProductionStrongRetainedTrustBudgetInternalV1,
 } from "../src/provider-production-strong-object-client.js";
 
@@ -257,4 +261,142 @@ describe("production strong retained Acceptance history", () => {
       currentAcceptance: currentV1(first4096.at(-1)!),
     }), "utf8")).toBeLessThan(limits.maxTrustSnapshotBytes);
   }, 30_000);
+});
+
+describe("production strong reserved index publication authority", () => {
+  const authority = providerProductionStrongIndexPublicationAuthorityInternalV1({
+    profile: "provider_production_strong_index_publication_authority_v1",
+    finalizedProviderRevision: 8,
+    generationId: `generation-${"a".repeat(64)}`,
+    generationManifestDigest: digest("b"),
+    sourceInventoryDigest: digest("c"),
+    sourceSnapshotId: "snapshot:step16-index-publication",
+  });
+  const compareInput = {
+    expectedRevision: 7,
+    operationNonce: "d".repeat(32),
+    phase: "strong_refresh_index_v1",
+    artifacts: { operation: "refresh_index", cut: "published" },
+    authority: {
+      profile: authority.profile,
+      generationId: authority.generationId,
+      generationManifestDigest: authority.generationManifestDigest,
+      sourceInventoryDigest: authority.sourceInventoryDigest,
+      sourceSnapshotId: authority.sourceSnapshotId,
+    },
+  } as const;
+
+  it("strictly parses the dedicated compare input and derives revision expected+1", () => {
+    expect(
+      providerProductionStrongIndexPublicationCompareInputInternalV1(
+        compareInput,
+      ),
+    ).toEqual(compareInput);
+    expect(() =>
+      providerProductionStrongIndexPublicationCompareInputInternalV1({
+        ...compareInput,
+        unexpected: true,
+      })
+    ).toThrow(/index publication compare input is invalid/u);
+    expect(() =>
+      providerProductionStrongIndexPublicationCompareInputInternalV1({
+        ...compareInput,
+        authority: { ...compareInput.authority, unexpected: true },
+      })
+    ).toThrow(/index publication authority input is invalid/u);
+    expect(() =>
+      providerProductionStrongIndexPublicationCompareInputInternalV1({
+        ...compareInput,
+        authority: { ...compareInput.authority, sourceSnapshotId: " padded " },
+      })
+    ).toThrow(/index publication authority is invalid/u);
+  });
+
+  it("sets the lane, strips it publicly, and carries it through ordinary commits", () => {
+    const first = providerProductionStrongIndexPublicationLaneInternalV1({
+      publicArtifacts: compareInput.artifacts,
+      replacementAuthority: authority,
+      currentRevision: 8,
+    });
+    expect(first.authority).toEqual(authority);
+    expect(first.publicArtifacts).toEqual(compareInput.artifacts);
+    expect(Object.keys(first.durableArtifacts).length).toBe(
+      Object.keys(compareInput.artifacts).length + 1,
+    );
+
+    const nextPublicArtifacts = { operation: "task_update", taskRevision: 9 };
+    const carried = providerProductionStrongIndexPublicationLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      publicArtifacts: nextPublicArtifacts,
+      currentRevision: 9,
+    });
+    expect(carried.authority).toEqual(authority);
+    expect(carried.publicArtifacts).toEqual(nextPublicArtifacts);
+  });
+
+  it("does not let an ordinary compare create the reserved lane", () => {
+    const ordinary = providerProductionStrongBusinessCompareInputInternalV1({
+      expectedRevision: 0,
+      operationNonce: "f".repeat(32),
+      phase: "strong_verification_v1",
+      artifacts: { operation: "verification", status: "passed" },
+    });
+    const projected = providerProductionStrongIndexPublicationLaneInternalV1({
+      publicArtifacts: ordinary.artifacts,
+      currentRevision: 1,
+    });
+    expect(projected.authority).toBeUndefined();
+    expect(projected.durableArtifacts).toEqual(ordinary.artifacts);
+    expect(projected.publicArtifacts).toEqual(ordinary.artifacts);
+  });
+
+  it("rejects ordinary reserved-key injection and fails closed on stale or tampered lanes", () => {
+    const first = providerProductionStrongIndexPublicationLaneInternalV1({
+      publicArtifacts: compareInput.artifacts,
+      replacementAuthority: authority,
+      currentRevision: 8,
+    });
+    const reservedKey = Object.keys(first.durableArtifacts).find(
+      (key) => !Object.hasOwn(compareInput.artifacts, key),
+    );
+    expect(reservedKey).toBeDefined();
+    expect(() => providerProductionStrongBusinessCompareInputInternalV1({
+      expectedRevision: 8,
+      operationNonce: "e".repeat(32),
+      phase: "strong_verification_v1",
+      artifacts: { [reservedKey!]: authority },
+    })).toThrow(/reserved authority is invalid/u);
+
+    expect(() => providerProductionStrongIndexPublicationLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      publicArtifacts: { operation: "stale_retry" },
+      currentRevision: 7,
+    })).toThrow(/authority revision is invalid/u);
+
+    const tampered = structuredClone(first.durableArtifacts) as Record<
+      string,
+      unknown
+    >;
+    tampered[reservedKey!] = { ...authority, unexpected: true };
+    expect(() => providerProductionStrongIndexPublicationLaneInternalV1({
+      currentArtifacts: tampered as never,
+      publicArtifacts: { operation: "tampered_retry" },
+      currentRevision: 9,
+    })).toThrow(/authority is invalid/u);
+  });
+
+  it("reconstructs an exact lane for idempotent replay", () => {
+    const first = providerProductionStrongIndexPublicationLaneInternalV1({
+      publicArtifacts: compareInput.artifacts,
+      replacementAuthority: authority,
+      currentRevision: 8,
+    });
+    const replay = providerProductionStrongIndexPublicationLaneInternalV1({
+      publicArtifacts: compareInput.artifacts,
+      replacementAuthority: authority,
+      currentRevision: 8,
+    });
+    expect(replay.durableArtifacts).toEqual(first.durableArtifacts);
+    expect(replay.publicArtifacts).toEqual(compareInput.artifacts);
+  });
 });

@@ -143,6 +143,7 @@ describe("advertised tool contracts", () => {
       "refresh_index",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
+      expect(tool.description).not.toMatch(/\bunavailable\b/iu);
       expect(tool.inputSchema).toMatchObject({
         $schema: "https://json-schema.org/draft/2020-12/schema",
         type: "object",

@@ -1,4 +1,5 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,33 +41,75 @@ const expectedCheckIds = [
 afterEach(cleanupTemporaryDirectories);
 
 async function seedSchemaValidArtifacts(root: string): Promise<void> {
-  const knowledgeBaseRoot = path.join(
-    root,
-    ".understand-code/knowledge-base",
+  const sha256 = (bytes: Buffer): `sha256:${string}` =>
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const artifactRoot = path.join(root, ".understand-code");
+  const sourceFiles = [
+    [
+      "knowledge-base/search-index.json",
+      "packages/contracts/fixtures/v1/legacy/wiki-search-v2.json",
+    ],
+    [
+      "knowledge-base/wiki-index.json",
+      "packages/contracts/fixtures/v1/legacy/wiki-index-v2.json",
+    ],
+    [
+      "knowledge-graph.json",
+      "packages/contracts/fixtures/v1/legacy/graph-v1.json",
+    ],
+  ] as const;
+  const files = await Promise.all(sourceFiles.map(async ([relative, fixture]) => ({
+    path: relative,
+    bytes: await readFile(path.join(workspaceRoot, fixture)),
+  })));
+  const sourceInventoryDigest = `sha256:${"1".repeat(64)}` as const;
+  const generationSeed = {
+    schemaVersion: 1,
+    sourceInventoryDigest,
+    files: files.map((file) => ({
+      path: file.path,
+      contentDigest: sha256(file.bytes),
+    })),
+  };
+  const generationId = `generation-${sha256(Buffer.from(
+    JSON.stringify(generationSeed),
+  )).slice(7)}`;
+  const generationManifest = { ...generationSeed, generationId };
+  const generationManifestBytes = Buffer.from(
+    `${JSON.stringify(generationManifest, null, 2)}\n`,
   );
-  await mkdir(knowledgeBaseRoot, { recursive: true });
+  const generationRoot = path.join(
+    artifactRoot,
+    "index-generations-v1",
+    generationId,
+  );
+  await mkdir(path.join(generationRoot, "knowledge-base"), {
+    recursive: true,
+    mode: 0o700,
+  });
+  await Promise.all(files.map((file) => writeFile(
+    path.join(generationRoot, file.path),
+    file.bytes,
+    { mode: 0o600 },
+  )));
+  await writeFile(
+    path.join(generationRoot, "generation-manifest.json"),
+    generationManifestBytes,
+    { mode: 0o600 },
+  );
+  await writeFile(
+    path.join(artifactRoot, "index-active-v1.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      generationId,
+      generationManifestDigest: sha256(generationManifestBytes),
+      sourceInventoryDigest,
+      sourceSnapshotId: "snapshot:actual",
+      finalizedProviderRevision: 2,
+    }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
   await Promise.all([
-    copyFile(
-      path.join(
-        workspaceRoot,
-        "packages/contracts/fixtures/v1/legacy/graph-v1.json",
-      ),
-      path.join(root, ".understand-code/knowledge-graph.json"),
-    ),
-    copyFile(
-      path.join(
-        workspaceRoot,
-        "packages/contracts/fixtures/v1/legacy/wiki-index-v2.json",
-      ),
-      path.join(knowledgeBaseRoot, "wiki-index.json"),
-    ),
-    copyFile(
-      path.join(
-        workspaceRoot,
-        "packages/contracts/fixtures/v1/legacy/wiki-search-v2.json",
-      ),
-      path.join(knowledgeBaseRoot, "search-index.json"),
-    ),
     copyFile(
       path.join(
         workspaceRoot,

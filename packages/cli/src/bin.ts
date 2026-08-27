@@ -24,6 +24,8 @@ import {
   InstallationLifecycleError,
   doctorInstallationV1,
   installInstallationV1,
+  resolveTrustedProviderInstallationRootV1,
+  resolveTrustedProductionInstallationSelectionV1,
   rollbackInstallationV1,
   uninstallInstallationV1,
   upgradeInstallationV1,
@@ -31,11 +33,19 @@ import {
 
 function installationInput(
   invocation: Extract<Awaited<ReturnType<typeof parseCliArguments>>, { kind: "installation" }>,
-): { readonly root?: string; readonly home?: string; readonly host?: "codex" | "claude" } {
+): {
+  readonly root?: string;
+  readonly home?: string;
+  readonly host?: "codex" | "claude";
+  readonly providerInstallationRoot?: string;
+} {
   return {
     ...(invocation.root === undefined ? {} : { root: invocation.root }),
     ...(invocation.home === undefined ? {} : { home: invocation.home }),
     ...(invocation.host === undefined ? {} : { host: invocation.host }),
+    ...(invocation.providerInstallationRoot === undefined
+      ? {}
+      : { providerInstallationRoot: invocation.providerInstallationRoot }),
   };
 }
 
@@ -237,6 +247,18 @@ async function main(): Promise<void> {
     ]);
     return;
   }
+  if (invocation.kind === "host_provider_selector") {
+    try {
+      const providerRoot = await resolveTrustedProviderInstallationRootV1({
+        root: invocation.installationRoot,
+      });
+      process.stdout.write(`${providerRoot}\n`);
+    } catch {
+      writeDiagnostic("configuration_error");
+      process.exitCode = 2;
+    }
+    return;
+  }
   if (invocation.kind === "provider_runtime") {
     await runProviderRuntimeChildV1(invocation);
     return;
@@ -247,13 +269,20 @@ async function main(): Promise<void> {
   }
 
   const initialBinding = await resolveInitialBinding(invocation.rootCandidates);
+  const trustedInstallationSelection = invocation.hostInstallationRoot === undefined
+    ? undefined
+    : await resolveTrustedProductionInstallationSelectionV1({
+        root: invocation.hostInstallationRoot,
+      });
+  const canonicalInstallationRoot = trustedInstallationSelection?.canonicalProviderInstallationRoot;
+  const canonicalHostInstallationRoot = trustedInstallationSelection?.canonicalHostInstallationRoot;
   await runStdioServer({
     initialBinding,
-    ...(invocation.canonicalInstallationRoot === undefined
+    ...(canonicalInstallationRoot === undefined
       ? {}
       : {
-          canonicalInstallationRoot:
-            invocation.canonicalInstallationRoot,
+          canonicalInstallationRoot,
+          canonicalHostInstallationRoot,
         }),
   });
 }

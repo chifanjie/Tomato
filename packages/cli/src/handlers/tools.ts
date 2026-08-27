@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
+  isProviderProductionStrongObjectUnavailableErrorV1,
+} from "@understand-code/durable-object-provider-client";
+import {
   CheckChangeInputV1Schema,
   RecordVerificationInputV1Schema,
   StrongCheckChangesInputV1Schema,
@@ -88,17 +91,22 @@ import {
   repositoryNotReadyFailure,
   resourceNotFoundFailure,
   sourceAccessDeniedFailure,
+  strongStoreUnavailableFailure,
   taskGateFailure,
 } from "../errors/tool-errors.js";
 import {
   openProductionRuntime,
   openRuntime,
   readPublishedPulse,
-  readPublishedSnapshot,
 } from "../runtime/context.js";
+import {
+  openActiveRepositoryIndexV1,
+  type ActiveRepositoryIndexReaderV1,
+} from "../runtime/repository-indexer.js";
 
 export interface ToolRuntimeSelectionV1 {
   readonly canonicalInstallationRoot?: string;
+  readonly canonicalHostInstallationRoot?: string;
 }
 
 function requireProductionInstallationRootV1(
@@ -112,24 +120,65 @@ function requireProductionInstallationRootV1(
   return root;
 }
 
+type ProductionRuntimeV1 = Awaited<ReturnType<typeof openProductionRuntime>>;
+
+async function withProductionRuntimeV1<T>(
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1,
+  operation: (runtime: ProductionRuntimeV1) => Promise<T>,
+): Promise<T> {
+  const runtime = await openProductionRuntime(
+    canonicalRoot,
+    requireProductionInstallationRootV1(selection),
+  );
+  try {
+    return await operation(runtime);
+  } finally {
+    await runtime.close?.();
+  }
+}
+
+async function readStrongPublishedSnapshotV1(
+  runtime: ProductionRuntimeV1,
+  snapshotId: string,
+) {
+  const read = await runtime.store.readArtifact("repository_snapshot", {
+    snapshotId,
+  });
+  if (read.artifact.artifactType !== "repository_snapshot") {
+    throw new Error("strong Repository Snapshot is unavailable");
+  }
+  const snapshot = StrongRepositorySnapshotV1Schema.parse(
+    read.artifact.payload,
+  );
+  return {
+    snapshot,
+    worktreeFingerprint: `sha256:${createHash("sha256")
+      .update(snapshot.repositoryStateToken, "utf8")
+      .digest("hex")}` as const,
+  };
+}
+
+async function readStrongPublishedPulseV1(runtime: ProductionRuntimeV1) {
+  const read = await runtime.store.readArtifact("repo_pulse");
+  if (read.artifact.artifactType !== "repo_pulse") {
+    throw new Error("strong Repo Pulse is unavailable");
+  }
+  return StrongRepoPulseV1Schema.parse(read.artifact.payload);
+}
+
 async function strongSuccessMetaV1(
-  runtime: Awaited<ReturnType<typeof openProductionRuntime>>,
+  runtime: ProductionRuntimeV1,
   snapshotId: string,
   durationMs: number,
   cacheHit: boolean,
+  truncatedCategories: readonly string[] = [],
 ) {
-  const [snapshotRead, pulseRead] = await Promise.all([
-    runtime.store.readArtifact("repository_snapshot", { snapshotId }),
-    runtime.store.readArtifact("repo_pulse"),
+  const [publishedSnapshot, pulse] = await Promise.all([
+    readStrongPublishedSnapshotV1(runtime, snapshotId),
+    readStrongPublishedPulseV1(runtime),
   ]);
-  if (
-    snapshotRead.artifact.artifactType !== "repository_snapshot" ||
-    pulseRead.artifact.artifactType !== "repo_pulse"
-  ) throw new Error("strong repository context projection is invalid");
-  const snapshot = StrongRepositorySnapshotV1Schema.parse(
-    snapshotRead.artifact.payload,
-  );
-  const pulse = StrongRepoPulseV1Schema.parse(pulseRead.artifact.payload);
+  const snapshot = publishedSnapshot.snapshot;
   return {
     repositoryId: snapshot.repositoryId,
     worktreeId: snapshot.worktreeId,
@@ -137,34 +186,42 @@ async function strongSuccessMetaV1(
     headCommit: snapshot.headState.kind === "commit"
       ? snapshot.headState.commit
       : null,
-    worktreeFingerprint: `sha256:${createHash("sha256")
-      .update(snapshot.repositoryStateToken, "utf8")
-      .digest("hex")}`,
+    worktreeFingerprint: publishedSnapshot.worktreeFingerprint,
     freshness: pulse.evaluatedSnapshotId === snapshot.snapshotId
       ? pulse.status
       : "stale",
     durationMs,
     cacheHit,
-    truncated: false,
-    truncatedCategories: [],
+    truncated: truncatedCategories.length > 0,
+    truncatedCategories: [...truncatedCategories],
   };
 }
 
 async function assertStrongPublishedCutV1(
-  runtime: Awaited<ReturnType<typeof openProductionRuntime>>,
+  runtime: ProductionRuntimeV1,
 ): Promise<void> {
-  const pulseRead = await runtime.store.readArtifact("repo_pulse");
-  if (pulseRead.artifact.artifactType !== "repo_pulse") {
-    throw new Error("strong Repo Pulse is unavailable");
+  const pulse = await readStrongPublishedPulseV1(runtime);
+  await readStrongPublishedSnapshotV1(runtime, pulse.evaluatedSnapshotId);
+}
+
+async function openStrongBoundActiveIndexV1(
+  runtime: ProductionRuntimeV1,
+): Promise<ActiveRepositoryIndexReaderV1> {
+  const [index, pulse] = await Promise.all([
+    openActiveRepositoryIndexV1(runtime.store.layout.worktreeRoot),
+    readStrongPublishedPulseV1(runtime),
+  ]);
+  const providerAuthority = await runtime.providerClient?.inspectIndexPublicationAuthority();
+  if (providerAuthority === undefined ||
+    index.authority.sourceSnapshotId !== pulse.evaluatedSnapshotId ||
+    index.authority.sourceSnapshotId !== providerAuthority.sourceSnapshotId ||
+    index.authority.finalizedProviderRevision !== providerAuthority.finalizedProviderRevision ||
+    index.generation.generationId !== providerAuthority.generationId ||
+    index.generation.generationManifestDigest !== providerAuthority.generationManifestDigest ||
+    index.generation.sourceInventoryDigest !== providerAuthority.sourceInventoryDigest) {
+    throw new Error("active repository index is not bound to the strong Pulse");
   }
-  const pulse = StrongRepoPulseV1Schema.parse(pulseRead.artifact.payload);
-  const snapshotRead = await runtime.store.readArtifact("repository_snapshot", {
-    snapshotId: pulse.evaluatedSnapshotId,
-  });
-  if (snapshotRead.artifact.artifactType !== "repository_snapshot") {
-    throw new Error("strong Repository Snapshot is unavailable");
-  }
-  StrongRepositorySnapshotV1Schema.parse(snapshotRead.artifact.payload);
+  return index;
 }
 
 export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
@@ -231,7 +288,7 @@ function decodePageCursor(
 }
 
 async function readTaskScopedContext(
-  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  runtime: ProductionRuntimeV1,
   taskId: string,
 ) {
   const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
@@ -251,25 +308,25 @@ async function readTaskScopedContext(
   ) {
     throw new ToolFailure(artifactUnavailableFailure("corrupt", "task_context"));
   }
-  const publishedSnapshot = await readPublishedSnapshot(
-    runtime.store,
-    read.bundle.manifest.latestSnapshotId,
-  );
-  const publishedPulse = await readPublishedPulse(runtime.store);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId ===
-    read.bundle.manifest.latestSnapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
-  return { read, publishedSnapshot, freshness };
+  const [publishedSnapshot, publishedPulse] = await Promise.all([
+    readStrongPublishedSnapshotV1(
+      runtime,
+      read.bundle.manifest.latestSnapshotId,
+    ),
+    readStrongPublishedPulseV1(runtime),
+  ]);
+  return { read, publishedSnapshot, publishedPulse };
 }
 
-async function getEvidence(argumentsValue: unknown, canonicalRoot: string) {
+async function getEvidence(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = GetEvidenceInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   const context = await readTaskScopedContext(runtime, parsed.data.taskId);
   const bundle = context.read.bundle;
   if (!("evidence" in bundle)) {
@@ -319,14 +376,12 @@ async function getEvidence(argumentsValue: unknown, canonicalRoot: string) {
     content: [{ type: "text", text: "Task evidence loaded." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(
-        context.publishedSnapshot,
-        context.freshness,
+      meta: await strongSuccessMetaV1(
+        runtime,
+        bundle.manifest.latestSnapshotId,
         elapsed(startedAt),
-        {
-          cacheHit: true,
-          truncatedCategories: hasMore ? ["evidence"] : [],
-        },
+        true,
+        hasMore ? ["evidence"] : [],
       ),
       page: {
         pageSize,
@@ -337,6 +392,7 @@ async function getEvidence(argumentsValue: unknown, canonicalRoot: string) {
       },
       result: { evidence: pageEvidence, missingEvidenceIds },
     },
+  });
   });
 }
 
@@ -400,15 +456,18 @@ type SearchCandidate = {
   readonly nodeId?: string;
 };
 
-async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
+async function searchContext(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = SearchContextInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
+  const startedAt = performance.now();
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   if (parsed.data.taskId === undefined) {
     throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
   }
-  const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
   const context = await readTaskScopedContext(runtime, parsed.data.taskId);
   const bundle = context.read.bundle;
   if (!("brief" in bundle) || !("claims" in bundle) || !("evidence" in bundle) || !("impactPaths" in bundle)) {
@@ -553,11 +612,12 @@ async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
     content: [{ type: "text", text: "Task context search completed." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(
-        context.publishedSnapshot,
-        context.freshness,
+      meta: await strongSuccessMetaV1(
+        runtime,
+        bundle.manifest.latestSnapshotId,
         elapsed(startedAt),
-        { cacheHit: true, truncatedCategories },
+        true,
+        truncatedCategories,
       ),
       page: {
         pageSize,
@@ -577,17 +637,21 @@ async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
       },
     },
   });
+  });
 }
 
-async function traceImpact(argumentsValue: unknown, canonicalRoot: string) {
+async function traceImpact(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = TraceImpactInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
+  const startedAt = performance.now();
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   if (parsed.data.taskId === undefined) {
     throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
   }
-  const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
   const context = await readTaskScopedContext(runtime, parsed.data.taskId);
   const bundle = context.read.bundle;
   if (!("impactPaths" in bundle)) {
@@ -673,11 +737,12 @@ async function traceImpact(argumentsValue: unknown, canonicalRoot: string) {
     content: [{ type: "text", text: "Task impact paths loaded." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(
-        context.publishedSnapshot,
-        context.freshness,
+      meta: await strongSuccessMetaV1(
+        runtime,
+        bundle.manifest.latestSnapshotId,
         elapsed(startedAt),
-        { cacheHit: true, truncatedCategories },
+        true,
+        truncatedCategories,
       ),
       page: {
         pageSize,
@@ -689,52 +754,52 @@ async function traceImpact(argumentsValue: unknown, canonicalRoot: string) {
       result: { paths, unresolvedNodeIds: unresolved },
     },
   });
+  });
 }
 
-function successMeta(
-  snapshot: Awaited<ReturnType<typeof readPublishedSnapshot>>,
-  freshness: "not_ready" | "fresh" | "partial" | "stale" | "unknown" | "rebuilding" | "error",
-  durationMs: number,
-  options: {
-    readonly cacheHit: boolean;
-    readonly truncated?: boolean;
-    readonly truncatedCategories?: readonly string[];
-  },
+async function getRepoPulse(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
 ) {
-  const truncatedCategories = [...(options.truncatedCategories ?? [])];
-  return {
-    repositoryId: snapshot.snapshot.repositoryId,
-    worktreeId: snapshot.snapshot.worktreeId,
-    sourceSnapshotId: snapshot.snapshot.snapshotId,
-    headCommit: snapshot.snapshot.headCommit ?? null,
-    worktreeFingerprint: snapshot.worktreeFingerprint,
-    freshness,
-    durationMs,
-    cacheHit: options.cacheHit,
-    truncated: options.truncated ?? truncatedCategories.length > 0,
-    truncatedCategories,
-  };
-}
-
-async function getRepoPulse(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = GetRepoPulseInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
-  const published = await readPublishedPulse(runtime.store);
-  const pulse = projectRepoPulseSurface(published.pulse);
-  return GetRepoPulseOutputV1Schema.parse({
-    isError: false,
-    content: [{ type: "text", text: "Repository pulse loaded." }],
-    structuredContent: {
-      schemaVersion: 1,
-      meta: {
-        durationMs: elapsed(startedAt),
-        cacheHit: true,
+  const respond = async (
+    runtime: Awaited<ReturnType<typeof openRuntime>>,
+    strong: boolean,
+  ) => {
+    const persistedPulse = strong
+      ? await readStrongPublishedPulseV1(runtime)
+      : (await readPublishedPulse(runtime.store)).pulse;
+    if (strong) {
+      await readStrongPublishedSnapshotV1(
+        runtime,
+        persistedPulse.evaluatedSnapshotId,
+      );
+    }
+    const pulse = projectRepoPulseSurface(persistedPulse);
+    return GetRepoPulseOutputV1Schema.parse({
+      isError: false,
+      content: [{ type: "text", text: "Repository pulse loaded." }],
+      structuredContent: {
+        schemaVersion: 1,
+        meta: {
+          durationMs: elapsed(startedAt),
+          cacheHit: true,
+        },
+        result: { pulse },
       },
-      result: { pulse },
-    },
-  });
+    });
+  };
+  if (selection.canonicalInstallationRoot === undefined) {
+    return respond(await openRuntime(canonicalRoot), false);
+  }
+  return withProductionRuntimeV1(
+    canonicalRoot,
+    selection,
+    (runtime) => respond(runtime, true),
+  );
 }
 
 async function buildTaskBrief(
@@ -779,12 +844,15 @@ async function buildTaskBrief(
   }
 }
 
-async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
+async function getTaskBrief(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = GetTaskBriefInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
   if (
     !manifest.artifacts.some(
@@ -796,14 +864,6 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
     throw new ToolFailure(resourceNotFoundFailure("task", parsed.data.taskId));
   }
   const page = await runtime.taskEngine.getTaskBrief(parsed.data);
-  const [snapshot, publishedPulse] = await Promise.all([
-    readPublishedSnapshot(runtime.store, page.result.task.latestSnapshotId),
-    readPublishedPulse(runtime.store),
-  ]);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId === page.result.task.latestSnapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
   const pageSize = parsed.data.pageSize ?? 50;
   const hasMore = page.nextCursor !== undefined;
   return GetTaskBriefOutputV1Schema.parse({
@@ -811,10 +871,13 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
     content: [{ type: "text", text: "Task Brief section loaded." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
-        cacheHit: true,
-        truncatedCategories: hasMore ? ["task_brief_items"] : [],
-      }),
+      meta: await strongSuccessMetaV1(
+        runtime,
+        page.result.task.latestSnapshotId,
+        elapsed(startedAt),
+        true,
+        hasMore ? ["task_brief_items"] : [],
+      ),
       page: {
         pageSize,
         returned: page.result.items.length,
@@ -825,14 +888,18 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
       result: page.result,
     },
   });
+  });
 }
 
-async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
+async function updateTask(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = UpdateTaskInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
-  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   const result = await runtime.taskEngine.updateTask(parsed.data, {
     actor: parsed.data.actor,
     repositoryId: runtime.store.repositoryId,
@@ -844,24 +911,20 @@ async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
       "task:supersede",
     ],
   });
-  const [snapshot, publishedPulse] = await Promise.all([
-    readPublishedSnapshot(runtime.store, result.task.latestSnapshotId),
-    readPublishedPulse(runtime.store),
-  ]);
-  const freshness =
-    publishedPulse.pulse.evaluatedSnapshotId === result.task.latestSnapshotId
-      ? publishedPulse.pulse.status
-      : "stale";
   return UpdateTaskOutputV1Schema.parse({
     isError: false,
     content: [{ type: "text", text: "Task updated." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
-        cacheHit: result.mutation.idempotentReplay,
-      }),
+      meta: await strongSuccessMetaV1(
+        runtime,
+        result.task.latestSnapshotId,
+        elapsed(startedAt),
+        result.mutation.idempotentReplay,
+      ),
       result,
     },
+  });
   });
 }
 
@@ -1089,36 +1152,14 @@ async function resolveWorkbenchUi(): Promise<ResolvedWorkbenchUiV1> {
   }
 }
 
-/**
- * Read a fixed ArtifactStore layout path without accepting a browser- or
- * caller-provided path.  A realpath check also keeps a malicious symlink in
- * the managed directory from turning the Workbench into a file oracle.
- */
-async function readFixedPublishedJson(
-  filePath: string,
-  managedRoot: string,
+async function readActiveIndexJson(
+  index: ActiveRepositoryIndexReaderV1,
+  relativePath: string,
 ): Promise<PublishedJsonReadV1> {
   try {
-    const canonicalRoot = await realpath(managedRoot);
-    const canonicalPath = await realpath(filePath);
-    const relative = path.relative(canonicalRoot, canonicalPath);
-    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      return { ok: false, reason: "read_failed" };
-    }
-    const text = await readFile(canonicalPath, "utf8");
-    try {
-      return { ok: true, value: JSON.parse(text) as unknown };
-    } catch {
-      return { ok: false, reason: "invalid_artifact" };
-    }
-  } catch (error) {
-    if (
-      error !== null &&
-      typeof error === "object" &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return { ok: false, reason: "not_published" };
-    }
+    const bytes = await index.read(relativePath);
+    return { ok: true, value: JSON.parse(bytes.toString("utf8")) as unknown };
+  } catch {
     return { ok: false, reason: "read_failed" };
   }
 }
@@ -1144,10 +1185,13 @@ const graphContextReader = (
   if (input.surface !== "graph") {
     return unavailableContext(input, "read_failed");
   }
-  const read = await readFixedPublishedJson(
-    runtime.store.layout.knowledgeGraph,
-    runtime.store.layout.storeRoot,
-  );
+  let index: ActiveRepositoryIndexReaderV1;
+  try {
+    index = await openStrongBoundActiveIndexV1(runtime as ProductionRuntimeV1);
+  } catch {
+    return unavailableContext(input, "read_failed");
+  }
+  const read = await readActiveIndexJson(index, "knowledge-graph.json");
   if (!read.ok) return unavailableContext(input, read.reason);
   const parsed = validateGraph(read.value);
   if (!parsed.success || parsed.data === undefined) {
@@ -1185,9 +1229,15 @@ const knowledgeContextReader = (
   if (input.surface !== "knowledge") {
     return unavailableContext(input, "read_failed");
   }
-  const read = await readFixedPublishedJson(
-    path.join(runtime.store.layout.knowledgeBase, "wiki-index.json"),
-    runtime.store.layout.storeRoot,
+  let index: ActiveRepositoryIndexReaderV1;
+  try {
+    index = await openStrongBoundActiveIndexV1(runtime as ProductionRuntimeV1);
+  } catch {
+    return unavailableContext(input, "read_failed");
+  }
+  const read = await readActiveIndexJson(
+    index,
+    "knowledge-base/wiki-index.json",
   );
   if (!read.ok) return unavailableContext(input, read.reason);
   const parsed = parseWikiIndexV2(read.value);
@@ -1219,32 +1269,6 @@ const knowledgeContextReader = (
 
 const DASHBOARD_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
 
-async function readFixedPublishedText(
-  filePath: string,
-  managedRoot: string,
-  maxBytes = DASHBOARD_ARTIFACT_MAX_BYTES,
-): Promise<{ readonly ok: true; readonly text: string } | { readonly ok: false; readonly reason: "missing" | "invalid" | "unavailable" }> {
-  try {
-    const canonicalRoot = await realpath(managedRoot);
-    const canonicalPath = await realpath(filePath);
-    const relative = path.relative(canonicalRoot, canonicalPath);
-    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      return { ok: false, reason: "invalid" };
-    }
-    const metadata = await lstat(canonicalPath);
-    if (!metadata.isFile() || metadata.size > maxBytes) return { ok: false, reason: "invalid" };
-    const bytes = await readFile(canonicalPath);
-    if (bytes.includes(0) || !Buffer.from(bytes.toString("utf8"), "utf8").equals(bytes)) {
-      return { ok: false, reason: "invalid" };
-    }
-    return { ok: true, text: bytes.toString("utf8") };
-  } catch (error) {
-    return error !== null && typeof error === "object" && (error as NodeJS.ErrnoException).code === "ENOENT"
-      ? { ok: false, reason: "missing" }
-      : { ok: false, reason: "unavailable" };
-  }
-}
-
 function dashboardReadFailure(
   status: "missing" | "stale" | "invalid" | "unavailable",
 ): WorkbenchDashboardReadResultV1 {
@@ -1262,32 +1286,36 @@ async function dashboardBindingStatus(
   ) return "invalid";
   try {
     const [snapshot, pulse] = await Promise.all([
-      readPublishedSnapshot(runtime.store, input.sourceSnapshotId),
-      readPublishedPulse(runtime.store),
+      readStrongPublishedSnapshotV1(runtime, input.sourceSnapshotId),
+      readStrongPublishedPulseV1(runtime),
     ]);
+    const headCommit = snapshot.snapshot.headState.kind === "commit"
+      ? snapshot.snapshot.headState.commit
+      : null;
     if (
       snapshot.snapshot.repositoryId !== input.repositoryId ||
       snapshot.snapshot.worktreeId !== input.worktreeId ||
       snapshot.snapshot.snapshotId !== input.sourceSnapshotId ||
-      (snapshot.snapshot.headCommit ?? null) !== input.headCommit
+      headCommit !== input.headCommit
     ) return "invalid";
-    if (pulse.pulse.evaluatedSnapshotId !== input.sourceSnapshotId) return "stale";
+    if (pulse.evaluatedSnapshotId !== input.sourceSnapshotId) return "stale";
     return "ready";
   } catch {
     return "unavailable";
   }
 }
 
-async function readDashboardJsonFile(
-  filePath: string,
-  managedRoot: string,
-): Promise<{ readonly status: "ready"; readonly value: unknown } | { readonly status: "missing" | "invalid" | "unavailable" }> {
-  const read = await readFixedPublishedText(filePath, managedRoot);
-  if (!read.ok) return { status: read.reason };
+async function readActiveIndexJsonFile(
+  index: ActiveRepositoryIndexReaderV1,
+  relativePath: string,
+): Promise<{ readonly status: "ready"; readonly value: unknown } | { readonly status: "invalid" | "unavailable" }> {
   try {
-    return { status: "ready", value: JSON.parse(read.text) as unknown };
-  } catch {
-    return { status: "invalid" };
+    const bytes = await index.read(relativePath);
+    return { status: "ready", value: JSON.parse(bytes.toString("utf8")) as unknown };
+  } catch (error) {
+    return error instanceof SyntaxError
+      ? { status: "invalid" }
+      : { status: "unavailable" };
   }
 }
 
@@ -1346,7 +1374,6 @@ async function taskDashboardProjection(
       if (items.length > 4_096) return dashboardReadFailure("invalid");
       cursor = page.nextCursor;
     } while (cursor !== undefined);
-    const pulse = await readPublishedPulse(runtime.store);
     return {
       status: "ready",
       json: {
@@ -1354,7 +1381,7 @@ async function taskDashboardProjection(
         brief: bundle.brief,
         section: input.section,
         items,
-        pulse: projectRepoPulseSurface(pulse.pulse),
+        pulse: projectRepoPulseSurface(context.publishedPulse),
         freshness,
       },
     };
@@ -1377,9 +1404,16 @@ const dashboardReader = (
     input.kind === "task_verification"
   ) return taskDashboardProjection(runtime, input);
 
-  const graphRead = await readDashboardJsonFile(
-    runtime.store.layout.knowledgeGraph,
-    runtime.store.layout.storeRoot,
+  let activeIndex: ActiveRepositoryIndexReaderV1;
+  try {
+    activeIndex = await openStrongBoundActiveIndexV1(runtime as ProductionRuntimeV1);
+  } catch {
+    return dashboardReadFailure("unavailable");
+  }
+
+  const graphRead = await readActiveIndexJsonFile(
+    activeIndex,
+    "knowledge-graph.json",
   );
   if (graphRead.status !== "ready") return dashboardReadFailure(graphRead.status);
   const graphResult = validateGraph(graphRead.value);
@@ -1392,9 +1426,9 @@ const dashboardReader = (
   }
   if (input.kind === "graph") return { status: "ready", json: graph };
   if (input.kind === "meta") {
-    const meta = await readDashboardJsonFile(
-      path.join(runtime.store.layout.storeRoot, "meta.json"),
-      runtime.store.layout.storeRoot,
+    const meta = await readActiveIndexJsonFile(
+      activeIndex,
+      "meta.json",
     );
     if (meta.status !== "ready") return dashboardReadFailure(meta.status);
     if (
@@ -1408,9 +1442,9 @@ const dashboardReader = (
     return { status: "ready", json: { autoUpdate: false, outputLanguage: "zh" } };
   }
 
-  const wikiRead = await readDashboardJsonFile(
-    path.join(runtime.store.layout.knowledgeBase, "wiki-index.json"),
-    runtime.store.layout.storeRoot,
+  const wikiRead = await readActiveIndexJsonFile(
+    activeIndex,
+    "knowledge-base/wiki-index.json",
   );
   if (wikiRead.status !== "ready") return dashboardReadFailure(wikiRead.status);
   const wikiResult = parseWikiIndexV2(wikiRead.value);
@@ -1421,9 +1455,9 @@ const dashboardReader = (
   }
   if (input.kind === "wiki_index") return { status: "ready", json: wiki };
   if (input.kind === "wiki_search") {
-    const searchRead = await readDashboardJsonFile(
-      path.join(runtime.store.layout.knowledgeBase, "search-index.json"),
-      runtime.store.layout.storeRoot,
+    const searchRead = await readActiveIndexJsonFile(
+      activeIndex,
+      "knowledge-base/search-index.json",
     );
     if (searchRead.status !== "ready") return dashboardReadFailure(searchRead.status);
     const searchResult = parseWikiSearchIndexV2(searchRead.value);
@@ -1441,14 +1475,20 @@ const dashboardReader = (
     isSensitiveRepositoryPath(input.relativePath) ||
     !wiki.pages.some((page) => page.markdownPath === input.relativePath)
   ) return dashboardReadFailure("missing");
-  const pageRead = await readFixedPublishedText(
-    path.join(runtime.store.layout.storeRoot, input.relativePath),
-    runtime.store.layout.storeRoot,
-  );
-  if (!pageRead.ok) return dashboardReadFailure(pageRead.reason);
+  let pageBytes: Buffer;
+  try {
+    pageBytes = await activeIndex.read(input.relativePath);
+  } catch {
+    return dashboardReadFailure("unavailable");
+  }
+  if (
+    pageBytes.byteLength > DASHBOARD_ARTIFACT_MAX_BYTES ||
+    pageBytes.includes(0) ||
+    !Buffer.from(pageBytes.toString("utf8"), "utf8").equals(pageBytes)
+  ) return dashboardReadFailure("invalid");
   return {
     status: "ready",
-    text: pageRead.text,
+    text: pageBytes.toString("utf8"),
     contentType: "text/markdown; charset=utf-8",
   };
 };
@@ -1860,12 +1900,15 @@ const evidenceReader = (
 
   const observedSnapshotId = manifest.latestSnapshotId;
   const snapshot = context.publishedSnapshot.snapshot;
+  const headCommit = snapshot.headState.kind === "commit"
+    ? snapshot.headState.commit
+    : null;
   if (
     observedSnapshotId !== input.snapshotId ||
     snapshot.snapshotId !== input.snapshotId ||
     snapshot.repositoryId !== input.repositoryId ||
     snapshot.worktreeId !== input.worktreeId ||
-    (snapshot.headCommit ?? null) !== input.headCommit
+    headCommit !== input.headCommit
   ) {
     return workbenchEvidenceNotReady(input, "stale", "snapshot_mismatch", {
       observedSnapshotId,
@@ -1971,10 +2014,18 @@ const evidenceReader = (
   }
   let nodeIds = [...sourceEvidence.nodeIds];
   if (nodeIds.length === 0) {
-    const graphRead = await readFixedPublishedJson(
-      runtime.store.layout.knowledgeGraph,
-      runtime.store.layout.storeRoot,
-    );
+    let graphRead: PublishedJsonReadV1 = {
+      ok: false,
+      reason: "read_failed",
+    };
+    try {
+      graphRead = await readActiveIndexJson(
+        await openStrongBoundActiveIndexV1(runtime as ProductionRuntimeV1),
+        "knowledge-graph.json",
+      );
+    } catch {
+      // Evidence remains valid without an optional Graph enrichment.
+    }
     if (graphRead.ok) {
       const graphResult = validateGraph(graphRead.value);
       if (
@@ -2020,7 +2071,11 @@ const evidenceReader = (
   };
 };
 
-async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
+async function openWorkbench(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+) {
   const parsed = OpenWorkbenchInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   if (parsed.data.openBrowser === true) {
@@ -2029,14 +2084,8 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     );
   }
 
-  // A legacy Task/Workbench session carries repository, worktree, Snapshot,
-  // Check, and Verification lineage that has no accepted public projection.
-  // Do not open the legacy Store or start a browser session until the strong
-  // Store can validate and project that lineage.
-  failStrongStoreUnavailableV1();
-
   const startedAt = performance.now();
-  const runtime = await openRuntime(canonicalRoot);
+  return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
   if (parsed.data.route.taskId !== undefined) {
     const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
     const taskExists = manifest.artifacts.some(
@@ -2051,10 +2100,17 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     }
   }
 
-  const [published, workbenchUi] = await Promise.all([
-    readPublishedPulse(runtime.store),
+  const [pulse, workbenchUi] = await Promise.all([
+    readStrongPublishedPulseV1(runtime),
     resolveWorkbenchUi(),
   ]);
+  const publishedSnapshot = await readStrongPublishedSnapshotV1(
+    runtime,
+    pulse.evaluatedSnapshotId,
+  );
+  const headCommit = publishedSnapshot.snapshot.headState.kind === "commit"
+    ? publishedSnapshot.snapshot.headState.commit
+    : null;
   const workbenchUiOptions = "dashboardBundle" in workbenchUi
     ? {
         dashboardBundle: workbenchUi.dashboardBundle,
@@ -2064,12 +2120,12 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
   const session = await openWorkbenchSessionV1(parsed.data, {
     canonicalRoot,
     productVersion: PRODUCT_VERSION,
-    repositoryId: published.snapshot.snapshot.repositoryId,
-    worktreeId: published.snapshot.snapshot.worktreeId,
-    sourceSnapshotId: published.snapshot.snapshot.snapshotId,
-    headCommit: published.snapshot.snapshot.headCommit ?? null,
-    worktreeFingerprint: published.snapshot.worktreeFingerprint,
-    freshness: published.pulse.status,
+    repositoryId: publishedSnapshot.snapshot.repositoryId,
+    worktreeId: publishedSnapshot.snapshot.worktreeId,
+    sourceSnapshotId: publishedSnapshot.snapshot.snapshotId,
+    headCommit,
+    worktreeFingerprint: publishedSnapshot.worktreeFingerprint,
+    freshness: pulse.status,
     ...workbenchUiOptions,
     taskBriefReader: async (input) => {
       const page = await runtime.taskEngine.getTaskBrief(input);
@@ -2093,6 +2149,7 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
         durationMs: elapsed(startedAt),
       },
     },
+  });
   });
 }
 
@@ -2260,30 +2317,38 @@ export async function callImplementedTool(
   try {
     switch (toolName) {
       case "get_repo_pulse":
-        return await getRepoPulse(argumentsValue, canonicalRoot);
+        return await getRepoPulse(argumentsValue, canonicalRoot, selection);
       case "build_task_brief":
         return await buildTaskBrief(argumentsValue, canonicalRoot, selection);
       case "get_task_brief":
-        return await getTaskBrief(argumentsValue, canonicalRoot);
+        return await getTaskBrief(argumentsValue, canonicalRoot, selection);
       case "update_task":
-        return await updateTask(argumentsValue, canonicalRoot);
+        return await updateTask(argumentsValue, canonicalRoot, selection);
       case "check_change":
         return await checkChange(argumentsValue, canonicalRoot, selection);
       case "record_verification":
         return await recordVerification(argumentsValue, canonicalRoot, selection);
       case "open_workbench":
-        return await openWorkbench(argumentsValue, canonicalRoot);
+        return await openWorkbench(argumentsValue, canonicalRoot, selection);
       case "get_evidence":
-        return await getEvidence(argumentsValue, canonicalRoot);
+        return await getEvidence(argumentsValue, canonicalRoot, selection);
       case "search_context":
-        return await searchContext(argumentsValue, canonicalRoot);
+        return await searchContext(argumentsValue, canonicalRoot, selection);
       case "trace_impact":
-        return await traceImpact(argumentsValue, canonicalRoot);
+        return await traceImpact(argumentsValue, canonicalRoot, selection);
       case "refresh_index":
-        return await refreshIndex(argumentsValue, canonicalRoot);
+        return await refreshIndex(
+          argumentsValue,
+          canonicalRoot,
+          selection.canonicalInstallationRoot,
+          selection.canonicalHostInstallationRoot,
+        );
     }
   } catch (error) {
     if (error instanceof ToolFailure) return error.result;
+    if (isProviderProductionStrongObjectUnavailableErrorV1(error)) {
+      return strongStoreUnavailableFailure();
+    }
     if (error instanceof TaskEngineError) {
       return mappedTaskEngineFailure(error) ?? internalErrorFailure();
     }

@@ -1,30 +1,48 @@
 # Understand Code CLI
 
-This package is the first installable, source-tree-readonly Alpha slice of
-Understand Code for Coding Agents. It builds one self-contained Node.js
-executable with no runtime npm dependencies.
+This package builds the self-contained Understand Code CLI and stdio MCP
+server. The executable has no runtime npm dependencies and is shared by the
+Codex CLI and Claude Code Host installations.
 
 ## Start the MCP server
 
-Prerequisites are Node.js 22 or newer, Git on `PATH`, and an Understand Code
-Artifact Store already published for the target worktree. The root must be the
-exact absolute path of the Git worktree top level:
+The root must be the exact absolute path of the Git worktree top level. A
+direct invocation without a Provider selector remains on the fail-closed
+read-only compatibility profile:
 
 ```sh
 understand-code mcp --stdio --root /absolute/path/to/worktree
 ```
 
-The Alpha advertises exactly three tools:
+An installer-owned Host wrapper selects a verified Provider installation and
+starts the strong profile with:
+
+```sh
+understand-code mcp --stdio \
+  --root /absolute/path/to/worktree \
+  --installation-root /absolute/path/to/provider-installation
+```
+
+The full MCP surface contains eleven versioned tools:
 
 | Tool | Behavior |
 | --- | --- |
-| `get_repo_pulse` | Reads the published Repo Pulse and the exact Repository Snapshot it evaluated. |
-| `build_task_brief` | Creates or idempotently resumes a Task Brief from published repository context. |
+| `get_repo_pulse` | Reads the published Repo Pulse and its exact Repository Snapshot. |
+| `refresh_index` | Captures and publishes a path-safe Snapshot, Pulse, Graph, and Wiki cut. |
+| `build_task_brief` | Creates or idempotently resumes an evidence-backed Task Brief. |
 | `get_task_brief` | Reads one paginated section from a managed Task Brief. |
+| `update_task` | Applies an optimistic, idempotent Task lifecycle action. |
+| `check_change` | Commits an evidence-backed comparison of the plan and actual Snapshot. |
+| `record_verification` | Records a caller-executed verification result; it never runs the command. |
+| `get_evidence` | Reads bounded, paginated Task evidence. |
+| `search_context` | Searches Task-pinned Graph and Wiki context. |
+| `trace_impact` | Reads bounded, paginated impact paths. |
+| `open_workbench` | Mints a one-time Task-first Workbench deep link. |
 
-If the required Snapshot, Pulse, or task context is absent, stale, or corrupt,
-the tool returns a structured fail-closed result. This command does not perform
-an indexing refresh.
+Every tool returns a versioned structured result. Missing, stale, corrupt, or
+untrusted state returns a stable fail-closed error; a missing or invalid
+Provider selector never falls back to a legacy writer. Large results use
+bounded pages, cursors, and explicit truncation metadata.
 
 ## Authority and write boundary
 
@@ -35,18 +53,20 @@ an indexing refresh.
   the explicit root authority.
 - Ambient Git authority variables are ignored while resolving and capturing
   the bound worktree, then restored for the host process.
-- Repository source files are never written. `build_task_brief` may write only
-  managed `.understand-code/**` artifacts through the Artifact Store; the two
-  read tools do not modify source state.
+- Strong capture is admitted only through the installed SafeGit and Provider
+  profile for the exact supported OS, filesystem, mount, and principal.
+- MCP never writes repository source files and never executes verification
+  commands. It writes only managed `.understand-code/**` artifacts after the
+  relevant strong authority and optimistic revision checks succeed.
 - Stdout is reserved for newline-delimited JSON-RPC frames. Diagnostics on
   stderr are generic and do not expose repository paths or internal errors.
 
-## Alpha boundary
+## Preview compatibility
 
-This package does not yet include the Codex or Claude host adapter, an indexing
-refresh command, strong Provider authority, Change Check, Verification, or the
-remaining MCP tools. Those capabilities stay unadvertised until their own
-quality gates close.
+The separately compiled Preview Candidate remains pinned to its original three
+tools (`get_repo_pulse`, `build_task_brief`, and `get_task_brief`) so its cold
+installation contract is byte- and schema-stable. That restricted surface is
+not the full Host Alpha profile described above.
 
 ## Development checks
 
@@ -56,5 +76,6 @@ pnpm --filter @understand-code/cli test
 pnpm --filter @understand-code/cli build
 ```
 
-The cold-pack test installs the generated tarball outside the monorepo and runs
-the complete three-tool stdio flow against a disposable Git repository.
+Cold-pack tests install the generated artifact outside the monorepo. The
+Linux/ext4 production gate additionally verifies the isolated Provider,
+SafeGit, Host selector, and strong mutation path.

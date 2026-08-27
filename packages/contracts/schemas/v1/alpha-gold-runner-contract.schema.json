@@ -1,0 +1,134 @@
+{
+  "$id": "urn:understand-code:schema:v1:alpha-gold-runner-contract",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "alpha_gold_runner_contract_v1"
+    },
+    "corpusProfile": {
+      "type": "string",
+      "const": "alpha_gold_task_corpus_v1"
+    },
+    "taskSelection": {
+      "type": "string",
+      "const": "versioned_two_person_reviewed_definitions_only"
+    },
+    "snapshotPolicy": {
+      "type": "string",
+      "const": "fresh_isolated_clean_commit_only_worktree_per_task"
+    },
+    "requiredStages": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "repo_pulse"
+        },
+        {
+          "type": "string",
+          "const": "task_brief"
+        },
+        {
+          "type": "string",
+          "const": "change_check"
+        },
+        {
+          "type": "string",
+          "const": "verification"
+        }
+      ]
+    },
+    "g2": {
+      "type": "object",
+      "properties": {
+        "minimumPassedTasksOnOneHost": {
+          "type": "number",
+          "const": 12
+        },
+        "requiredHostCount": {
+          "type": "number",
+          "const": 1
+        }
+      },
+      "required": [
+        "minimumPassedTasksOnOneHost",
+        "requiredHostCount"
+      ],
+      "additionalProperties": false
+    },
+    "g3": {
+      "type": "object",
+      "properties": {
+        "requiredTasksPerHost": {
+          "type": "number",
+          "const": 24
+        },
+        "requiredHostCount": {
+          "type": "number",
+          "const": 2
+        },
+        "requiredHostTaskExecutions": {
+          "type": "number",
+          "const": 48
+        },
+        "requiredHosts": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "codex"
+            },
+            {
+              "type": "string",
+              "const": "claude"
+            }
+          ]
+        },
+        "artifactTaskRevisionIdentity": {
+          "type": "string",
+          "const": "required"
+        }
+      },
+      "required": [
+        "requiredTasksPerHost",
+        "requiredHostCount",
+        "requiredHostTaskExecutions",
+        "requiredHosts",
+        "artifactTaskRevisionIdentity"
+      ],
+      "additionalProperties": false
+    },
+    "syntheticSubstitution": {
+      "type": "string",
+      "const": "forbidden"
+    },
+    "blockedEvidence": {
+      "type": "string",
+      "const": "machine_readable_required"
+    },
+    "alphaBHandling": {
+      "type": "string",
+      "const": "local_only_no_source_private_evidence_or_absolute_path_copy"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "corpusProfile",
+    "taskSelection",
+    "snapshotPolicy",
+    "requiredStages",
+    "g2",
+    "g3",
+    "syntheticSubstitution",
+    "blockedEvidence",
+    "alphaBHandling"
+  ],
+  "additionalProperties": false
+}

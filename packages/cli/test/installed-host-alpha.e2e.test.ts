@@ -5,6 +5,7 @@ import {
   cp,
   lstat,
   readFile,
+  realpath,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -79,9 +80,13 @@ async function runLifecycle(
   operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall",
   root: string,
   host?: "codex" | "claude",
+  providerInstallationRoot?: string,
 ): Promise<Record<string, any>> {
   const args = [operation, "--root", root];
   if (host !== undefined) args.push("--host", host);
+  if (providerInstallationRoot !== undefined) {
+    args.push("--provider-installation-root", providerInstallationRoot);
+  }
   const result = await execFile(executable, args, {
     cwd: path.dirname(root),
     encoding: "utf8",
@@ -255,6 +260,100 @@ async function exerciseInstalledMutationLock(
 }
 
 describe("installed dual-host alpha", () => {
+  it("resolves a production Provider selector only through the healthy installed Host", async () => {
+    const releases = await makeReleaseCopies();
+    const providerRoot = await createTemporaryDirectory(
+      "understand-code-provider-selector-",
+    );
+    const alternateProviderRoot = await createTemporaryDirectory(
+      "understand-code-alternate-provider-selector-",
+    );
+    const installRoot = path.join(
+      await createTemporaryDirectory("understand-code-strong-host-home-"),
+      "install",
+    );
+    const canonicalProviderRoot = await realpath(providerRoot);
+    const canonicalAlternateProviderRoot = await realpath(
+      alternateProviderRoot,
+    );
+
+    await expect(
+      runLifecycle(
+        releases.initial,
+        "install",
+        installRoot,
+        "codex",
+        providerRoot,
+      ),
+    ).resolves.toMatchObject({ ok: true, status: "installed" });
+    const installedCli = path.join(
+      installRoot,
+      INSTALLATION_CLI_BUNDLE_FILE,
+    );
+    const selectorArgs = [
+      "__host-provider-selector",
+      "--installation-root",
+      installRoot,
+    ];
+    const selected = await execFile(installedCli, selectorArgs, {
+      cwd: alternateProviderRoot,
+      encoding: "utf8",
+      env: {
+        PATH: coldPath,
+        NODE_PATH: "",
+        UNDERSTAND_CODE_CLI: "/untrusted/provider-selector",
+        UNDERSTAND_CODE_HOME: alternateProviderRoot,
+        UNDERSTAND_CODE_INSTALL_ROOT: alternateProviderRoot,
+      },
+    });
+    expect(selected).toEqual({
+      stdout: `${canonicalProviderRoot}\n`,
+      stderr: "",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(installRoot, INSTALLATION_MANIFEST_FILE),
+        "utf8",
+      ),
+    ) as { providerInstallationRoot?: string };
+    const configPath = path.join(installRoot, INSTALLATION_CONFIG_FILE);
+    const originalConfigBytes = await readFile(configPath);
+    const config = JSON.parse(originalConfigBytes.toString("utf8")) as {
+      providerInstallationRoot?: string;
+    };
+    expect(manifest.providerInstallationRoot).toBe(canonicalProviderRoot);
+    expect(config.providerInstallationRoot).toBe(canonicalProviderRoot);
+
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        ...config,
+        providerInstallationRoot: canonicalAlternateProviderRoot,
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await expect(
+      execFile(installedCli, selectorArgs, {
+        encoding: "utf8",
+        env: { PATH: coldPath, NODE_PATH: "" },
+      }),
+    ).rejects.toMatchObject({
+      code: 2,
+      stderr: "understand-code: configuration_error\n",
+    });
+
+    await writeFile(configPath, originalConfigBytes, { mode: 0o600 });
+    await expect(
+      runLifecycle(installedCli, "doctor", installRoot),
+    ).resolves.toMatchObject({ ok: true, status: "healthy" });
+    await expect(
+      runLifecycle(installedCli, "uninstall", installRoot),
+    ).resolves.toMatchObject({ ok: true, status: "removed" });
+    expect(await lstat(providerRoot)).toBeDefined();
+    expect(await lstat(alternateProviderRoot)).toBeDefined();
+  });
+
   it(
     "preserves the strong-writer lock across bundled hosts and lifecycle operations",
     async () => {

@@ -20,6 +20,7 @@ import {
   type SafeGitTaskBaselineLeaseCreateRequestV1,
 } from "@understand-code/repository-state";
 import {
+  isProviderProductionStrongObjectUnavailableErrorV1,
   openProviderProductionStrongObjectClientV1,
   type ProviderProductionStrongObjectClientV1,
 } from "@understand-code/durable-object-provider-client";
@@ -54,6 +55,7 @@ export interface RuntimeContext {
   readonly store: ArtifactStore;
   readonly taskEngine: TaskEngine;
   readonly close?: () => Promise<void>;
+  readonly providerClient?: ProviderProductionStrongObjectClientV1;
 }
 
 export interface PublishedSnapshotContext {
@@ -233,134 +235,189 @@ export async function openRuntime(
   // only repository read authorities; no cwd, PATH, env, or raw argv enters
   // the contained snapshot runner.
   const strongSelector = options.canonicalInstallationRoot;
-  const capture = strongSelector === undefined
-    ? await captureBoundRepositorySnapshot(canonicalRoot)
-    : await (async () => {
-        const candidate = await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
-        try {
-          await candidate.capability.bindRepositoryControl();
-          await candidate.capability.bindRepositoryIdentity();
-          await candidate.capability.bindEmptyHooksDirectory();
-          await candidate.capability.bindGitExecutable(PRODUCTION_SAFE_GIT_EXECUTABLE_V1);
-          await candidate.capability.executeGitVersion();
-          return await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
-            canonicalRoot,
-            candidate.capability,
-          );
-        } finally {
-          await candidate.capability.close();
-        }
-      })();
-  if (
-    capture.snapshot.captureStatus === "error" ||
-    capture.canonicalRoot !== canonicalRoot
-  ) {
-    throw new ToolFailure(
-      repositoryNotReadyFailure(
-        "unknown",
-        ["repository_snapshot"],
-        "repair_environment",
-      ),
-    );
-  }
-
-  const store = await ArtifactStore.open(canonicalRoot, {
-    repositoryId: capture.snapshot.repositoryId,
-    worktreeId: capture.snapshot.worktreeId,
-    producerVersion: PRODUCT_VERSION,
-  });
+  const providerClient = strongSelector === undefined
+    ? undefined
+    : await openProviderProductionStrongObjectClientV1({
+        canonicalInstallationRoot: strongSelector,
+      });
+  let providerClientOwnedByRuntime = false;
   try {
-    await store.readManifest({ verifyArtifacts: false });
-  } catch (error) {
-    if (error instanceof ArtifactStoreError) {
-      if (error.code === "artifact_not_found") throw missingRepositoryContext();
-      if (error.code === "manifest_inconsistent") {
-        throw new RuntimeBindingError();
-      }
-      if (error.code === "artifact_corrupt") {
-        throw new ToolFailure(artifactUnavailableFailure("corrupt", "artifact_manifest"));
-      }
+    const bound = strongSelector === undefined
+      ? { capture: await captureBoundRepositorySnapshot(canonicalRoot) }
+      : await (async () => {
+          const candidate =
+            await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
+          try {
+            await candidate.capability.bindRepositoryControl();
+            const identity =
+              await candidate.capability.bindRepositoryIdentity();
+            await candidate.capability.bindEmptyHooksDirectory();
+            await candidate.capability.bindGitExecutable(
+              PRODUCTION_SAFE_GIT_EXECUTABLE_V1,
+            );
+            await candidate.capability.executeGitVersion();
+            return {
+              capture:
+                await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+                  canonicalRoot,
+                  candidate.capability,
+                ),
+              identity,
+            };
+          } finally {
+            await candidate.capability.close();
+          }
+        })();
+    const capture = bound.capture;
+    if (
+      capture.snapshot.captureStatus === "error" ||
+      capture.canonicalRoot !== canonicalRoot
+    ) {
+      throw new ToolFailure(
+        repositoryNotReadyFailure(
+          "unknown",
+          ["repository_snapshot"],
+          "repair_environment",
+        ),
+      );
     }
-    throw error;
-  }
 
-  let providerClient: ProviderProductionStrongObjectClientV1 | undefined;
-  let strongChangeAuthority: ArtifactStoreStrongChangeAuthorityV1 | undefined;
-  const contextProvider = await RepositoryTaskContextProvider.open({
-    canonicalRoot,
-    ...(strongSelector === undefined
-      ? {}
-      : { openStrongSafeGitReadSession: () => openProductionSafeGitReadSessionV1(canonicalRoot) }),
-  });
-  if (strongSelector !== undefined) {
-    providerClient = await openProviderProductionStrongObjectClientV1({
-      canonicalInstallationRoot: strongSelector,
+    const store = await ArtifactStore.open(canonicalRoot, {
+      // A production selector promotes the descriptor-bound,
+      // installation-keyed identity into the Store binding. The legacy
+      // capture still proves repository state and canonical root, but its
+      // path-derived opaque IDs must never select a strong namespace.
+      repositoryId: "identity" in bound
+        ? bound.identity.repositoryId
+        : capture.snapshot.repositoryId,
+      worktreeId: "identity" in bound
+        ? bound.identity.worktreeId
+        : capture.snapshot.worktreeId,
+      producerVersion: PRODUCT_VERSION,
     });
-    const provider: StrongChangeProviderAuthorityV1 = {
-      inspectState: async () => {
-        const result = await providerClient!.inspectState();
-        return { revision: result.revision };
-      },
-      readExactObject: ({ locator }) => providerClient!.readExactObject(
-        ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locator),
-      ),
-      writeExactObject: (input) => providerClient!.writeExactObject({
-        ...input,
-        locator: ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(input.locator),
-      }),
-      compareCommit: async (input) => {
-        const result = await providerClient!.compareCommit({
-          ...input,
-          artifacts: input.artifacts as Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
-        });
-        return {
-          resolution: result.resolution,
-          committedRevision: result.state.revision,
-          artifacts: result.state.artifacts,
-        };
-      },
-    };
-    const ownerKeyAuthority = {
-      provenance: "provider_installation_owner_v1" as const,
-      commit: (domain: "record-verification-full-input-v1" | "verification-detail-semantic-v1", canonicalValue: string) =>
-        providerClient!.commitOwnerOnlyState(domain, canonicalValue),
-    };
-    const materialAuthority = new RepositoryStrongChangeMaterialAuthorityV1({
-      store,
-      repositoryContextProvider: contextProvider,
-      provider,
-      providerId: providerClient.verifiedProviderId,
-      ownerKeyAuthority,
-    });
-    strongChangeAuthority = new ArtifactStoreStrongChangeAuthorityV1(store, {
-      provider,
-      materialAuthority,
-      providerId: providerClient.verifiedProviderId,
-    });
-  }
-  return {
-    store,
-    taskEngine: new TaskEngine(store, {
-      contextProvider,
-      createScope: "mcp:build_task_brief:v1",
-      ...(strongChangeAuthority === undefined
+    try {
+      await store.readManifest({ verifyArtifacts: false });
+    } catch (error) {
+      if (error instanceof ArtifactStoreError) {
+        if (error.code === "artifact_not_found") {
+          throw missingRepositoryContext();
+        }
+        if (error.code === "manifest_inconsistent") {
+          throw new RuntimeBindingError();
+        }
+        if (error.code === "artifact_corrupt") {
+          throw new ToolFailure(
+            artifactUnavailableFailure("corrupt", "artifact_manifest"),
+          );
+        }
+      }
+      throw error;
+    }
+
+    let strongChangeAuthority:
+      | ArtifactStoreStrongChangeAuthorityV1
+      | undefined;
+    const contextProvider = await RepositoryTaskContextProvider.open({
+      canonicalRoot,
+      ...(strongSelector === undefined
         ? {}
-        : { strongChangeAuthority }),
-    }),
-    ...(providerClient === undefined
-      ? {}
-      : { close: async () => providerClient!.close() }),
-  };
+        : {
+            openStrongSafeGitReadSession: () =>
+              openProductionSafeGitReadSessionV1(canonicalRoot),
+          }),
+    });
+    if (providerClient !== undefined) {
+      const provider: StrongChangeProviderAuthorityV1 = {
+        inspectState: async () => {
+          const result = await providerClient.inspectState();
+          return { revision: result.revision };
+        },
+        readExactObject: ({ locator }) =>
+          providerClient.readExactObject(
+            ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locator),
+          ),
+        writeExactObject: (input) =>
+          providerClient.writeExactObject({
+            ...input,
+            locator: ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
+              input.locator,
+            ),
+          }),
+        compareCommit: async (input) => {
+          const result = await providerClient.compareCommit({
+            ...input,
+            artifacts: input.artifacts as Readonly<
+              Record<string, ProviderRuntimeIpcJsonValueV1>
+            >,
+          });
+          return {
+            resolution: result.resolution,
+            committedRevision: result.state.revision,
+            artifacts: result.state.artifacts,
+          };
+        },
+      };
+      const ownerKeyAuthority = {
+        provenance: "provider_installation_owner_v1" as const,
+        commit: (
+          domain:
+            | "record-verification-full-input-v1"
+            | "verification-detail-semantic-v1",
+          canonicalValue: string,
+        ) => providerClient.commitOwnerOnlyState(domain, canonicalValue),
+      };
+      const materialAuthority =
+        new RepositoryStrongChangeMaterialAuthorityV1({
+          store,
+          repositoryContextProvider: contextProvider,
+          provider,
+          providerId: providerClient.verifiedProviderId,
+          ownerKeyAuthority,
+        });
+      strongChangeAuthority = new ArtifactStoreStrongChangeAuthorityV1(store, {
+        provider,
+        materialAuthority,
+        providerId: providerClient.verifiedProviderId,
+      });
+    }
+    const runtime: RuntimeContext = {
+      store,
+      taskEngine: new TaskEngine(store, {
+        contextProvider,
+        createScope: "mcp:build_task_brief:v1",
+        ...(strongChangeAuthority === undefined
+          ? {}
+          : { strongChangeAuthority }),
+      }),
+      ...(providerClient === undefined
+        ? {}
+        : {
+            providerClient,
+            close: async () => providerClient.close(),
+          }),
+    };
+    providerClientOwnedByRuntime = providerClient !== undefined;
+    return runtime;
+  } finally {
+    if (!providerClientOwnedByRuntime) providerClient?.close();
+  }
 }
 
 /** Explicit production composition entrypoint.  The installation selector is
  * intentionally mandatory here; it is never inferred from cwd, PATH, or
  * ambient environment. */
-export function openProductionRuntime(
+export async function openProductionRuntime(
   canonicalRoot: string,
   canonicalInstallationRoot: string,
 ): Promise<RuntimeContext> {
-  return openRuntime(canonicalRoot, { canonicalInstallationRoot });
+  try {
+    return await openRuntime(canonicalRoot, { canonicalInstallationRoot });
+  } catch (error) {
+    if (isProviderProductionStrongObjectUnavailableErrorV1(error)) {
+      throw new ToolFailure(strongStoreUnavailableFailure());
+    }
+    throw error;
+  }
 }
 
 export async function readPublishedSnapshot(

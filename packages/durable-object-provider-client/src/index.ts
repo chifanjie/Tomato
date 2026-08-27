@@ -26,13 +26,21 @@ export {
 } from "./provider-migration-durable-execution-entrypoint.js";
 
 export {
+  isProviderProductionStrongObjectUnavailableErrorV1,
   openProviderProductionStrongObjectClientV1,
+  PROVIDER_PRODUCTION_STRONG_OBJECT_UNAVAILABLE_CODE_V1,
+  ProviderProductionStrongObjectUnavailableErrorV1,
   startProviderProductionStrongObjectGatewayServiceV1,
   type ProviderProductionStrongObjectGatewayServiceV1,
 } from "./provider-production-strong-object-gateway.js";
 export type {
   OpenProviderProductionStrongObjectClientV1Input,
+  ProviderProductionStrongCompareCommitIndexPublicationV1Input,
   ProviderProductionStrongCompareCommitV1Input,
+  ProviderProductionStrongBusinessHeadV1,
+  ProviderProductionStrongIndexPublicationAuthorityInputV1,
+  ProviderProductionStrongIndexPublicationAuthorityV1,
+  ProviderProductionOwnerCommitmentDomainV1,
   ProviderProductionStrongObjectClientV1,
   ProviderProductionStrongWriteExactObjectV1Input,
 } from "./provider-production-strong-object-client.js";

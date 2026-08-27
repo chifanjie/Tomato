@@ -31,8 +31,83 @@ describe.skipIf(!runnable)("production strong object three-principal Linux", () 
       ext4: true,
       foreignCallerRejected: true,
       authorityUid: 0,
+      nativeExactObject: {
+        status: "verified",
+        exactObject: "verified",
+        noReplace: "verified",
+        renameReparent: "rejected_zero_write",
+        pathnameAba: "rejected_zero_write",
+        sourceSwap: "rejected_zero_write",
+      },
+      caller: {
+        role: "caller",
+        keyDenied: true,
+        keyDenials: 4,
+        write: "committed",
+        check: "committed",
+        checkReplay: "committed",
+        verification: "committed",
+        revision: 3,
+        revisionOnly: true,
+        reservedForgeryRejected: true,
+      },
+      restartReplay: {
+        role: "caller",
+        keyDenied: true,
+        keyDenials: 4,
+        write: "committed",
+        check: "committed",
+        checkReplay: "committed",
+        verification: "committed",
+        revision: 3,
+      },
+      restartSockets: {
+        retainedAfterSigkill: "verified",
+        broker: "reclaimed",
+        runtime: "reclaimed",
+        gateway: "reclaimed",
+        startOrder: "authority_runtime_gateway",
+      },
+      lifecycleLease: {
+        liveUninstall: "refused_zero_write",
+        doubleStart: "rejected",
+      },
+      casNonce: {
+        role: "cas-probe",
+        writeNonceConflict: true,
+        compareNonceConflict: true,
+        stale: "stale",
+        staleReplay: "stale",
+        revision: 4,
+      },
+      trustRotationReplay: {
+        role: "trust-rotation-replay",
+        acceptanceOrdinal: 2,
+        resolution: "committed",
+        originalRevision: 2,
+        currentRevision: 4,
+        zeroWrite: true,
+      },
+      durableCurrent: {
+        revision: 4,
+        lifecycleArtifactCount: 17,
+        businessHeadPresent: true,
+      },
+      lifecycle: {
+        install: "installed",
+        upgrade: "rotated",
+        rollback: "rolled_back",
+        uninstall: "uninstalled",
+        retainedIdentity: "verified",
+      },
     });
-    expect(result.callerUid).toBe(result.caller.callerUid ?? result.callerUid);
-    expect(result.restartReplay).toMatchObject({ role: "caller" });
+    expect(result.runtimeUid).toBe(result.nativeExactObject.principalUid);
+    expect(result.callerUid).toBe(result.caller.callerUid);
+    expect(new Set([
+      result.authorityUid,
+      result.runtimeUid,
+      result.callerUid,
+    ]).size).toBe(3);
+    expect(result.restartReplay.read).toBe(result.caller.read);
   }, 15 * 60 * 1000);
 });

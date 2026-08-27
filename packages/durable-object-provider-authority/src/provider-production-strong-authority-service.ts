@@ -10,8 +10,12 @@ import {
   type ProviderTargetProfileIdV1,
 } from "@understand-code/durable-object-provider-contracts/primitives";
 import {
-  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
-} from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
+  ProviderAcceptanceGenerationPinV1Schema,
+  ProviderAcceptanceStateEnvelopeV1Schema,
+  type ProviderAcceptedConfigurationV1,
+  type ProviderAcceptanceGenerationPinV1,
+  type ProviderAcceptanceStateEnvelopeV1,
+} from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 import type {
   ProviderStrictEd25519OpaqueCapabilityV1,
 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";
@@ -49,6 +53,30 @@ const O_CLOEXEC_V1 =
   (fsConstants as Readonly<Record<string, number>>)["O_CLOEXEC"] ?? 0;
 const STRONG_MUTATION_BROKER_SOCKET_BASENAME_V1 =
   "strong-mutation-broker-v1.sock" as const;
+const STRONG_MUTATION_BROKER_LEASE_SUFFIX_V1 =
+  ".strong-mutation-broker.lock" as const;
+
+type ProviderProductionCompletedStrongReadyConfigurationInternalV1 =
+  Extract<ProviderAcceptedConfigurationV1, { readonly state: "strong_ready" }> &
+  Readonly<{
+    activation: Extract<
+      Extract<ProviderAcceptedConfigurationV1, {
+        readonly state: "strong_ready";
+      }>["activation"],
+      { readonly origin: "completed_provider_migration" }
+    >;
+  }>;
+
+export function assertProviderProductionCompletedStrongReadyConfigurationInternalV1(
+  configuration: ProviderAcceptedConfigurationV1,
+): asserts configuration is ProviderProductionCompletedStrongReadyConfigurationInternalV1 {
+  if (
+    configuration.state !== "strong_ready" ||
+    configuration.activation.origin !== "completed_provider_migration"
+  ) {
+    throw new TypeError("provider strong authority writer is unavailable");
+  }
+}
 
 export interface OpenProviderProductionStrongAuthorityServiceV1Input {
   /** Root-owned, signed installer handoff; a caller-supplied object is never authority. */
@@ -154,6 +182,8 @@ async function readCurrentWriterV1(
   readonly targetProfileId: ProviderTargetProfileIdV1;
   readonly installationIdentityGenerationId:
     InstallationIdentityGenerationIdV1;
+  readonly envelope: ProviderAcceptanceStateEnvelopeV1;
+  readonly pin: ProviderAcceptanceGenerationPinV1;
 }>> {
   const targetProfileId = ProviderTargetProfileIdV1Schema.parse(
     targetProfileIdInput,
@@ -167,7 +197,9 @@ async function readCurrentWriterV1(
       if (current === null) {
         throw new TypeError("provider strong authority Acceptance is unavailable");
       }
-      const pin = current.highWater.payload.currentAcceptance;
+      const pin = ProviderAcceptanceGenerationPinV1Schema.parse(
+        current.highWater.payload.currentAcceptance,
+      );
       const matching = view.verifiedGenerationEnvelopes.filter((envelope) =>
         envelope.generationId === pin.generationId &&
         envelope.contentDigest === pin.contentDigest &&
@@ -176,10 +208,9 @@ async function readCurrentWriterV1(
       if (matching.length !== 1) {
         throw new TypeError("provider strong authority Acceptance is invalid");
       }
-      const envelope =
-        ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
-          matching[0],
-        );
+      const envelope = ProviderAcceptanceStateEnvelopeV1Schema.parse(
+        matching[0],
+      );
       if (
         envelope.installationIdentityGenerationId !==
           view.installationIdentityGenerationId ||
@@ -190,7 +221,11 @@ async function readCurrentWriterV1(
       ) {
         throw new TypeError("provider strong authority identity is invalid");
       }
-      const selections = envelope.payload.configuration.core
+      const configuration = envelope.payload.configuration;
+      assertProviderProductionCompletedStrongReadyConfigurationInternalV1(
+        configuration,
+      );
+      const selections = configuration.core
         .activeWriterSelector.selections.filter((selection) =>
           selection.targetProfileId === targetProfileId &&
           selection.providerId === config.payload.providerId
@@ -204,6 +239,8 @@ async function readCurrentWriterV1(
           InstallationIdentityGenerationIdV1Schema.parse(
             view.installationIdentityGenerationId,
           ),
+        envelope,
+        pin,
       });
     },
   );
@@ -282,9 +319,20 @@ export async function openProviderProductionStrongAuthorityServiceV1(
         config.payload.runtimeRoot,
         STRONG_MUTATION_BROKER_SOCKET_BASENAME_V1,
       ),
+      leasePath: `${input.serviceConfigPath}${STRONG_MUTATION_BROKER_LEASE_SUFFIX_V1}`,
       expectedRuntimeUid: config.payload.principal.uid,
       expectedRuntimeGid: config.payload.principal.gid,
       broker,
+      readCurrentFormalAcceptance: async () => {
+        const fresh = await readCurrentWriterV1(
+          config,
+          input.targetProfileId,
+        );
+        return Object.freeze({
+          envelope: fresh.envelope,
+          pin: fresh.pin,
+        });
+      },
     });
     await server.start();
   } catch (error) {

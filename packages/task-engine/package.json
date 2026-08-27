@@ -30,8 +30,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "pnpm run build && vitest run"
+    "typecheck": "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build && tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build && pnpm run build && vitest run"
   },
   "dependencies": {
     "@understand-code/artifact-store": "workspace:*",
@@ -40,6 +40,7 @@
     "@understand-code/repository-state": "workspace:*"
   },
   "devDependencies": {
+    "@understand-code/durable-object-provider-runtime": "workspace:*",
     "@types/node": "^25.5.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"

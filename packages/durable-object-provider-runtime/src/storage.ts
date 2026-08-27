@@ -19,8 +19,10 @@ import {
   PROVIDER_RUNTIME_IPC_STORAGE_FILE_MODE_V1,
   ProviderRuntimeIpcFixedObjectLocatorV1Schema,
   ProviderRuntimeIpcJournalStateV1Schema,
+  ProviderRuntimeIpcCompareCommitResultV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
+  ProviderRuntimeIpcWriteObjectResultV1Schema,
   type ProviderRuntimeIpcFixedObjectLocatorV1,
   type ProviderRuntimeIpcJournalStateV1,
   type ProviderRuntimeIpcJsonValueV1,
@@ -45,6 +47,7 @@ import {
   consumeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
   type ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
 } from "./strong-mutation-session-authority-internal.js";
+import { projectProviderRuntimeDurableLifecycleArtifactSetV1 } from "./durable-lifecycle-artifacts.js";
 
 const JOURNAL_DISK_PROFILE_V1 =
   "provider_runtime_durable_operation_journal_v1" as const;
@@ -56,6 +59,16 @@ const DEFAULT_MAX_OBJECT_BYTES = 6 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_BYTES = 8 * 1024 * 1024;
 const STRONG_MUTATION_OUTCOME_PROFILE_V1 =
   "provider_runtime_strong_mutation_outcome_v1" as const;
+const STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1 =
+  "provider_runtime_strong_mutation_nonce_receipt_v1" as const;
+const STRONG_MUTATION_NONCE_RECEIPT_ERA_PROFILE_V1 =
+  "provider_runtime_strong_mutation_nonce_receipt_era_v1" as const;
+const STRONG_MUTATION_NONCE_RECEIPT_ERA_NAME_V1 =
+  "nonce-receipt-era-v1.json" as const;
+const STRONG_MUTATION_NONCE_RECEIPT_NAME_V1 =
+  /^nonce-([0-9a-f]{32})\.json$/u;
+const STRONG_MUTATION_ABANDONED_TEMP_NAME_V1 =
+  /^\.(?:nonce-[0-9a-f]{32}|nonce-receipt-era-v1|[0-9a-f]{64})\.json\.[0-9]+\.[0-9a-f]{24}\.tmp$/u;
 
 type JsonObjectV1 = Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 
@@ -78,6 +91,27 @@ export class ProviderRuntimeStorageErrorV1 extends Error {
     super(message);
     this.name = "ProviderRuntimeStorageErrorV1";
     this.code = code;
+  }
+}
+
+function durableLifecycleBaseCanonicalV1(
+  phase: string,
+  artifacts: JsonObjectV1,
+  errorCode: "invalid_input" | "journal_corrupt",
+): string | undefined {
+  if (phase !== "final_strong_ready") return undefined;
+  try {
+    return canonicalizeJcsSafeIntegerV1(
+      projectProviderRuntimeDurableLifecycleArtifactSetV1(artifacts)
+        .lifecycleArtifacts,
+    );
+  } catch (cause) {
+    throw new ProviderRuntimeStorageErrorV1(
+      errorCode,
+      errorCode === "journal_corrupt"
+        ? "durable final_strong_ready lifecycle artifacts are corrupt"
+        : "final_strong_ready requires the exact durable lifecycle artifact set",
+    );
   }
 }
 
@@ -167,6 +201,41 @@ interface DurableStrongMutationOutcomeDiskV1 {
   readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
   readonly phase: "prepared" | "completed";
   readonly outcomeDigest: string;
+}
+
+type SuccessfulStrongMutationResponseV1 = Extract<
+  ProviderRuntimeIpcStrongMutationResponseV1,
+  { readonly ok: true }
+>;
+
+interface DurableStrongMutationNonceReceiptDiskV1 {
+  readonly profile: typeof STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1;
+  readonly providerId: string;
+  readonly operationNonce: string;
+  readonly operation: ProviderRuntimeIpcStrongMutationRequestV1["operation"];
+  readonly requestDigest: string;
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+  readonly response: SuccessfulStrongMutationResponseV1;
+  readonly receiptDigest: string;
+}
+
+interface DurableStrongMutationNonceReceiptEraDiskV1 {
+  readonly profile: typeof STRONG_MUTATION_NONCE_RECEIPT_ERA_PROFILE_V1;
+  readonly providerId: string;
+  readonly outcomeProfile: typeof STRONG_MUTATION_OUTCOME_PROFILE_V1;
+  readonly nonceReceiptProfile: typeof STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1;
+  readonly markerDigest: string;
+}
+
+interface ScannedStrongMutationStateV1 {
+  readonly outcomes: readonly DurableStrongMutationOutcomeDiskV1[];
+  readonly nonceReceipts: readonly DurableStrongMutationNonceReceiptDiskV1[];
+  readonly nonceReceiptEraEstablished: boolean;
+}
+
+export interface ProviderRuntimeStrongMutationNonceReceiptMigrationSelectionV1 {
+  readonly operationNonce: string;
+  readonly bindingDigest: string;
 }
 
 interface RetainedStrongMutationDirectoryV1 {
@@ -289,6 +358,28 @@ function strongMutationOutcomeDigestV1(
     canonicalizeJcsSafeIntegerV1({
       domain: "understand-code-provider-runtime-strong-mutation-outcome-v1",
       outcome: input,
+    }),
+  );
+}
+
+function strongMutationNonceReceiptDigestV1(
+  input: Omit<DurableStrongMutationNonceReceiptDiskV1, "receiptDigest">,
+): string {
+  return sha256DigestV1(
+    canonicalizeJcsSafeIntegerV1({
+      domain: "understand-code-provider-runtime-strong-mutation-nonce-receipt-v1",
+      receipt: input,
+    }),
+  );
+}
+
+function strongMutationNonceReceiptEraDigestV1(
+  input: Omit<DurableStrongMutationNonceReceiptEraDiskV1, "markerDigest">,
+): string {
+  return sha256DigestV1(
+    canonicalizeJcsSafeIntegerV1({
+      domain: "understand-code-provider-runtime-strong-mutation-nonce-receipt-era-v1",
+      marker: input,
     }),
   );
 }
@@ -450,6 +541,8 @@ export class DurableObjectProviderRuntimeStoreV1 {
     | RetainedStrongMutationExactObjectAuthorityV1
     | undefined;
   #testCompletedOutcomePersistFailureArmed = false;
+  #testNonceReceiptPersistCutArmed = false;
+  #testNonceReceiptMigrationBackfillCutArmed = false;
 
   constructor(options: DurableObjectProviderRuntimeStoreOptionsV1) {
     this.rootPath = resolve(options.rootPath);
@@ -633,6 +726,34 @@ export class DurableObjectProviderRuntimeStoreV1 {
     this.#testCompletedOutcomePersistFailureArmed = true;
   }
 
+  /** Test-only crash cut after the global receipt fsync and before binding WAL. */
+  armTestStrongMutationNonceReceiptPersistCutOnceV1(): void {
+    if (
+      (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") ||
+      this.#testNonceReceiptPersistCutArmed
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation nonce-receipt fault seam is unavailable",
+      );
+    }
+    this.#testNonceReceiptPersistCutArmed = true;
+  }
+
+  /** Test-only crash cut after one legacy receipt backfill and before the era marker. */
+  armTestStrongMutationNonceReceiptMigrationBackfillCutOnceV1(): void {
+    if (
+      (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") ||
+      this.#testNonceReceiptMigrationBackfillCutArmed
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation nonce-receipt migration fault seam is unavailable",
+      );
+    }
+    this.#testNonceReceiptMigrationBackfillCutArmed = true;
+  }
+
   /**
    * Write-ahead strong-mutation execution.  The exact principal-signed result
    * is fsynced before the first storage side effect.  A crash may therefore
@@ -664,28 +785,60 @@ export class DurableObjectProviderRuntimeStoreV1 {
           "strong mutation execution authorization is unavailable",
         );
       }
-      const existing = await this.#readStrongMutationOutcomeV1(request);
+      const scanned = await this.#scanStrongMutationStateV1();
+      if (!scanned.nonceReceiptEraEstablished) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "strong mutation nonce-receipt migration is incomplete",
+        );
+      }
+      this.#assertStrongMutationOperationNonceAvailableV1(
+        scanned.nonceReceipts,
+        request,
+      );
+      const existing = this.#findStrongMutationOutcomeV1(
+        scanned.outcomes,
+        request,
+      );
       if (existing !== undefined) {
         return this.#resumePreparedStrongMutationV1(existing);
       }
-      const payload = await this.#planStrongMutationPayloadV1(request);
-      const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
-        createResponse(payload),
+      let nonceReceipt = this.#findStrongMutationNonceReceiptV1(
+        scanned.nonceReceipts,
+        request,
       );
-      this.#assertStrongMutationResponseContextV1(request, response);
-      if (!response.ok || !exactCanonicalV1(response.payload, payload)) {
-        throw new ProviderRuntimeStorageErrorV1(
-          "storage_security_violation",
-          "strong mutation signer changed the prepared result",
+      if (nonceReceipt === undefined) {
+        const plannedPayload = await this.#planStrongMutationPayloadV1(request);
+        const response = this.#createPreparedStrongMutationResponseV1(
+          request,
+          plannedPayload,
+          createResponse,
+        );
+        nonceReceipt = this.#strongMutationNonceReceiptV1(
+          request,
+          response,
+        );
+        await this.#persistStrongMutationNonceReceiptV1(nonceReceipt);
+        if (this.#testNonceReceiptPersistCutArmed) {
+          this.#testNonceReceiptPersistCutArmed = false;
+          throw new ProviderRuntimeStrongMutationDurabilityIndeterminateErrorV1();
+        }
+      }
+      if (!exactCanonicalV1(nonceReceipt.request, request)) {
+        await this.#resumeNonceReceiptFirstOutcomeV1(
+          nonceReceipt,
+          scanned.outcomes,
+        );
+        return this.#createPreparedStrongMutationResponseV1(
+          request,
+          nonceReceipt.response.payload,
+          createResponse,
         );
       }
-      const prepared = this.#strongMutationOutcomeV1(
-        request,
-        response,
-        "prepared",
+      return this.#resumeNonceReceiptFirstOutcomeV1(
+        nonceReceipt,
+        scanned.outcomes,
       );
-      await this.#persistStrongMutationOutcomeV1(prepared);
-      return this.#resumePreparedStrongMutationV1(prepared);
     });
   }
 
@@ -694,6 +847,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
     requestInput: ProviderRuntimeIpcStrongMutationRequestV1,
     authorization:
       ProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
+    createResponse: CreateProviderRuntimeStrongMutationResponseV1,
   ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
     this.#assertInitialized();
     return this.#strongMutationExclusive(async () => {
@@ -714,11 +868,40 @@ export class DurableObjectProviderRuntimeStoreV1 {
           "strong mutation recovery authorization is unavailable",
         );
       }
-      const existing = await this.#readStrongMutationOutcomeV1(request);
+      const scanned = await this.#scanStrongMutationStateV1();
+      this.#assertStrongMutationOperationNonceAvailableV1(
+        scanned.nonceReceipts,
+        request,
+      );
+      const existing = this.#findStrongMutationOutcomeV1(
+        scanned.outcomes,
+        request,
+      );
       if (existing === undefined) {
-        throw new ProviderRuntimeStorageErrorV1(
-          "strong_mutation_outcome_missing",
-          "durable strong mutation outcome is unavailable",
+        const nonceReceipt = this.#findStrongMutationNonceReceiptV1(
+          scanned.nonceReceipts,
+          request,
+        );
+        if (nonceReceipt === undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "strong_mutation_outcome_missing",
+            "durable strong mutation outcome is unavailable",
+          );
+        }
+        if (!exactCanonicalV1(nonceReceipt.request, request)) {
+          await this.#resumeNonceReceiptFirstOutcomeV1(
+            nonceReceipt,
+            scanned.outcomes,
+          );
+          return this.#createPreparedStrongMutationResponseV1(
+            request,
+            nonceReceipt.response.payload,
+            createResponse,
+          );
+        }
+        return this.#resumeNonceReceiptFirstOutcomeV1(
+          nonceReceipt,
+          scanned.outcomes,
         );
       }
       return this.#resumePreparedStrongMutationV1(existing);
@@ -730,58 +913,100 @@ export class DurableObjectProviderRuntimeStoreV1 {
   > {
     this.#assertInitialized();
     return this.#strongMutationExclusive(async () => {
-      const authority = this.#strongMutationExactObjectAuthority;
-      const parent = authority !== undefined && process.platform === "linux"
-        ? `/proc/self/fd/${authority.outcomes.handle.fd}`
-        : this.strongMutationOutcomesPath;
-      const names = (await readdir(parent)).sort();
-      const outcomes: ProviderRuntimeDurableStrongMutationOutcomeInspectionV1[] = [];
-      for (const name of names) {
-        if (!/^[0-9a-f]{64}\.json$/u.test(name)) {
-          throw new ProviderRuntimeStorageErrorV1(
-            "journal_corrupt",
-            "strong mutation outcome directory contains an unknown entry",
-          );
+      const scanned = await this.#scanStrongMutationStateV1();
+      const outcomes = [...scanned.outcomes];
+      for (const receipt of scanned.nonceReceipts) {
+        if (!outcomes.some(
+          (outcome) => outcome.bindingDigest === receipt.request.bindingDigest,
+        )) {
+          outcomes.push(this.#strongMutationOutcomeV1(
+            receipt.request,
+            receipt.response,
+            "prepared",
+          ));
         }
-        const candidatePath = join(parent, name);
-        await assertPrivateRegularFileV1(candidatePath);
-        const serialized = await readFile(candidatePath, "utf8");
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(serialized) as unknown;
-        } catch {
-          throw new ProviderRuntimeStorageErrorV1(
-            "journal_corrupt",
-            "durable strong mutation outcome is not JSON",
-          );
-        }
-        const candidate = asRecordV1(parsed, "strong mutation outcome");
-        const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
-          candidate.request,
-        );
-        if (
-          request.bindingDigest.slice(CONTENT_DIGEST_PREFIX.length) !==
-            name.slice(0, -".json".length)
-        ) {
-          throw new ProviderRuntimeStorageErrorV1(
-            "journal_corrupt",
-            "strong mutation outcome filename is not bound to its request",
-          );
-        }
-        const outcome = await this.#readStrongMutationOutcomeV1(request);
-        if (outcome === undefined) {
-          throw new ProviderRuntimeStorageErrorV1(
-            "journal_corrupt",
-            "strong mutation outcome disappeared during recovery scan",
-          );
-        }
-        outcomes.push(Object.freeze({
-          phase: outcome.phase,
-          request: outcome.request,
-          response: outcome.response,
-        }));
       }
-      return Object.freeze(outcomes);
+      return Object.freeze(outcomes.map((outcome) => Object.freeze({
+        phase: outcome.phase,
+        request: outcome.request,
+        response: outcome.response,
+      })));
+    });
+  }
+
+  async strongMutationNonceReceiptMigrationRequiredV1(): Promise<boolean> {
+    this.#assertInitialized();
+    return this.#strongMutationExclusive(async () =>
+      !(await this.#scanStrongMutationStateV1()).nonceReceiptEraEstablished
+    );
+  }
+
+  async finalizeStrongMutationNonceReceiptMigrationV1(
+    selections: readonly ProviderRuntimeStrongMutationNonceReceiptMigrationSelectionV1[],
+  ): Promise<void> {
+    this.#assertInitialized();
+    await this.#strongMutationExclusive(async () => {
+      const scanned = await this.#scanStrongMutationStateV1();
+      if (scanned.nonceReceiptEraEstablished) return;
+      const selectedByNonce = new Map(selections.map((selection) => [
+        selection.operationNonce,
+        selection.bindingDigest,
+      ]));
+      const outcomesByNonce = new Map<
+        string,
+        DurableStrongMutationOutcomeDiskV1[]
+      >();
+      for (const outcome of scanned.outcomes) {
+        const group = outcomesByNonce.get(outcome.request.operationNonce) ?? [];
+        group.push(outcome);
+        outcomesByNonce.set(outcome.request.operationNonce, group);
+      }
+      if (
+        selectedByNonce.size !== selections.length ||
+        selectedByNonce.size !== outcomesByNonce.size
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "legacy nonce-receipt authority selection is incomplete",
+        );
+      }
+      for (const [operationNonce, outcomes] of outcomesByNonce) {
+        const selectedBinding = selectedByNonce.get(operationNonce);
+        const selected = outcomes.find(
+          (outcome) => outcome.bindingDigest === selectedBinding,
+        );
+        if (selected === undefined || !selected.response.ok) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "legacy nonce-receipt authority selection is invalid",
+          );
+        }
+        const receipt = this.#strongMutationNonceReceiptV1(
+          selected.request,
+          selected.response,
+        );
+        const existing = scanned.nonceReceipts.find(
+          (candidate) => candidate.operationNonce === operationNonce,
+        );
+        if (existing !== undefined) {
+          if (!exactCanonicalV1(existing, receipt)) {
+            throw new ProviderRuntimeStorageErrorV1(
+              "journal_corrupt",
+              "partial legacy nonce-receipt backfill conflicts with authority",
+            );
+          }
+          continue;
+        }
+        await this.#persistStrongMutationNonceReceiptV1(receipt);
+        if (this.#testNonceReceiptMigrationBackfillCutArmed) {
+          this.#testNonceReceiptMigrationBackfillCutArmed = false;
+          throw new ProviderRuntimeStorageErrorV1(
+            "storage_failure",
+            "injected strong mutation nonce-receipt migration backfill cut",
+          );
+        }
+      }
+      await this.#persistStrongMutationNonceReceiptEraV1();
     });
   }
 
@@ -844,6 +1069,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
         state: canonicalCloneV1(journalStateFromRecordV1(prior)),
       };
     }
+    this.#assertDurableLifecycleTransitionV1(input.phase, artifacts);
     if (input.expectedRevision !== this.#state.revision) {
       return {
         operation: "compare_commit" as const,
@@ -941,6 +1167,26 @@ export class DurableObjectProviderRuntimeStoreV1 {
     );
     await this.#persistStrongMutationOutcomeV1(completed);
     return completed.response;
+  }
+
+  async #resumeNonceReceiptFirstOutcomeV1(
+    receipt: DurableStrongMutationNonceReceiptDiskV1,
+    outcomes: readonly DurableStrongMutationOutcomeDiskV1[],
+  ): Promise<ProviderRuntimeIpcStrongMutationResponseV1> {
+    const existing = this.#findStrongMutationOutcomeV1(
+      outcomes,
+      receipt.request,
+    );
+    if (existing !== undefined) {
+      return this.#resumePreparedStrongMutationV1(existing);
+    }
+    const prepared = this.#strongMutationOutcomeV1(
+      receipt.request,
+      receipt.response,
+      "prepared",
+    );
+    await this.#persistStrongMutationOutcomeV1(prepared);
+    return this.#resumePreparedStrongMutationV1(prepared);
   }
 
   async #resumePreparedStrongMutationV1(
@@ -1272,6 +1518,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
           state: canonicalCloneV1(journalStateFromRecordV1(prior)),
         };
       }
+      this.#assertDurableLifecycleTransitionV1(input.phase, artifacts);
       if (input.expectedRevision !== this.#state.revision) {
         return {
           resolution: "stale",
@@ -1321,6 +1568,37 @@ export class DurableObjectProviderRuntimeStoreV1 {
     });
   }
 
+  #assertDurableLifecycleTransitionV1(
+    phase: string,
+    artifacts: JsonObjectV1,
+  ): void {
+    const currentLifecycleBase = durableLifecycleBaseCanonicalV1(
+      this.#state.phase,
+      this.#state.artifacts,
+      "journal_corrupt",
+    );
+    if (currentLifecycleBase !== undefined && phase !== "final_strong_ready") {
+      throw new ProviderRuntimeStorageErrorV1(
+        "invalid_input",
+        "a final_strong_ready journal cannot leave its terminal lifecycle phase",
+      );
+    }
+    const candidateLifecycleBase = durableLifecycleBaseCanonicalV1(
+      phase,
+      artifacts,
+      "invalid_input",
+    );
+    if (
+      currentLifecycleBase !== undefined &&
+      candidateLifecycleBase !== currentLifecycleBase
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "invalid_input",
+        "the durable final_strong_ready lifecycle artifact set is immutable",
+      );
+    }
+  }
+
   async #objectPath(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<string> {
@@ -1356,6 +1634,553 @@ export class DurableObjectProviderRuntimeStoreV1 {
       parent,
       `${bindingDigest.slice(CONTENT_DIGEST_PREFIX.length)}.json`,
     );
+  }
+
+  #strongMutationNonceReceiptPathV1(operationNonce: string): string {
+    if (!OPERATION_NONCE_PATTERN.test(operationNonce)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "invalid_input",
+        "strong mutation operation nonce is invalid",
+      );
+    }
+    const authority = this.#strongMutationExactObjectAuthority;
+    const parent = authority !== undefined && process.platform === "linux"
+      ? `/proc/self/fd/${authority.outcomes.handle.fd}`
+      : this.strongMutationOutcomesPath;
+    return join(parent, `nonce-${operationNonce}.json`);
+  }
+
+  #strongMutationNonceReceiptEraPathV1(): string {
+    const authority = this.#strongMutationExactObjectAuthority;
+    const parent = authority !== undefined && process.platform === "linux"
+      ? `/proc/self/fd/${authority.outcomes.handle.fd}`
+      : this.strongMutationOutcomesPath;
+    return join(parent, STRONG_MUTATION_NONCE_RECEIPT_ERA_NAME_V1);
+  }
+
+  async #removeExactAbandonedStrongMutationTempV1(
+    parent: string,
+    name: string,
+  ): Promise<void> {
+    if (!STRONG_MUTATION_ABANDONED_TEMP_NAME_V1.test(name)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "strong mutation temporary outcome name is invalid",
+      );
+    }
+    const path = join(parent, name);
+    const observed = await lstat(path);
+    if (
+      !observed.isFile() || observed.isSymbolicLink() ||
+      observed.nlink !== 1 || (observed.mode & 0o777) !== 0o600 ||
+      (typeof process.getuid === "function" && observed.uid !== process.getuid()) ||
+      (typeof process.getgid === "function" && observed.gid !== process.getgid())
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "abandoned strong mutation temporary outcome is not exact",
+      );
+    }
+    const projected = await lstat(path);
+    if (
+      projected.isSymbolicLink() || !projected.isFile() ||
+      projected.dev !== observed.dev || projected.ino !== observed.ino ||
+      projected.mode !== observed.mode || projected.uid !== observed.uid ||
+      projected.gid !== observed.gid || projected.nlink !== observed.nlink ||
+      projected.size !== observed.size || projected.mtimeMs !== observed.mtimeMs ||
+      projected.ctimeMs !== observed.ctimeMs
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "abandoned strong mutation temporary outcome changed during cleanup",
+      );
+    }
+    await unlink(path);
+    await syncDirectoryV1(parent);
+  }
+
+  async #readStrongMutationNonceReceiptV1(
+    operationNonce: string,
+  ): Promise<DurableStrongMutationNonceReceiptDiskV1 | undefined> {
+    const path = this.#strongMutationNonceReceiptPathV1(operationNonce);
+    let serialized: string;
+    try {
+      await assertPrivateRegularFileV1(path);
+      serialized = await readFile(path, "utf8");
+    } catch (error) {
+      if (isErrnoV1(error, "ENOENT")) return undefined;
+      throw error;
+    }
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation nonce receipt exceeds its byte limit",
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(serialized) as unknown;
+    } catch {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation nonce receipt is not JSON",
+      );
+    }
+    const disk = asRecordV1(parsed, "strong mutation nonce receipt");
+    if (
+      !exactObjectKeysV1(disk, [
+        "profile",
+        "providerId",
+        "operationNonce",
+        "operation",
+        "requestDigest",
+        "request",
+        "response",
+        "receiptDigest",
+      ]) ||
+      disk.profile !== STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1 ||
+      disk.providerId !== this.providerId ||
+      disk.operationNonce !== operationNonce ||
+      (disk.operation !== "write_object" &&
+        disk.operation !== "compare_commit") ||
+      typeof disk.requestDigest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(disk.requestDigest) ||
+      typeof disk.receiptDigest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(disk.receiptDigest)
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation nonce receipt fields are invalid",
+      );
+    }
+    const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+      disk.request,
+    );
+    const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+      disk.response,
+    );
+    this.#assertStrongMutationResponseContextV1(request, response);
+    if (
+      request.operationNonce !== operationNonce ||
+      request.operation !== disk.operation ||
+      request.requestDigest !== disk.requestDigest ||
+      !response.ok
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation nonce receipt authority is invalid",
+      );
+    }
+    if (request.operation === "write_object") {
+      ProviderRuntimeIpcWriteObjectResultV1Schema.parse(response.payload);
+    } else {
+      ProviderRuntimeIpcCompareCommitResultV1Schema.parse(response.payload);
+    }
+    const withoutDigest = {
+      profile: STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1,
+      providerId: this.providerId,
+      operationNonce,
+      operation: disk.operation,
+      requestDigest: disk.requestDigest,
+      request,
+      response,
+    } satisfies Omit<
+      DurableStrongMutationNonceReceiptDiskV1,
+      "receiptDigest"
+    >;
+    if (
+      disk.receiptDigest !== strongMutationNonceReceiptDigestV1(withoutDigest)
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "durable strong mutation nonce receipt digest is invalid",
+      );
+    }
+    return Object.freeze({ ...withoutDigest, receiptDigest: disk.receiptDigest });
+  }
+
+  async #readStrongMutationNonceReceiptEraV1(): Promise<
+    DurableStrongMutationNonceReceiptEraDiskV1 | undefined
+  > {
+    const path = this.#strongMutationNonceReceiptEraPathV1();
+    let serialized: string;
+    try {
+      await assertPrivateRegularFileV1(path);
+      serialized = await readFile(path, "utf8");
+    } catch (error) {
+      if (isErrnoV1(error, "ENOENT")) return undefined;
+      throw error;
+    }
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "strong mutation nonce-receipt era marker exceeds its byte limit",
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(serialized) as unknown;
+    } catch {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "strong mutation nonce-receipt era marker is not JSON",
+      );
+    }
+    const disk = asRecordV1(parsed, "strong mutation nonce-receipt era marker");
+    if (
+      !exactObjectKeysV1(disk, [
+        "profile",
+        "providerId",
+        "outcomeProfile",
+        "nonceReceiptProfile",
+        "markerDigest",
+      ]) ||
+      disk.profile !== STRONG_MUTATION_NONCE_RECEIPT_ERA_PROFILE_V1 ||
+      disk.providerId !== this.providerId ||
+      disk.outcomeProfile !== STRONG_MUTATION_OUTCOME_PROFILE_V1 ||
+      disk.nonceReceiptProfile !== STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1 ||
+      typeof disk.markerDigest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(disk.markerDigest)
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "strong mutation nonce-receipt era marker fields are invalid",
+      );
+    }
+    const withoutDigest = {
+      profile: STRONG_MUTATION_NONCE_RECEIPT_ERA_PROFILE_V1,
+      providerId: this.providerId,
+      outcomeProfile: STRONG_MUTATION_OUTCOME_PROFILE_V1,
+      nonceReceiptProfile: STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1,
+    } satisfies Omit<
+      DurableStrongMutationNonceReceiptEraDiskV1,
+      "markerDigest"
+    >;
+    if (
+      disk.markerDigest !== strongMutationNonceReceiptEraDigestV1(withoutDigest)
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "journal_corrupt",
+        "strong mutation nonce-receipt era marker digest is invalid",
+      );
+    }
+    return Object.freeze({ ...withoutDigest, markerDigest: disk.markerDigest });
+  }
+
+  async #scanStrongMutationStateV1(): Promise<ScannedStrongMutationStateV1> {
+    const authority = this.#strongMutationExactObjectAuthority;
+    const parent = authority !== undefined && process.platform === "linux"
+      ? `/proc/self/fd/${authority.outcomes.handle.fd}`
+      : this.strongMutationOutcomesPath;
+    for (const name of (await readdir(parent)).sort()) {
+      if (STRONG_MUTATION_ABANDONED_TEMP_NAME_V1.test(name)) {
+        await this.#removeExactAbandonedStrongMutationTempV1(parent, name);
+      }
+    }
+    const outcomes: DurableStrongMutationOutcomeDiskV1[] = [];
+    const nonceReceipts: DurableStrongMutationNonceReceiptDiskV1[] = [];
+    let receiptEra: DurableStrongMutationNonceReceiptEraDiskV1 | undefined;
+    for (const name of (await readdir(parent)).sort()) {
+      if (name === STRONG_MUTATION_NONCE_RECEIPT_ERA_NAME_V1) {
+        receiptEra = await this.#readStrongMutationNonceReceiptEraV1();
+        if (receiptEra === undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "strong mutation nonce-receipt era marker disappeared during recovery scan",
+          );
+        }
+        continue;
+      }
+      const nonceReceiptName = STRONG_MUTATION_NONCE_RECEIPT_NAME_V1.exec(name);
+      if (nonceReceiptName !== null) {
+        const receipt = await this.#readStrongMutationNonceReceiptV1(
+          nonceReceiptName[1]!,
+        );
+        if (receipt === undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "strong mutation nonce receipt disappeared during recovery scan",
+          );
+        }
+        nonceReceipts.push(receipt);
+        continue;
+      }
+      if (!/^[0-9a-f]{64}\.json$/u.test(name)) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "strong mutation outcome directory contains an unknown entry",
+        );
+      }
+      const candidatePath = join(parent, name);
+      await assertPrivateRegularFileV1(candidatePath);
+      const serialized = await readFile(candidatePath, "utf8");
+      if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation outcome exceeds its byte limit",
+        );
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(serialized) as unknown;
+      } catch {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation outcome is not JSON",
+        );
+      }
+      const candidate = asRecordV1(parsed, "strong mutation outcome");
+      const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        candidate.request,
+      );
+      if (
+        request.bindingDigest.slice(CONTENT_DIGEST_PREFIX.length) !==
+          name.slice(0, -".json".length)
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "strong mutation outcome filename is not bound to its request",
+        );
+      }
+      const outcome = await this.#readStrongMutationOutcomeV1(request);
+      if (outcome === undefined) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "strong mutation outcome disappeared during recovery scan",
+        );
+      }
+      outcomes.push(outcome);
+    }
+
+    const receiptsByNonce = new Map<
+      string,
+      DurableStrongMutationNonceReceiptDiskV1
+    >();
+    for (const receipt of nonceReceipts) {
+      if (receiptsByNonce.has(receipt.operationNonce)) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation nonce receipt is duplicated",
+        );
+      }
+      receiptsByNonce.set(receipt.operationNonce, receipt);
+    }
+    const outcomesByNonce = new Map<
+      string,
+      DurableStrongMutationOutcomeDiskV1[]
+    >();
+    for (const outcome of outcomes) {
+      const operationNonce = outcome.request.operationNonce;
+      if (!outcome.response.ok) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation outcome is not successful",
+        );
+      }
+      const group = outcomesByNonce.get(operationNonce) ?? [];
+      const first = group[0];
+      if (
+        first !== undefined &&
+        (first.request.operation !== outcome.request.operation ||
+          first.request.requestDigest !== outcome.request.requestDigest)
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation operation nonce binds different requests",
+        );
+      }
+      group.push(outcome);
+      outcomesByNonce.set(operationNonce, group);
+      const receipt = receiptsByNonce.get(operationNonce);
+      if (receipt === undefined) {
+        if (receiptEra !== undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "receipt-era strong mutation outcome is missing its nonce receipt",
+          );
+        }
+        continue;
+      }
+      if (
+        receipt.operation !== outcome.request.operation ||
+        receipt.requestDigest !== outcome.request.requestDigest
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable strong mutation outcome conflicts with its nonce authority",
+        );
+      }
+    }
+
+    for (const receipt of nonceReceipts) {
+      const group = outcomesByNonce.get(receipt.operationNonce);
+      if (group === undefined) {
+        if (receiptEra === undefined) {
+          throw new ProviderRuntimeStorageErrorV1(
+            "journal_corrupt",
+            "partial legacy nonce receipt has no retained outcome",
+          );
+        }
+        continue;
+      }
+      if (!group.some((outcome) =>
+        outcome.bindingDigest === receipt.request.bindingDigest &&
+        exactCanonicalV1(outcome.request, receipt.request) &&
+        exactCanonicalV1(outcome.response, receipt.response)
+      )) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable nonce authority has no exact retained first outcome",
+        );
+      }
+    }
+    return Object.freeze({
+      outcomes: Object.freeze(outcomes),
+      nonceReceipts: Object.freeze(nonceReceipts),
+      nonceReceiptEraEstablished: receiptEra !== undefined,
+    });
+  }
+
+  #assertStrongMutationOperationNonceAvailableV1(
+    receipts: readonly DurableStrongMutationNonceReceiptDiskV1[],
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+  ): void {
+    const prior = receipts.find(
+      (receipt) => receipt.operationNonce === request.operationNonce,
+    );
+    if (
+      prior !== undefined &&
+      (prior.operation !== request.operation ||
+        prior.requestDigest !== request.requestDigest)
+    ) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "operation_nonce_conflict",
+        "strong mutation operation nonce was already bound to another request",
+      );
+    }
+  }
+
+  #findStrongMutationOutcomeV1(
+    outcomes: readonly DurableStrongMutationOutcomeDiskV1[],
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+  ): DurableStrongMutationOutcomeDiskV1 | undefined {
+    const outcome = outcomes.find(
+      (candidate) => candidate.bindingDigest === request.bindingDigest,
+    );
+    if (outcome !== undefined && !exactCanonicalV1(outcome.request, request)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "operation_nonce_conflict",
+        "strong mutation binding was already used for another request",
+      );
+    }
+    return outcome;
+  }
+
+  #findStrongMutationNonceReceiptV1(
+    receipts: readonly DurableStrongMutationNonceReceiptDiskV1[],
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+  ): DurableStrongMutationNonceReceiptDiskV1 | undefined {
+    return receipts.find((receipt) =>
+      receipt.operationNonce === request.operationNonce &&
+      receipt.operation === request.operation &&
+      receipt.requestDigest === request.requestDigest
+    );
+  }
+
+  #strongMutationNonceReceiptV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    responseInput: ProviderRuntimeIpcStrongMutationResponseV1,
+  ): DurableStrongMutationNonceReceiptDiskV1 {
+    const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+      responseInput,
+    );
+    this.#assertStrongMutationResponseContextV1(request, response);
+    if (!response.ok) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation nonce receipt requires a successful authority",
+      );
+    }
+    const withoutDigest = {
+      profile: STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1,
+      providerId: this.providerId,
+      operationNonce: request.operationNonce,
+      operation: request.operation,
+      requestDigest: request.requestDigest,
+      request,
+      response,
+    } satisfies Omit<
+      DurableStrongMutationNonceReceiptDiskV1,
+      "receiptDigest"
+    >;
+    return Object.freeze({
+      ...withoutDigest,
+      receiptDigest: strongMutationNonceReceiptDigestV1(withoutDigest),
+    });
+  }
+
+  async #persistStrongMutationNonceReceiptV1(
+    receipt: DurableStrongMutationNonceReceiptDiskV1,
+  ): Promise<void> {
+    const serialized = `${canonicalizeJcsSafeIntegerV1(receipt)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_failure",
+        "durable strong mutation nonce receipt exceeds its byte limit",
+      );
+    }
+    await atomicReplacePrivateFileV1(
+      this.#strongMutationNonceReceiptPathV1(receipt.operationNonce),
+      serialized,
+    );
+  }
+
+  async #persistStrongMutationNonceReceiptEraV1(): Promise<void> {
+    const withoutDigest = {
+      profile: STRONG_MUTATION_NONCE_RECEIPT_ERA_PROFILE_V1,
+      providerId: this.providerId,
+      outcomeProfile: STRONG_MUTATION_OUTCOME_PROFILE_V1,
+      nonceReceiptProfile: STRONG_MUTATION_NONCE_RECEIPT_PROFILE_V1,
+    } satisfies Omit<
+      DurableStrongMutationNonceReceiptEraDiskV1,
+      "markerDigest"
+    >;
+    const marker: DurableStrongMutationNonceReceiptEraDiskV1 = Object.freeze({
+      ...withoutDigest,
+      markerDigest: strongMutationNonceReceiptEraDigestV1(withoutDigest),
+    });
+    const serialized = `${canonicalizeJcsSafeIntegerV1(marker)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > this.#maxJournalBytes) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_failure",
+        "strong mutation nonce-receipt era marker exceeds its byte limit",
+      );
+    }
+    await atomicReplacePrivateFileV1(
+      this.#strongMutationNonceReceiptEraPathV1(),
+      serialized,
+    );
+  }
+
+  #createPreparedStrongMutationResponseV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    payloadInput: unknown,
+    createResponse: CreateProviderRuntimeStrongMutationResponseV1,
+  ): ProviderRuntimeIpcStrongMutationResponseV1 {
+    const payload = request.operation === "write_object"
+      ? ProviderRuntimeIpcWriteObjectResultV1Schema.parse(payloadInput)
+      : ProviderRuntimeIpcCompareCommitResultV1Schema.parse(payloadInput);
+    const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+      createResponse(payload),
+    );
+    this.#assertStrongMutationResponseContextV1(request, response);
+    if (!response.ok || !exactCanonicalV1(response.payload, payload)) {
+      throw new ProviderRuntimeStorageErrorV1(
+        "storage_security_violation",
+        "strong mutation signer changed the prepared result",
+      );
+    }
+    return response;
   }
 
   #assertStrongMutationResponseContextV1(
@@ -1538,6 +2363,7 @@ export class DurableObjectProviderRuntimeStoreV1 {
     }
     const records: DurableOperationJournalRecordDiskV1[] = [];
     const nonces = new Set<string>();
+    let terminalLifecycleBase: string | undefined;
     for (const [index, candidate] of disk.records.entries()) {
       const record = asRecordV1(candidate, `journal record ${index + 1}`);
       if (
@@ -1596,6 +2422,30 @@ export class DurableObjectProviderRuntimeStoreV1 {
       const artifacts = canonicalCloneV1(
         asRecordV1(record.artifacts, "journal record artifacts") as JsonObjectV1,
       );
+      if (
+        terminalLifecycleBase !== undefined &&
+        record.phase !== "final_strong_ready"
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable journal history leaves final_strong_ready",
+        );
+      }
+      const candidateLifecycleBase = durableLifecycleBaseCanonicalV1(
+        record.phase as string,
+        artifacts,
+        "journal_corrupt",
+      );
+      if (
+        terminalLifecycleBase !== undefined &&
+        candidateLifecycleBase !== terminalLifecycleBase
+      ) {
+        throw new ProviderRuntimeStorageErrorV1(
+          "journal_corrupt",
+          "durable final_strong_ready lifecycle history was rewritten",
+        );
+      }
+      terminalLifecycleBase ??= candidateLifecycleBase;
       const normalizedInput: CompareCommitInputV1 = {
         expectedRevision: record.expectedRevision,
         operationNonce: record.operationNonce,

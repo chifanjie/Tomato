@@ -21,15 +21,21 @@ import {
   access,
   chmod,
   chown,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  rename,
   rm,
   statfs,
   writeFile,
 } from "node:fs/promises";
-import { spawn } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { userInfo } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -58,12 +64,15 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-registry";
 import {
   ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+  deriveProviderActiveWriterSelectorContentDigestV1,
   deriveProviderStrongReadyAcceptanceStateContentDigestV1,
   deriveProviderStrongReadyAcceptanceStateGenerationIdV1,
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
 import {
   deriveInstallationIdentityGenerationIdV1,
   deriveInstallationIdentityKeyCheckTokenV1,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanEnvelopeReferenceCandidateV1Schema,
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPinV1,
 } from "@understand-code/durable-object-provider-contracts";
 import {
   InstallationIdentityGenerationIdV1Schema,
@@ -74,14 +83,29 @@ import {
   createProviderServiceReadinessReceiptV1,
 } from "@understand-code/durable-object-provider-runtime/service-handoff";
 import {
+  PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1,
   installProviderProductionStrongClientTrustV1,
+  providerProductionStrongClientDescriptorPathV1,
   providerProductionStrongClientGatewaySocketPathV1,
+  rollbackProviderProductionStrongClientTrustV1,
+  rotateProviderProductionStrongClientTrustV1,
+  uninstallProviderProductionStrongClientTrustV1,
 } from "@understand-code/durable-object-provider-runtime/provider-production-strong-client-trust-lifecycle";
 import {
   openProviderProductionStrongObjectClientV1,
   startProviderProductionStrongObjectGatewayServiceV1,
 } from "@understand-code/durable-object-provider-client";
 import { DurableObjectProviderRuntimeServerV1 } from "@understand-code/durable-object-provider-runtime/server";
+import {
+  projectProviderRuntimeDurableLifecycleArtifactsV1,
+} from "@understand-code/durable-object-provider-runtime/durable-acceptance-current";
+import {
+  closeProviderRuntimeNativeExactObjectPublisherV1,
+  closeProviderRuntimeNativeExactObjectSourceV1,
+  commitProviderRuntimeNativeExactObjectV1,
+  openProviderRuntimeNativeExactObjectPublisherV1,
+  stageProviderRuntimeNativeExactObjectV1,
+} from "@understand-code/native-kernel-bridge";
 import {
   createProviderRuntimeStrongMutationBrokerVerifierInternalV1,
 } from "../../durable-object-provider-runtime/dist/strong-mutation-broker-client-internal.js";
@@ -102,10 +126,25 @@ const GRANT_SEED = 0x41;
 const SERVICE_SEED = 0x51;
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(SCRIPT_PATH), "../../..");
+const FORMAL_PLAN_FIXTURE_PATH = join(
+  dirname(SCRIPT_PATH),
+  "fixtures/provider-migration-formal-plan-reference-candidate-v1.json",
+);
+const FORMAL_PLAN =
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanEnvelopeReferenceCandidateV1Schema.parse(
+    JSON.parse(readFileSync(FORMAL_PLAN_FIXTURE_PATH, "utf8")),
+  );
+const FORMAL_PLAN_PIN =
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPinV1(
+    FORMAL_PLAN,
+  );
+const FORMAL_MIGRATION_ID = FORMAL_PLAN.migrationId;
+const FORMAL_PLAN_DIGEST = FORMAL_PLAN.contentDigest;
 const REGISTRY_FIXTURE_PATH = join(
   REPO_ROOT,
   "packages/durable-object-provider-contracts/fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
 );
+const execFileAsync = promisify(execFile);
 
 function privateKey(seed) {
   return createPrivateKey({
@@ -135,6 +174,10 @@ function digestBytes(bytes) {
 
 function digestValue(value) {
   return digestBytes(Buffer.from(canonicalizeJcsSafeIntegerV1(value), "utf8"));
+}
+
+function domainDigest(domain, value) {
+  return digestValue([domain, value]);
 }
 
 function rootPrivate(fixture) {
@@ -232,41 +275,482 @@ function appendGrantManifest(fixture) {
   return { history: [...history, envelope], grantKey };
 }
 
-function trustedConfiguration(fixture, history) {
+function trustedCore(fixture, history) {
   const current = history.at(-1);
   const member = current.payload.members.find(
-    (candidate) => candidate.providerId === PROVIDER_ID && candidate.disposition === "enabled",
+    (candidate) =>
+      candidate.providerId === PROVIDER_ID &&
+      candidate.disposition === "enabled",
   );
+  if (member === undefined) throw new Error("enabled Registry member missing");
   const entry = member.registryEntry;
   return {
+    activeRootMetadata: current.payload.activeRootMetadata,
+    providerRegistryManifest: {
+      locatorProfile: "installation_provider_registry_manifest_v1",
+      manifestGeneration: current.payload.manifestGeneration,
+      generationId: current.generationId,
+      contentDigest: current.contentDigest,
+    },
+    providerSupportCatalog: {
+      locatorProfile: "distribution_provider_feasibility_support_catalog_v1",
+      catalogGeneration: 1,
+      contentDigest: `sha256:${"9".repeat(64)}`,
+    },
+    activeWriterSelector: {
+      profile: "provider_active_writer_selector_v1",
+      selections: [{
+        targetProfileId: TARGET_PROFILE_ID,
+        providerId: PROVIDER_ID,
+        registryEntryContentDigest: member.registryEntryContentDigest,
+        semanticProviderPolicyDigest: entry.semanticProviderPolicyDigest,
+        providerFeasibilityEvidence: entry.providerFeasibilityEvidence,
+        runtimeAttestationContentDigest: entry.runtimeAttestation.contentDigest,
+        bindingDerivationKeyGeneration:
+          entry.verificationKeys.activeBindingDerivationKeyGeneration,
+      }],
+    },
+  };
+}
+
+function formalAcceptanceEnvelopeV1({
+  configuration,
+  installationIdentityGenerationId,
+  acceptanceOrdinal,
+  predecessor,
+  acceptedAt,
+}) {
+  const generationId = deriveProviderAcceptanceStateGenerationIdV1({
+    installationIdentityGenerationId,
+    acceptanceOrdinal,
+    predecessor,
+    configuration,
+  });
+  const unsigned = {
+    profile: "provider_acceptance_state_v1",
+    generationId,
+    installationIdentityGenerationId,
+    acceptanceOrdinal,
+    predecessor,
+    configuration,
+    acceptedAt,
+  };
+  const payload = {
+    ...unsigned,
+    acceptanceToken: `hmac-sha256:${createHmac("sha256", IDENTITY_KEY)
+      .update(createProviderAcceptanceStateTokenMessageV1(unsigned))
+      .digest("hex")}`,
+  };
+  return ProviderAcceptanceStateEnvelopeV1Schema.parse({
+    schemaVersion: 1,
+    recordType: "provider_acceptance_state",
+    generationId,
+    installationIdentityGenerationId,
+    acceptedAt,
+    contentDigest: deriveProviderAcceptanceStateContentDigestV1(payload),
+    payload,
+  });
+}
+
+function referenceAcceptanceEnvelopeV1({
+  configuration,
+  installationIdentityGenerationId,
+  acceptedAt,
+}) {
+  const predecessor = { state: "genesis" };
+  const generationId = deriveProviderStrongReadyAcceptanceStateGenerationIdV1({
+    installationIdentityGenerationId,
+    acceptanceOrdinal: 1,
+    predecessor,
+    configuration,
+  });
+  const payload = {
+    profile: "provider_acceptance_state_v1",
+    generationId,
+    installationIdentityGenerationId,
+    acceptanceOrdinal: 1,
+    predecessor,
+    configuration,
+    acceptedAt,
+    acceptanceToken: `hmac-sha256:${"a".repeat(64)}`,
+  };
+  return ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse({
+    schemaVersion: 1,
+    recordType: "provider_acceptance_state",
+    generationId,
+    installationIdentityGenerationId,
+    acceptedAt,
+    contentDigest:
+      deriveProviderStrongReadyAcceptanceStateContentDigestV1(payload),
+    payload,
+  });
+}
+
+function terminalLifecycleV1(core, installationIdentityGenerationId) {
+  if (
+    FORMAL_PLAN.payload.journalAuthorityInstallationIdentityGenerationId !==
+      installationIdentityGenerationId
+  ) throw new Error("official formal Plan Identity does not match Registry");
+  const formalPlan = clone(FORMAL_PLAN);
+  const formalPlanPin = clone(FORMAL_PLAN_PIN);
+  const terminalProgressUnsigned = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_execution_progress_receipt_v1",
+    durability:
+      "in_memory_execution_progress_reference_only_not_a_durable_provider_v1",
+    resolution: "committed",
+    operationNonce: "d".repeat(32),
+    requestContentDigest: `sha256:${"d".repeat(64)}`,
+    linearizationOrdinal: 1,
+    progressRecord: { phase: "completed" },
+    destinationObjectPublication: "none",
+    committedHighWater: { phase: "completed" },
+  };
+  const terminalProgressReceipt = {
+    ...terminalProgressUnsigned,
+    receiptContentDigest: domainDigest(
+      "provider-migration-same-installation-identity-execution-progress-receipt-v1",
+      terminalProgressUnsigned,
+    ),
+  };
+  const sourceTombstoneUnsigned = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_source_tombstone_record_v1",
+    journalOrdinal: 1,
+    installationIdentityGenerationId,
+    formalMigrationId: FORMAL_MIGRATION_ID,
+    sourceProviderId: "durable-object-provider:native-a",
+    steadyRegistryManifestPin: core.providerRegistryManifest,
+    lastEnabledRegistryEntryContentDigest: `sha256:${"8".repeat(64)}`,
+    revokedAtManifestGeneration: core.providerRegistryManifest.manifestGeneration,
+    reason: "migration_completed",
+    zeroLiveProofContentDigest: `sha256:${"e".repeat(64)}`,
+    terminalProgressReceiptContentDigest:
+      terminalProgressReceipt.receiptContentDigest,
+    relationship:
+      "steady_registry_revoked_source_member_bound_to_exact_zero_live_terminal_progress_v1",
+  };
+  const sourceTombstoneRecord = {
+    ...sourceTombstoneUnsigned,
+    contentDigest: domainDigest(
+      "provider-migration-same-installation-identity-terminal-source-tombstone-record-v1",
+      sourceTombstoneUnsigned,
+    ),
+  };
+  const readyUnsigned = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_ready_to_activate_record_v1",
+    journalOrdinal: 2,
+    state: "ready_to_activate",
+    installationIdentityGenerationId,
+    formalMigrationId: FORMAL_MIGRATION_ID,
+    destinationProviderId: PROVIDER_ID,
+    steadyRegistryManifestPin: core.providerRegistryManifest,
+    currentSupportCatalogPin: core.providerSupportCatalog,
+    formalPlanPin,
+    sourceTombstoneRecordContentDigest: sourceTombstoneRecord.contentDigest,
+    terminalProgressReceiptContentDigest:
+      terminalProgressReceipt.receiptContentDigest,
+    relationship:
+      "terminal_metadata_ready_for_final_strong_activation_not_activated_v1",
+  };
+  const readyToActivateRecord = {
+    ...readyUnsigned,
+    contentDigest: domainDigest(
+      "provider-migration-same-installation-identity-terminal-ready-to-activate-record-v1",
+      readyUnsigned,
+    ),
+  };
+  const sealedUnsigned = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_sealed_progress_head_v1",
+    journalOrdinal: 3,
+    state: "sealed",
+    journalRevision: 1,
+    steadyRegistryManifestPin: core.providerRegistryManifest,
+    formalPlanPin,
+    terminalProgressReceiptContentDigest:
+      terminalProgressReceipt.receiptContentDigest,
+    destinationUniverseContentDigest: `sha256:${"f".repeat(64)}`,
+    completeDestinationPublicationReceiptSetDigest: `sha256:${"0".repeat(64)}`,
+    zeroLiveProofContentDigest: sourceTombstoneUnsigned.zeroLiveProofContentDigest,
+    sourceTombstoneRecordContentDigest: sourceTombstoneRecord.contentDigest,
+    readyToActivateRecordContentDigest: readyToActivateRecord.contentDigest,
+    relationship:
+      "terminal_metadata_progress_head_sealed_before_final_acceptance_v1",
+  };
+  const sealedProgressHead = {
+    ...sealedUnsigned,
+    contentDigest: domainDigest(
+      "provider-migration-same-installation-identity-terminal-sealed-progress-head-v1",
+      sealedUnsigned,
+    ),
+  };
+  const journalReceiptUnsigned = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_terminal_journal_seal_receipt_v1",
+    durability:
+      "in_memory_terminal_journal_reference_only_not_a_durable_provider_v1",
+    status: "committed",
+    operationNonce: "e".repeat(32),
+    requestContentDigest: `sha256:${"1".repeat(64)}`,
+    previousJournalRevision: 0,
+    committedJournalRevision: 1,
+    sourceTombstoneRecordContentDigest: sourceTombstoneRecord.contentDigest,
+    readyToActivateRecordContentDigest: readyToActivateRecord.contentDigest,
+    sealedProgressHeadContentDigest: sealedProgressHead.contentDigest,
+  };
+  const terminalJournalReceipt = {
+    ...journalReceiptUnsigned,
+    contentDigest: domainDigest(
+      "provider-migration-same-installation-identity-terminal-journal-receipt-v1",
+      journalReceiptUnsigned,
+    ),
+  };
+  const terminalUnsigned = {
+    authority:
+      "in_memory_metadata_reference_only_no_real_provider_bytes_or_io_proof_v1",
+    durability:
+      "in_memory_terminal_journal_reference_only_not_a_durable_provider_v1",
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_terminal_journal_sealed_validation_v1",
+    relationship:
+      "exact_steady_registry_source_tombstone_ready_to_activate_and_progress_head_atomically_sealed_v1",
+    steadyRegistryCompletion: { state: "completed" },
+    sourceTombstoneRecord,
+    readyToActivateRecord,
+    sealedProgressHead,
+    terminalJournalReceipt,
+    terminalJournalReceiptContentDigest: terminalJournalReceipt.contentDigest,
+    currentRegistryManifestEnvelope: {
+      contentDigest: core.providerRegistryManifest.contentDigest,
+    },
+    currentRegistryManifestPin: core.providerRegistryManifest,
+    currentSupportCatalogPin: core.providerSupportCatalog,
+    formalPlanPin,
+    terminalProgressReceipt,
+    installationIdentityGenerationId,
+    formalMigrationId: FORMAL_MIGRATION_ID,
+    sourceProviderId: sourceTombstoneUnsigned.sourceProviderId,
+    destinationProviderId: PROVIDER_ID,
+    journalRevision: 1,
+    strongWriterPublicationCount: 0,
+    acceptancePublicationCount: 0,
+  };
+  const terminalJournal = {
+    ...terminalUnsigned,
+    closureContentDigest: domainDigest(
+      "provider-migration-same-installation-identity-terminal-journal-sealed-closure-v1",
+      terminalUnsigned,
+    ),
+  };
+  return {
+    formalPlan,
+    formalPlanPin,
+    terminalProgressReceipt,
+    sourceTombstoneRecord,
+    readyToActivateRecord,
+    sealedProgressHead,
+    terminalJournalReceipt,
+    terminalJournal,
+  };
+}
+
+function buildLifecycleAuthorityV1(core, installationIdentityGenerationId) {
+  const terminal = terminalLifecycleV1(
+    core,
+    installationIdentityGenerationId,
+  );
+  const role =
+    FORMAL_PLAN.payload.migrationHistoryQuotaReservations.journal.role;
+  const formalConfiguration = {
     state: "strong_ready",
-    core: {
-      activeRootMetadata: current.payload.activeRootMetadata,
-      providerRegistryManifest: {
-        locatorProfile: "installation_provider_registry_manifest_v1",
-        manifestGeneration: current.payload.manifestGeneration,
-        generationId: current.generationId,
-        contentDigest: current.contentDigest,
+    core,
+    activation: {
+      origin: "completed_provider_migration",
+      migrationPlan: {
+        locatorProfile: "installation_provider_migration_plan_v1",
+        migrationId: FORMAL_MIGRATION_ID,
+        mode: "same_installation_identity",
+        contentDigest: FORMAL_PLAN_DIGEST,
       },
-      providerSupportCatalog: {
-        locatorProfile: "distribution_provider_feasibility_support_catalog_v1",
-        catalogGeneration: 1,
-        contentDigest: `sha256:${"9".repeat(64)}`,
+      sealedProgressHead: {
+        locatorProfile: "installation_provider_migration_progress_head_v1",
+        migrationId: FORMAL_MIGRATION_ID,
+        versionOrdinal: 2,
+        headContentDigest: terminal.sealedProgressHead.contentDigest,
+        currentVersionToken: `hmac-sha256:${"1".repeat(64)}`,
+        readyToActivateRecord: {
+          locatorProfile: "installation_provider_migration_progress_record_v1",
+          migrationId: FORMAL_MIGRATION_ID,
+          recordOrdinal: 2,
+          recordId: `provider-migration-progress:${"0".repeat(22)}`,
+          contentDigest: terminal.readyToActivateRecord.contentDigest,
+        },
       },
-      activeWriterSelector: {
-        profile: "provider_active_writer_selector_v1",
-        selections: [{
-          targetProfileId: TARGET_PROFILE_ID,
-          providerId: PROVIDER_ID,
-          registryEntryContentDigest: member.registryEntryContentDigest,
-          semanticProviderPolicyDigest: entry.semanticProviderPolicyDigest,
-          providerFeasibilityEvidence: entry.providerFeasibilityEvidence,
-          runtimeAttestationContentDigest: entry.runtimeAttestation.contentDigest,
-          bindingDerivationKeyGeneration: entry.verificationKeys.activeBindingDerivationKeyGeneration,
-        }],
+      migrationHistoryQuotaCommits: {
+        mode: "same_installation_identity",
+        journalCommit: {
+          locatorProfile:
+            "installation_provider_migration_history_quota_operation_receipt_v1",
+          installationIdentityGenerationId,
+          operationNonce: "c".repeat(32),
+          contentDigest: `sha256:${"d".repeat(64)}`,
+          receiptToken: `hmac-sha256:${"d".repeat(64)}`,
+          migrationId: FORMAL_MIGRATION_ID,
+          reservationId:
+            `provider-migration-history-reservation:${"c".repeat(22)}`,
+          migrationPlanContentDigest: FORMAL_PLAN_DIGEST,
+          role,
+          operation: "compare_commit",
+          commitKind: "commit_retained_history",
+          outcome: "committed",
+        },
       },
     },
-    activation: { origin: "bootstrap_or_steady_successor" },
+  };
+  const referenceConfiguration = {
+    state: "strong_ready",
+    core,
+    activation: {
+      origin: "provider_migration_terminal_sealed_success_v1",
+      formalMigrationId: FORMAL_MIGRATION_ID,
+      formalPlanPin: terminal.formalPlanPin,
+      terminalProgressReceiptContentDigest:
+        terminal.terminalProgressReceipt.receiptContentDigest,
+      terminalJournalReceiptContentDigest:
+        terminal.terminalJournalReceipt.contentDigest,
+      sourceTombstoneRecordContentDigest:
+        terminal.sourceTombstoneRecord.contentDigest,
+      readyToActivateRecordContentDigest:
+        terminal.readyToActivateRecord.contentDigest,
+      sealedProgressHeadContentDigest: terminal.sealedProgressHead.contentDigest,
+    },
+  };
+  const acceptedAt = "2026-08-26T00:00:00.000Z";
+  const referenceAcceptance = referenceAcceptanceEnvelopeV1({
+    configuration: referenceConfiguration,
+    installationIdentityGenerationId,
+    acceptedAt,
+  });
+  const formalAcceptanceA = formalAcceptanceEnvelopeV1({
+    configuration: formalConfiguration,
+    installationIdentityGenerationId,
+    acceptanceOrdinal: 1,
+    predecessor: { state: "genesis" },
+    acceptedAt,
+  });
+  const formalAcceptanceB = formalAcceptanceEnvelopeV1({
+    configuration: formalConfiguration,
+    installationIdentityGenerationId,
+    acceptanceOrdinal: 2,
+    predecessor: {
+      state: "acceptance",
+      generationId: formalAcceptanceA.generationId,
+      contentDigest: formalAcceptanceA.contentDigest,
+    },
+    acceptedAt: "2026-08-26T00:00:01.000Z",
+  });
+  const referencePin = {
+    locatorProfile: "installation_provider_acceptance_state_v1",
+    acceptanceOrdinal: 1,
+    generationId: referenceAcceptance.generationId,
+    contentDigest: referenceAcceptance.contentDigest,
+  };
+  const referenceReceipt = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_final_strong_ready_acceptance_compare_append_receipt_v1",
+    durability: "in_memory_reference_only_not_a_durable_provider_v1",
+    operationNonce: "2".repeat(32),
+    requestContentDigest: `sha256:${"2".repeat(64)}`,
+    resolvedAt: "2026-08-26T00:00:01.000Z",
+    outcome: {
+      state: "committed",
+      appendedAcceptance: referencePin,
+      highWaterRevision: 1,
+    },
+    receiptContentDigest: `sha256:${"3".repeat(64)}`,
+  };
+  const acceptanceState = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_final_strong_ready_acceptance_compare_append_state_v1",
+    durability: "in_memory_reference_only_not_a_durable_provider_v1",
+    installationIdentityGenerationId,
+    highWaterRevision: 1,
+    generationCount: 1,
+    generationSetDigest: `sha256:${"4".repeat(64)}`,
+    currentVersionToken: `hmac-sha256:${"5".repeat(64)}`,
+    currentAcceptance: referencePin,
+    retiredMigrationOnlyState: { lifecycle: "retired" },
+    finalStrongReadyAcceptance: referenceAcceptance,
+    receipts: [referenceReceipt],
+    acceptancePublicationCount: 1,
+  };
+  const candidate = {
+    authority: "none",
+    durability: "none",
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_final_strong_ready_acceptance_candidate_validation_v1",
+    relationship:
+      "exact_terminal_sealed_destination_only_strong_ready_acceptance_candidate_not_appended_v1",
+    formalMigrationId: FORMAL_MIGRATION_ID,
+    formalPlanPin: terminal.formalPlanPin,
+    activeWriterSelector: core.activeWriterSelector,
+    activeWriterSelectorContentDigest:
+      deriveProviderActiveWriterSelectorContentDigestV1(
+        core.activeWriterSelector,
+      ),
+    acceptanceStateEnvelope: referenceAcceptance,
+    acceptanceGenerationPin: referencePin,
+    destinationOnlyPublicStrongWriter: true,
+    acceptanceAppendCount: 0,
+  };
+  const closure = {
+    authority:
+      "in_memory_reference_machine_only_no_production_provider_authority_v1",
+    durability: "in_memory_reference_only_not_a_durable_provider_v1",
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_final_strong_ready_acceptance_reference_validation_v1",
+    relationship:
+      "exact_terminal_sealed_new_destination_writer_final_strong_ready_acceptance_compare_appended_v1",
+    sealedTerminalJournal: terminal.terminalJournal,
+    candidateValidation: candidate,
+    finalStrongReadyAcceptanceEnvelope: referenceAcceptance,
+    finalStrongReadyAcceptancePin: referencePin,
+    acceptanceCompareAppendReceipt: referenceReceipt,
+    acceptanceReferenceState: acceptanceState,
+    destinationProviderId: PROVIDER_ID,
+    sourceWriterRetired: true,
+    migrationOnlyWriterRetired: true,
+    destinationOnlyPublicStrongWriter: true,
+    finalSteadyRegistryAndCatalogBound: true,
+    formalPlanAndTerminalSealBound: true,
+    acceptancePublicationCount: 1,
+    publicStrongWriterPublicationCount: 1,
+  };
+  return {
+    formalAcceptanceA,
+    formalAcceptanceB,
+    referenceAcceptance,
+    lifecycleArtifacts: {
+      preparedCatalogSuccessor: { profile: "prepared_catalog_successor_v1" },
+      registryManifest: core.providerRegistryManifest,
+      supportCatalog: core.providerSupportCatalog,
+      formalPlan: terminal.formalPlan,
+      formalPlanPin: terminal.formalPlanPin,
+      formalReservation: { profile: "formal_reservation_v1" },
+      reservationRecord: { profile: "reservation_record_v1" },
+      compoundPublicationReceipt: { profile: "compound_publication_receipt_v1" },
+      migrationOnlyAcceptance: { profile: "migration_only_acceptance_v1" },
+      rebindingRegistry: { profile: "rebinding_registry_v1" },
+      executionProgress: { profile: "execution_progress_v1" },
+      destinationObjectPublications: [],
+      zeroLive: { profile: "zero_live_v1" },
+      sourceDrainedRegistry: { profile: "source_drained_registry_v1" },
+      steadyRegistry: { profile: "steady_registry_v1" },
+      terminalJournal: terminal.terminalJournal,
+      finalStrongReadyAcceptance: closure,
+    },
   };
 }
 
@@ -287,35 +771,13 @@ async function makeFixture(work, installRoot, runtimeRoot, paths) {
     IDENTITY_KEY,
     cryptoHost,
   );
-  const configPlaceholder = trustedConfiguration(fixture, registry.history);
-  const acceptanceUnsigned = {
-    profile: "provider_acceptance_state_v1",
-    generationId: deriveProviderAcceptanceStateGenerationIdV1({
-      installationIdentityGenerationId,
-      acceptanceOrdinal: 1,
-      predecessor: { state: "genesis" },
-      configuration: configPlaceholder,
-    }),
+  const core = trustedCore(fixture, registry.history);
+  const lifecycle = buildLifecycleAuthorityV1(
+    core,
     installationIdentityGenerationId,
-    acceptanceOrdinal: 1,
-    predecessor: { state: "genesis" },
-    configuration: configPlaceholder,
-    acceptedAt: "2026-08-26T00:00:00Z",
-  };
-  const acceptancePayload = {
-    ...acceptanceUnsigned,
-    acceptanceToken: `hmac-sha256:${createHmac("sha256", IDENTITY_KEY)
-      .update(createProviderAcceptanceStateTokenMessageV1(acceptanceUnsigned)).digest("hex")}`,
-  };
-  const acceptance = ProviderAcceptanceStateEnvelopeV1Schema.parse({
-    schemaVersion: 1,
-    recordType: "provider_acceptance_state",
-    generationId: acceptancePayload.generationId,
-    installationIdentityGenerationId,
-    acceptedAt: acceptancePayload.acceptedAt,
-    contentDigest: deriveProviderAcceptanceStateContentDigestV1(acceptancePayload),
-    payload: acceptancePayload,
-  });
+  );
+  const acceptance = lifecycle.formalAcceptanceA;
+  const acceptanceB = lifecycle.formalAcceptanceB;
   const acceptanceRequest = ProviderAcceptanceCompareAppendRequestV1Schema.parse({
     profile: "provider_acceptance_compare_append_request_v1",
     operationNonce: "00000000000000000000000000000001",
@@ -426,12 +888,15 @@ async function makeFixture(work, installRoot, runtimeRoot, paths) {
     grantKeyPath: paths.grantKeyPath,
     callerPrincipal: { uid: CALLER_UID, gid: CALLER_GID },
   };
-  await installProviderProductionStrongClientTrustV1({
+  const installedTrust = await installProviderProductionStrongClientTrustV1({
     canonicalInstallationRoot: installRoot,
     serviceConfig: config,
     servicePrivateKey,
     trust,
   });
+  if (installedTrust.status !== "installed") {
+    throw new Error("production client trust installation did not complete");
+  }
   await writeFile(paths.fixturePath, `${canonicalizeJcsSafeIntegerV1({
     providerId: PROVIDER_ID,
     serviceUid: SERVICE_UID,
@@ -446,16 +911,22 @@ async function makeFixture(work, installRoot, runtimeRoot, paths) {
     installationIdentityGenerationId,
     identityNonce: IDENTITY_NONCE,
     acceptance,
+    acceptanceB,
     acceptanceRequest,
+    referenceAcceptance: lifecycle.referenceAcceptance,
+    lifecycleArtifacts: lifecycle.lifecycleArtifacts,
     registryHistory,
     config,
+    configPath: paths.configPath,
     runtimeRoot,
     installRoot,
-    authorityTmpRoot: paths.authorityTmpRoot,
+    authorityHome: paths.authorityHome,
+    nativeProbeRoot: paths.nativeProbeRoot,
     authKeyPath: config.payload.authKeyPath,
     grantKeyPath: paths.grantKeyPath,
     readinessPath: config.payload.readinessPath,
     servicePublicKey: config.publicKey,
+    trustInstallStatus: installedTrust.status,
     brokerSocketPath: join(runtimeRoot, "strong-mutation-broker-v1.sock"),
     runtimeSocketPath: config.payload.socketPath,
     gatewaySocketPath: providerProductionStrongClientGatewaySocketPathV1(installRoot),
@@ -464,11 +935,103 @@ async function makeFixture(work, installRoot, runtimeRoot, paths) {
   authKey.fill(0);
   signingKey.fill(0);
   grantKey.fill(0);
-  return { config, servicePrivateKey, acceptance, registryHistory };
+  return {
+    config,
+    servicePrivateKey,
+    acceptance,
+    acceptanceB,
+    registryHistory,
+  };
 }
 
 async function readFixture(path) {
   return JSON.parse(await readFile(path, "utf8"));
+}
+
+function durableLifecycleArtifactsV1(fixture) {
+  return clone(fixture.lifecycleArtifacts);
+}
+function trustMaterialV1(
+  fixture,
+  targetFingerprintDigest,
+  acceptanceHistory = [fixture.acceptance],
+) {
+  const currentAcceptance = acceptanceHistory.at(-1);
+  return {
+    canonicalTargetRoot: fixture.runtimeRoot,
+    targetProfileId: fixture.targetProfileId,
+    targetFingerprintDigest,
+    acceptanceHistory,
+    currentAcceptance: {
+      generationId: currentAcceptance.generationId,
+      contentDigest: currentAcceptance.contentDigest,
+      acceptanceOrdinal: currentAcceptance.payload.acceptanceOrdinal,
+      installationIdentityGenerationId:
+        fixture.installationIdentityGenerationId,
+    },
+    registryHistory: fixture.registryHistory,
+    grantKeyPath: fixture.grantKeyPath,
+    callerPrincipal: { uid: fixture.callerUid, gid: fixture.callerGid },
+  };
+}
+
+async function productionTrustLifecycleV1(fixture) {
+  const snapshotPath = join(
+    fixture.installRoot,
+    PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1,
+  );
+  const descriptorPath = providerProductionStrongClientDescriptorPathV1(
+    fixture.installRoot,
+  );
+  const initialSnapshot = await readFile(snapshotPath);
+  const initialDescriptor = await readFile(descriptorPath);
+  const servicePrivateKey = privateKey(SERVICE_SEED);
+  const rotated = await rotateProviderProductionStrongClientTrustV1({
+    canonicalInstallationRoot: fixture.installRoot,
+    serviceConfig: fixture.config,
+    servicePrivateKey,
+    trust: trustMaterialV1(
+      fixture,
+      `sha256:${"8".repeat(64)}`,
+      [fixture.acceptance, fixture.acceptanceB],
+    ),
+  });
+  const rotatedSnapshot = await readFile(snapshotPath);
+  if (
+    rotated.status !== "rotated" ||
+    rotatedSnapshot.equals(initialSnapshot)
+  ) throw new Error("production trust upgrade did not replace the snapshot");
+  const rolledBack = await rollbackProviderProductionStrongClientTrustV1(
+    fixture.installRoot,
+  );
+  if (
+    rolledBack.status !== "rolled_back" ||
+    !(await readFile(snapshotPath)).equals(initialSnapshot) ||
+    !(await readFile(descriptorPath)).equals(initialDescriptor)
+  ) throw new Error("production trust rollback did not restore exact files");
+  const uninstalled = await uninstallProviderProductionStrongClientTrustV1(
+    fixture.installRoot,
+  );
+  if (uninstalled.status !== "uninstalled") {
+    throw new Error("production trust uninstall did not complete");
+  }
+  for (const path of [snapshotPath, descriptorPath]) {
+    try {
+      await access(path);
+      throw new Error("production trust uninstall retained a managed file");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  await access(fixture.config.payload.installationIdentityCustody.keyPath);
+  await access(fixture.authKeyPath);
+  return {
+    install: fixture.trustInstallStatus,
+    upgrade: rotated.status,
+    rollback: rolledBack.status,
+    uninstall: uninstalled.status,
+    retainedIdentity: "verified",
+  };
 }
 
 async function waitForPath(path, timeoutMs = 20_000) {
@@ -481,6 +1044,32 @@ async function waitForPath(path, timeoutMs = 20_000) {
       if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
     }
+  }
+}
+
+async function retainedSocketIdentityV1(path, expectedUid, expectedGid) {
+  const metadata = await lstat(path, { bigint: true });
+  if (
+    !metadata.isSocket() || metadata.isSymbolicLink() ||
+    metadata.uid !== BigInt(expectedUid) ||
+    metadata.gid !== BigInt(expectedGid)
+  ) throw new Error(`retained production socket is invalid: ${path}`);
+  return Object.freeze({ dev: metadata.dev, ino: metadata.ino });
+}
+
+async function assertRetainedSocketIdentityV1(
+  path,
+  expectedUid,
+  expectedGid,
+  identity,
+) {
+  const actual = await retainedSocketIdentityV1(
+    path,
+    expectedUid,
+    expectedGid,
+  );
+  if (actual.dev !== identity.dev || actual.ino !== identity.ino) {
+    throw new Error(`SIGKILL socket projection changed before restart: ${path}`);
   }
 }
 
@@ -525,81 +1114,124 @@ async function strictCryptoCapability() {
 }
 
 async function authorityRole(fixturePath) {
-  process.env.NODE_ENV = "test";
   const fixture = await readFixture(fixturePath);
-  // Fedora's /tmp carries a security xattr that the native authority rightly
-  // rejects; use the dedicated ext4 image for the explicit test seam.
-  process.env.TMPDIR = fixture.authorityTmpRoot;
+  const account = userInfo({ encoding: "utf8" });
+  if (
+    process.geteuid?.() !== 0 ||
+    !isAbsolute(account.homedir) ||
+    resolve(account.homedir) !== account.homedir ||
+    REPO_ROOT === account.homedir ||
+    REPO_ROOT.startsWith(`${account.homedir}/`)
+  ) throw new Error("isolated production authority home is unavailable");
+  await execFileAsync("/usr/bin/mount", [
+    "--bind",
+    fixture.authorityHome,
+    account.homedir,
+  ]);
   const {
-    createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
-    provisionProviderAcceptanceAuthorityForTestInternalV1,
-    openProviderAcceptanceAuthorityStoreForTestInternalV1,
-    openProviderStrongMutationExecutionBrokerStoreForTestInternalV1,
-    mintProviderStrongMutationTrustVerifierForTestInternalV1,
-    registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1,
-  } = await import("../../durable-object-provider-authority/dist/test-seam-internal.js");
-  const { ProviderStrongMutationBrokerServerInternalV1 } = await import("../../durable-object-provider-authority/dist/strong-mutation-broker-server-internal.js");
-  // The native authority owns creation of the final root; pre-creating that
-  // inode would correctly fail its create-only namespace bootstrap.
-  const authorityRoot = join(fixture.authorityTmpRoot, "authority");
-  const capability = createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(authorityRoot);
+    inspectProviderAcceptanceAuthorityCandidateV1,
+    openProviderProductionStrongAuthorityServiceV1,
+  } = await import("@understand-code/durable-object-provider-authority");
+  const {
+    openProviderAcceptanceAuthorityStoreCandidateInternalV1,
+  } = await import("@understand-code/durable-object-provider-authority/internal/acceptance-store");
+  const {
+    resolveProviderAcceptanceAuthorityProductionLayoutInternalV1,
+  } = await import("../../durable-object-provider-authority/dist/platform-layout.js");
+  const {
+    provisionProviderAcceptanceInstallationIdentityForTestInternalV1,
+  } = await import("../../durable-object-provider-authority/dist/key-custody-internal.js");
+  const layout = resolveProviderAcceptanceAuthorityProductionLayoutInternalV1();
   let authorityAlreadyProvisioned = true;
   try {
-    await access(authorityRoot);
+    await access(layout.authorityRoot);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
     authorityAlreadyProvisioned = false;
   }
   if (!authorityAlreadyProvisioned) {
-    await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
+    // Fixture setup fixes the otherwise-random installation identity so the
+    // checked-in signed Registry history remains exact.  Strong admission
+    // below is exclusively the production composition root and native fence.
+    await provisionProviderAcceptanceInstallationIdentityForTestInternalV1(
+      layout,
+      {
       installationIdentityGenerationId: fixture.installationIdentityGenerationId,
       installationIdentityKey: IDENTITY_KEY,
-    });
+      },
+    );
   }
-  const acceptance = await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability);
+  const acceptance = await openProviderAcceptanceAuthorityStoreCandidateInternalV1();
   if (!authorityAlreadyProvisioned) {
     await acceptance.compareAppend(fixture.acceptanceRequest);
   }
+  const authorityDoctor = await inspectProviderAcceptanceAuthorityCandidateV1();
+  if (
+    authorityDoctor.status !== "ready" ||
+    authorityDoctor.namespace !== "current" ||
+    authorityDoctor.strongWrites !== "locked"
+  ) {
+    throw new Error("production Acceptance authority Doctor is not ready");
+  }
   const strict = await strictCryptoCapability();
-  const verifier = mintProviderStrongMutationTrustVerifierForTestInternalV1({
+  const service = await openProviderProductionStrongAuthorityServiceV1({
+    serviceConfigPath: fixture.configPath,
+    targetProfileId: fixture.targetProfileId,
     strictCryptoCapability: strict,
-    readEvidence: async () => ({
+    readTrustEvidence: async () => ({
       bootstrapTrustBundle: fixture.registryHistory.bootstrapTrustBundle,
       rootMetadataHistory: fixture.registryHistory.rootMetadataHistory,
       registryManifestHistory: fixture.registryHistory.registryManifestHistory,
     }),
   });
-  const fence = registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
-    profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
-    providerId: fixture.providerId,
-    targetProfileId: fixture.targetProfileId,
-    targetFingerprintDigest: fixture.targetFingerprintDigest,
-    capabilityDigest: fixture.capabilityDigest,
-    installationIdentityGenerationId: fixture.installationIdentityGenerationId,
-    principal: {
-      uid: fixture.serviceUid,
-      gid: fixture.serviceGid,
-      handoffPayloadDigest: fixture.config.payloadDigest,
-    },
-    revalidateExactObjectAuthority(input) {
-      return input.request.authorityGrant.payload.providerId === fixture.providerId &&
-        input.principalAttestation.providerId === fixture.providerId;
-    },
-  });
-  const broker = await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(capability, verifier, fence);
-  const server = new ProviderStrongMutationBrokerServerInternalV1({
-    socketPath: fixture.brokerSocketPath,
-    expectedRuntimeUid: fixture.serviceUid,
-    expectedRuntimeGid: fixture.serviceGid,
-    broker,
-  });
-  await server.start();
   await writeFile(join(dirname(fixturePath), "authority.ready"), "ready\n", { mode: 0o644 });
   const stopPath = join(dirname(fixturePath), "authority.stop");
+  const rotatePath = join(dirname(fixturePath), "authority.rotate-b");
+  const rotatedPath = join(dirname(fixturePath), "authority.rotated-b");
   try {
-    await waitForPath(stopPath, 24 * 60 * 60 * 1000);
+    let rotated = false;
+    for (;;) {
+      try {
+        await access(stopPath);
+        break;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (!rotated) {
+        try {
+          await access(rotatePath);
+          const currentResult = await acceptance.readCurrent();
+          if (currentResult.state !== "current") {
+            throw new Error("Acceptance G1 is unavailable for rotation");
+          }
+          const current = currentResult.current;
+          const request = ProviderAcceptanceCompareAppendRequestV1Schema.parse({
+            profile: "provider_acceptance_compare_append_request_v1",
+            operationNonce: "00000000000000000000000000000002",
+            installationIdentityGenerationId:
+              fixture.installationIdentityGenerationId,
+            expected: {
+              state: "current",
+              highWaterRevision: current.highWater.payload.highWaterRevision,
+              highWaterContentDigest: current.highWater.contentDigest,
+              currentVersionToken: current.highWater.currentVersionToken,
+              generationCount: current.highWater.payload.generationCount,
+              generationSetDigest:
+                current.highWater.payload.generationSetDigest,
+            },
+            candidate: fixture.acceptanceB,
+          });
+          await acceptance.compareAppend(request);
+          await writeFile(rotatedPath, "rotated\n", { mode: 0o644 });
+          rotated = true;
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
   } finally {
-    await server.close();
+    await service.close();
   }
 }
 
@@ -644,24 +1276,27 @@ async function runtimeRole(fixturePath) {
   await server.store.initialize();
   const state = server.store.inspectState();
   if (state.revision === 0) {
-    const acceptance = fixture.acceptance;
-    const pin = {
-      locatorProfile: "provider_acceptance_state_v1",
-      acceptanceOrdinal: 1,
-      generationId: acceptance.generationId,
-      contentDigest: acceptance.contentDigest,
-    };
     await server.store.compareCommit({
       expectedRevision: 0,
       operationNonce: "0".repeat(31) + "1",
       phase: "final_strong_ready",
-      artifacts: {
-        finalStrongReadyAcceptance: {
-          finalStrongReadyAcceptanceEnvelope: acceptance,
-          finalStrongReadyAcceptancePin: pin,
-        },
-      },
+      artifacts: durableLifecycleArtifactsV1(fixture),
     });
+  }
+  const acceptancePin = {
+    locatorProfile: "installation_provider_acceptance_state_v1",
+    acceptanceOrdinal: fixture.acceptance.payload.acceptanceOrdinal,
+    generationId: fixture.acceptance.generationId,
+    contentDigest: fixture.acceptance.contentDigest,
+  };
+  const projectDurableCurrent = () =>
+    projectProviderRuntimeDurableLifecycleArtifactsV1({
+      journalState: server.store.inspectState(),
+      expectedAcceptanceEnvelope: fixture.acceptance,
+      expectedAcceptancePin: acceptancePin,
+    });
+  if (Object.keys(projectDurableCurrent().lifecycleArtifacts).length !== 17) {
+    throw new Error("runtime durable-current lifecycle basis is incomplete");
   }
   await server.start();
   const readyPath = join(fixture.runtimeRoot, ".runtime.ready");
@@ -670,6 +1305,17 @@ async function runtimeRole(fixturePath) {
   try {
     await waitForPath(stopPath, 24 * 60 * 60 * 1000);
   } finally {
+    const durableCurrent = projectDurableCurrent();
+    await writeFile(
+      join(fixture.runtimeRoot, ".runtime.durable-current.json"),
+      `${canonicalizeJcsSafeIntegerV1({
+        revision: durableCurrent.state.revision,
+        lifecycleArtifactCount:
+          Object.keys(durableCurrent.lifecycleArtifacts).length,
+        businessHeadPresent: durableCurrent.businessHead !== undefined,
+      })}\n`,
+      { mode: 0o600 },
+    );
     await server.close();
     authKey.fill(0);
   }
@@ -690,21 +1336,330 @@ async function gatewayRole(fixturePath) {
   }
 }
 
-async function callerRole(fixturePath, bad = false) {
+async function renameExchangeV1(left, right) {
+  await execFileAsync("/usr/bin/python3", [
+    "-c",
+    [
+      "import ctypes, os, sys",
+      "libc=ctypes.CDLL(None, use_errno=True)",
+      "fn=libc.renameat2",
+      "fn.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]",
+      "result=fn(-100,os.fsencode(sys.argv[1]),-100,os.fsencode(sys.argv[2]),2)",
+      "result == 0 or (_ for _ in ()).throw(OSError(ctypes.get_errno(),os.strerror(ctypes.get_errno())))",
+    ].join(";"),
+    left,
+    right,
+  ]);
+}
+
+function exactOutcomeV1(actual, status, reason) {
+  return actual?.status === status &&
+    (reason === undefined || actual?.reason === reason);
+}
+
+async function nativeExactObjectRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
-  dropTo(bad ? fixture.badCallerUid : fixture.callerUid, bad ? fixture.badCallerGid : fixture.callerGid);
-  if (!bad) {
-    let keyDenied = false;
-    try {
-      await readFile(fixture.grantKeyPath);
-    } catch (error) {
-      keyDenied = error?.code === "EACCES" || error?.code === "EPERM";
+  dropTo(fixture.serviceUid, fixture.serviceGid);
+  const root = fixture.nativeProbeRoot;
+  const finalName = `${"f".repeat(64)}.blob`;
+  const publishers = [];
+  const sources = [];
+  const openPublisher = (path) => {
+    const publisher = openProviderRuntimeNativeExactObjectPublisherV1(path, {
+      expectedOwnerUid: fixture.serviceUid,
+      expectedOwnerGid: fixture.serviceGid,
+    });
+    publishers.push(publisher);
+    return publisher;
+  };
+  const stage = (publisher, bytes) => {
+    const source = stageProviderRuntimeNativeExactObjectV1(publisher, bytes);
+    sources.push(source);
+    return source;
+  };
+  try {
+    const exact = join(root, "exact");
+    await mkdir(exact, { mode: 0o700 });
+    const exactPublisher = openPublisher(exact);
+    const exactBytes = Buffer.from("provider-exact-object\n", "utf8");
+    if (!exactOutcomeV1(
+      commitProviderRuntimeNativeExactObjectV1(
+        exactPublisher,
+        stage(exactPublisher, exactBytes),
+        finalName,
+      ),
+      "committed",
+    )) throw new Error("exact-object publication did not commit");
+    if (!exactOutcomeV1(
+      commitProviderRuntimeNativeExactObjectV1(
+        exactPublisher,
+        stage(exactPublisher, exactBytes),
+        finalName,
+      ),
+      "not_committed",
+      "final_collision",
+    )) throw new Error("exact-object no-replace was not enforced");
+
+    const renameRoot = join(root, "rename-reparent");
+    const originalParent = join(renameRoot, "from", "parent");
+    const movedParent = join(renameRoot, "to", "moved");
+    await mkdir(originalParent, { recursive: true, mode: 0o700 });
+    await mkdir(dirname(movedParent), { recursive: true, mode: 0o700 });
+    const renamePublisher = openPublisher(originalParent);
+    const renameSource = stage(
+      renamePublisher,
+      Buffer.from("rename-reparent-race", "utf8"),
+    );
+    await rename(originalParent, movedParent);
+    await mkdir(originalParent, { mode: 0o700 });
+    if (!exactOutcomeV1(
+      commitProviderRuntimeNativeExactObjectV1(
+        renamePublisher,
+        renameSource,
+        finalName,
+      ),
+      "not_committed",
+      "parent_path_projection_changed",
+    ) || (await readdir(originalParent)).length !== 0 ||
+      (await readdir(movedParent)).length !== 0) {
+      throw new Error("rename/reparent was not rejected at zero write");
     }
-    if (!keyDenied) throw new Error("ordinary caller could read service grant key");
+
+    const abaRoot = join(root, "aba");
+    const left = join(abaRoot, "left");
+    const right = join(abaRoot, "right");
+    await mkdir(left, { recursive: true, mode: 0o700 });
+    await mkdir(right, { mode: 0o700 });
+    const abaPublisher = openPublisher(left);
+    const abaSource = stage(abaPublisher, Buffer.from("aba-race", "utf8"));
+    await renameExchangeV1(left, right);
+    await renameExchangeV1(left, right);
+    if (!exactOutcomeV1(
+      commitProviderRuntimeNativeExactObjectV1(
+        abaPublisher,
+        abaSource,
+        finalName,
+      ),
+      "not_committed",
+      "parent_path_projection_changed",
+    ) || (await readdir(left)).length !== 0 || (await readdir(right)).length !== 0) {
+      throw new Error("pathname ABA was not rejected at zero write");
+    }
+
+    const sourceRoot = join(root, "source-swap");
+    const sourceLeft = join(sourceRoot, "left");
+    const sourceRight = join(sourceRoot, "right");
+    await mkdir(sourceLeft, { recursive: true, mode: 0o700 });
+    await mkdir(sourceRight, { mode: 0o700 });
+    const sourceLeftPublisher = openPublisher(sourceLeft);
+    const sourceRightPublisher = openPublisher(sourceRight);
+    const foreignSource = stage(
+      sourceRightPublisher,
+      Buffer.from("foreign-source", "utf8"),
+    );
+    let sourceSwapRejected = false;
+    try {
+      commitProviderRuntimeNativeExactObjectV1(
+        sourceLeftPublisher,
+        foreignSource,
+        finalName,
+      );
+    } catch (error) {
+      sourceSwapRejected =
+        error?.code === "ERR_PROVIDER_RUNTIME_NATIVE_EXACT_OBJECT_UNAVAILABLE";
+    }
+    if (!sourceSwapRejected || (await readdir(sourceLeft)).length !== 0 ||
+      (await readdir(sourceRight)).length !== 0) {
+      throw new Error("cross-authority source swap was not rejected at zero write");
+    }
+
+    process.stdout.write(`${JSON.stringify({
+      profile: "provider_runtime_native_exact_object_service_principal_ext4_v1",
+      status: "verified",
+      principalUid: process.geteuid(),
+      exactObject: "verified",
+      noReplace: "verified",
+      renameReparent: "rejected_zero_write",
+      pathnameAba: "rejected_zero_write",
+      sourceSwap: "rejected_zero_write",
+    })}\n`);
+  } finally {
+    for (const source of sources) {
+      try {
+        closeProviderRuntimeNativeExactObjectSourceV1(source);
+      } catch {
+        // Commit or rejection consumes the retained source.
+      }
+    }
+    for (const publisher of publishers) {
+      try {
+        closeProviderRuntimeNativeExactObjectPublisherV1(publisher);
+      } catch {
+        // Continue closing every retained exact authority.
+      }
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function callerRole(fixturePath, mode = "primary") {
+  const fixture = await readFixture(fixturePath);
+  const bad = mode === "bad";
+  dropTo(
+    bad ? fixture.badCallerUid : fixture.callerUid,
+    bad ? fixture.badCallerGid : fixture.callerGid,
+  );
+  if (!bad) {
+    const protectedKeys = [
+      fixture.authKeyPath,
+      fixture.grantKeyPath,
+      fixture.config.payload.signingKeyPath,
+      fixture.config.payload.installationIdentityCustody.keyPath,
+    ];
+    for (const path of protectedKeys) {
+      let denied = false;
+      try {
+        await readFile(path);
+      } catch (error) {
+        denied = error?.code === "EACCES" || error?.code === "EPERM";
+      }
+      if (!denied) throw new Error(`ordinary caller could read protected key ${path}`);
+    }
+  }
+  if (bad) {
+    try {
+      const client = await openProviderProductionStrongObjectClientV1({
+        canonicalInstallationRoot: fixture.installRoot,
+      });
+      await client.close();
+    } catch {
+      process.stdout.write(`${JSON.stringify({ role: "bad-caller", rejected: true })}\n`);
+      return;
+    }
+    throw new Error("foreign caller unexpectedly opened public gateway");
   }
   try {
     const client = await openProviderProductionStrongObjectClientV1({ canonicalInstallationRoot: fixture.installRoot });
-    if (bad) throw new Error("foreign caller unexpectedly opened public gateway");
+    if (mode === "cas-probe") {
+      let writeNonceConflict = false;
+      const differentBytes = Buffer.from("step15-operation-nonce-conflict\n", "utf8");
+      try {
+        await client.writeExactObject({
+          locator: {
+            providerId: fixture.providerId,
+            contentDigest: digestBytes(differentBytes),
+          },
+          logicalBytes: differentBytes.byteLength,
+          bytes: `base64url:${differentBytes.toString("base64url")}`,
+          operationNonce: "a".repeat(32),
+        });
+      } catch {
+        writeNonceConflict = true;
+      }
+      let compareNonceConflict = false;
+      try {
+        await client.compareCommit({
+          expectedRevision: 2,
+          operationNonce: "b".repeat(32),
+          phase: "strong_verification_v1",
+          artifacts: { conflict: true },
+        });
+      } catch {
+        compareNonceConflict = true;
+      }
+      const futureStaleInput = {
+        expectedRevision: 4,
+        operationNonce: "c".repeat(32),
+        phase: "strong_change_check_v1",
+        artifacts: { futureStale: true },
+      };
+      const stale = await client.compareCommit(futureStaleInput);
+      const advance = await client.compareCommit({
+        expectedRevision: 3,
+        operationNonce: "f".repeat(32),
+        phase: "strong_verification_v1",
+        artifacts: { advanced: true },
+      });
+      const staleReplay = await client.compareCommit(futureStaleInput);
+      await client.close();
+      if (
+        !writeNonceConflict || !compareNonceConflict ||
+        stale.resolution !== "stale" ||
+        stale.state.revision !== 3 ||
+        stale.state.phase !== "strong_verification_v1" ||
+        canonicalizeJcsSafeIntegerV1(stale.state.artifacts) !==
+          canonicalizeJcsSafeIntegerV1({
+            operation: "record_verification",
+            checkRevision: 2,
+          }) ||
+        (advance.resolution !== "committed" && advance.resolution !== "replayed") ||
+        advance.state.revision !== 4 ||
+        staleReplay.resolution !== "stale" ||
+        canonicalizeJcsSafeIntegerV1(staleReplay.state) !==
+          canonicalizeJcsSafeIntegerV1(stale.state)
+      ) {
+        throw new Error("CAS/nonce constraints were not enforced");
+      }
+      process.stdout.write(`${JSON.stringify({
+        role: "cas-probe",
+        writeNonceConflict,
+        compareNonceConflict,
+        stale: stale.resolution,
+        staleReplay: staleReplay.resolution,
+        revision: advance.state.revision,
+      })}\n`);
+      return;
+    }
+    if (mode === "trust-rotation-replay") {
+      const bytes = Buffer.from("step15-three-principal-ext4\n", "utf8");
+      const contentDigest = digestBytes(bytes);
+      const locator = { providerId: fixture.providerId, contentDigest };
+      const ownerCanonicalValue = canonicalizeJcsSafeIntegerV1([
+        "record-verification-full-input-v1",
+        contentDigest,
+      ]);
+      const checkInput = {
+        expectedRevision: 1,
+        operationNonce: "b".repeat(32),
+        phase: "strong_change_check_v1",
+        artifacts: {
+          operation: "check_changes",
+          object: locator,
+          owner: await client.commitOwnerOnlyState(
+            "record-verification-full-input-v1",
+            ownerCanonicalValue,
+          ),
+        },
+      };
+      const before = await client.inspectState();
+      const replay = await client.compareCommit(checkInput);
+      const after = await client.inspectState();
+      await client.close();
+      if (
+        before.revision !== 4 ||
+        replay.resolution !== "committed" ||
+        replay.state.revision !== 2 ||
+        replay.state.phase !== checkInput.phase ||
+        canonicalizeJcsSafeIntegerV1(replay.state.artifacts) !==
+          canonicalizeJcsSafeIntegerV1(checkInput.artifacts) ||
+        after.revision !== before.revision
+      ) {
+        throw new Error("Acceptance A-to-B logical nonce replay was not exact");
+      }
+      process.stdout.write(`${JSON.stringify({
+        role: "trust-rotation-replay",
+        acceptanceOrdinal: fixture.acceptanceB.payload.acceptanceOrdinal,
+        resolution: replay.resolution,
+        originalRevision: replay.state.revision,
+        currentRevision: after.revision,
+        zeroWrite: true,
+      })}\n`);
+      return;
+    }
+    const inspectedBefore = await client.inspectState();
+    if (Object.keys(inspectedBefore).join(",") !== "revision") {
+      throw new Error("public inspect leaked Provider journal state");
+    }
     const bytes = Buffer.from("step15-three-principal-ext4\n", "utf8");
     const contentDigest = digestBytes(bytes);
     const locator = { providerId: fixture.providerId, contentDigest };
@@ -719,34 +1674,79 @@ async function callerRole(fixturePath, bad = false) {
       "record-verification-full-input-v1",
       contentDigest,
     ]);
-    const compareResult = await client.compareCommit({
+    const checkInput = {
       expectedRevision: 1,
       operationNonce: "b".repeat(32),
-      phase: "final_strong_ready",
+      phase: "strong_change_check_v1",
       artifacts: {
-        finalStrongReadyAcceptance: {
-          finalStrongReadyAcceptanceEnvelope: fixture.acceptance,
-          finalStrongReadyAcceptancePin: {
-            locatorProfile: "provider_acceptance_state_v1",
-            acceptanceOrdinal: fixture.acceptance.payload.acceptanceOrdinal,
-            generationId: fixture.acceptance.generationId,
-            contentDigest: fixture.acceptance.contentDigest,
-          },
-        },
+        operation: "check_changes",
         object: locator,
         owner: await client.commitOwnerOnlyState(
           "record-verification-full-input-v1",
           ownerCanonicalValue,
         ),
       },
-    });
-    await client.close();
-    process.stdout.write(`${JSON.stringify({ role: "caller", keyDenied: true, write: writeResult.resolution, read: readResult.verifiedContentDigest, compare: compareResult.resolution, revision: compareResult.state.revision })}\n`);
-  } catch (error) {
-    if (bad) {
-      process.stdout.write(`${JSON.stringify({ role: "bad-caller", rejected: true })}\n`);
-      return;
+    };
+    const checkResult = await client.compareCommit(checkInput);
+    const inspectedAfterCheck = await client.inspectState();
+    const replayedCheck = await client.compareCommit(checkInput);
+    const inspectedAfterReplay = await client.inspectState();
+    const verificationInput = {
+      expectedRevision: 2,
+      operationNonce: "d".repeat(32),
+      phase: "strong_verification_v1",
+      artifacts: {
+        operation: "record_verification",
+        checkRevision: checkResult.state.revision,
+      },
+    };
+    const verificationResult = await client.compareCommit(verificationInput);
+    const inspectedAfterVerification = await client.inspectState();
+    let reservedForgeryRejected = false;
+    try {
+      await client.compareCommit({
+        expectedRevision: 3,
+        operationNonce: "e".repeat(32),
+        phase: "strong_change_check_v1",
+        artifacts: { finalStrongReadyAcceptance: { forged: true } },
+      });
+    } catch {
+      reservedForgeryRejected = true;
     }
+    const inspectedAfterForgery = await client.inspectState();
+    await client.close();
+    if (
+      (checkResult.resolution !== "committed" && checkResult.resolution !== "replayed") ||
+      replayedCheck.resolution !== checkResult.resolution ||
+      replayedCheck.state.revision !== 2 ||
+      canonicalizeJcsSafeIntegerV1(replayedCheck.state.artifacts) !==
+        canonicalizeJcsSafeIntegerV1(checkInput.artifacts) ||
+      (verificationResult.resolution !== "committed" && verificationResult.resolution !== "replayed") ||
+      verificationResult.state.revision !== 3 ||
+      canonicalizeJcsSafeIntegerV1(verificationResult.state.artifacts) !==
+        canonicalizeJcsSafeIntegerV1(verificationInput.artifacts) ||
+      inspectedAfterCheck.revision < 2 ||
+      inspectedAfterReplay.revision !== inspectedAfterCheck.revision ||
+      inspectedAfterVerification.revision !== 3 ||
+      inspectedAfterForgery.revision !== inspectedAfterVerification.revision ||
+      !reservedForgeryRejected
+    ) throw new Error("business journal Acceptance closure was not preserved");
+    process.stdout.write(`${JSON.stringify({
+      role: "caller",
+      callerUid: process.geteuid(),
+      keyDenied: true,
+      keyDenials: 4,
+      write: writeResult.resolution,
+      read: readResult.verifiedContentDigest,
+      inspectBefore: inspectedBefore.revision,
+      check: checkResult.resolution,
+      checkReplay: replayedCheck.resolution,
+      verification: verificationResult.resolution,
+      revision: inspectedAfterVerification.revision,
+      revisionOnly: true,
+      reservedForgeryRejected,
+    })}\n`);
+  } catch (error) {
     throw error;
   }
 }
@@ -767,9 +1767,11 @@ async function orchestrate() {
     configPath: join(installRoot, "provider-service-config-v1.json"),
     grantKeyPath: join(runtimeRoot, "grant.pk8"),
     fixturePath: join(work, "fixture.json"),
-    // Keep the native authority on the same real ext4 gate while retaining a
-    // dedicated, empty parent that is disjoint from the runtime target root.
-    authorityTmpRoot: join(ext4Mount, `step15-authority-tmp-${process.pid}-${randomBytes(4).toString("hex")}`),
+    // Bind-mounted over the root account home in an isolated mount namespace;
+    // the production resolver therefore uses real ext4 without touching host
+    // installation state.
+    authorityHome: join(ext4Mount, `step15-authority-home-${process.pid}-${randomBytes(4).toString("hex")}`),
+    nativeProbeRoot: join(ext4Mount, `step15-native-probe-${process.pid}-${randomBytes(4).toString("hex")}`),
   };
   const authorityReadyPath = join(work, "authority.ready");
   const authorityStopPath = join(work, "authority.stop");
@@ -783,13 +1785,30 @@ async function orchestrate() {
   await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
   await chown(runtimeRoot, SERVICE_UID, SERVICE_GID);
   await chmod(runtimeRoot, 0o700);
-  await mkdir(paths.authorityTmpRoot, { recursive: true, mode: 0o700 });
-  await chmod(paths.authorityTmpRoot, 0o700);
+  await mkdir(paths.authorityHome, { recursive: true, mode: 0o700 });
+  await chmod(paths.authorityHome, 0o700);
+  await mkdir(paths.nativeProbeRoot, { recursive: true, mode: 0o700 });
+  await chown(paths.nativeProbeRoot, SERVICE_UID, SERVICE_GID);
+  await chmod(paths.nativeProbeRoot, 0o700);
   let authority;
   let runtime;
   let gateway;
   const start = (role, env = {}) => spawn(process.execPath, [SCRIPT_PATH, "--role", role, "--fixture", paths.fixturePath], {
     env: { ...process.env, ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const startAuthority = () => spawn("/usr/bin/unshare", [
+    "--mount",
+    "--propagation",
+    "private",
+    process.execPath,
+    SCRIPT_PATH,
+    "--role",
+    "authority",
+    "--fixture",
+    paths.fixturePath,
+  ], {
+    env: { ...process.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const collect = (child) => {
@@ -799,12 +1818,28 @@ async function orchestrate() {
     child.on("exit", (code, signal) => { if (code !== 0 && signal !== "SIGTERM") process.stderr.write(stderr); });
     return { child, get stderr() { return stderr; } };
   };
+  const killAndWait = async (tracked, signal = "SIGKILL") => {
+    if (tracked.child.exitCode !== null || tracked.child.signalCode !== null) return;
+    const exited = new Promise((resolvePromise) => tracked.child.once("exit", resolvePromise));
+    tracked.child.kill(signal);
+    await exited;
+  };
   try {
     await makeFixture(work, installRoot, runtimeRoot, paths);
-    authority = collect(start("authority", { NODE_ENV: "test" }));
-    await waitForPath(authorityReadyPath);
+    const nativeExactObject = await new Promise((resolvePromise, rejectPromise) => {
+      const child = collect(start("native-exact-object"));
+      let out = "";
+      child.child.stdout?.setEncoding("utf8");
+      child.child.stdout?.on("data", (chunk) => { out += chunk; });
+      child.child.once("error", rejectPromise);
+      child.child.once("exit", (code) => code === 0
+        ? resolvePromise(out.trim())
+        : rejectPromise(new Error(`native exact-object probe failed: ${code} ${child.stderr}`)));
+    });
     runtime = collect(start("runtime"));
     await waitForPath(runtimeReadyPath);
+    authority = collect(startAuthority());
+    await waitForPath(authorityReadyPath);
     gateway = collect(start("gateway"));
     await waitForPath(gatewayReadyPath);
     const caller = await new Promise((resolvePromise, rejectPromise) => {
@@ -821,13 +1856,52 @@ async function orchestrate() {
       const child = collect(start("bad-caller"));
       child.child.once("exit", (code) => resolvePromise(code === 0));
     });
-    await writeFile(gatewayStopPath, "stop\n");
-    await new Promise((resolvePromise) => gateway.child.once("exit", resolvePromise));
-    await writeFile(runtimeStopPath, "stop\n");
-    await new Promise((resolvePromise) => runtime.child.once("exit", resolvePromise));
-    await writeFile(authorityStopPath, "stop\n");
-    await new Promise((resolvePromise) => authority.child.once("exit", resolvePromise));
-    // Restart both production processes and replay the exact nonces.  The
+    const killedSocketIdentities = {
+      broker: await retainedSocketIdentityV1(
+        join(runtimeRoot, "strong-mutation-broker-v1.sock"),
+        0,
+        SERVICE_GID,
+      ),
+      runtime: await retainedSocketIdentityV1(
+        join(runtimeRoot, "provider.sock"),
+        SERVICE_UID,
+        SERVICE_GID,
+      ),
+      gateway: await retainedSocketIdentityV1(
+        gatewaySocketPath,
+        SERVICE_UID,
+        CALLER_GID,
+      ),
+    };
+    // Abruptly terminate every production process after the durable response.
+    // Restart must recover the exact object, journal, broker grant ledger, and
+    // operation-nonce receipts without relying on graceful close hooks.
+    await Promise.all([
+      killAndWait(gateway),
+      killAndWait(runtime),
+      killAndWait(authority),
+    ]);
+    await Promise.all([
+      assertRetainedSocketIdentityV1(
+        join(runtimeRoot, "strong-mutation-broker-v1.sock"),
+        0,
+        SERVICE_GID,
+        killedSocketIdentities.broker,
+      ),
+      assertRetainedSocketIdentityV1(
+        join(runtimeRoot, "provider.sock"),
+        SERVICE_UID,
+        SERVICE_GID,
+        killedSocketIdentities.runtime,
+      ),
+      assertRetainedSocketIdentityV1(
+        gatewaySocketPath,
+        SERVICE_UID,
+        CALLER_GID,
+        killedSocketIdentities.gateway,
+      ),
+    ]);
+    // Restart all production processes and replay the exact nonces.  The
     // caller process is fresh and still has no key custody.
     await Promise.all([
       rm(gatewayReadyPath, { force: true }),
@@ -837,12 +1911,27 @@ async function orchestrate() {
       rm(authorityReadyPath, { force: true }),
       rm(authorityStopPath, { force: true }),
     ]);
-    authority = collect(start("authority", { NODE_ENV: "test" }));
+    authority = collect(startAuthority());
     await waitForPath(authorityReadyPath);
+    await retainedSocketIdentityV1(
+      join(runtimeRoot, "strong-mutation-broker-v1.sock"),
+      0,
+      SERVICE_GID,
+    );
     runtime = collect(start("runtime"));
     await waitForPath(runtimeReadyPath);
+    await retainedSocketIdentityV1(
+      join(runtimeRoot, "provider.sock"),
+      SERVICE_UID,
+      SERVICE_GID,
+    );
     gateway = collect(start("gateway"));
     await waitForPath(gatewayReadyPath);
+    await retainedSocketIdentityV1(
+      gatewaySocketPath,
+      SERVICE_UID,
+      CALLER_GID,
+    );
     const replay = await new Promise((resolvePromise, rejectPromise) => {
       const child = collect(start("caller"));
       let out = "";
@@ -852,20 +1941,140 @@ async function orchestrate() {
         ? resolvePromise(out.trim())
         : rejectPromise(new Error(`replay caller failed: ${code} ${child.stderr}`)));
     });
+    const cas = await new Promise((resolvePromise, rejectPromise) => {
+      const child = collect(start("cas-probe"));
+      let out = "";
+      child.child.stdout?.setEncoding("utf8");
+      child.child.stdout?.on("data", (chunk) => { out += chunk; });
+      child.child.once("exit", (code) => code === 0
+        ? resolvePromise(out.trim())
+        : rejectPromise(new Error(`CAS/nonce probe failed: ${code} ${child.stderr}`)));
+    });
+    const secondGatewayRejected = await new Promise((resolvePromise) => {
+      const child = collect(start("gateway"));
+      child.child.once("exit", (code) => resolvePromise(code !== 0));
+    });
+    if (!secondGatewayRejected) {
+      throw new Error("exclusive gateway lifecycle lease admitted two listeners");
+    }
+    const liveFixture = await readFixture(paths.fixturePath);
+    const liveSnapshotPath = join(
+      liveFixture.installRoot,
+      PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1,
+    );
+    const liveDescriptorPath = providerProductionStrongClientDescriptorPathV1(
+      liveFixture.installRoot,
+    );
+    const liveSnapshot = await readFile(liveSnapshotPath);
+    const liveDescriptor = await readFile(liveDescriptorPath);
+    let liveGatewayLeaseRefused = false;
+    try {
+      await uninstallProviderProductionStrongClientTrustV1(
+        liveFixture.installRoot,
+      );
+    } catch (error) {
+      liveGatewayLeaseRefused = /trust lifecycle is busy/u.test(
+        String(error?.message),
+      );
+    }
+    if (
+      !liveGatewayLeaseRefused ||
+      !(await readFile(liveSnapshotPath)).equals(liveSnapshot) ||
+      !(await readFile(liveDescriptorPath)).equals(liveDescriptor)
+    ) throw new Error("live gateway lease did not block uninstall atomically");
+    try {
+      await access(join(
+        liveFixture.installRoot,
+        ".provider-production-strong-client-trust-transaction-v1.json",
+      ));
+      throw new Error("live gateway lease created an uninstall transaction");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const gatewayExited = new Promise((resolvePromise) =>
+      gateway.child.once("exit", resolvePromise)
+    );
     await writeFile(gatewayStopPath, "stop\n");
-    await new Promise((resolvePromise) => gateway.child.once("exit", resolvePromise));
+    await gatewayExited;
+    await Promise.all([
+      rm(gatewayReadyPath, { force: true }),
+      rm(gatewayStopPath, { force: true }),
+    ]);
+    const authorityRotatePath = join(work, "authority.rotate-b");
+    const authorityRotatedPath = join(work, "authority.rotated-b");
+    await writeFile(authorityRotatePath, "rotate\n", { mode: 0o644 });
+    await waitForPath(authorityRotatedPath);
+    const rotationFixture = await readFixture(paths.fixturePath);
+    const rotatedTrust = await rotateProviderProductionStrongClientTrustV1({
+      canonicalInstallationRoot: rotationFixture.installRoot,
+      serviceConfig: rotationFixture.config,
+      servicePrivateKey: privateKey(SERVICE_SEED),
+      trust: trustMaterialV1(
+        rotationFixture,
+        rotationFixture.targetFingerprintDigest,
+        [rotationFixture.acceptance, rotationFixture.acceptanceB],
+      ),
+    });
+    if (rotatedTrust.status !== "rotated") {
+      throw new Error("formal Acceptance B trust rotation did not complete");
+    }
+    gateway = collect(start("gateway"));
+    await waitForPath(gatewayReadyPath);
+    const trustRotationReplay = await new Promise(
+      (resolvePromise, rejectPromise) => {
+        const child = collect(start("trust-rotation-replay"));
+        let out = "";
+        child.child.stdout?.setEncoding("utf8");
+        child.child.stdout?.on("data", (chunk) => { out += chunk; });
+        child.child.once("exit", (code) => code === 0
+          ? resolvePromise(out.trim())
+          : rejectPromise(new Error(
+              `trust rotation replay failed: ${code} ${child.stderr}`,
+            )));
+      },
+    );
+    const rotatedGatewayExited = new Promise((resolvePromise) =>
+      gateway.child.once("exit", resolvePromise)
+    );
+    await writeFile(gatewayStopPath, "stop\n");
+    await rotatedGatewayExited;
+    await Promise.all([
+      rm(gatewayReadyPath, { force: true }),
+      rm(gatewayStopPath, { force: true }),
+    ]);
+    const lifecycle = await productionTrustLifecycleV1(
+      await readFixture(paths.fixturePath),
+    );
+    const runtimeExited = new Promise((resolvePromise) =>
+      runtime.child.once("exit", resolvePromise)
+    );
     await writeFile(runtimeStopPath, "stop\n");
-    await new Promise((resolvePromise) => runtime.child.once("exit", resolvePromise));
+    await runtimeExited;
+    const durableCurrent = JSON.parse(await readFile(
+      join(runtimeRoot, ".runtime.durable-current.json"),
+      "utf8",
+    ));
+    if (
+      durableCurrent.lifecycleArtifactCount !== 17 ||
+      durableCurrent.businessHeadPresent !== true ||
+      durableCurrent.revision !== 4
+    ) {
+      throw new Error("runtime durable-current did not preserve the exact lifecycle basis");
+    }
+    const authorityExited = new Promise((resolvePromise) =>
+      authority.child.once("exit", resolvePromise)
+    );
     await writeFile(authorityStopPath, "stop\n");
-    await new Promise((resolvePromise) => authority.child.once("exit", resolvePromise));
-    process.stdout.write(`${JSON.stringify({ profile: "provider_production_strong_object_three_principal_linux_v1", status: "verified", ext4: true, caller: JSON.parse(caller), foreignCallerRejected: denied, restartReplay: JSON.parse(replay), authorityUid: 0, runtimeUid: SERVICE_UID, callerUid: CALLER_UID })}\n`);
+    await authorityExited;
+    process.stdout.write(`${JSON.stringify({ profile: "provider_production_strong_object_three_principal_linux_v1", status: "verified", ext4: true, nativeExactObject: JSON.parse(nativeExactObject), caller: JSON.parse(caller), foreignCallerRejected: denied, restartReplay: JSON.parse(replay), restartSockets: { retainedAfterSigkill: "verified", broker: "reclaimed", runtime: "reclaimed", gateway: "reclaimed", startOrder: "authority_runtime_gateway" }, lifecycleLease: { liveUninstall: "refused_zero_write", doubleStart: "rejected" }, casNonce: JSON.parse(cas), trustRotationReplay: JSON.parse(trustRotationReplay), durableCurrent, lifecycle, authorityUid: 0, runtimeUid: SERVICE_UID, callerUid: CALLER_UID })}\n`);
   } finally {
     for (const child of [gateway?.child, runtime?.child, authority?.child]) {
       if (child && child.exitCode === null) child.kill("SIGTERM");
     }
     await rm(work, { recursive: true, force: true }).catch(() => undefined);
     await rm(runtimeRoot, { recursive: true, force: true }).catch(() => undefined);
-    await rm(paths.authorityTmpRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(paths.authorityHome, { recursive: true, force: true }).catch(() => undefined);
+    await rm(paths.nativeProbeRoot, { recursive: true, force: true }).catch(() => undefined);
     await rm(`${installRoot}.provider-production-strong-client-v1.json`, { force: true }).catch(() => undefined);
   }
 }
@@ -879,8 +2088,13 @@ if (role === "--role") {
   if (selected === "authority") await authorityRole(fixturePath);
   else if (selected === "runtime") await runtimeRole(fixturePath);
   else if (selected === "gateway") await gatewayRole(fixturePath);
-  else if (selected === "caller") await callerRole(fixturePath, false);
-  else if (selected === "bad-caller") await callerRole(fixturePath, true);
+  else if (selected === "caller") await callerRole(fixturePath, "primary");
+  else if (selected === "bad-caller") await callerRole(fixturePath, "bad");
+  else if (selected === "cas-probe") await callerRole(fixturePath, "cas-probe");
+  else if (selected === "trust-rotation-replay") {
+    await callerRole(fixturePath, "trust-rotation-replay");
+  }
+  else if (selected === "native-exact-object") await nativeExactObjectRole(fixturePath);
   else throw new Error(`unknown role ${selected}`);
 } else {
   await orchestrate();

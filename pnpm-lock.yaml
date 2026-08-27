@@ -332,6 +332,12 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
+      '@understand-code/durable-object-provider-authority':
+        specifier: workspace:*
+        version: link:../durable-object-provider-authority
+      '@understand-code/durable-object-provider-client':
+        specifier: workspace:*
+        version: link:../durable-object-provider-client
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -421,6 +427,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      '@understand-code/durable-object-provider-runtime':
+        specifier: workspace:*
+        version: link:../durable-object-provider-runtime
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

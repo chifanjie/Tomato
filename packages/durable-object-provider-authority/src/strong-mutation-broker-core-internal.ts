@@ -235,6 +235,12 @@ export type ProviderStrongMutationBrokerResolveResultInternalV1 =
       readonly existingIntent: ProviderStrongMutationBrokerResolvedIntentInternalV1;
     }>;
 
+export interface ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 {
+  readonly intentOrdinal: number;
+  readonly firstIntentOrdinal: number;
+  readonly firstBindingDigest: string;
+}
+
 export interface ProviderStrongMutationBrokerStoreInternalV1 {
   readonly authority: "installation_owner_candidate";
   readonly strongWrites: "locked" | "unlocked";
@@ -250,6 +256,9 @@ export interface ProviderStrongMutationBrokerStoreInternalV1 {
   readonly resolve: (
     request: unknown,
   ) => Promise<ProviderStrongMutationBrokerResolveResultInternalV1>;
+  readonly inspectLegacyOutcomeAuthority: (
+    inspection: unknown,
+  ) => Promise<ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 | false>;
 }
 
 const brokerStoreCapabilitiesV1 = new WeakSet<object>();
@@ -785,12 +794,34 @@ function parseSnapshotV1(
     }
     const intents = Object.freeze(raw.intents.map(parseIntentV1));
     const uniqueGrantIds = new Set(intents.map((intent) => intent.grantId));
+    const logicalRequestsByNonce = new Map<
+      string,
+      Readonly<{ readonly operation: string; readonly requestDigest: string }>
+    >();
+    let operationNonceConflict = false;
+    for (const intent of intents) {
+      const operationNonce = intent.request.operationNonce;
+      const prior = logicalRequestsByNonce.get(operationNonce);
+      if (
+        prior !== undefined &&
+        (prior.operation !== intent.request.operation ||
+          prior.requestDigest !== intent.requestDigest)
+      ) {
+        operationNonceConflict = true;
+        break;
+      }
+      logicalRequestsByNonce.set(operationNonce, Object.freeze({
+        operation: intent.request.operation,
+        requestDigest: intent.requestDigest,
+      }));
+    }
     const resolvedCount = intents.reduce(
       (count, intent) => count + (intent.state === "resolved" ? 1 : 0),
       0,
     );
     if (
       uniqueGrantIds.size !== intents.length ||
+      operationNonceConflict ||
       (raw.snapshotRevision as number) !== intents.length + resolvedCount
     ) {
       throw new ProviderAcceptanceAuthorityErrorV1("namespace_integrity_failed");
@@ -1372,6 +1403,15 @@ function findIntentV1(
   );
 }
 
+function findIntentByOperationNonceV1(
+  snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined,
+  operationNonce: string,
+): ProviderStrongMutationBrokerIntentInternalV1 | undefined {
+  return snapshot?.envelope.payload.intents.find(
+    (intent) => intent.request.operationNonce === operationNonce,
+  );
+}
+
 function sameStoredRequestV1(
   intent: ProviderStrongMutationBrokerIntentInternalV1,
   request: ProviderRuntimeIpcStrongMutationRequestV1,
@@ -1496,6 +1536,112 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
     () => undefined,
   );
 
+  const testMaxIntentCount = (options as
+    ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 & {
+      readonly testMaxIntentCount?: number;
+    }).testMaxIntentCount;
+  if (
+    testMaxIntentCount !== undefined &&
+    ((process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") ||
+      !Number.isSafeInteger(testMaxIntentCount) ||
+      testMaxIntentCount < 1 ||
+      testMaxIntentCount >
+        PROVIDER_STRONG_MUTATION_BROKER_LIMITS_INTERNAL_V1.maxIntentCount)
+  ) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  const effectiveMaxIntentCount = testMaxIntentCount ??
+    PROVIDER_STRONG_MUTATION_BROKER_LIMITS_INTERNAL_V1.maxIntentCount;
+  const transientReplayIntents = new Map<
+    string,
+    ProviderStrongMutationBrokerIntentInternalV1
+  >();
+  const rememberTransientReplayIntentV1 = (
+    intent: ProviderStrongMutationBrokerIntentInternalV1,
+  ): void => {
+    transientReplayIntents.delete(intent.grantId);
+    transientReplayIntents.set(intent.grantId, intent);
+    while (
+      transientReplayIntents.size >
+        PROVIDER_STRONG_MUTATION_BROKER_LIMITS_INTERNAL_V1.maxIntentCount
+    ) {
+      const oldestGrantId = transientReplayIntents.keys().next().value;
+      if (typeof oldestGrantId !== "string") break;
+      transientReplayIntents.delete(oldestGrantId);
+    }
+  };
+
+  const inspectLegacyOutcomeAuthority = async (
+    inspection: unknown,
+  ): Promise<
+    ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 | false
+  > => {
+    let request: ProviderRuntimeIpcStrongMutationRequestV1;
+    let response: ProviderRuntimeIpcStrongMutationResponseV1;
+    try {
+      if (!exactRecordV1(inspection, ["request", "response"])) return false;
+      request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        inspection.request,
+      );
+      response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+        inspection.response,
+      );
+    } catch {
+      return false;
+    }
+    try {
+      return await withBrokerViewV1(
+        layout,
+        verifierCapability,
+        executionFenceCapability,
+        options,
+        async (_view, converged) => {
+          const intents = converged.snapshot?.envelope.payload.intents ?? [];
+          const intentIndex = intents.findIndex((candidate) =>
+            candidate.grantId === request.authorityGrant.grantId &&
+            sameStoredRequestV1(candidate, request)
+          );
+          if (intentIndex < 0) return false;
+          const intent = intents[intentIndex]!;
+          const nonceIntentIndexes = intents.flatMap((candidate, index) =>
+            candidate.request.operationNonce === request.operationNonce
+              ? [index]
+              : []
+          );
+          const firstIntentIndex = nonceIntentIndexes[0];
+          if (
+            firstIntentIndex === undefined ||
+            nonceIntentIndexes.some((index) => {
+              const candidate = intents[index]!;
+              return candidate.request.operation !== request.operation ||
+                candidate.requestDigest !== request.requestDigest;
+            }) ||
+            !responseMatchesIntentV1(response, intent)
+          ) return false;
+          if (intent.state === "resolved") {
+            if (!sameCanonicalV1(intent.response, response)) return false;
+          } else {
+            await verifyProviderStrongMutationResponseTrustInternalV1(
+              verifierCapability,
+              {
+                certificate: intent.verificationCertificate,
+                principalAttestation: intent.principalAttestation,
+                response,
+              },
+            );
+          }
+          return Object.freeze({
+            intentOrdinal: intentIndex + 1,
+            firstIntentOrdinal: firstIntentIndex + 1,
+            firstBindingDigest: intents[firstIntentIndex]!.bindingDigest,
+          });
+        },
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const begin = async (
     input: unknown,
     principalAttestationInput?: unknown,
@@ -1526,8 +1672,11 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
       executionFenceCapability,
       options,
       async (view, converged, verificationSession) => {
-        const existing = findIntentV1(
+        const durableExisting = findIntentV1(
           converged.snapshot,
+          request.authorityGrant.grantId,
+        );
+        const existing = durableExisting ?? transientReplayIntents.get(
           request.authorityGrant.grantId,
         );
         if (existing !== undefined) {
@@ -1579,20 +1728,41 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
               : { executionAuthorization }),
           });
         }
+        const logicalExisting = findIntentByOperationNonceV1(
+          converged.snapshot,
+          request.operationNonce,
+        );
+        if (
+          logicalExisting !== undefined &&
+          (logicalExisting.request.operation !== request.operation ||
+            logicalExisting.requestDigest !== request.requestDigest)
+        ) {
+          return Object.freeze({
+            resolution: "request_rejected" as const,
+            reason: "grant_request_mismatch" as const,
+            existingIntent: logicalExisting,
+          });
+        }
         const acceptanceIdentity = requireFreshCurrentAcceptanceJoinV1(
           request,
           view.current,
         );
-        const admission = classifyProviderStrongMutationBrokerAdmissionInternalV1({
-          intentCount:
-            (converged.snapshot?.envelope.payload.intents.length ?? 0) + 1,
-          requestLogicalBytes: requestBytes,
-          responseLogicalBytes: 0,
-          snapshotPhysicalBytes: 0,
-          isExistingReplay: false,
-        });
-        if (!admission.admitted) {
-          throw new ProviderAcceptanceAuthorityErrorV1("capacity_exhausted");
+        if (logicalExisting === undefined) {
+          const nextIntentCount =
+            (converged.snapshot?.envelope.payload.intents.length ?? 0) + 1;
+          const admission = classifyProviderStrongMutationBrokerAdmissionInternalV1({
+            intentCount: nextIntentCount,
+            requestLogicalBytes: requestBytes,
+            responseLogicalBytes: 0,
+            snapshotPhysicalBytes: 0,
+            isExistingReplay: false,
+          });
+          if (
+            nextIntentCount > effectiveMaxIntentCount ||
+            !admission.admitted
+          ) {
+            throw new ProviderAcceptanceAuthorityErrorV1("capacity_exhausted");
+          }
         }
         let verified;
         try {
@@ -1654,6 +1824,17 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
             state: "pending" as const,
           });
         verifyIntentRequestBindingsV1(intent);
+        if (logicalExisting !== undefined) {
+          rememberTransientReplayIntentV1(intent);
+          return Object.freeze({
+            resolution: "recorded" as const,
+            disposition: "created" as const,
+            intent,
+            ...(executionAuthorization === undefined
+              ? {}
+              : { executionAuthorization }),
+          });
+        }
         const intents = [
           ...(converged.snapshot?.envelope.payload.intents ?? []),
           intent,
@@ -1709,7 +1890,13 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
       executionFenceCapability,
       options,
       async (view, converged) => {
-        const existing = findIntentV1(converged.snapshot, resolution.grantId);
+        const durableExisting = findIntentV1(
+          converged.snapshot,
+          resolution.grantId,
+        );
+        const existing = durableExisting ?? transientReplayIntents.get(
+          resolution.grantId,
+        );
         if (
           existing === undefined ||
           existing.requestContentDigest !== resolution.requestContentDigest ||
@@ -1762,6 +1949,14 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
         if (!responseMatchesIntentV1(resolved.response, resolved)) {
           throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
         }
+        if (durableExisting === undefined) {
+          rememberTransientReplayIntentV1(resolved);
+          return Object.freeze({
+            resolution: "resolved" as const,
+            disposition: "created" as const,
+            intent: resolved,
+          });
+        }
         const intents = converged.snapshot!.envelope.payload.intents.map(
           (intent) => intent.grantId === resolved.grantId ? resolved : intent,
         );
@@ -1804,6 +1999,7 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
       : "established_linux_ext4_exact_object_dedicated_os_principal_v1" as const,
     begin,
     resolve,
+    inspectLegacyOutcomeAuthority,
   });
   brokerStoreCapabilitiesV1.add(store);
   return store;

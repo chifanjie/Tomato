@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 
 import {
   armTestProviderRuntimeNativeExactObjectParentFsyncFailureV1,
+  armTestProviderRuntimeNativeExactObjectPreLinkParentAbaV1,
+  armTestProviderRuntimeNativeExactObjectPostLinkParentChangeV1,
   closeProviderRuntimeNativeExactObjectPublisherV1,
   closeProviderRuntimeNativeExactObjectSourceV1,
   commitProviderRuntimeNativeExactObjectV1,
@@ -72,6 +74,50 @@ try {
     ),
     { status: "committed" },
   );
+
+  const outstandingParent = join(fixture, "single-outstanding");
+  mkdirSync(outstandingParent, { mode: 0o700 });
+  const outstandingPublisher = open(outstandingParent);
+  const outstandingSource = stage(outstandingPublisher, "first-source");
+  assert.throws(() => stage(outstandingPublisher, "second-source"));
+  closeProviderRuntimeNativeExactObjectSourceV1(outstandingSource);
+  closeProviderRuntimeNativeExactObjectSourceV1(
+    stage(outstandingPublisher, "replacement-source"),
+  );
+
+  const invalidNameParent = join(fixture, "invalid-final-name");
+  mkdirSync(invalidNameParent, { mode: 0o700 });
+  const invalidNamePublisher = open(invalidNameParent);
+  const invalidNameSource = stage(invalidNamePublisher, "invalid-final-name");
+  assert.throws(() =>
+    commitProviderRuntimeNativeExactObjectV1(
+      invalidNamePublisher,
+      invalidNameSource,
+      "not-a-content-addressed-name.blob",
+    )
+  );
+  closeProviderRuntimeNativeExactObjectSourceV1(invalidNameSource);
+  closeProviderRuntimeNativeExactObjectSourceV1(
+    stage(invalidNamePublisher, "replacement-after-invalid-name"),
+  );
+  assert.deepEqual(readdirSync(invalidNameParent), []);
+
+  const postLinkParent = join(fixture, "post-link-change");
+  mkdirSync(postLinkParent, { mode: 0o700 });
+  const postLinkPublisher = open(postLinkParent);
+  const postLinkSource = stage(postLinkPublisher, "post-link-change");
+  armTestProviderRuntimeNativeExactObjectPostLinkParentChangeV1(
+    postLinkPublisher,
+  );
+  assert.deepEqual(
+    commitProviderRuntimeNativeExactObjectV1(
+      postLinkPublisher,
+      postLinkSource,
+      finalName,
+    ),
+    { status: "not_committed", reason: "parent_path_projection_changed" },
+  );
+  assert.deepEqual(readdirSync(postLinkParent), []);
 
   const indeterminateParent = join(fixture, "indeterminate");
   mkdirSync(indeterminateParent, { mode: 0o700 });
@@ -165,6 +211,51 @@ try {
   assert.deepEqual(readdirSync(left), []);
   assert.deepEqual(readdirSync(right), []);
 
+  const abaRoot = join(fixture, "double-exchange-aba");
+  const abaLeft = join(abaRoot, "left");
+  const abaRight = join(abaRoot, "right");
+  mkdirSync(abaLeft, { mode: 0o700, recursive: true });
+  mkdirSync(abaRight, { mode: 0o700 });
+  const abaPublisher = open(abaLeft);
+  const abaSource = stage(abaPublisher, "double-exchange-aba");
+  exchange(abaLeft, abaRight);
+  exchange(abaLeft, abaRight);
+  assert.deepEqual(
+    commitProviderRuntimeNativeExactObjectV1(
+      abaPublisher,
+      abaSource,
+      finalName,
+    ),
+    { status: "not_committed", reason: "parent_path_projection_changed" },
+  );
+  assert.deepEqual(readdirSync(abaLeft), []);
+  assert.deepEqual(readdirSync(abaRight), []);
+
+  const preLinkAbaRoot = join(fixture, "prelink-double-exchange-aba");
+  const preLinkAbaLeft = join(preLinkAbaRoot, "left");
+  const preLinkAbaRight = join(preLinkAbaRoot, "right");
+  mkdirSync(preLinkAbaLeft, { mode: 0o700, recursive: true });
+  mkdirSync(preLinkAbaRight, { mode: 0o700 });
+  const preLinkAbaPublisher = open(preLinkAbaLeft);
+  const preLinkAbaSource = stage(
+    preLinkAbaPublisher,
+    "prelink-double-exchange-aba",
+  );
+  armTestProviderRuntimeNativeExactObjectPreLinkParentAbaV1(
+    preLinkAbaPublisher,
+    preLinkAbaRight,
+  );
+  assert.deepEqual(
+    commitProviderRuntimeNativeExactObjectV1(
+      preLinkAbaPublisher,
+      preLinkAbaSource,
+      finalName,
+    ),
+    { status: "not_committed", reason: "parent_path_projection_changed" },
+  );
+  assert.deepEqual(readdirSync(preLinkAbaLeft), []);
+  assert.deepEqual(readdirSync(preLinkAbaRight), []);
+
   process.stdout.write(
     `${JSON.stringify({
       profile: "provider_runtime_native_exact_object_ext4_v1",
@@ -172,8 +263,13 @@ try {
       noReplace: "verified",
       parentRename: "rejected_zero_write",
       parentExchange: "rejected_zero_write",
+      pathnameAba: "rejected_zero_write",
+      preLinkPathnameAba: "rejected_zero_write",
       sourceSwap: "rejected_zero_write",
       postLinkFsyncRecovery: "verified",
+      postLinkProjectionRollback: "verified",
+      singleOutstandingSource: "verified",
+      invalidFinalNameSourceRelease: "verified",
     })}\n`,
   );
 } finally {

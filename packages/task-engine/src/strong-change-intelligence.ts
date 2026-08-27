@@ -110,6 +110,7 @@ function sortedUniqueSources(
 }
 
 function exactEqual(left: unknown, right: unknown): boolean {
+  if (left === undefined || right === undefined) return left === right;
   return canonicalizeJson(left) === canonicalizeJson(right);
 }
 
@@ -119,6 +120,26 @@ function invalidAuthority(reason: string): never {
     "Strong Change Intelligence authority returned an invalid projection.",
     { reason },
   );
+}
+
+type StrongReservedOperationAbortV1 = Parameters<
+  NonNullable<StrongChangeIntelligenceAuthorityV1["abortReservedOperation"]>
+>[0];
+
+async function prepareReservedStrongOperationV1<T>(
+  authority: StrongChangeIntelligenceAuthorityV1,
+  reservedByAuthority: boolean,
+  abortInput: StrongReservedOperationAbortV1,
+  prepare: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await prepare();
+  } catch (error) {
+    if (reservedByAuthority) {
+      await authority.abortReservedOperation?.(abortInput);
+    }
+    throw error;
+  }
 }
 
 export function deriveStrongBoundaryIdV1(
@@ -487,7 +508,7 @@ interface ActualDraft {
   readonly newSymbolRefs: StrongAnalyzedHunkV1["newSymbolRefs"];
   readonly pairingStatus: ActualChangeV1["pairingStatus"];
   readonly semanticFacets: ActualChangeV1["semanticFacets"];
-  readonly status: AnalysisStatusV1;
+  status: AnalysisStatusV1;
   readonly granularity: ActualChangeV1["granularity"];
   readonly hunkIds: string[];
 }
@@ -782,9 +803,12 @@ export async function executeStrongChangeCheckV1(
       idempotentReplay: true,
     });
   }
-  const occurredAt = authority.reserveOperationTime === undefined
+  const reserveOperationTime = authority.reserveOperationTime;
+  const reservedByAuthority = reserveOperationTime !== undefined;
+  const occurredAt = reserveOperationTime === undefined
     ? clock().toISOString()
-    : await authority.reserveOperationTime(
+    : await reserveOperationTime.call(
+        authority,
         {
           taskId: input.taskId,
           expectedRevision: input.expectedRevision,
@@ -795,6 +819,18 @@ export async function executeStrongChangeCheckV1(
         },
         clock().toISOString(),
       );
+  return prepareReservedStrongOperationV1(
+    authority,
+    reservedByAuthority,
+    {
+      taskId: input.taskId,
+      expectedRevision: input.expectedRevision,
+      operation: "check_change",
+      idempotencyKey: input.idempotencyKey,
+      actor: input.actor,
+      requestDigest,
+    },
+    async () => {
   const preparation = StrongChangeCheckPreparationV1Schema.parse(
     await authority.prepareCheck(input),
   );
@@ -835,12 +871,18 @@ export async function executeStrongChangeCheckV1(
       impactBoundaryByUnitId.set(draft.id, impactBoundary.id);
     }
     if (matches.length > 1) {
+      for (const match of matches) {
+        if (match.expectation === "required_change") {
+          matchedRequired.add(match.plannedChangeId);
+        }
+      }
       const boundary = boundaryForAmbiguousMatch(taskId, draft.pathDelta.path, draft.id);
       if (!boundaryById.has(boundary.id)) {
         boundaries.push(boundary);
         boundaryById.set(boundary.id, boundary);
       }
       draft.boundaryIds.push(boundary.id);
+      draft.status = "unknown";
       findingDrafts.push({
         type: "cannot_determine",
         severity: "error",
@@ -1328,6 +1370,8 @@ export async function executeStrongChangeCheckV1(
   return StrongChangeCheckMutationOutcomeV1Schema.parse(
     await authority.commitCheck(commitRequest),
   );
+    },
+  );
 }
 
 function requestDigestForVerification(
@@ -1392,9 +1436,12 @@ export async function executeStrongVerificationRecordV1(
       idempotentReplay: true,
     });
   }
-  const recordedAt = authority.reserveOperationTime === undefined
+  const reserveOperationTime = authority.reserveOperationTime;
+  const reservedByAuthority = reserveOperationTime !== undefined;
+  const recordedAt = reserveOperationTime === undefined
     ? clock().toISOString()
-    : await authority.reserveOperationTime(
+    : await reserveOperationTime.call(
+        authority,
         {
           taskId: input.taskId,
           expectedRevision: input.expectedRevision,
@@ -1406,6 +1453,19 @@ export async function executeStrongVerificationRecordV1(
         },
         clock().toISOString(),
       );
+  return prepareReservedStrongOperationV1(
+    authority,
+    reservedByAuthority,
+    {
+      taskId: input.taskId,
+      expectedRevision: input.expectedRevision,
+      operation: "record_verification",
+      idempotencyKey: input.idempotencyKey,
+      actor: input.actor,
+      requestDigest,
+      fullInputEqualityTag: security.fullInputEqualityTag,
+    },
+    async () => {
   const preparation = StrongVerificationPreparationV1Schema.parse(
     await authority.prepareVerification(input, security),
   );
@@ -1578,5 +1638,7 @@ export async function executeStrongVerificationRecordV1(
   });
   return StrongVerificationMutationOutcomeV1Schema.parse(
     await authority.commitVerification(request),
+  );
+    },
   );
 }

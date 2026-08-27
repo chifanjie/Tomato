@@ -623,12 +623,10 @@ export class TaskEngine {
           requestDigest: internalDigest,
         },
       );
-      if (strongCreation !== undefined) {
-        await this.#store.completeStrongBaselineTransactionIntent(taskId).catch(() => {
-          // The committed Task is authoritative; a leftover marker remains
-          // recoverable and is cleaned by the next replay/startup pass.
-        });
-      }
+      // The baseline transaction envelope becomes the durable Provider locator
+      // for dirty-overlay baselines.  It must outlive Task creation so later
+      // Change checks never reconstruct private baseline bytes from a drifting
+      // worktree.
       // The durable creation intent is only cleared after the Task bundle is
       // the commit point.  If this process dies before that point, the next
       // identical request finds the marker and deterministically replays the

@@ -14,10 +14,17 @@ import {
   type ProviderRuntimeIpcStrongMutationRequestV1,
   type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
-import type {
-  ContentDigestV1,
-  DurableObjectIdentityProviderIdV1,
+import {
+  ContentDigestV1Schema,
+  type ContentDigestV1,
+  type DurableObjectIdentityProviderIdV1,
 } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  ProviderAcceptanceGenerationPinV1Schema,
+  ProviderAcceptanceStateEnvelopeV1Schema,
+  type ProviderAcceptanceGenerationPinV1,
+  type ProviderAcceptanceStateEnvelopeV1,
+} from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 
 declare const providerRuntimeStrongMutationAuthorityVerifierBrandV1:
   unique symbol;
@@ -71,7 +78,20 @@ export interface ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1 {
   readonly principalAttestation?: ProviderRuntimeIpcPrincipalAttestationV1;
 }
 
+export interface ProviderRuntimeFormalAcceptanceBindingInternalV1 {
+  readonly envelope: ProviderAcceptanceStateEnvelopeV1;
+  readonly pin: ProviderAcceptanceGenerationPinV1;
+}
+
 export interface MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input {
+  /**
+   * Lazy, authenticated root-authority read. It is deliberately retained only
+   * behind the opaque verifier and is never caller/path/env supplied.
+   */
+  readonly readCurrentFormalAcceptance?: () =>
+    | ProviderRuntimeFormalAcceptanceBindingInternalV1
+    | false
+    | Promise<ProviderRuntimeFormalAcceptanceBindingInternalV1 | false>;
   /**
    * Atomically validate and durably consume the external grant. The injected
    * authoritative store must reject replay across calls and process restarts;
@@ -93,11 +113,31 @@ export interface MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInt
   readonly resolveGrant?: (
     resolution: ProviderRuntimeStrongMutationAuthorityGrantResolutionInternalV1,
   ) => boolean | Promise<boolean>;
+  /** Read-only proof against the verified, append-ordered legacy broker history. */
+  readonly inspectLegacyOutcomeAuthority?: (
+    inspection: ProviderRuntimeStrongMutationLegacyOutcomeInspectionInternalV1,
+  ) =>
+    | ProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1
+    | false
+    | Promise<
+        ProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1 | false
+      >;
 }
 
 export interface ProviderRuntimeStrongMutationAuthorityGrantResolutionInternalV1 {
   readonly context: ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1;
   readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+}
+
+export interface ProviderRuntimeStrongMutationLegacyOutcomeInspectionInternalV1 {
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+  readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+}
+
+export interface ProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1 {
+  readonly intentOrdinal: number;
+  readonly firstIntentOrdinal: number;
+  readonly firstBindingDigest: ContentDigestV1;
 }
 
 interface ProviderRuntimeStrongMutationAuthorityVerifierStateInternalV1 {
@@ -106,6 +146,12 @@ interface ProviderRuntimeStrongMutationAuthorityVerifierStateInternalV1 {
   readonly pendingBindings: Set<ContentDigestV1>;
   readonly resolveGrant:
     | MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["resolveGrant"]
+    | undefined;
+  readonly inspectLegacyOutcomeAuthority:
+    | MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["inspectLegacyOutcomeAuthority"]
+    | undefined;
+  readonly readCurrentFormalAcceptance:
+    | MintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1Input["readCurrentFormalAcceptance"]
     | undefined;
 }
 
@@ -139,6 +185,14 @@ const executionAuthorizationStatesV1 = new WeakMap<
   object,
   ProviderRuntimeStrongMutationExecutionAuthorizationStateInternalV1
 >();
+
+function deepFreezeParsedJsonV1<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) deepFreezeParsedJsonV1(nested);
+  return Object.freeze(value);
+}
 
 function parseDecisionV1(
   value: boolean | ProviderRuntimeStrongMutationGrantDecisionInternalV1,
@@ -197,7 +251,11 @@ export function mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInte
 ): ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1 {
   if (
     typeof input.consumeGrant !== "function" ||
-    (input.resolveGrant !== undefined && typeof input.resolveGrant !== "function")
+    (input.resolveGrant !== undefined && typeof input.resolveGrant !== "function") ||
+    (input.inspectLegacyOutcomeAuthority !== undefined &&
+      typeof input.inspectLegacyOutcomeAuthority !== "function") ||
+    (input.readCurrentFormalAcceptance !== undefined &&
+      typeof input.readCurrentFormalAcceptance !== "function")
   ) {
     throw new TypeError("strong mutation authority verifier is invalid");
   }
@@ -207,8 +265,103 @@ export function mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInte
     consumeGrant: input.consumeGrant,
     pendingBindings: new Set(),
     resolveGrant: input.resolveGrant,
+    inspectLegacyOutcomeAuthority: input.inspectLegacyOutcomeAuthority,
+    readCurrentFormalAcceptance: input.readCurrentFormalAcceptance,
   });
   return capability;
+}
+
+/** Resolve a fresh formal Acceptance only through the registered root broker. */
+export async function resolveProviderRuntimeCurrentFormalAcceptanceInternalV1(
+  verifier:
+    ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+): Promise<ProviderRuntimeFormalAcceptanceBindingInternalV1 | undefined> {
+  const read = verifierStatesV1.get(verifier as object)
+    ?.readCurrentFormalAcceptance;
+  if (read === undefined) return undefined;
+  try {
+    const result = await read();
+    if (result === false) return undefined;
+    const envelope = ProviderAcceptanceStateEnvelopeV1Schema.parse(
+      structuredClone(result.envelope),
+    );
+    const pin = ProviderAcceptanceGenerationPinV1Schema.parse(
+      structuredClone(result.pin),
+    );
+    if (
+      pin.generationId !== envelope.generationId ||
+      pin.contentDigest !== envelope.contentDigest ||
+      pin.acceptanceOrdinal !== envelope.payload.acceptanceOrdinal
+    ) return undefined;
+    return Object.freeze({
+      envelope: deepFreezeParsedJsonV1(envelope),
+      pin: deepFreezeParsedJsonV1(pin),
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Distinguish an unavailable registered resolver from the older internal
+ * verifier seam that predates formal Acceptance reads. Production broker
+ * verifiers always register the resolver; a registered resolver returning no
+ * binding must therefore fail closed and must never fall back to reference
+ * Acceptance.
+ */
+export function hasProviderRuntimeCurrentFormalAcceptanceResolverInternalV1(
+  verifier:
+    ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+): boolean {
+  return verifierStatesV1.get(verifier as object)
+    ?.readCurrentFormalAcceptance !== undefined;
+}
+
+/** Read-only proof of one retained HEAD outcome against broker history. */
+export async function inspectProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1(
+  verifier:
+    ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+  inspection: ProviderRuntimeStrongMutationLegacyOutcomeInspectionInternalV1,
+): Promise<
+  ProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1 | undefined
+> {
+  const inspect = verifierStatesV1.get(verifier as object)
+    ?.inspectLegacyOutcomeAuthority;
+  if (inspect === undefined) return undefined;
+  let result:
+    | ProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1
+    | false;
+  try {
+    result = await inspect(Object.freeze({
+      request: ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        structuredClone(inspection.request),
+      ),
+      response: ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+        structuredClone(inspection.response),
+      ),
+    }));
+  } catch {
+    return undefined;
+  }
+  if (
+    result === false ||
+    !Number.isSafeInteger(result.intentOrdinal) ||
+    result.intentOrdinal < 1 ||
+    !Number.isSafeInteger(result.firstIntentOrdinal) ||
+    result.firstIntentOrdinal < 1 ||
+    result.firstIntentOrdinal > result.intentOrdinal
+  ) return undefined;
+  let firstBindingDigest: ContentDigestV1;
+  try {
+    firstBindingDigest = ContentDigestV1Schema.parse(result.firstBindingDigest);
+  } catch {
+    return undefined;
+  }
+  return Object.freeze({
+    intentOrdinal: result.intentOrdinal,
+    firstIntentOrdinal: result.firstIntentOrdinal,
+    firstBindingDigest,
+  });
 }
 
 /** Atomically consume a grant and mint a process-local, one-shot capability. */

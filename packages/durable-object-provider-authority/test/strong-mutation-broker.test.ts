@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -9,6 +9,9 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import * as publicAuthorityApi from "../src/index.js";
+import {
+  ProviderStrongMutationBrokerServerInternalV1,
+} from "../src/strong-mutation-broker-server-internal.js";
 import {
   PROVIDER_STRONG_MUTATION_NATIVE_EXACT_OBJECT_BLOCKER_INTERNAL_V1,
   registerProviderStrongMutationLinuxExt4ExecutionFenceInternalV1,
@@ -51,6 +54,10 @@ import {
 } from "./strong-mutation-broker-fixtures.js";
 
 const fixtureRoots = new Set<string>();
+const linuxRootIt = process.platform === "linux" &&
+    typeof process.geteuid === "function" && process.geteuid() === 0
+  ? it
+  : it.skip;
 const brokerVerifierByLayoutV1 = new WeakMap<object, Awaited<
   ReturnType<typeof strongMutationTrustVerifierV1>
 >>();
@@ -139,6 +146,45 @@ async function allFilesV1(root: string): Promise<readonly string[]> {
   };
   await visit(root);
   return output.sort();
+}
+
+async function directChildHoldingLeaseV1(path: string): Promise<number> {
+  const lease = await stat(path, { bigint: true });
+  for (const entry of await readdir("/proc", { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+    try {
+      const status = await readFile(`/proc/${entry.name}/status`, "utf8");
+      if (!new RegExp(`^PPid:\\s+${String(process.pid)}$`, "mu").test(status)) {
+        continue;
+      }
+      const descriptor = await stat(`/proc/${entry.name}/fd/3`, {
+        bigint: true,
+      });
+      if (descriptor.dev === lease.dev && descriptor.ino === lease.ino) {
+        return Number(entry.name);
+      }
+    } catch {
+      // The process may exit while /proc is inspected.
+    }
+  }
+  throw new Error("broker lease child absent");
+}
+
+async function waitForMissingV1(path: string): Promise<void> {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    try {
+      await stat(path);
+    } catch (error) {
+      if (
+        typeof error === "object" && error !== null && "code" in error &&
+        (error as { readonly code?: unknown }).code === "ENOENT"
+      ) return;
+      throw error;
+    }
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  throw new Error("broker listener remained after lease loss");
 }
 
 function expectPendingV1(result: Awaited<ReturnType<
@@ -420,6 +466,166 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await expect(
       inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
     ).resolves.toEqual(beforeReplay);
+  });
+
+  it("admits a new binding for the same logical nonce at capacity without a durable alias", async () => {
+    const { root, capability, current } = await fixtureV1();
+    const originalPrincipal = strongMutationPrincipalAttestationV1(
+      currentAcceptanceIdentityV1(current),
+    );
+    const originalRequest = strongMutationRequestV1(current, {
+      nonceDigit: "e",
+      body: "one globally bound logical request",
+      requestId: "1".repeat(32),
+      principalAttestation: originalPrincipal,
+    });
+    const replayPrincipal = strongMutationPrincipalAttestationV1(
+      currentAcceptanceIdentityV1(current),
+      {
+        claimsOverrides: {
+          challenge: "c".repeat(64),
+          connectionNonce: "d".repeat(64),
+          processId: 4343,
+        },
+      },
+    );
+    const replayRequest = strongMutationRequestV1(current, {
+      nonceDigit: "e",
+      body: "one globally bound logical request",
+      requestId: "2".repeat(32),
+      principalAttestation: replayPrincipal,
+    });
+    brokerVerifierByLayoutV1.set(
+      capability,
+      await strongMutationTrustVerifierV1((query) =>
+        strongMutationTrustEvidenceV1(query.acceptanceIdentity, {
+          principalAttestation:
+            query.principalAttestationDigest ===
+                replayRequest.principalAttestationDigest
+              ? replayPrincipal
+              : originalPrincipal,
+        })
+      ),
+    );
+    const limited = await openProviderStrongMutationBrokerStoreForTestInternalV1(
+      capability,
+      {
+        clock: testAuthorityClockV1,
+        testMaxIntentCount: 1,
+      } as Parameters<
+        typeof openProviderStrongMutationBrokerStoreForTestInternalV1
+      >[1] & { readonly testMaxIntentCount: number },
+    );
+    await limited.begin(originalRequest, originalPrincipal);
+    const snapshotPath = join(
+      root,
+      "runtime-state/private/provider-strong-mutation-broker-v1.snapshot.json",
+    );
+    const publicationPath = join(
+      root,
+      "runtime-state/private/provider-strong-mutation-broker-v1.publication.json",
+    );
+    const snapshotAtCapacity = await readFile(snapshotPath);
+    const publicationAtCapacity = await readFile(publicationPath);
+    expect(replayRequest.requestDigest).toBe(originalRequest.requestDigest);
+    expect(replayRequest.authorityGrant.grantId).not.toBe(
+      originalRequest.authorityGrant.grantId,
+    );
+    expect(replayRequest.bindingDigest).not.toBe(
+      originalRequest.bindingDigest,
+    );
+
+    const replay = await limited.begin(replayRequest, replayPrincipal);
+    expect(replay).toMatchObject({
+      resolution: "recorded",
+      disposition: "created",
+      intent: {
+        state: "pending",
+        request: replayRequest,
+        bindingDigest: replayRequest.bindingDigest,
+        requestDigest: originalRequest.requestDigest,
+      },
+    });
+    if (replay.resolution !== "recorded") {
+      throw new Error("expected transient logical replay");
+    }
+    expect(await readFile(snapshotPath)).toEqual(snapshotAtCapacity);
+    expect(await readFile(publicationPath)).toEqual(publicationAtCapacity);
+
+    const response = strongMutationResponseV1(replayRequest);
+    await expect(limited.resolve(
+      brokerResolveRequestV1(replay.intent, response),
+    )).resolves.toMatchObject({
+      resolution: "resolved",
+      disposition: "created",
+      intent: {
+        state: "resolved",
+        request: replayRequest,
+        response,
+      },
+    });
+    await expect(limited.begin(replayRequest)).resolves.toMatchObject({
+      resolution: "recorded",
+      disposition: "replayed",
+      intent: { state: "resolved", response },
+    });
+    expect(await readFile(snapshotPath)).toEqual(snapshotAtCapacity);
+    expect(await readFile(publicationPath)).toEqual(publicationAtCapacity);
+
+    const reopened = await openProviderStrongMutationBrokerStoreForTestInternalV1(
+      capability,
+      {
+        clock: testAuthorityClockV1,
+        testMaxIntentCount: 1,
+      } as Parameters<
+        typeof openProviderStrongMutationBrokerStoreForTestInternalV1
+      >[1] & { readonly testMaxIntentCount: number },
+    );
+    const rebuilt = await reopened.begin(replayRequest, replayPrincipal);
+    expect(rebuilt).toMatchObject({
+      resolution: "recorded",
+      disposition: "created",
+      intent: { state: "pending", request: replayRequest },
+    });
+    if (rebuilt.resolution !== "recorded") {
+      throw new Error("expected rebuilt transient logical replay");
+    }
+    await expect(reopened.resolve(
+      brokerResolveRequestV1(rebuilt.intent, response),
+    )).resolves.toMatchObject({
+      resolution: "resolved",
+      disposition: "created",
+      intent: { state: "resolved", request: replayRequest, response },
+    });
+    await expect(reopened.begin(replayRequest, replayPrincipal))
+      .resolves.toMatchObject({
+        resolution: "recorded",
+        disposition: "replayed",
+        intent: { state: "resolved", response },
+      });
+    expect(await readFile(snapshotPath)).toEqual(snapshotAtCapacity);
+    expect(await readFile(publicationPath)).toEqual(publicationAtCapacity);
+
+    const conflictingRequest = strongMutationRequestV1(current, {
+      nonceDigit: "e",
+      body: "different request must not consume capacity or persist",
+      requestId: "3".repeat(32),
+      principalAttestation: replayPrincipal,
+    });
+    expect(conflictingRequest.requestDigest).not.toBe(
+      originalRequest.requestDigest,
+    );
+    await expect(
+      reopened.begin(conflictingRequest, replayPrincipal),
+    ).resolves.toMatchObject({
+      resolution: "request_rejected",
+      reason: "grant_request_mismatch",
+    });
+    expect(await readFile(snapshotPath)).toEqual(snapshotAtCapacity);
+    expect(await readFile(publicationPath)).toEqual(publicationAtCapacity);
+    await expect(
+      inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
+    ).resolves.toMatchObject({ intentCount: 1, pendingCount: 1 });
   });
 
   it("resolves and replays an exact G1 pending intent after Acceptance advances to G2 while the execution fence remains unestablished", async () => {
@@ -864,6 +1070,80 @@ describe("execution-fenced production strong-mutation session", () => {
       },
     });
     expect(nativeRevalidationCount).toBeGreaterThan(0);
+  });
+
+  linuxRootIt("fails closed and restarts when the broker lease process is killed", async () => {
+    const { root, capability, current } = await fixtureV1();
+    const acceptanceIdentity = currentAcceptanceIdentityV1(current);
+    const principalAttestation =
+      strongMutationPrincipalAttestationV1(acceptanceIdentity);
+    const request = strongMutationRequestV1(current, { principalAttestation });
+    const grant = request.authorityGrant.payload;
+    const executionFence =
+      registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
+        profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
+        providerId: grant.providerId,
+        targetProfileId: grant.targetProfileId,
+        targetFingerprintDigest: grant.targetFingerprintDigest,
+        capabilityDigest: grant.capabilityDigest,
+        installationIdentityGenerationId:
+          grant.acceptanceIdentity.installationIdentityGenerationId,
+        principal: {
+          uid: 501,
+          gid: 20,
+          handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+        },
+        revalidateExactObjectAuthority() {
+          return true;
+        },
+      });
+    const broker =
+      await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        await strongMutationTrustVerifierV1(),
+        executionFence,
+        { clock: testAuthorityClockV1 },
+      );
+    const socketPath = join(root, "broker-lease-loss.sock");
+    const leasePath = join(root, "broker-lease-loss.lock");
+    expect((await stat(root)).mode & 0o777).toBe(0o700);
+    const createServerV1 = () =>
+      new ProviderStrongMutationBrokerServerInternalV1({
+        socketPath,
+        leasePath,
+        expectedRuntimeUid: process.geteuid!(),
+        expectedRuntimeGid: process.getegid!(),
+        broker,
+      });
+    await chmod(root, 0o755);
+    const unsafeRootServer = createServerV1();
+    try {
+      await expect(unsafeRootServer.start()).rejects.toThrow(
+        "strong mutation broker lease root is invalid",
+      );
+    } finally {
+      await unsafeRootServer.close().catch(() => undefined);
+      await chmod(root, 0o700);
+    }
+    const server = createServerV1();
+    let restarted: ProviderStrongMutationBrokerServerInternalV1 | undefined;
+    try {
+      await server.start();
+      expect((await stat(socketPath)).isSocket()).toBe(true);
+      const leasePid = await directChildHoldingLeaseV1(leasePath);
+      process.kill(leasePid, "SIGKILL");
+      await waitForMissingV1(socketPath);
+      // close() joins the persistent close observation even though SIGKILL may
+      // already have populated signalCode and emitted close.
+      await server.close();
+
+      restarted = createServerV1();
+      await restarted.start();
+      expect((await stat(socketPath)).isSocket()).toBe(true);
+    } finally {
+      await restarted?.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    }
   });
 
   it("rejects omitted, tampered, and replayed live principal transcripts", async () => {

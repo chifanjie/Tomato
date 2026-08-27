@@ -238,6 +238,26 @@ interface PreparedTaskBundle {
   contextual: boolean;
 }
 
+type StrongOperationIntentOperationV1 =
+  | "check_change"
+  | "record_verification";
+
+export interface StrongOperationExactObjectDescriptorV1 {
+  readonly role: "projection" | "owner_detail";
+  readonly providerId: string;
+  readonly contentDigest: ContentDigest;
+  readonly logicalBytes: number;
+  readonly operationNonce: string;
+}
+
+export interface StrongOperationProviderObjectBindingV1 {
+  readonly profile: "strong_operation_provider_object_binding_v1";
+  readonly phase: "strong_change_check_v1" | "strong_verification_v1";
+  readonly projection: StrongOperationExactObjectDescriptorV1;
+  readonly ownerDetail: StrongOperationExactObjectDescriptorV1 | "none";
+  readonly compareArtifacts: Readonly<Record<string, JsonValue>>;
+}
+
 interface TaskTransactionBytesV1 {
   contentBase64: string;
   contentDigest: ContentDigest;
@@ -1019,6 +1039,381 @@ export class ArtifactStore {
     return IsoTimestampSchema.parse(this.#clock().toISOString());
   }
 
+  #strongOperationIntentPath(
+    taskId: string,
+    expectedRevision: number,
+    operation: "check_change" | "record_verification",
+  ): string {
+    const cut = sha256CanonicalJson([
+      "strong-operation-intent-cut-v1",
+      { taskId, expectedRevision, operation },
+    ]).slice("sha256:".length, "sha256:".length + 32);
+    return path.join(
+      this.layout.worktreeRoot,
+      `.understand-code/.recovery/strong-operation-intents/${taskId}`,
+      `${cut}.json`,
+    );
+  }
+
+  async #readStrongOperationIntentMarker(
+    targetPath: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    let value: unknown;
+    try {
+      value = await readManagedJson(this.layout.worktreeRoot, targetPath);
+    } catch (error) {
+      if (
+        (error instanceof ArtifactStoreError &&
+          error.code === "artifact_not_found") ||
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) return undefined;
+      throw error;
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Strong operation intent marker is invalid.",
+      );
+    }
+    return value as Record<string, unknown>;
+  }
+
+  #assertStrongOperationMarkerShape(
+    marker: Record<string, unknown>,
+    identity: Readonly<{
+      taskId: string;
+      expectedRevision: number;
+      operation: StrongOperationIntentOperationV1;
+    }>,
+  ): void {
+    try {
+      const state = marker.state;
+      const expectedKeys = [
+        "schemaVersion",
+        "profile",
+        "state",
+        "taskId",
+        "expectedRevision",
+        "operation",
+        "idempotencyKey",
+        "actor",
+        "requestDigest",
+        "occurredAt",
+        ...(marker.fullInputEqualityTag === undefined
+          ? []
+          : ["fullInputEqualityTag"]),
+        ...(state === "active"
+          ? [
+              "providerExpectedRevision",
+              "providerRevisionAttemptCount",
+              "providerObjectBinding",
+            ]
+          : []),
+      ].sort();
+      const actualKeys = Object.keys(marker).sort();
+      if (
+        marker.schemaVersion !== 3 ||
+        marker.profile !== "strong_operation_intent_v1" ||
+        (state !== "reserved" && state !== "active") ||
+        actualKeys.length !== expectedKeys.length ||
+        actualKeys.some((key, index) => key !== expectedKeys[index]) ||
+        marker.taskId !== identity.taskId ||
+        marker.expectedRevision !== identity.expectedRevision ||
+        marker.operation !== identity.operation ||
+        typeof marker.occurredAt !== "string" ||
+        typeof marker.idempotencyKey !== "string" ||
+        typeof marker.actor !== "string" ||
+        typeof marker.requestDigest !== "string" ||
+        (marker.fullInputEqualityTag !== undefined &&
+          typeof marker.fullInputEqualityTag !== "string")
+      ) throw new Error("invalid marker");
+      IsoTimestampSchema.parse(marker.occurredAt);
+      IdempotencyKeySchema.parse(marker.idempotencyKey);
+      ActorSchema.parse(marker.actor);
+      ContentDigestSchema.parse(marker.requestDigest);
+      if (marker.fullInputEqualityTag !== undefined) {
+        KeyedStateTokenV1Schema.parse(marker.fullInputEqualityTag);
+      }
+      if (state === "active") {
+        if (
+          !Number.isSafeInteger(marker.providerExpectedRevision) ||
+          (marker.providerExpectedRevision as number) < 0 ||
+          !Number.isSafeInteger(marker.providerRevisionAttemptCount) ||
+          (marker.providerRevisionAttemptCount as number) < 0 ||
+          (marker.providerRevisionAttemptCount as number) > 8
+        ) throw new Error("invalid Provider revision binding");
+        this.#assertStrongOperationProviderObjectBinding(
+          marker.providerObjectBinding,
+          marker,
+        );
+      }
+    } catch (error) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Strong operation intent marker has an unsupported or invalid shape.",
+        { taskId: identity.taskId, operation: identity.operation },
+        { cause: error },
+      );
+    }
+  }
+
+  #assertStrongOperationProviderObjectBinding(
+    value: unknown,
+    marker: Record<string, unknown>,
+  ): asserts value is StrongOperationProviderObjectBindingV1 {
+    const exactKeys = (
+      candidate: Record<string, unknown>,
+      expected: readonly string[],
+    ): boolean => {
+      const actual = Object.keys(candidate).sort();
+      const sortedExpected = [...expected].sort();
+      return actual.length === sortedExpected.length &&
+        actual.every((key, index) => key === sortedExpected[index]);
+    };
+    const parseDescriptor = (
+      candidateValue: unknown,
+      role: "projection" | "owner_detail",
+    ): StrongOperationExactObjectDescriptorV1 => {
+      if (
+        typeof candidateValue !== "object" || candidateValue === null ||
+        Array.isArray(candidateValue)
+      ) throw new Error("invalid exact-object descriptor");
+      const candidate = candidateValue as Record<string, unknown>;
+      if (
+        !exactKeys(candidate, [
+          "role",
+          "providerId",
+          "contentDigest",
+          "logicalBytes",
+          "operationNonce",
+        ]) ||
+        candidate.role !== role ||
+        typeof candidate.providerId !== "string" ||
+        candidate.providerId.length === 0 ||
+        !Number.isSafeInteger(candidate.logicalBytes) ||
+        (candidate.logicalBytes as number) < 0 ||
+        typeof candidate.operationNonce !== "string" ||
+        !/^[0-9a-f]{32}$/u.test(candidate.operationNonce)
+      ) throw new Error("invalid exact-object descriptor");
+      return {
+        role,
+        providerId: candidate.providerId,
+        contentDigest: ContentDigestSchema.parse(candidate.contentDigest),
+        logicalBytes: candidate.logicalBytes as number,
+        operationNonce: candidate.operationNonce,
+      };
+    };
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error("invalid Provider object binding");
+    }
+    const binding = value as Record<string, unknown>;
+    if (
+      !exactKeys(binding, [
+        "profile",
+        "phase",
+        "projection",
+        "ownerDetail",
+        "compareArtifacts",
+      ]) ||
+      binding.profile !== "strong_operation_provider_object_binding_v1" ||
+      (binding.phase !== "strong_change_check_v1" &&
+        binding.phase !== "strong_verification_v1") ||
+      (marker.operation === "check_change") !==
+        (binding.phase === "strong_change_check_v1") ||
+      typeof binding.compareArtifacts !== "object" ||
+      binding.compareArtifacts === null ||
+      Array.isArray(binding.compareArtifacts)
+    ) throw new Error("invalid Provider object binding");
+    const projection = parseDescriptor(binding.projection, "projection");
+    const ownerDetail = binding.ownerDetail === "none"
+      ? "none"
+      : parseDescriptor(binding.ownerDetail, "owner_detail");
+    const compareArtifacts = binding.compareArtifacts as Record<string, unknown>;
+    canonicalizeJson(compareArtifacts);
+    if (
+      compareArtifacts.projectionProviderId !== projection.providerId ||
+      compareArtifacts.projectionContentDigest !== projection.contentDigest ||
+      compareArtifacts.projectionLogicalBytes !== projection.logicalBytes ||
+      compareArtifacts.requestDigest !== marker.requestDigest ||
+      compareArtifacts.idempotencyKey !== marker.idempotencyKey ||
+      compareArtifacts.taskExpectedRevision !== marker.expectedRevision ||
+      (ownerDetail === "none"
+        ? Object.prototype.hasOwnProperty.call(
+            compareArtifacts,
+            "ownerDetailProviderId",
+          ) ||
+          Object.prototype.hasOwnProperty.call(
+            compareArtifacts,
+            "ownerDetailContentDigest",
+          ) ||
+          Object.prototype.hasOwnProperty.call(
+            compareArtifacts,
+            "ownerDetailLogicalBytes",
+          )
+        : compareArtifacts.ownerDetailProviderId !== ownerDetail.providerId ||
+          compareArtifacts.ownerDetailContentDigest !==
+            ownerDetail.contentDigest ||
+          compareArtifacts.ownerDetailLogicalBytes !== ownerDetail.logicalBytes)
+    ) throw new Error("Provider object binding is internally inconsistent");
+  }
+
+  #strongOperationMarkerIsActive(marker: Record<string, unknown>): boolean {
+    return marker.state === "active";
+  }
+
+  async #assertStrongOperationTaskRevisionLocked(
+    taskId: string,
+    expectedRevision: number,
+  ): Promise<void> {
+    const manifest = await this.#readManifestRaw();
+    const descriptor = manifest.artifacts.find(
+      (candidate) =>
+        candidate.artifactType === "task_manifest" &&
+        candidate.taskId === taskId,
+    );
+    if (descriptor === undefined || descriptor.revision !== expectedRevision) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Strong operation Task revision changed before Provider activation.",
+        {
+          taskId,
+          expectedRevision,
+          observedRevision: descriptor?.revision,
+        },
+      );
+    }
+    const taskPath = this.layout.artifact("task_manifest", { taskId });
+    const currentTask = await this.#readArtifactPath(taskPath);
+    if (
+      currentTask.artifactType !== "task_manifest" ||
+      currentTask.payload.taskId !== taskId ||
+      currentTask.payload.revision !== expectedRevision
+    ) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "Strong operation Task revision is not the exact published revision.",
+        { taskId, expectedRevision },
+      );
+    }
+    await this.#requirePublishedDescriptor(currentTask, taskPath, manifest);
+  }
+
+  async #assertStrongOperationPersistenceOwnership(
+    prepared: PreparedTaskBundle,
+    expectedRevision: number,
+    idempotency: StoreIdempotencyControl,
+  ): Promise<void> {
+    const active: Array<{
+      operation: "check_change" | "record_verification";
+      marker: Record<string, unknown>;
+    }> = [];
+    for (const operation of [
+      "check_change",
+      "record_verification",
+    ] as const) {
+      const marker = await this.#readStrongOperationIntentMarker(
+        this.#strongOperationIntentPath(
+          prepared.taskId,
+          expectedRevision,
+          operation,
+        ),
+      );
+      if (marker === undefined) continue;
+      this.#assertStrongOperationMarkerShape(marker, {
+        taskId: prepared.taskId,
+        expectedRevision,
+        operation,
+      });
+      if (this.#strongOperationMarkerIsActive(marker)) {
+        active.push({ operation, marker });
+      }
+    }
+    if (active.length === 0) return;
+    if (active.length !== 1) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "More than one strong operation owns the same Task revision.",
+        { taskId: prepared.taskId, expectedRevision },
+      );
+    }
+    const owner = active[0]!;
+    const journal = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "task_operation_journal",
+    );
+    const record = prepared.bundle.idempotencyRecords.at(-1);
+    const receipt = journal?.artifactType === "task_operation_journal"
+      ? journal.payload.receipts.at(-1)
+      : undefined;
+    const event = prepared.bundle.events.at(-1);
+    const marker = owner.marker;
+    const eventRecord = event as unknown as Record<string, unknown> | undefined;
+    const strongOutcome = receipt === undefined ||
+        typeof receipt.result !== "object" || receipt.result === null
+      ? undefined
+      : (receipt.result as unknown as Record<string, unknown>).strongOutcome;
+    if (
+      idempotency.scope?.kind !== "task" ||
+      idempotency.scope.taskId !== prepared.taskId ||
+      idempotency.key !== marker.idempotencyKey ||
+      idempotency.actor !== marker.actor ||
+      idempotency.requestDigest !== marker.requestDigest ||
+      journal?.artifactType !== "task_operation_journal" ||
+      record === undefined || receipt === undefined || event === undefined ||
+      record.scope.kind !== "task" || record.scope.taskId !== prepared.taskId ||
+      record.idempotencyKey !== marker.idempotencyKey ||
+      record.actor !== marker.actor ||
+      record.requestDigest !== marker.requestDigest ||
+      record.resultRevision !== expectedRevision + 1 ||
+      record.createdAt !== marker.occurredAt ||
+      receipt.operation !== owner.operation ||
+      receipt.eventId !== record.eventId ||
+      event.eventId !== record.eventId ||
+      eventRecord?.occurredAt !== marker.occurredAt ||
+      eventRecord?.actor !== marker.actor ||
+      eventRecord?.idempotencyKey !== marker.idempotencyKey ||
+      eventRecord?.requestDigest !== marker.requestDigest ||
+      strongOutcome === undefined
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "An active strong operation owns this Task revision.",
+        {
+          taskId: prepared.taskId,
+          expectedRevision,
+          operation: owner.operation,
+        },
+      );
+    }
+    const providerObjectBinding = marker.providerObjectBinding as
+      StrongOperationProviderObjectBindingV1;
+    const canonicalProjection = {
+      profile: "strong_canonical_task_projection_v1",
+      operation: owner.operation,
+      requestDigest: marker.requestDigest,
+      bundle: prepared.bundle,
+      artifacts: prepared.artifacts,
+      receipts: journal.payload.receipts,
+      outcome: strongOutcome,
+    };
+    const canonicalProjectionBytes = canonicalizeJson(canonicalProjection);
+    if (
+      providerObjectBinding.projection.contentDigest !==
+        sha256Bytes(canonicalProjectionBytes) ||
+      providerObjectBinding.projection.logicalBytes !==
+        Buffer.byteLength(canonicalProjectionBytes, "utf8")
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Task persistence does not match the active Provider projection.",
+        {
+          taskId: prepared.taskId,
+          expectedRevision,
+          operation: owner.operation,
+        },
+      );
+    }
+  }
+
   /**
    * Marker-first reservation for strong mutations. The cut identity excludes
    * the idempotency key so a second key cannot create an orphan Provider blob
@@ -1027,11 +1422,11 @@ export class ArtifactStore {
   async reserveStrongOperationIntent(inputValue: Readonly<{
     taskId: string;
     expectedRevision: number;
-    operation: "check_change" | "record_verification";
+    operation: StrongOperationIntentOperationV1;
     idempotencyKey: string;
     actor: string;
     proposedAt: string;
-    requestDigest?: string;
+    requestDigest: string;
     fullInputEqualityTag?: string;
   }>): Promise<string> {
     const input = {
@@ -1041,9 +1436,7 @@ export class ArtifactStore {
       idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
       actor: ActorSchema.parse(inputValue.actor),
       proposedAt: IsoTimestampSchema.parse(inputValue.proposedAt),
-      ...(inputValue.requestDigest === undefined
-        ? {}
-        : { requestDigest: ContentDigestSchema.parse(inputValue.requestDigest) }),
+      requestDigest: ContentDigestSchema.parse(inputValue.requestDigest),
       ...(inputValue.fullInputEqualityTag === undefined
         ? {}
         : {
@@ -1090,30 +1483,27 @@ export class ArtifactStore {
             throw new ArtifactStoreError("artifact_corrupt", "Strong operation intent marker is invalid.");
           }
           const marker = existing as Record<string, unknown>;
+          this.#assertStrongOperationMarkerShape(marker, input);
           if (
-            marker.profile !== "strong_operation_intent_v1" ||
-            marker.taskId !== input.taskId ||
-            marker.expectedRevision !== input.expectedRevision ||
-            marker.operation !== input.operation ||
             marker.idempotencyKey !== input.idempotencyKey ||
             marker.actor !== input.actor ||
-            (input.requestDigest !== undefined && marker.requestDigest !== input.requestDigest) ||
-            (input.fullInputEqualityTag !== undefined &&
-              marker.fullInputEqualityTag !== input.fullInputEqualityTag) ||
-            typeof marker.occurredAt !== "string"
+            marker.requestDigest !== input.requestDigest ||
+            marker.fullInputEqualityTag !== input.fullInputEqualityTag
           ) {
             throw new ArtifactStoreError("idempotency_conflict", "A different strong request already owns this Task cut.");
           }
           return IsoTimestampSchema.parse(marker.occurredAt);
         }
         const marker = {
+          schemaVersion: 3,
           profile: "strong_operation_intent_v1",
+          state: "reserved",
           taskId: input.taskId,
           expectedRevision: input.expectedRevision,
           operation: input.operation,
           idempotencyKey: input.idempotencyKey,
           actor: input.actor,
-          ...(input.requestDigest === undefined ? {} : { requestDigest: input.requestDigest }),
+          requestDigest: input.requestDigest,
           ...(input.fullInputEqualityTag === undefined
             ? {}
             : { fullInputEqualityTag: input.fullInputEqualityTag }),
@@ -1121,6 +1511,325 @@ export class ArtifactStore {
         };
         await atomicWriteJson(this.layout.worktreeRoot, targetPath, marker, { mode: 0o600 });
         return input.proposedAt;
+      },
+      this.#lockOptions,
+    );
+  }
+
+  /** Delete only the byte-identical pre-Provider reservation. */
+  async abortReservedStrongOperationIntent(inputValue: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: StrongOperationIntentOperationV1;
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: string;
+    fullInputEqualityTag?: string;
+  }>): Promise<boolean> {
+    const input = {
+      taskId: TaskIdSchema.parse(inputValue.taskId),
+      expectedRevision: inputValue.expectedRevision,
+      operation: inputValue.operation,
+      idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
+      actor: ActorSchema.parse(inputValue.actor),
+      requestDigest: ContentDigestSchema.parse(inputValue.requestDigest),
+      ...(inputValue.fullInputEqualityTag === undefined
+        ? {}
+        : {
+            fullInputEqualityTag: KeyedStateTokenV1Schema.parse(
+              inputValue.fullInputEqualityTag,
+            ),
+          }),
+    };
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Strong operation abort revision is invalid.",
+      );
+    }
+    const targetPath = this.#strongOperationIntentPath(
+      input.taskId,
+      input.expectedRevision,
+      input.operation,
+    );
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(input.taskId),
+      async () => {
+        const marker = await this.#readStrongOperationIntentMarker(targetPath);
+        if (marker === undefined) return false;
+        this.#assertStrongOperationMarkerShape(marker, input);
+        if (
+          marker.idempotencyKey !== input.idempotencyKey ||
+          marker.actor !== input.actor ||
+          marker.requestDigest !== input.requestDigest ||
+          marker.fullInputEqualityTag !== input.fullInputEqualityTag
+        ) {
+          throw new ArtifactStoreError(
+            "idempotency_conflict",
+            "Strong operation abort does not match the complete reserved cut.",
+          );
+        }
+        if (this.#strongOperationMarkerIsActive(marker)) return false;
+        await this.#durablyUnlinkManagedFile(targetPath);
+        return true;
+      },
+      this.#lockOptions,
+    );
+  }
+
+  /**
+   * Persist the Provider journal basis before the first Provider mutation for
+   * a strong Task cut.  A retained basis wins over a later observation so a
+   * crash after Provider commit can replay the exact compare request.
+   */
+  async resolveStrongOperationProviderRevision(inputValue: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: StrongOperationIntentOperationV1;
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: string;
+    fullInputEqualityTag?: string;
+    observedProviderRevision: number;
+    providerObjectBinding: StrongOperationProviderObjectBindingV1;
+  }>): Promise<number> {
+    const input = {
+      taskId: TaskIdSchema.parse(inputValue.taskId),
+      expectedRevision: inputValue.expectedRevision,
+      operation: inputValue.operation,
+      idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
+      actor: ActorSchema.parse(inputValue.actor),
+      requestDigest: ContentDigestSchema.parse(inputValue.requestDigest),
+      ...(inputValue.fullInputEqualityTag === undefined
+        ? {}
+        : {
+            fullInputEqualityTag: KeyedStateTokenV1Schema.parse(
+              inputValue.fullInputEqualityTag,
+            ),
+          }),
+      observedProviderRevision: inputValue.observedProviderRevision,
+      providerObjectBinding: inputValue.providerObjectBinding,
+    };
+    if (
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 0 ||
+      !Number.isSafeInteger(input.observedProviderRevision) ||
+      input.observedProviderRevision < 0
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Strong operation Provider revision is invalid.",
+      );
+    }
+    const cut = sha256CanonicalJson([
+      "strong-operation-intent-cut-v1",
+      {
+        taskId: input.taskId,
+        expectedRevision: input.expectedRevision,
+        operation: input.operation,
+      },
+    ]).slice("sha256:".length, "sha256:".length + 32);
+    const relativeDirectory =
+      `.understand-code/.recovery/strong-operation-intents/${input.taskId}`;
+    const targetPath = path.join(
+      this.layout.worktreeRoot,
+      relativeDirectory,
+      `${cut}.json`,
+    );
+    await ensureManagedDirectory(this.layout.worktreeRoot, relativeDirectory);
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(input.taskId),
+      async () => withStoreLock(
+        this.layout.worktreeRoot,
+        this.layout.repositoryLock,
+        async () => {
+          await this.#recoverPendingTaskTransactions();
+          const marker = await this.#readStrongOperationIntentMarker(targetPath);
+          if (marker === undefined) {
+            throw new ArtifactStoreError(
+              "artifact_corrupt",
+              "Strong operation intent must be reserved before binding its Provider revision.",
+            );
+          }
+          this.#assertStrongOperationMarkerShape(marker, input);
+          if (
+            marker.idempotencyKey !== input.idempotencyKey ||
+            marker.actor !== input.actor ||
+            marker.requestDigest !== input.requestDigest ||
+            marker.fullInputEqualityTag !== input.fullInputEqualityTag
+          ) {
+            throw new ArtifactStoreError(
+              "idempotency_conflict",
+              "Strong operation Provider revision binding does not match its complete Task cut.",
+            );
+          }
+          this.#assertStrongOperationProviderObjectBinding(
+            input.providerObjectBinding,
+            marker,
+          );
+          if (this.#strongOperationMarkerIsActive(marker)) {
+            if (
+              canonicalizeJson(marker.providerObjectBinding) !==
+                canonicalizeJson(input.providerObjectBinding)
+            ) {
+              throw new ArtifactStoreError(
+                "idempotency_conflict",
+                "Strong operation exact-object identity changed after Provider activation.",
+              );
+            }
+            return marker.providerExpectedRevision as number;
+          }
+          await this.#assertStrongOperationTaskRevisionLocked(
+            input.taskId,
+            input.expectedRevision,
+          );
+          const activeMarker = {
+            ...marker,
+            state: "active",
+            providerExpectedRevision: input.observedProviderRevision,
+            providerRevisionAttemptCount: 0,
+            providerObjectBinding: input.providerObjectBinding,
+          };
+          this.#assertStrongOperationMarkerShape(activeMarker, input);
+          await atomicWriteJson(
+            this.layout.worktreeRoot,
+            targetPath,
+            activeMarker,
+            { mode: 0o600 },
+          );
+          return input.observedProviderRevision;
+        },
+        this.#lockOptions,
+      ),
+      this.#lockOptions,
+    );
+  }
+
+  /** Advance a previously bound Provider CAS basis only after a stale result. */
+  async advanceStrongOperationProviderRevision(inputValue: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: StrongOperationIntentOperationV1;
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: string;
+    fullInputEqualityTag?: string;
+    attemptedProviderRevision: number;
+    observedProviderRevision: number;
+  }>): Promise<number> {
+    const input = {
+      taskId: TaskIdSchema.parse(inputValue.taskId),
+      expectedRevision: inputValue.expectedRevision,
+      operation: inputValue.operation,
+      idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
+      actor: ActorSchema.parse(inputValue.actor),
+      requestDigest: ContentDigestSchema.parse(inputValue.requestDigest),
+      ...(inputValue.fullInputEqualityTag === undefined
+        ? {}
+        : {
+            fullInputEqualityTag: KeyedStateTokenV1Schema.parse(
+              inputValue.fullInputEqualityTag,
+            ),
+          }),
+      attemptedProviderRevision: inputValue.attemptedProviderRevision,
+      observedProviderRevision: inputValue.observedProviderRevision,
+    };
+    if (
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 0 ||
+      !Number.isSafeInteger(input.attemptedProviderRevision) ||
+      input.attemptedProviderRevision < 0 ||
+      !Number.isSafeInteger(input.observedProviderRevision) ||
+      input.observedProviderRevision <= input.attemptedProviderRevision
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Strong operation stale Provider revision advance is invalid.",
+      );
+    }
+    const cut = sha256CanonicalJson([
+      "strong-operation-intent-cut-v1",
+      {
+        taskId: input.taskId,
+        expectedRevision: input.expectedRevision,
+        operation: input.operation,
+      },
+    ]).slice("sha256:".length, "sha256:".length + 32);
+    const targetPath = path.join(
+      this.layout.worktreeRoot,
+      `.understand-code/.recovery/strong-operation-intents/${input.taskId}`,
+      `${cut}.json`,
+    );
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      this.layout.taskLock(input.taskId),
+      async () => {
+        let marker: Record<string, unknown>;
+        try {
+          const value = await readManagedJson(
+            this.layout.worktreeRoot,
+            targetPath,
+          );
+          if (
+            typeof value !== "object" || value === null ||
+            Array.isArray(value)
+          ) throw new Error("invalid marker");
+          marker = value as Record<string, unknown>;
+        } catch (error) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "Strong operation Provider revision binding is unavailable.",
+            undefined,
+            { cause: error },
+          );
+        }
+        const attempts = marker.providerRevisionAttemptCount;
+        const retainedProviderRevision = marker.providerExpectedRevision;
+        this.#assertStrongOperationMarkerShape(marker, input);
+        if (
+          !this.#strongOperationMarkerIsActive(marker) ||
+          marker.idempotencyKey !== input.idempotencyKey ||
+          marker.actor !== input.actor ||
+          marker.requestDigest !== input.requestDigest ||
+          marker.fullInputEqualityTag !== input.fullInputEqualityTag ||
+          !Number.isSafeInteger(retainedProviderRevision) ||
+          (retainedProviderRevision as number) < 0 ||
+          !Number.isSafeInteger(attempts) || (attempts as number) < 0 ||
+          (attempts as number) > 8
+        ) {
+          throw new ArtifactStoreError(
+            "idempotency_conflict",
+            "Strong operation stale Provider revision does not match its complete retained cut.",
+          );
+        }
+        if (retainedProviderRevision !== input.attemptedProviderRevision) {
+          if ((retainedProviderRevision as number) > input.attemptedProviderRevision) {
+            return retainedProviderRevision as number;
+          }
+          throw new ArtifactStoreError(
+            "idempotency_conflict",
+            "Strong operation stale Provider revision regressed behind its attempted cut.",
+          );
+        }
+        if ((attempts as number) >= 8) {
+          throw new ArtifactStoreError(
+            "revision_conflict",
+            "Strong operation exceeded its bounded Provider stale retry budget.",
+          );
+        }
+        await atomicWriteJson(
+          this.layout.worktreeRoot,
+          targetPath,
+          {
+            ...marker,
+            providerExpectedRevision: input.observedProviderRevision,
+            providerRevisionAttemptCount: (attempts as number) + 1,
+          },
+          { mode: 0o600 },
+        );
+        return input.observedProviderRevision;
       },
       this.#lockOptions,
     );
@@ -1355,7 +2064,10 @@ export class ArtifactStore {
           }
           return { markerContentDigest, markerRelativePath, marker };
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          if (
+            (error as NodeJS.ErrnoException).code !== "ENOENT" &&
+            !(error instanceof ArtifactStoreError && error.code === "artifact_not_found")
+          ) throw error;
         }
         // The native SafeGit lease gate pins the exact canonical marker bytes
         // (including their digest) through a descriptor-relative handle.  Keep
@@ -1399,7 +2111,10 @@ export class ArtifactStore {
     try {
       marker = await readManagedJson(this.layout.worktreeRoot, targetPath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if (
+        (error as NodeJS.ErrnoException).code === "ENOENT" ||
+        (error instanceof ArtifactStoreError && error.code === "artifact_not_found")
+      ) return undefined;
       throw error;
     }
     if (
@@ -2750,12 +3465,19 @@ export class ArtifactStore {
         );
       }
     }
+    const checkEvidenceIds = new Set([
+      ...findings.flatMap((finding) => finding.evidenceIds),
+      ...("analysis" in candidateCheck.payload
+        ? candidateCheck.payload.analysis.completeness.dimensions.flatMap(
+            (dimension) => [
+              ...dimension.boundaryEvidenceIds,
+              ...dimension.units.flatMap((unit) => unit.boundaryEvidenceIds),
+            ],
+          )
+        : []),
+    ]);
     for (const evidence of afterEvidence.slice(beforeEvidence.length)) {
-      if (
-        !findings.some((finding) =>
-          finding.evidenceIds.includes(evidence.id),
-        )
-      ) {
+      if (!checkEvidenceIds.has(evidence.id)) {
         throw new ArtifactStoreError(
           "reference_integrity_failed",
           "change_checked may append only Evidence referenced by this Check.",
@@ -6943,6 +7665,11 @@ export class ArtifactStore {
           this.layout.repositoryLock,
           async () => {
         await this.#recoverPendingTaskTransactions();
+        await this.#assertStrongOperationPersistenceOwnership(
+          prepared,
+          expectedRevision,
+          idempotency,
+        );
         const idempotencyPath = this.#idempotencyPath(prepared.taskId);
         const index = await this.#readIdempotencyIndex(idempotencyPath);
         const identity = storeIdempotencyIdentity(idempotency);

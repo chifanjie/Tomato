@@ -297,6 +297,10 @@ export async function openRuntime(
       canonicalInstallationRoot: strongSelector,
     });
     const provider: StrongChangeProviderAuthorityV1 = {
+      inspectState: async () => {
+        const result = await providerClient!.inspectState();
+        return { revision: result.revision };
+      },
       readExactObject: ({ locator }) => providerClient!.readExactObject(
         ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locator),
       ),

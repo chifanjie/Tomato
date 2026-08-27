@@ -22,7 +22,10 @@ import {
   type InstallationIdentityGenerationIdV1,
   type StoreProviderVerificationKeyIdV1,
 } from "@understand-code/durable-object-provider-contracts/primitives";
-import type { ProviderAcceptanceStateEnvelopeV1 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";
+import {
+  ProviderAcceptanceStateEnvelopeV1Schema,
+  type ProviderAcceptanceStateEnvelopeV1,
+} from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 import {
   ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
@@ -42,9 +45,7 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import {
   ProviderActiveWriterSelectionV1Schema,
-  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
   type ProviderActiveWriterSelectionV1,
-  type ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1,
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
 import {
   verifyRawEd25519WithCapabilityV1,
@@ -384,7 +385,7 @@ function exactAcceptanceIdentityV1(
 function findHistoricalStrongReadyAcceptanceV1(
   history: ProviderStrongMutationVerifiedAcceptanceHistoryInternalV1,
   identity: ProviderRuntimeIpcAcceptanceIdentityProofV1,
-): ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1 {
+): ProviderAcceptanceStateEnvelopeV1 {
   if (
     history.installationIdentityGenerationId !==
       identity.installationIdentityGenerationId
@@ -398,7 +399,7 @@ function findHistoricalStrongReadyAcceptanceV1(
   );
   if (matches.length !== 1) failV1("acceptance_history");
   try {
-    return ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
+    return ProviderAcceptanceStateEnvelopeV1Schema.parse(
       matches[0],
     );
   } catch {
@@ -725,6 +726,9 @@ export async function verifyProviderStrongMutationBeginTrustInternalV1(
     input.acceptanceHistory,
     acceptanceIdentity,
   );
+  if (acceptance.payload.configuration.state !== "strong_ready") {
+    failV1("acceptance_history");
+  }
   const core = acceptance.payload.configuration.core;
   const sessionState = requireVerificationSessionStateV1({
     verifierCapability: capability,

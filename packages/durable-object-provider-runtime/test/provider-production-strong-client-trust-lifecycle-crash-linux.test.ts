@@ -21,11 +21,15 @@ describe("production strong client trust lifecycle crash recovery on Linux", () 
       expect(result).toMatchObject({
         profile: "provider_production_strong_client_trust_lifecycle_crash_linux_v1",
         status: "verified",
-        verifiedCuts: 22,
+        verifiedCuts: 40,
         recovery: "reinvoke_converged",
         rejectedForeignDirectories: 2,
         rotateRaceVerified: true,
         uninstallRaceVerified: true,
+        liveGatewayUninstallVerified: true,
+        partialUninstallLiveGatewayVerified: true,
+        largeLifecycleVerified: true,
+        rawRollbackGatewayGuardVerified: true,
       });
     },
     240_000,

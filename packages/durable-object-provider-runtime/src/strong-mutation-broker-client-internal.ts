@@ -4,6 +4,11 @@ import { isAbsolute, resolve } from "node:path";
 
 import { canonicalizeJcsSafeIntegerV1 } from "@understand-code/durable-object-provider-contracts/jcs";
 import { ProviderRuntimeIpcStrongMutationResponseV1Schema } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
+import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  ProviderAcceptanceGenerationPinV1Schema,
+  ProviderAcceptanceStateEnvelopeV1Schema,
+} from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 import { readProviderRuntimeNativeKernelPeerCredentialsV1 } from "@understand-code/native-kernel-bridge";
 
 import {
@@ -11,6 +16,7 @@ import {
   type ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
   type ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1,
   type ProviderRuntimeStrongMutationAuthorityGrantResolutionInternalV1,
+  type ProviderRuntimeStrongMutationLegacyOutcomeInspectionInternalV1,
 } from "./strong-mutation-session-authority-internal.js";
 
 const BROKER_WIRE_PROFILE_V1 =
@@ -223,9 +229,78 @@ export function createProviderRuntimeStrongMutationBrokerVerifierInternalV1(
     }
   };
 
+  const inspectLegacyOutcomeAuthority = async (
+    inspection: ProviderRuntimeStrongMutationLegacyOutcomeInspectionInternalV1,
+  ) => {
+    let socket: Socket | undefined;
+    try {
+      socket = await connectAuthenticatedV1(options);
+      await writeFrameV1(socket, {
+        profile: BROKER_WIRE_PROFILE_V1,
+        kind: "inspect_legacy_outcome_authority",
+        inspection,
+      });
+      const result = recordV1(await readFrameV1(socket));
+      const authority = recordV1(result?.authority);
+      if (
+        result?.profile !== BROKER_WIRE_PROFILE_V1 ||
+        result.kind !== "inspect_legacy_outcome_authority_result" ||
+        result.approved !== true ||
+        authority === undefined ||
+        !Number.isSafeInteger(authority.intentOrdinal) ||
+        !Number.isSafeInteger(authority.firstIntentOrdinal) ||
+        typeof authority.firstBindingDigest !== "string"
+      ) return false;
+      return Object.freeze({
+        intentOrdinal: authority.intentOrdinal as number,
+        firstIntentOrdinal: authority.firstIntentOrdinal as number,
+        firstBindingDigest: ContentDigestV1Schema.parse(
+          authority.firstBindingDigest,
+        ),
+      });
+    } catch {
+      return false;
+    } finally {
+      socket?.end();
+    }
+  };
+
+  const readCurrentFormalAcceptance = async () => {
+    let socket: Socket | undefined;
+    try {
+      socket = await connectAuthenticatedV1(options);
+      await writeFrameV1(socket, {
+        profile: BROKER_WIRE_PROFILE_V1,
+        kind: "read_current_formal_acceptance",
+      });
+      const result = recordV1(await readFrameV1(socket));
+      if (
+        result?.profile !== BROKER_WIRE_PROFILE_V1 ||
+        result.kind !== "read_current_formal_acceptance_result" ||
+        result.available !== true
+      ) return false;
+      const envelope = ProviderAcceptanceStateEnvelopeV1Schema.parse(
+        result.envelope,
+      );
+      const pin = ProviderAcceptanceGenerationPinV1Schema.parse(result.pin);
+      if (
+        pin.generationId !== envelope.generationId ||
+        pin.contentDigest !== envelope.contentDigest ||
+        pin.acceptanceOrdinal !== envelope.payload.acceptanceOrdinal
+      ) return false;
+      return Object.freeze({ envelope, pin });
+    } catch {
+      return false;
+    } finally {
+      socket?.end();
+    }
+  };
+
   return mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
     consumeGrant,
     resolveGrant,
+    inspectLegacyOutcomeAuthority,
+    readCurrentFormalAcceptance,
   });
 }
 

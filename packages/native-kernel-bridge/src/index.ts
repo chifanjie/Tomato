@@ -269,6 +269,13 @@ interface NativeKernelBridgeAddonV1 {
     source: object,
     finalName: string,
   ) => unknown;
+  readonly armTestProviderExactObjectPostLinkParentChange: (
+    publisher: object,
+  ) => unknown;
+  readonly armTestProviderExactObjectPreLinkParentAba: (
+    publisher: object,
+    peerPath: string,
+  ) => unknown;
   readonly closeProviderExactObjectSource: (source: object) => unknown;
   readonly closeProviderExactObjectPublisher: (publisher: object) => unknown;
   readonly bindSafeGitRepositoryControl: (binding: object) => unknown;
@@ -504,6 +511,10 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         typeof candidate.revalidateProviderExactObjectPublisher !== "function" ||
         typeof candidate.stageProviderExactObject !== "function" ||
         typeof candidate.commitProviderExactObject !== "function" ||
+        typeof candidate.armTestProviderExactObjectPostLinkParentChange !==
+          "function" ||
+        typeof candidate.armTestProviderExactObjectPreLinkParentAba !==
+          "function" ||
         typeof candidate.closeProviderExactObjectSource !== "function" ||
         typeof candidate.closeProviderExactObjectPublisher !== "function" ||
         typeof candidate.getKernelBridgeProfile !== "function" ||
@@ -537,6 +548,10 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
       loadedAddonV1 = Object.freeze({
         armTestProviderExactObjectParentFsyncFailure:
           candidate.armTestProviderExactObjectParentFsyncFailure,
+        armTestProviderExactObjectPostLinkParentChange:
+          candidate.armTestProviderExactObjectPostLinkParentChange,
+        armTestProviderExactObjectPreLinkParentAba:
+          candidate.armTestProviderExactObjectPreLinkParentAba,
         armTestSafeGitEmptyHooksRace:
           candidate.armTestSafeGitEmptyHooksRace,
         armTestSafeGitExecutableOwnerAdmission:
@@ -1664,18 +1679,24 @@ export function commitProviderRuntimeNativeExactObjectV1(
   if (sourceState.publisher !== publisher) {
     throw providerRuntimeNativeExactObjectUnavailableV1();
   }
+  const admittedFinalName = providerRuntimeNativeExactObjectFinalNameV1(
+    finalName,
+  );
+  let nativeCommitInvoked = false;
   try {
+    const addon = loadNativeAddonV1();
+    nativeCommitInvoked = true;
     return parseProviderRuntimeNativeExactObjectCommitResultV1(
-      loadNativeAddonV1().commitProviderExactObject(
+      addon.commitProviderExactObject(
         publisherState.nativePublisher,
         sourceState.nativeSource,
-        providerRuntimeNativeExactObjectFinalNameV1(finalName),
+        admittedFinalName,
       ),
     );
   } catch {
     throw providerRuntimeNativeExactObjectUnavailableV1();
   } finally {
-    sourceState.closed = true;
+    if (nativeCommitInvoked) sourceState.closed = true;
   }
 }
 
@@ -1688,6 +1709,44 @@ export function armTestProviderRuntimeNativeExactObjectParentFsyncFailureV1(
     if (
       loadNativeAddonV1().armTestProviderExactObjectParentFsyncFailure(
         state.nativePublisher,
+      ) !== true
+    ) {
+      throw providerRuntimeNativeExactObjectUnavailableV1();
+    }
+  } catch {
+    throw providerRuntimeNativeExactObjectUnavailableV1();
+  }
+}
+
+/** Test-only one-shot mutation seam for the post-link projection rollback. */
+export function armTestProviderRuntimeNativeExactObjectPostLinkParentChangeV1(
+  publisher: ProviderRuntimeNativeExactObjectPublisherV1,
+): void {
+  try {
+    const state = providerRuntimeNativeExactObjectPublisherStateV1(publisher);
+    if (
+      loadNativeAddonV1().armTestProviderExactObjectPostLinkParentChange(
+        state.nativePublisher,
+      ) !== true
+    ) {
+      throw providerRuntimeNativeExactObjectUnavailableV1();
+    }
+  } catch {
+    throw providerRuntimeNativeExactObjectUnavailableV1();
+  }
+}
+
+/** Test-only A-B-A seam after the final pre-link check and before linkat. */
+export function armTestProviderRuntimeNativeExactObjectPreLinkParentAbaV1(
+  publisher: ProviderRuntimeNativeExactObjectPublisherV1,
+  peerPath: string,
+): void {
+  try {
+    const state = providerRuntimeNativeExactObjectPublisherStateV1(publisher);
+    if (
+      loadNativeAddonV1().armTestProviderExactObjectPreLinkParentAba(
+        state.nativePublisher,
+        peerPath,
       ) !== true
     ) {
       throw providerRuntimeNativeExactObjectUnavailableV1();

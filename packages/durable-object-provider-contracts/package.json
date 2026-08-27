@@ -227,6 +227,8 @@
     "generate:provider-release-target-universe-point": "pnpm run build && node scripts/generate-provider-release-target-universe-point.mjs",
     "generate:provider-distribution-history-current-candidate-point": "pnpm run build && node scripts/generate-provider-distribution-history-current-candidate-point.mjs",
     "prepack": "npm run build && npm run verify:all",
+    "test:c09-aggregate": "node scripts/test-c09-aggregate.mjs",
+    "test:c09-aggregate:focused": "node scripts/test-c09-aggregate.mjs --focused",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "verify:golden": "node scripts/verify-golden.mjs",
@@ -249,7 +251,7 @@
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
     "verify:all": "npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point && npm run verify:provider-registry-evidence-binding-point && npm run verify:provider-feasibility-support-catalog-point && npm run verify:provider-distribution-history-current-candidate-point",
-    "test": "pnpm run build && pnpm run typecheck && vitest run --maxWorkers=1 && pnpm run test:distribution"
+    "test": "pnpm run test:c09-aggregate"
   },
   "dependencies": {
     "zod": "4.3.6"

@@ -89,6 +89,11 @@
       "import": "./dist/durable-acceptance-current.js",
       "default": "./dist/durable-acceptance-current.js"
     },
+    "./durable-lifecycle-artifacts": {
+      "types": "./dist/durable-lifecycle-artifacts.d.ts",
+      "import": "./dist/durable-lifecycle-artifacts.js",
+      "default": "./dist/durable-lifecycle-artifacts.js"
+    },
     "./live-principal-challenge": {
       "types": "./dist/live-principal-challenge.d.ts",
       "import": "./dist/live-principal-challenge.js",
@@ -120,6 +125,8 @@
     "@understand-code/native-kernel-bridge": "workspace:*"
   },
   "devDependencies": {
+    "@understand-code/durable-object-provider-authority": "workspace:*",
+    "@understand-code/durable-object-provider-client": "workspace:*",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"

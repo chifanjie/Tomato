@@ -51,7 +51,12 @@ import {
   type StrongVerificationSecurityProjectionV1,
 } from "@understand-code/contracts";
 
-import { ArtifactStore, type ReadTaskBundleResult } from "./store.js";
+import {
+  ArtifactStore,
+  type ReadTaskBundleResult,
+  type StrongOperationProviderObjectBindingV1,
+} from "./store.js";
+import { digestCanonicalJson } from "./digest.js";
 
 function digest(value: unknown): ContentDigest {
   return `sha256:${createHash("sha256")
@@ -68,6 +73,20 @@ function operationNonce(domain: string, requestDigest: ContentDigest): string {
     .update(domain, "utf8")
     .update("\0", "utf8")
     .update(requestDigest, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function compareOperationNonce(
+  phase: "strong_change_check_v1" | "strong_verification_v1",
+  taskCutDigest: ContentDigest,
+  providerExpectedRevision: number,
+): string {
+  return createHash("sha256")
+    .update(canonicalizeJson([
+      "strong-provider-compare-nonce-v1",
+      { phase, taskCutDigest, providerExpectedRevision },
+    ]), "utf8")
     .digest("hex")
     .slice(0, 32);
 }
@@ -225,6 +244,7 @@ export interface ProviderPinnedTaskBaselineAuthorityV1 {
 
 /** Provider-owned production port. It is deliberately storage-only. */
 export interface StrongChangeProviderAuthorityV1 {
+  inspectState(): Promise<Readonly<{ revision: number }>>;
   readExactObject(input: Readonly<{
     locator: Readonly<{ providerId: string; contentDigest: ContentDigest }>;
   }>): Promise<Readonly<{
@@ -353,7 +373,26 @@ export class ArtifactStoreStrongChangeAuthorityV1
     }>,
     proposedAt: string,
   ): Promise<string> {
-    return this.#store.reserveStrongOperationIntent({ ...input, proposedAt });
+    if (input.requestDigest === undefined) {
+      throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+    }
+    return this.#store.reserveStrongOperationIntent({
+      ...input,
+      requestDigest: input.requestDigest,
+      proposedAt,
+    });
+  }
+
+  async abortReservedOperation(input: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: "check_change" | "record_verification";
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: ContentDigest;
+    fullInputEqualityTag?: string;
+  }>): Promise<void> {
+    await this.#store.abortReservedStrongOperationIntent(input);
   }
 
   async #localStrongReplay(input: Readonly<{
@@ -440,6 +479,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       input.expectedRevision,
       requestDigest,
       input.idempotencyKey,
+      input.actor,
       local.projection,
       { actorDigest: digest(input.actor) },
     );
@@ -482,6 +522,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       input.expectedRevision,
       local.requestDigest,
       input.idempotencyKey,
+      input.actor,
       local.projection,
       {
         actorDigest: digest(input.actor),
@@ -642,11 +683,28 @@ export class ArtifactStoreStrongChangeAuthorityV1
       ],
       idempotentReplay: false,
     };
+    const withFindingClaimBacklinks = <
+      T extends Readonly<{ id: string; claimIds: readonly string[] }>,
+    >(evidenceItem: T): T => {
+      const appendedClaimIds = input.findingClaims
+        .filter((claim) =>
+          (claim.evidenceIds as readonly string[]).includes(evidenceItem.id) &&
+          !evidenceItem.claimIds.includes(claim.id)
+        )
+        .map((claim) => claim.id);
+      return appendedClaimIds.length === 0
+        ? evidenceItem
+        : {
+            ...evidenceItem,
+            claimIds: [...evidenceItem.claimIds, ...appendedClaimIds],
+          };
+    };
+    const outcomeEvidence = input.evidence.map(withFindingClaimBacklinks);
     const outcome = StrongChangeCheckMutationOutcomeV1Schema.parse({
       profile: "strong_change_check_outcome_v1",
       changeCheck: input.changeCheck,
       findingClaims: input.findingClaims,
-      evidence: input.evidence,
+      evidence: outcomeEvidence,
       impactConclusion: input.impactConclusion,
       commitEvidence: input.commitEvidence,
       committedRevision: manifest.revision,
@@ -668,15 +726,50 @@ export class ArtifactStoreStrongChangeAuthorityV1
       requestDigest: input.requestDigest,
       occurredAt,
     });
-    const claims = [...current.bundle.claims, ...input.findingClaims];
-    const evidence = [...current.bundle.evidence, ...input.evidence];
+    const claims = [
+      ...current.bundle.claims.map((claim) => {
+        const appendedFindingIds = input.changeCheck.findings
+          .filter((finding) =>
+            finding.claimIds.includes(claim.id) &&
+            !claim.findingIds.includes(finding.id)
+          )
+          .map((finding) => finding.id);
+        return appendedFindingIds.length === 0
+          ? claim
+          : {
+              ...claim,
+              findingIds: [...claim.findingIds, ...appendedFindingIds],
+            };
+      }),
+      ...input.findingClaims,
+    ];
+    const evidence = [
+      ...current.bundle.evidence.map(withFindingClaimBacklinks),
+      ...outcomeEvidence,
+    ];
+    const impactPaths = current.bundle.impactPaths.map((impactPath) => {
+      const appendedClaimIds = input.findingClaims
+        .filter((claim) =>
+          input.changeCheck.findings.some((finding) =>
+            finding.claimIds.includes(claim.id) &&
+            finding.impactPathIds.includes(impactPath.id)
+          ) && !impactPath.claimIds.includes(claim.id)
+        )
+        .map((claim) => claim.id);
+      return appendedClaimIds.length === 0
+        ? impactPath
+        : {
+            ...impactPath,
+            claimIds: [...impactPath.claimIds, ...appendedClaimIds],
+          };
+    });
     const verificationRecords = current.bundle.verificationRecords;
     const artifacts = this.#projectionArtifacts({
       manifest,
       brief: current.bundle.brief,
       claims,
       evidence,
-      impactPaths: current.bundle.impactPaths,
+      impactPaths,
       impactConclusion: input.impactConclusion,
       changeCheck: input.changeCheck,
       verificationRecords,
@@ -689,7 +782,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       brief: current.bundle.brief,
       claims,
       evidence,
-      impactPaths: current.bundle.impactPaths,
+      impactPaths,
       impactConclusion: input.impactConclusion,
       changeChecks: [input.changeCheck],
       verificationRecords,
@@ -912,6 +1005,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     expectedRevision: number,
     requestDigest: ContentDigest,
     idempotencyKey: string,
+    actor: string,
     projection: unknown,
     privateArtifacts: Readonly<Record<string, string>> = {},
     privateExactObject?: unknown,
@@ -942,15 +1036,109 @@ export class ArtifactStoreStrongChangeAuthorityV1
       `${phase}:exact-object`,
       taskCutDigest,
     );
-    const compareOperationNonce = operationNonce(
-      `${phase}:compare-commit`,
-      taskCutDigest,
-    );
+    const projectionLogicalBytes = Buffer.byteLength(canonical, "utf8");
     const bytes = `base64url:${Buffer.from(canonical, "utf8").toString("base64url")}`;
+    const operation = phase === "strong_change_check_v1"
+      ? "check_change" as const
+      : "record_verification" as const;
+    const fullInputEqualityTag = privateArtifacts.fullInputEqualityTag;
+    const privateCanonical = privateExactObject === undefined
+      ? undefined
+      : canonicalizeJson(privateExactObject);
+    const privateContentDigest = privateExactObject === undefined
+      ? undefined
+      : digest(privateExactObject);
+    const privateLogicalBytes = privateCanonical === undefined
+      ? undefined
+      : Buffer.byteLength(privateCanonical, "utf8");
+    const privateWriteOperationNonce = privateExactObject === undefined
+      ? undefined
+      : operationNonce(`${phase}:owner-detail-exact-object`, taskCutDigest);
+    const privateLocator = privateContentDigest === undefined
+      ? undefined
+      : { providerId: this.#providerId, contentDigest: privateContentDigest };
+    const privateBytes = privateCanonical === undefined
+      ? undefined
+      : `base64url:${Buffer.from(privateCanonical, "utf8").toString("base64url")}`;
+    const privateObjectArtifacts: Readonly<Record<string, string | number>> =
+      privateLocator === undefined || privateLogicalBytes === undefined
+        ? {}
+        : {
+            ownerDetailProviderId: privateLocator.providerId,
+            ownerDetailContentDigest: privateLocator.contentDigest,
+            ownerDetailLogicalBytes: privateLogicalBytes,
+          };
+    const compareArtifacts = {
+      projectionProviderId: this.#providerId,
+      projectionContentDigest: contentDigest,
+      projectionLogicalBytes,
+      requestDigest,
+      idempotencyKey,
+      taskExpectedRevision: expectedRevision,
+      ...privateArtifacts,
+      ...privateObjectArtifacts,
+    };
+    const providerObjectBinding = {
+      profile: "strong_operation_provider_object_binding_v1",
+      phase,
+      projection: {
+        role: "projection",
+        providerId: locator.providerId,
+        contentDigest: locator.contentDigest,
+        logicalBytes: projectionLogicalBytes,
+        operationNonce: writeOperationNonce,
+      },
+      ownerDetail: privateLocator === undefined ||
+          privateLogicalBytes === undefined ||
+          privateWriteOperationNonce === undefined
+        ? "none"
+        : {
+            role: "owner_detail",
+            providerId: privateLocator.providerId,
+            contentDigest: privateLocator.contentDigest,
+            logicalBytes: privateLogicalBytes,
+            operationNonce: privateWriteOperationNonce,
+          },
+      compareArtifacts,
+    } as const satisfies StrongOperationProviderObjectBindingV1;
+    const inspected = await provider.inspectState();
+    if (
+      !Number.isSafeInteger(inspected.revision) || inspected.revision < 0
+    ) throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+    let providerExpectedRevision: number;
+    try {
+      providerExpectedRevision =
+        await this.#store.resolveStrongOperationProviderRevision({
+          taskId: candidate.bundle.manifest.taskId,
+          expectedRevision,
+          operation,
+          idempotencyKey,
+          actor,
+          requestDigest,
+          ...(fullInputEqualityTag === undefined
+            ? {}
+            : { fullInputEqualityTag }),
+          observedProviderRevision: inspected.revision,
+          providerObjectBinding,
+        });
+    } catch (error) {
+      await this.#store.abortReservedStrongOperationIntent({
+        taskId: candidate.bundle.manifest.taskId,
+        expectedRevision,
+        operation,
+        idempotencyKey,
+        actor,
+        requestDigest,
+        ...(fullInputEqualityTag === undefined
+          ? {}
+          : { fullInputEqualityTag }),
+      });
+      throw error;
+    }
     const written = await provider.writeExactObject({
       operationNonce: writeOperationNonce,
       locator,
-      logicalBytes: Buffer.byteLength(canonical, "utf8"),
+      logicalBytes: projectionLogicalBytes,
       bytes,
     });
     if (written.verifiedContentDigest !== contentDigest) {
@@ -991,53 +1179,67 @@ export class ArtifactStoreStrongChangeAuthorityV1
       }
     };
     await readAndVerify(locator, bytes);
-    let privateObjectArtifacts: Readonly<Record<string, string | number>> = {};
-    if (privateExactObject !== undefined) {
-      const privateCanonical = canonicalizeJson(privateExactObject);
-      const privateContentDigest = digest(privateExactObject);
-      const privateLocator = {
-        providerId: this.#providerId,
-        contentDigest: privateContentDigest,
-      };
-      const privateBytes = `base64url:${Buffer.from(privateCanonical, "utf8").toString("base64url")}`;
+    if (
+      privateLocator !== undefined &&
+      privateContentDigest !== undefined &&
+      privateLogicalBytes !== undefined &&
+      privateWriteOperationNonce !== undefined &&
+      privateBytes !== undefined
+    ) {
       const privateWrite = await provider.writeExactObject({
-        operationNonce: operationNonce(
-          `${phase}:owner-detail-exact-object`,
-          taskCutDigest,
-        ),
+        operationNonce: privateWriteOperationNonce,
         locator: privateLocator,
-        logicalBytes: Buffer.byteLength(privateCanonical, "utf8"),
+        logicalBytes: privateLogicalBytes,
         bytes: privateBytes,
       });
       if (privateWrite.verifiedContentDigest !== privateContentDigest) {
         throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
       }
       await readAndVerify(privateLocator, privateBytes);
-      privateObjectArtifacts = {
-        ownerDetailProviderId: this.#providerId,
-        ownerDetailContentDigest: privateContentDigest,
-        ownerDetailLogicalBytes: Buffer.byteLength(privateCanonical, "utf8"),
-      };
     }
-    const compareArtifacts = {
-      projectionProviderId: this.#providerId,
-      projectionContentDigest: contentDigest,
-      projectionLogicalBytes: Buffer.byteLength(canonical, "utf8"),
-      requestDigest,
-      idempotencyKey,
-      ...privateArtifacts,
-      ...privateObjectArtifacts,
-    };
-    const committed = await provider.compareCommit({
-      operationNonce: compareOperationNonce,
-      expectedRevision,
-      phase,
-      artifacts: compareArtifacts,
-    });
-    if (
-      committed.resolution === "stale" ||
-      committed.committedRevision !== expectedRevision + 1
-    ) {
+    let committed: Awaited<ReturnType<StrongChangeProviderAuthorityV1["compareCommit"]>> | undefined;
+    for (let attempt = 0; attempt <= 8; attempt += 1) {
+      const providerArtifacts = {
+        ...compareArtifacts,
+        providerExpectedRevision,
+      };
+      committed = await provider.compareCommit({
+        operationNonce: compareOperationNonce(
+          phase,
+          taskCutDigest,
+          providerExpectedRevision,
+        ),
+        expectedRevision: providerExpectedRevision,
+        phase,
+        artifacts: providerArtifacts,
+      });
+      if (committed.resolution !== "stale") {
+        if (committed.committedRevision !== providerExpectedRevision + 1) {
+          throw new StrongChangeAuthorityErrorV1(
+            "strong_change_provider_invalid",
+          );
+        }
+        break;
+      }
+      if (attempt === 8) {
+        throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
+      }
+      providerExpectedRevision =
+        await this.#store.advanceStrongOperationProviderRevision({
+          taskId: candidate.bundle.manifest.taskId,
+          expectedRevision,
+          operation,
+          idempotencyKey,
+          actor,
+          requestDigest,
+          ...(fullInputEqualityTag === undefined
+            ? {}
+            : { fullInputEqualityTag }),
+          attemptedProviderRevision: providerExpectedRevision,
+          observedProviderRevision: committed.committedRevision,
+        });
+    }
+    if (committed === undefined || committed.resolution === "stale") {
       throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
     }
     const committedContentDigest = committed.artifacts.projectionContentDigest;
@@ -1047,11 +1249,16 @@ export class ArtifactStoreStrongChangeAuthorityV1
       committed.artifacts.requestDigest !== requestDigest ||
       committed.artifacts.idempotencyKey !== idempotencyKey ||
       committed.artifacts.projectionProviderId !== this.#providerId ||
+      committed.artifacts.taskExpectedRevision !== expectedRevision ||
+      committed.artifacts.providerExpectedRevision !==
+        providerExpectedRevision ||
       Object.entries({ ...privateArtifacts, ...privateObjectArtifacts }).some(
         ([key, value]) => committed.artifacts[key] !== value,
       ) ||
-      (committed.resolution === "committed" &&
-        !canonicalEqual(committed.artifacts, compareArtifacts))
+      !canonicalEqual(committed.artifacts, {
+        ...compareArtifacts,
+        providerExpectedRevision,
+      })
     ) {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
@@ -1180,7 +1387,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     try {
       snapshot = parseTrustedStrongRepositorySnapshotV1(
         read.artifact.payload,
-        digest,
+        digestCanonicalJson,
       );
     } catch {
       throw new StrongChangeAuthorityErrorV1("strong_snapshot_pin_mismatch");
@@ -1226,7 +1433,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
         baselineContentDigest: baseline.baselineContentDigest,
         snapshot: parseTrustedStrongRepositorySnapshotV1(
           baseline.snapshot,
-          digest,
+          digestCanonicalJson,
         ),
         snapshotArtifactId: baseline.snapshotArtifactId,
         snapshotContentDigest: baseline.snapshotContentDigest,
@@ -1305,6 +1512,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
             : {
                 status: "pinned" as const,
                 leaseId: baseline.baselineHead.gitLease.leaseId,
+                refName: baseline.baselineHead.gitLease.refName,
                 objectId: baseline.baselineHead.gitLease.objectId,
               },
         };
@@ -1363,6 +1571,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     inputValue: StrongChangeCheckCommitRequestV1,
   ): Promise<StrongChangeCheckMutationOutcomeV1> {
     const input = StrongChangeCheckCommitRequestV1Schema.parse(inputValue);
+    try {
     const provider = this.#requireProvider();
     const task = await this.#taskProjection(
       input.changeCheck.taskId,
@@ -1452,6 +1661,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       input.expectedRevision,
       input.requestDigest,
       input.idempotencyKey,
+      input.actor,
       candidate,
       { actorDigest: digest(input.actor) },
     );
@@ -1472,6 +1682,17 @@ export class ArtifactStoreStrongChangeAuthorityV1
       ...committed.outcome,
       idempotentReplay: resolution.resolution === "replayed" || localReplay,
     });
+    } catch (error) {
+      await this.#store.abortReservedStrongOperationIntent({
+        taskId: input.changeCheck.taskId,
+        expectedRevision: input.expectedRevision,
+        operation: "check_change",
+        idempotencyKey: input.idempotencyKey,
+        actor: input.actor,
+        requestDigest: input.requestDigest,
+      });
+      throw error;
+    }
   }
 
   async prepareVerification(
@@ -1554,6 +1775,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     inputValue: StrongVerificationCommitRequestV1,
   ): Promise<StrongVerificationMutationOutcomeV1> {
     const input = StrongVerificationCommitRequestV1Schema.parse(inputValue);
+    try {
     const provider = this.#requireProvider();
     const task = await this.#taskProjection(
       input.verification.taskId,
@@ -1648,6 +1870,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       input.expectedRevision,
       input.requestDigest,
       input.idempotencyKey,
+      input.actor,
       candidate,
       {
         actorDigest: digest(input.actor),
@@ -1675,6 +1898,18 @@ export class ArtifactStoreStrongChangeAuthorityV1
       ...committed.outcome,
       idempotentReplay: resolution.resolution === "replayed" || localReplay,
     });
+    } catch (error) {
+      await this.#store.abortReservedStrongOperationIntent({
+        taskId: input.verification.taskId,
+        expectedRevision: input.expectedRevision,
+        operation: "record_verification",
+        idempotencyKey: input.idempotencyKey,
+        actor: input.actor,
+        requestDigest: input.requestDigest,
+        fullInputEqualityTag: input.fullInputEqualityTag,
+      });
+      throw error;
+    }
   }
 }
 

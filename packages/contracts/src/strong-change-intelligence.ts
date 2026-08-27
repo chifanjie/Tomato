@@ -1479,6 +1479,16 @@ export interface StrongChangeIntelligenceAuthorityV1 {
     }>,
     proposedAt: string,
   ): Promise<string>;
+  /** Exact, idempotent cleanup for a reservation that never reached Provider activation. */
+  abortReservedOperation?(input: Readonly<{
+    taskId: string;
+    expectedRevision: number;
+    operation: "check_change" | "record_verification";
+    idempotencyKey: string;
+    actor: string;
+    requestDigest: z.infer<typeof ContentDigestSchema>;
+    fullInputEqualityTag?: z.infer<typeof KeyedStateTokenV1Schema>;
+  }>): Promise<void>;
   /** Durable preflight used before reading a now-advanced Task revision. */
   replayCheck?(
     input: StrongCheckChangesInputV1,

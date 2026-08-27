@@ -33,6 +33,7 @@ import {
   ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcCompareCommitResultV1Schema,
   ProviderRuntimeIpcFixedObjectLocatorV1Schema,
+  ProviderRuntimeIpcInspectStateResultV1Schema,
   ProviderRuntimeIpcReadObjectResultV1Schema,
   ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1Schema,
   ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema,
@@ -41,6 +42,7 @@ import {
   type ProviderRuntimeIpcCompareCommitResultV1,
   type ProviderRuntimeIpcFixedObjectLocatorV1,
   type ProviderRuntimeIpcJsonValueV1,
+  type ProviderRuntimeIpcInspectStateResultV1,
   type ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1,
   type ProviderRuntimeIpcStrongMutationRequestClaimsV1,
   type ProviderRuntimeIpcStrongMutationResponseV1,
@@ -48,10 +50,11 @@ import {
   type ProviderRuntimeIpcReadObjectResultV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import {
-  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
-  deriveProviderStrongReadyAcceptanceStateContentDigestV1,
-  deriveProviderStrongReadyAcceptanceStateGenerationIdV1,
-} from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
+  ProviderAcceptanceGenerationPinV1Schema,
+  ProviderAcceptanceStateEnvelopeV1Schema,
+  deriveProviderAcceptanceStateContentDigestV1,
+  deriveProviderAcceptanceStateGenerationIdV1,
+} from "@understand-code/durable-object-provider-contracts/provider-acceptance";
 import {
   attestProviderStrictEd25519CryptoHostV1,
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
@@ -71,6 +74,14 @@ import {
 import {
   providerProductionStrongClientGatewaySocketPathV1,
 } from "@understand-code/durable-object-provider-runtime/provider-production-strong-client-trust-lifecycle";
+import {
+  projectProviderRuntimeDurableLifecycleArtifactsV1,
+  type ProviderRuntimeDurableLifecycleProjectionV1,
+} from "@understand-code/durable-object-provider-runtime/durable-acceptance-current";
+import {
+  PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1,
+  PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1,
+} from "@understand-code/durable-object-provider-runtime/durable-lifecycle-artifacts";
 
 import {
   mintProviderRuntimeStrongMutationAuthorityGrantSignerCapabilityInternalV1,
@@ -161,7 +172,17 @@ const PRODUCTION_INSTALLATION_MANIFEST_PROFILE_V1 =
   "understand_code_provider_service_installation_manifest_v1" as const;
 const PRODUCTION_INSTALLATION_MANIFEST_DIGEST_DOMAIN_V1 =
   "understand-code-provider-service-installation-manifest-v1" as const;
-const MAX_PRODUCTION_TRUST_SNAPSHOT_BYTES_V1 = 16 * 1024 * 1024;
+const PRODUCTION_STRONG_RUNTIME_PHASE_V1 = "final_strong_ready" as const;
+const PRODUCTION_STRONG_BUSINESS_UNINITIALIZED_PHASE_V1 =
+  "provider_business_uninitialized_v1" as const;
+const MAX_PRODUCTION_ACCEPTANCE_HISTORY_GENERATIONS_V1 = 4_096;
+const MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 =
+  256 * 1024 * 1024;
+const MAX_PRODUCTION_SINGLE_TRUST_ENVELOPE_LOGICAL_BYTES_V1 =
+  4 * 1024 * 1024;
+// Match the Acceptance authority's physical snapshot cap: 300 MiB carries the
+// frozen 256 MiB retained history plus current projections/signature wrapper.
+const MAX_PRODUCTION_TRUST_SNAPSHOT_BYTES_V1 = 300 * 1024 * 1024;
 const MAX_PRODUCTION_INSTALLATION_MANIFEST_BYTES_V1 = 1024 * 1024;
 const MAX_GRANT_KEY_BYTES_V1 = 512;
 const O_CLOEXEC_V1 =
@@ -190,6 +211,8 @@ export interface ProviderProductionStrongCompareCommitV1Input {
 export interface ProviderProductionStrongObjectClientV1 {
   /** Read-only identity derived from the verified signed installation. */
   readonly verifiedProviderId: DurableObjectIdentityProviderIdV1;
+  /** Minimal journal observation; artifacts never cross the public gateway. */
+  inspectState(): Promise<Readonly<{ revision: number }>>;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -216,6 +239,7 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   readonly gatewaySocketPath: string;
   readonly serviceConfigPayloadDigest: ContentDigestV1;
   readonly trustSnapshotDigest: ContentDigestV1;
+  inspectState(): Promise<Readonly<{ revision: number }>>;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -243,8 +267,19 @@ interface ProductionSelectionV1 {
   readonly targetFingerprintDigest: ContentDigestV1;
   readonly acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1;
   readonly acceptanceEnvelope: ReturnType<
-    typeof ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse
+    typeof ProviderAcceptanceStateEnvelopeV1Schema.parse
   >;
+  readonly acceptancePin: ReturnType<
+    typeof ProviderAcceptanceGenerationPinV1Schema.parse
+  >;
+  readonly acceptanceHistory: readonly Readonly<{
+    envelope: ReturnType<
+      typeof ProviderAcceptanceStateEnvelopeV1Schema.parse
+    >;
+    pin: ReturnType<
+      typeof ProviderAcceptanceGenerationPinV1Schema.parse
+    >;
+  }>[];
   readonly signerKeyId:
     ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1["signerKeyId"];
   readonly signerPublicKeyBytes: ReturnType<
@@ -264,6 +299,12 @@ interface ProductionSelectionV1 {
   readonly callerPrincipal: Readonly<{ readonly uid: number; readonly gid: number }>;
   readonly gatewaySocketPath: string;
   readonly trustSnapshotDigest: ContentDigestV1;
+}
+
+interface ProductionStrongBusinessHeadInternalV1 {
+  readonly profile: typeof PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1;
+  readonly phase: "strong_change_check_v1" | "strong_verification_v1";
+  readonly artifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 }
 
 interface ProductionClientStateV1 {
@@ -607,20 +648,44 @@ function validateAcceptanceHistoryV1(
   value: unknown,
   currentValue: unknown,
 ) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 128) {
+  if (
+    !Array.isArray(value) || value.length < 1 ||
+    value.length > MAX_PRODUCTION_ACCEPTANCE_HISTORY_GENERATIONS_V1
+  ) {
     return productionFailV1("production Acceptance history is invalid");
   }
-  const history: ReturnType<
-    typeof ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse
-  >[] = [];
+  const history: Array<Readonly<{
+    envelope: ReturnType<
+      typeof ProviderAcceptanceStateEnvelopeV1Schema.parse
+    >;
+    pin: ReturnType<
+      typeof ProviderAcceptanceGenerationPinV1Schema.parse
+    >;
+  }>> = [];
+  let acceptanceCanonicalBytes = 0;
   for (const [index, candidate] of value.entries()) {
+    const canonicalBytes = acceptanceEnvelopeCanonicalBytesV1(candidate);
+    if (
+      acceptanceCanonicalBytes >
+        MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 - canonicalBytes
+    ) {
+      return productionFailV1(
+        "production retained trust history exceeds the logical byte budget",
+      );
+    }
+    acceptanceCanonicalBytes += canonicalBytes;
     const envelope =
-      ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
+      ProviderAcceptanceStateEnvelopeV1Schema.parse(
         candidate,
       );
+    const previous = history[index - 1]?.envelope;
     if (
+      envelope.generationId !== envelope.payload.generationId ||
+      envelope.installationIdentityGenerationId !==
+        envelope.payload.installationIdentityGenerationId ||
+      envelope.acceptedAt !== envelope.payload.acceptedAt ||
       envelope.generationId !==
-        deriveProviderStrongReadyAcceptanceStateGenerationIdV1({
+        deriveProviderAcceptanceStateGenerationIdV1({
           installationIdentityGenerationId:
             envelope.installationIdentityGenerationId,
           acceptanceOrdinal: envelope.payload.acceptanceOrdinal,
@@ -628,17 +693,33 @@ function validateAcceptanceHistoryV1(
           configuration: envelope.payload.configuration,
         }) ||
       envelope.contentDigest !==
-        deriveProviderStrongReadyAcceptanceStateContentDigestV1(
+        deriveProviderAcceptanceStateContentDigestV1(
           envelope.payload,
         ) ||
-      (index > 0 &&
-        !exactCanonicalEqualV1(envelope.payload.predecessor, {
-          state: "acceptance",
-          generationId: history[index - 1]!.generationId,
-          contentDigest: history[index - 1]!.contentDigest,
-        }))
+      (index === 0 &&
+        (envelope.payload.acceptanceOrdinal !== 1 ||
+          envelope.payload.predecessor.state !== "genesis")) ||
+      (previous !== undefined &&
+        (envelope.payload.acceptanceOrdinal !==
+            previous.payload.acceptanceOrdinal + 1 ||
+          envelope.installationIdentityGenerationId !==
+            previous.installationIdentityGenerationId ||
+          envelope.acceptedAt <= previous.acceptedAt ||
+          !exactCanonicalEqualV1(envelope.payload.predecessor, {
+            state: "acceptance",
+            generationId: previous.generationId,
+            contentDigest: previous.contentDigest,
+          })))
     ) return productionFailV1("production Acceptance history is invalid");
-    history.push(envelope);
+    history.push(Object.freeze({
+      envelope,
+      pin: ProviderAcceptanceGenerationPinV1Schema.parse({
+        locatorProfile: "installation_provider_acceptance_state_v1",
+        acceptanceOrdinal: envelope.payload.acceptanceOrdinal,
+        generationId: envelope.generationId,
+        contentDigest: envelope.contentDigest,
+      }),
+    }));
   }
   const current = dataRecordV1(currentValue, "production current Acceptance");
   if (
@@ -651,13 +732,104 @@ function validateAcceptanceHistoryV1(
   ) return productionFailV1("production current Acceptance is invalid");
   const tip = history.at(-1)!;
   if (
-    current.generationId !== tip.generationId ||
-    current.contentDigest !== tip.contentDigest ||
-    current.acceptanceOrdinal !== tip.payload.acceptanceOrdinal ||
+    current.generationId !== tip.envelope.generationId ||
+    current.contentDigest !== tip.envelope.contentDigest ||
+    current.acceptanceOrdinal !== tip.envelope.payload.acceptanceOrdinal ||
     current.installationIdentityGenerationId !==
-      tip.installationIdentityGenerationId
+      tip.envelope.installationIdentityGenerationId
   ) return productionFailV1("production current Acceptance is invalid");
-  return tip;
+  return Object.freeze({
+    history: Object.freeze(history),
+    tip,
+    acceptanceCanonicalBytes,
+  });
+}
+
+function acceptanceEnvelopeCanonicalBytesV1(value: unknown): number {
+  let canonical: string;
+  try {
+    canonical = canonicalizeJcsSafeIntegerV1(value);
+  } catch {
+    return productionFailV1("production Acceptance history is invalid");
+  }
+  const bytes = Buffer.byteLength(canonical, "utf8");
+  if (
+    !Number.isSafeInteger(bytes) || bytes < 1 ||
+    bytes > MAX_PRODUCTION_SINGLE_TRUST_ENVELOPE_LOGICAL_BYTES_V1
+  ) {
+    return productionFailV1(
+      "production Acceptance envelope exceeds the logical byte budget",
+    );
+  }
+  return bytes;
+}
+
+function validateRetainedTrustLogicalBytesV1(
+  registryCanonicalBytes: number,
+  acceptanceCanonicalBytes: number,
+): void {
+  if (
+    !Number.isSafeInteger(registryCanonicalBytes) ||
+    registryCanonicalBytes < 0 ||
+    !Number.isSafeInteger(acceptanceCanonicalBytes) ||
+    acceptanceCanonicalBytes < 0 ||
+    registryCanonicalBytes >
+      MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 ||
+    acceptanceCanonicalBytes >
+      MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 -
+        registryCanonicalBytes
+  ) {
+    return productionFailV1(
+      "production retained trust history exceeds the logical byte budget",
+    );
+  }
+}
+
+/** Internal focused-test seam for the signed, retained Acceptance chain. */
+export function providerProductionStrongAcceptanceHistoryInternalV1(
+  input: Readonly<{ history: unknown; current: unknown }>,
+): Readonly<{ generationIds: readonly string[]; tipGenerationId: string }> {
+  const validated = validateAcceptanceHistoryV1(input.history, input.current);
+  return Object.freeze({
+    generationIds: Object.freeze(
+      validated.history.map((candidate) => candidate.envelope.generationId),
+    ),
+    tipGenerationId: validated.tip.envelope.generationId,
+  });
+}
+
+/** Internal focused-test seam over the exact production canonical meter. */
+export function providerProductionStrongAcceptanceCanonicalBytesInternalV1(
+  value: unknown,
+): number {
+  return acceptanceEnvelopeCanonicalBytesV1(value);
+}
+
+/** Internal focused-test seam over the cross-history Installation budget. */
+export function providerProductionStrongRetainedTrustBudgetInternalV1(
+  input: Readonly<{
+    registryCanonicalBytes: number;
+    acceptanceCanonicalBytes: number;
+  }>,
+): true {
+  validateRetainedTrustLogicalBytesV1(
+    input.registryCanonicalBytes,
+    input.acceptanceCanonicalBytes,
+  );
+  return true;
+}
+
+/** Internal focused-test seam for the frozen retained-history/file ceilings. */
+export function providerProductionStrongAcceptanceLimitsInternalV1() {
+  return Object.freeze({
+    maxAcceptanceHistoryGenerations:
+      MAX_PRODUCTION_ACCEPTANCE_HISTORY_GENERATIONS_V1,
+    maxTotalTrustHistoryLogicalBytes:
+      MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1,
+    maxSingleTrustEnvelopeLogicalBytes:
+      MAX_PRODUCTION_SINGLE_TRUST_ENVELOPE_LOGICAL_BYTES_V1,
+    maxTrustSnapshotBytes: MAX_PRODUCTION_TRUST_SNAPSHOT_BYTES_V1,
+  });
 }
 
 async function verifyProductionSelectionV1(
@@ -733,10 +905,11 @@ async function verifyProductionSelectionV1(
   const targetFingerprintDigest = ContentDigestV1Schema.parse(
     payload.targetFingerprintDigest,
   );
-  const acceptanceEnvelope = validateAcceptanceHistoryV1(
+  const acceptance = validateAcceptanceHistoryV1(
     payload.acceptanceHistory,
     payload.currentAcceptance,
   );
+  const acceptanceEnvelope = acceptance.tip.envelope;
   const readiness = await readProviderServiceReadinessV1({
     config: serviceConfig,
     readinessPath: serviceConfig.payload.readinessPath,
@@ -755,7 +928,21 @@ async function verifyProductionSelectionV1(
     ...registryHistory,
     strictCryptoCapability: await strictCryptoCapabilityV1(),
   });
-  const core = acceptanceEnvelope.payload.configuration.core;
+  validateRetainedTrustLogicalBytesV1(
+    registryClosure.retainedTrustHistoryCanonicalBytes,
+    acceptance.acceptanceCanonicalBytes,
+  );
+  const acceptanceConfiguration = acceptanceEnvelope.payload.configuration;
+  if (
+    acceptanceConfiguration.state !== "strong_ready" ||
+    acceptanceConfiguration.activation.origin !==
+      "completed_provider_migration"
+  ) {
+    return productionFailV1(
+      "production current Acceptance is not completed strong-ready",
+    );
+  }
+  const core = acceptanceConfiguration.core;
   if (
     registryClosure.authority !== "none_registry_structure_and_history_only" ||
     registryClosure.installationIdentityGenerationId !==
@@ -843,6 +1030,8 @@ async function verifyProductionSelectionV1(
           acceptanceEnvelope.installationIdentityGenerationId,
       }),
     acceptanceEnvelope,
+    acceptancePin: acceptance.tip.pin,
+    acceptanceHistory: acceptance.history,
     signerKeyId,
     signerPublicKeyBytes: CanonicalPublicKeyBytes32V1Schema.parse(
       records[0]!.publicKeyBytes,
@@ -985,18 +1174,15 @@ function productionStateV1(
 
 async function strongExchangeV1(
   state: ProductionClientStateV1,
-  request: ProviderRuntimeIpcStrongMutationRequestClaimsV1,
+  requestInput:
+    | ProviderRuntimeIpcStrongMutationRequestClaimsV1
+    | ((trusted: ReturnType<typeof validateTrustedProductionStateV1>) =>
+        ProviderRuntimeIpcStrongMutationRequestClaimsV1),
 ): Promise<StrongMutationSuccessPayloadInternalV1> {
-  const inspected = await state.runtimeClient.inspectState();
-  const closure = inspected.state.artifacts.finalStrongReadyAcceptance;
-  if (
-    inspected.state.phase !== "final_strong_ready" ||
-    typeof closure !== "object" || closure === null || Array.isArray(closure) ||
-    !exactCanonicalEqualV1(
-      (closure as Record<string, unknown>).finalStrongReadyAcceptanceEnvelope,
-      state.selection.acceptanceEnvelope,
-    )
-  ) return productionFailV1("runtime current Acceptance binding is invalid");
+  const trusted = await inspectTrustedProductionStateV1(state);
+  const request = typeof requestInput === "function"
+    ? requestInput(trusted)
+    : requestInput;
   return exchangeProviderRuntimeStrongMutationSameSocketInternalV1({
     socketPath: state.selection.serviceConfig.payload.socketPath,
     timeoutMs: state.timeoutMs,
@@ -1008,9 +1194,9 @@ async function strongExchangeV1(
         state.selection.serviceConfig.publicKey,
       ),
       journalHead: {
-        revision: inspected.state.revision,
-        phase: inspected.state.phase,
-        mutationDigest: inspected.state.mutationDigest,
+        revision: trusted.inspected.state.revision,
+        phase: trusted.inspected.state.phase,
+        mutationDigest: trusted.inspected.state.mutationDigest,
       },
       acceptanceIdentity: state.selection.acceptanceIdentity,
     },
@@ -1027,6 +1213,229 @@ async function strongExchangeV1(
         expectedPublicKeyBytes: state.selection.signerPublicKeyBytes,
         grantFields,
       });
+    },
+  });
+}
+
+function validateTrustedProductionStateV1(
+  inspectedInput: unknown,
+  binding: Readonly<{
+    acceptanceEnvelope: ProductionSelectionV1["acceptanceEnvelope"];
+    acceptancePin: ProductionSelectionV1["acceptancePin"];
+  }>,
+): Readonly<{
+  inspected: ProviderRuntimeIpcInspectStateResultV1;
+  lifecycleArtifacts:
+    ProviderRuntimeDurableLifecycleProjectionV1["lifecycleArtifacts"];
+  businessHead?: ProductionStrongBusinessHeadInternalV1;
+}> {
+  const inspected = ProviderRuntimeIpcInspectStateResultV1Schema.parse(
+    inspectedInput,
+  );
+  let projected: ProviderRuntimeDurableLifecycleProjectionV1;
+  try {
+    projected = projectProviderRuntimeDurableLifecycleArtifactsV1({
+      journalState: inspected.state,
+      expectedAcceptanceEnvelope: binding.acceptanceEnvelope,
+      expectedAcceptancePin: binding.acceptancePin,
+    });
+  } catch {
+    return productionFailV1("runtime current Acceptance binding is invalid");
+  }
+  return Object.freeze({
+    inspected,
+    lifecycleArtifacts: projected.lifecycleArtifacts,
+    ...(projected.businessHead === undefined
+      ? {}
+      : {
+          businessHead: projected.businessHead as unknown as
+            ProductionStrongBusinessHeadInternalV1,
+        }),
+  });
+}
+
+function validateTrustedProductionReplayStateV1(
+  inspectedInput: unknown,
+  selection: ProductionSelectionV1,
+): ReturnType<typeof validateTrustedProductionStateV1> {
+  // Equivalent formal successors may all bridge to the same immutable
+  // lifecycle basis. The signed trust snapshot already identifies one exact
+  // current Acceptance, so prefer it and retain uniqueness only for fallback
+  // to an older, semantically different replay basis.
+  try {
+    return validateTrustedProductionStateV1(inspectedInput, {
+      acceptanceEnvelope: selection.acceptanceEnvelope,
+      acceptancePin: selection.acceptancePin,
+    });
+  } catch {
+    // Fall through to retained-history replay.
+  }
+  const matches = selection.acceptanceHistory.flatMap((candidate) => {
+    if (
+      candidate.envelope.generationId ===
+        selection.acceptanceEnvelope.generationId &&
+      candidate.envelope.contentDigest ===
+        selection.acceptanceEnvelope.contentDigest
+    ) return [];
+    try {
+      return [validateTrustedProductionStateV1(inspectedInput, {
+        acceptanceEnvelope: candidate.envelope,
+        acceptancePin: candidate.pin,
+      })];
+    } catch {
+      return [];
+    }
+  });
+  if (matches.length !== 1) {
+    return productionFailV1(
+      "replayed runtime Acceptance binding is not retained exactly once",
+    );
+  }
+  return matches[0]!;
+}
+
+/** Internal focused-test seam; only the revision crosses the public boundary. */
+export function providerProductionStrongJournalRevisionInternalV1(
+  input: Readonly<{
+    inspected: unknown;
+    acceptanceEnvelope: unknown;
+    acceptancePin: unknown;
+  }>,
+): Readonly<{ revision: number }> {
+  const trusted = validateTrustedProductionStateV1(input.inspected, {
+    acceptanceEnvelope:
+      ProviderAcceptanceStateEnvelopeV1Schema.parse(
+        input.acceptanceEnvelope,
+      ),
+    acceptancePin:
+      ProviderAcceptanceGenerationPinV1Schema.parse(
+        input.acceptancePin,
+      ),
+  });
+  return Object.freeze({ revision: trusted.inspected.state.revision });
+}
+
+async function inspectTrustedProductionStateV1(
+  state: ProductionClientStateV1,
+): Promise<ReturnType<typeof validateTrustedProductionStateV1>> {
+  return validateTrustedProductionReplayStateV1(
+    await state.runtimeClient.inspectState(),
+    state.selection,
+  );
+}
+
+type ProductionStrongCompareClaimsInternalV1 = Extract<
+  ProviderRuntimeIpcStrongMutationRequestClaimsV1,
+  { readonly operation: "compare_commit" }
+>;
+
+function parseProductionStrongBusinessCompareV1(
+  input: ProviderProductionStrongCompareCommitV1Input,
+): ProductionStrongCompareClaimsInternalV1 {
+  const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
+    operation: "compare_commit",
+    operationNonce: input.operationNonce,
+    payload: {
+      expectedRevision: input.expectedRevision,
+      operationNonce: input.operationNonce,
+      phase: input.phase,
+      artifacts: input.artifacts,
+    },
+  });
+  if (request.operation !== "compare_commit") {
+    return productionFailV1("strong compare request is invalid");
+  }
+  if (
+    request.payload.phase === PRODUCTION_STRONG_RUNTIME_PHASE_V1 ||
+    Object.prototype.hasOwnProperty.call(
+      request.payload.artifacts,
+      "finalStrongReadyAcceptance",
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      request.payload.artifacts,
+      PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1,
+    )
+  ) return productionFailV1("strong compare reserved authority is invalid");
+  return request;
+}
+
+function createProductionStrongRuntimeCompareV1(
+  trusted: ReturnType<typeof validateTrustedProductionStateV1>,
+  business: ProductionStrongCompareClaimsInternalV1,
+): ProductionStrongCompareClaimsInternalV1 {
+  const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
+    operation: "compare_commit",
+    operationNonce: business.operationNonce,
+    payload: {
+      expectedRevision: business.payload.expectedRevision,
+      operationNonce: business.operationNonce,
+      phase: PRODUCTION_STRONG_RUNTIME_PHASE_V1,
+      artifacts: {
+        ...trusted.lifecycleArtifacts,
+        [PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1]: {
+          profile: PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1,
+          phase: business.payload.phase,
+          artifacts: business.payload.artifacts,
+        },
+      },
+    },
+  });
+  if (request.operation !== "compare_commit") {
+    return productionFailV1("strong compare request is invalid");
+  }
+  return request;
+}
+
+function projectProductionStrongCompareResultV1(
+  resultInput: unknown,
+  business: ProductionStrongCompareClaimsInternalV1,
+  runtimeRequest: ProductionStrongCompareClaimsInternalV1,
+  selection: ProductionSelectionV1,
+): ProviderRuntimeIpcCompareCommitResultV1 {
+  const result = ProviderRuntimeIpcCompareCommitResultV1Schema.parse(resultInput);
+  const replayObservation = {
+    operation: "inspect_state" as const,
+    state: result.state,
+  };
+  const trusted = validateTrustedProductionReplayStateV1(
+    replayObservation,
+    selection,
+  );
+  if (result.resolution === "stale") {
+    const businessHead = trusted.businessHead;
+    return ProviderRuntimeIpcCompareCommitResultV1Schema.parse({
+      operation: "compare_commit",
+      resolution: "stale",
+      state: {
+        profile: trusted.inspected.state.profile,
+        revision: trusted.inspected.state.revision,
+        phase: businessHead?.phase ??
+          PRODUCTION_STRONG_BUSINESS_UNINITIALIZED_PHASE_V1,
+        operationNonce: businessHead === undefined
+          ? "none"
+          : trusted.inspected.state.operationNonce,
+        mutationDigest: businessHead === undefined
+          ? "none"
+          : trusted.inspected.state.mutationDigest,
+        artifacts: businessHead?.artifacts ?? {},
+      },
+    });
+  }
+  if (
+    result.state.revision !== runtimeRequest.payload.expectedRevision + 1 ||
+    result.state.operationNonce !== runtimeRequest.operationNonce ||
+    result.state.phase !== PRODUCTION_STRONG_RUNTIME_PHASE_V1 ||
+    !exactCanonicalEqualV1(
+      result.state.artifacts,
+      runtimeRequest.payload.artifacts,
+    )
+  ) return productionFailV1("strong compare runtime projection is invalid");
+  return ProviderRuntimeIpcCompareCommitResultV1Schema.parse({
+    ...result,
+    state: {
+      ...result.state,
+      phase: business.payload.phase,
+      artifacts: business.payload.artifacts,
     },
   });
 }
@@ -1069,6 +1478,12 @@ export async function openProviderProductionStrongObjectHostInternalV1(
     gatewaySocketPath: selection.gatewaySocketPath,
     serviceConfigPayloadDigest: selection.serviceConfig.payloadDigest,
     trustSnapshotDigest: selection.trustSnapshotDigest,
+    async inspectState() {
+      const inspected = await inspectTrustedProductionStateV1(
+        productionStateV1(client),
+      );
+      return { revision: inspected.inspected.state.revision };
+    },
     async readExactObject(locatorInput: ProviderRuntimeIpcFixedObjectLocatorV1) {
       const state = productionStateV1(client);
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
@@ -1110,19 +1525,26 @@ export async function openProviderProductionStrongObjectHostInternalV1(
     },
     async compareCommit(inputValue: ProviderProductionStrongCompareCommitV1Input) {
       const state = productionStateV1(client);
-      const operationNonce = LowerHex32V1Schema.parse(inputValue.operationNonce);
-      const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
-        operation: "compare_commit",
-        operationNonce,
-        payload: {
-          expectedRevision: inputValue.expectedRevision,
-          operationNonce,
-          phase: inputValue.phase,
-          artifacts: inputValue.artifacts,
+      const business = parseProductionStrongBusinessCompareV1(inputValue);
+      let runtimeRequest: ProductionStrongCompareClaimsInternalV1 | undefined;
+      const result = await strongExchangeV1(
+        state,
+        (inspected) => {
+          runtimeRequest = createProductionStrongRuntimeCompareV1(
+            inspected,
+            business,
+          );
+          return runtimeRequest;
         },
-      });
-      return ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
-        await strongExchangeV1(state, request),
+      );
+      if (runtimeRequest === undefined) {
+        return productionFailV1("strong compare runtime projection is unavailable");
+      }
+      return projectProductionStrongCompareResultV1(
+        result,
+        business,
+        runtimeRequest,
+        state.selection,
       );
     },
     commitOwnerOnlyState(

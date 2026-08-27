@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import { chmod, lstat, open, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
@@ -19,6 +20,7 @@ import {
 import {
   PROVIDER_PRODUCTION_STRONG_CLIENT_DESCRIPTOR_PROFILE_V1,
   providerProductionStrongClientDescriptorPathV1,
+  providerProductionStrongClientLifecycleLockPathV1,
 } from "@understand-code/durable-object-provider-runtime/provider-production-strong-client-trust-lifecycle";
 import { readProviderRuntimeNativeKernelPeerCredentialsV1 } from "@understand-code/native-kernel-bridge";
 
@@ -53,7 +55,235 @@ interface GatewayClientStateV1 {
   readonly descriptor: GatewayDescriptorV1;
 }
 
+interface GatewayLifecycleLeaseV1 {
+  readonly lost: Promise<void>;
+  held(): boolean;
+  close(): Promise<void>;
+}
+
+interface GatewayServiceResourceClosersInternalV1 {
+  closeServer(): Promise<void>;
+  closeHost(): void;
+  closeLifecycleLease(): Promise<void>;
+}
+
 const gatewayClientStatesV1 = new WeakMap<object, GatewayClientStateV1>();
+
+/**
+ * Shared production/test close coordinator. Every resource is attempted in
+ * dependency order even when an earlier close fails, so an unlink/fsync error
+ * can never strand the root lifecycle lease.
+ */
+export async function closeProviderProductionStrongObjectGatewayResourcesInternalV1(
+  closers: GatewayServiceResourceClosersInternalV1,
+): Promise<void> {
+  const errors: unknown[] = [];
+  try {
+    await closers.closeServer();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    closers.closeHost();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await closers.closeLifecycleLease();
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "production strong object gateway resource close failed",
+    );
+  }
+}
+
+function sameGatewayDescriptorV1(
+  left: GatewayDescriptorV1,
+  right: GatewayDescriptorV1,
+): boolean {
+  return left.canonicalInstallationRoot === right.canonicalInstallationRoot &&
+    left.providerId === right.providerId &&
+    left.servicePrincipal.uid === right.servicePrincipal.uid &&
+    left.servicePrincipal.gid === right.servicePrincipal.gid &&
+    left.callerPrincipal.uid === right.callerPrincipal.uid &&
+    left.callerPrincipal.gid === right.callerPrincipal.gid &&
+    left.gatewaySocketPath === right.gatewaySocketPath &&
+    left.serviceConfigPayloadDigest === right.serviceConfigPayloadDigest &&
+    left.trustSnapshotDigest === right.trustSnapshotDigest;
+}
+
+async function syncDirectoryV1(path: string): Promise<void> {
+  const handle = await open(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | O_CLOEXEC_V1,
+  );
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function acquireGatewayLifecycleLeaseV1(
+  descriptor: GatewayDescriptorV1,
+): Promise<GatewayLifecycleLeaseV1> {
+  const lockPath = providerProductionStrongClientLifecycleLockPathV1(
+    descriptor.canonicalInstallationRoot,
+  );
+  const handle = await open(
+    lockPath,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | O_CLOEXEC_V1,
+  );
+  let child: ChildProcessWithoutNullStreams | undefined;
+  try {
+    const before = await handle.stat({ bigint: true });
+    const projected = await lstat(lockPath, { bigint: true });
+    if (
+      !before.isFile() || before.uid !== 0n || before.nlink !== 1n ||
+      (before.mode & 0o777n) !== 0o600n || projected.isSymbolicLink() ||
+      projected.dev !== before.dev || projected.ino !== before.ino
+    ) return unavailableV1();
+    child = spawn(
+      "/usr/bin/setpriv",
+      [
+        `--reuid=${descriptor.servicePrincipal.uid}`,
+        `--regid=${descriptor.servicePrincipal.gid}`,
+        "--clear-groups",
+        "/bin/sh",
+        "-c",
+        "/usr/bin/flock -x -w 2 3 || exit 1; printf ready; exec /usr/bin/cat",
+      ],
+      { stdio: ["pipe", "pipe", "pipe", handle.fd] },
+    ) as ChildProcessWithoutNullStreams;
+    let ready = false;
+    let output = Buffer.alloc(0);
+    let spawnError: Error | undefined;
+    let lostState = false;
+    let closedState = false;
+    let resolveLost!: () => void;
+    let resolveClosed!: () => void;
+    const lost = new Promise<void>((resolvePromise) => {
+      resolveLost = resolvePromise;
+    });
+    const closed = new Promise<void>((resolvePromise) => {
+      resolveClosed = resolvePromise;
+    });
+    const markLost = (): void => {
+      if (lostState) return;
+      lostState = true;
+      resolveLost();
+    };
+    const markClosed = (): void => {
+      markLost();
+      if (closedState) return;
+      closedState = true;
+      resolveClosed();
+    };
+    const held = (): boolean =>
+      !lostState && child!.exitCode === null && child!.signalCode === null;
+    const endInput = (): void => {
+      if (!child!.stdin.destroyed && !child!.stdin.writableEnded) {
+        child!.stdin.end();
+      }
+    };
+    child.once("exit", markLost);
+    child.once("close", markClosed);
+    child.once("error", (error) => {
+      spawnError = error;
+      markLost();
+    });
+    child.stdout.on("data", (chunk: Buffer) => {
+      output = Buffer.concat([output, chunk]);
+      if (output.subarray(0, 5).toString("utf8") === "ready") ready = true;
+    });
+    await new Promise<void>((resolvePromise) => {
+      const timer = setTimeout(resolvePromise, 3_000);
+      const check = (): void => {
+        if (ready || spawnError !== undefined || !held()) {
+          clearTimeout(timer);
+          resolvePromise();
+        } else setImmediate(check);
+      };
+      check();
+    });
+    output.fill(0);
+    if (!ready || !held()) {
+      endInput();
+      if (held()) child.kill("SIGKILL");
+      await closed;
+      return unavailableV1();
+    }
+    return Object.freeze({
+      lost,
+      held,
+      async close(): Promise<void> {
+        // Always drive EOF. If flock was signalled, its command may still own
+        // the inherited pipe even though the lease itself is already lost.
+        endInput();
+        await closed;
+      },
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
+async function gatewaySocketIsLiveV1(path: string): Promise<boolean> {
+  return new Promise<boolean>((resolvePromise, rejectPromise) => {
+    const socket = createConnection(path);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      rejectPromise(new TypeError("production strong object gateway is unavailable"));
+    }, 1_000);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolvePromise(true);
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      socket.destroy();
+      if (error.code === "ECONNREFUSED") resolvePromise(false);
+      else rejectPromise(error);
+    });
+  });
+}
+
+async function reclaimExactStaleGatewaySocketV1(
+  descriptor: GatewayDescriptorV1,
+): Promise<void> {
+  let stale;
+  try {
+    stale = await lstat(descriptor.gatewaySocketPath);
+  } catch (error) {
+    if (
+      typeof error === "object" && error !== null && "code" in error &&
+      (error as { readonly code?: unknown }).code === "ENOENT"
+    ) return;
+    throw error;
+  }
+  if (
+    !stale.isSocket() || stale.isSymbolicLink() ||
+    stale.uid !== descriptor.servicePrincipal.uid ||
+    stale.gid !== descriptor.callerPrincipal.gid ||
+    (stale.mode & 0o777) !== 0o660 ||
+    await gatewaySocketIsLiveV1(descriptor.gatewaySocketPath)
+  ) return unavailableV1();
+  const projected = await lstat(descriptor.gatewaySocketPath);
+  if (
+    !projected.isSocket() || projected.isSymbolicLink() ||
+    projected.dev !== stale.dev || projected.ino !== stale.ino ||
+    projected.uid !== stale.uid || projected.gid !== stale.gid ||
+    projected.mode !== stale.mode
+  ) return unavailableV1();
+  await unlink(descriptor.gatewaySocketPath);
+  await syncDirectoryV1(dirname(descriptor.gatewaySocketPath));
+}
 
 export function providerProductionStrongObjectPrivilegeDropIsExactInternalV1(
   input: Readonly<{
@@ -86,6 +316,19 @@ function exactKeysV1(value: Record<string, unknown>, keys: readonly string[]): b
   const expected = [...keys].sort();
   return actual.length === expected.length &&
     actual.every((key, index) => key === expected[index]);
+}
+
+/** Internal focused-test seam for the revision-only public projection. */
+export function providerProductionStrongObjectRevisionProjectionInternalV1(
+  value: unknown,
+): Readonly<{ revision: number }> {
+  const inspected = recordV1(value);
+  if (
+    inspected === undefined || !exactKeysV1(inspected, ["revision"]) ||
+    !Number.isSafeInteger(inspected.revision) ||
+    (inspected.revision as number) < 0
+  ) return unavailableV1();
+  return Object.freeze({ revision: inspected.revision as number });
 }
 
 function exactPathV1(value: unknown): string {
@@ -332,6 +575,12 @@ export async function openProviderProductionStrongObjectClientV1(
   ) return unavailableV1();
   const client = Object.freeze({
     verifiedProviderId: descriptor.providerId,
+    async inspectState() {
+      const current = stateV1(client).descriptor;
+      return providerProductionStrongObjectRevisionProjectionInternalV1(
+        await exchangeV1(current, "inspect_state", {}),
+      );
+    },
     async readExactObject(locatorInput: Parameters<ProviderProductionStrongObjectClientV1["readExactObject"]>[0]) {
       const current = stateV1(client).descriptor;
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locatorInput);
@@ -374,20 +623,26 @@ export interface ProviderProductionStrongObjectGatewayServiceV1 {
 
 class GatewayServerInternalV1 {
   readonly #host: ProviderProductionStrongObjectHostInternalV1;
+  readonly #lifecycleLeaseHeld: () => boolean;
   readonly #connections = new Set<Socket>();
   readonly #active = new Set<Promise<void>>();
   #server: Server | undefined;
   #identity: { readonly dev: number; readonly ino: number } | undefined;
   #servicePrincipalActive = false;
 
-  constructor(host: ProviderProductionStrongObjectHostInternalV1) {
+  constructor(
+    host: ProviderProductionStrongObjectHostInternalV1,
+    lifecycleLeaseHeld: () => boolean,
+  ) {
     this.#host = host;
+    this.#lifecycleLeaseHeld = lifecycleLeaseHeld;
   }
 
   async start(): Promise<void> {
     if (
       process.geteuid?.() !== this.#host.servicePrincipal.uid ||
-      process.getegid?.() !== this.#host.servicePrincipal.gid
+      process.getegid?.() !== this.#host.servicePrincipal.gid ||
+      !this.#lifecycleLeaseHeld()
     ) return unavailableV1();
     const directory = await lstat(dirname(this.#host.gatewaySocketPath));
     if (
@@ -407,6 +662,10 @@ class GatewayServerInternalV1 {
       ) throw error;
     }
     const server = createServer((socket) => {
+      if (!this.#servicePrincipalActive || !this.#lifecycleLeaseHeld()) {
+        socket.destroy();
+        return;
+      }
       this.#connections.add(socket);
       socket.once("close", () => this.#connections.delete(socket));
       const active = this.#serve(socket);
@@ -440,7 +699,8 @@ class GatewayServerInternalV1 {
         projected.dev !== created.dev || projected.ino !== created.ino ||
         projected.uid !== this.#host.servicePrincipal.uid ||
         projected.gid !== this.#host.callerPrincipal.gid ||
-        (projected.mode & 0o777) !== 0o660
+        (projected.mode & 0o777) !== 0o660 ||
+        !this.#lifecycleLeaseHeld()
       ) return unavailableV1();
     } catch (error) {
       await this.close().catch(() => undefined);
@@ -466,7 +726,10 @@ class GatewayServerInternalV1 {
       if (
         projected.isSocket() && projected.dev === identity.dev &&
         projected.ino === identity.ino
-      ) await unlink(this.#host.gatewaySocketPath);
+      ) {
+        await unlink(this.#host.gatewaySocketPath);
+        await syncDirectoryV1(dirname(this.#host.gatewaySocketPath));
+      }
     } catch (error) {
       if (
         !(typeof error === "object" && error !== null && "code" in error &&
@@ -476,7 +739,10 @@ class GatewayServerInternalV1 {
   }
 
   activateServicePrincipal(): void {
-    if (this.#server === undefined || !this.#server.listening) unavailableV1();
+    if (
+      this.#server === undefined || !this.#server.listening ||
+      !this.#lifecycleLeaseHeld()
+    ) unavailableV1();
     this.#servicePrincipalActive = true;
   }
 
@@ -485,7 +751,7 @@ class GatewayServerInternalV1 {
     try {
       // The listener is created only after the exact service drop. This keeps
       // Linux SO_PEERCRED bound to the service principal rather than root.
-      if (!this.#servicePrincipalActive) return;
+      if (!this.#servicePrincipalActive || !this.#lifecycleLeaseHeld()) return;
       const peer = readProviderRuntimeNativeKernelPeerCredentialsV1(socket);
       if (
         peer.uid !== this.#host.callerPrincipal.uid ||
@@ -502,6 +768,10 @@ class GatewayServerInternalV1 {
         case "inspect":
           if (payload === undefined || !exactKeysV1(payload, [])) return;
           result = { providerId: this.#host.verifiedProviderId };
+          break;
+        case "inspect_state":
+          if (payload === undefined || !exactKeysV1(payload, [])) return;
+          result = await this.#host.inspectState();
           break;
         case "read": {
           if (payload === undefined || !exactKeysV1(payload, ["locator"])) return;
@@ -535,13 +805,14 @@ class GatewayServerInternalV1 {
         default:
           return;
       }
+      if (!this.#lifecycleLeaseHeld()) return;
       await writeFrameV1(socket, {
         profile: GATEWAY_WIRE_PROFILE_V1,
         ok: true,
         payload: result,
       });
     } catch {
-      if (!socket.destroyed) {
+      if (this.#lifecycleLeaseHeld() && !socket.destroyed) {
         await writeFrameV1(socket, {
           profile: GATEWAY_WIRE_PROFILE_V1,
           ok: false,
@@ -563,24 +834,35 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
   input: OpenProviderProductionStrongObjectClientV1Input,
 ): Promise<ProviderProductionStrongObjectGatewayServiceV1> {
   if (process.platform !== "linux" || process.geteuid?.() !== 0) unavailableV1();
-  const descriptor = await readRootDescriptorV1(input.canonicalInstallationRoot);
-  const host = await openProviderProductionStrongObjectHostInternalV1(input);
-  if (
-    host.verifiedInstallationRoot !== descriptor.canonicalInstallationRoot ||
-    host.verifiedProviderId !== descriptor.providerId ||
-    host.gatewaySocketPath !== descriptor.gatewaySocketPath ||
-    host.serviceConfigPayloadDigest !== descriptor.serviceConfigPayloadDigest ||
-    host.trustSnapshotDigest !== descriptor.trustSnapshotDigest ||
-    host.servicePrincipal.uid !== descriptor.servicePrincipal.uid ||
-    host.servicePrincipal.gid !== descriptor.servicePrincipal.gid ||
-    host.callerPrincipal.uid !== descriptor.callerPrincipal.uid ||
-    host.callerPrincipal.gid !== descriptor.callerPrincipal.gid
-  ) {
-    host.close();
-    return unavailableV1();
-  }
-  const server = new GatewayServerInternalV1(host);
+  const observedDescriptor = await readRootDescriptorV1(
+    input.canonicalInstallationRoot,
+  );
+  const lifecycleLease = await acquireGatewayLifecycleLeaseV1(
+    observedDescriptor,
+  );
+  let host: ProviderProductionStrongObjectHostInternalV1 | undefined;
+  let server: GatewayServerInternalV1 | undefined;
   try {
+    const descriptor = await readRootDescriptorV1(
+      input.canonicalInstallationRoot,
+    );
+    if (!sameGatewayDescriptorV1(observedDescriptor, descriptor)) {
+      return unavailableV1();
+    }
+    await reclaimExactStaleGatewaySocketV1(descriptor);
+    host = await openProviderProductionStrongObjectHostInternalV1(input);
+    if (
+      host.verifiedInstallationRoot !== descriptor.canonicalInstallationRoot ||
+      host.verifiedProviderId !== descriptor.providerId ||
+      host.gatewaySocketPath !== descriptor.gatewaySocketPath ||
+      host.serviceConfigPayloadDigest !== descriptor.serviceConfigPayloadDigest ||
+      host.trustSnapshotDigest !== descriptor.trustSnapshotDigest ||
+      host.servicePrincipal.uid !== descriptor.servicePrincipal.uid ||
+      host.servicePrincipal.gid !== descriptor.servicePrincipal.gid ||
+      host.callerPrincipal.uid !== descriptor.callerPrincipal.uid ||
+      host.callerPrincipal.gid !== descriptor.callerPrincipal.gid
+    ) return unavailableV1();
+    server = new GatewayServerInternalV1(host, lifecycleLease.held);
     if (
       typeof process.setgroups !== "function" ||
       typeof process.getgroups !== "function" ||
@@ -588,6 +870,7 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
       typeof process.setuid !== "function" ||
       host.servicePrincipal.uid === 0 || host.servicePrincipal.gid === 0
     ) return unavailableV1();
+    if (!lifecycleLease.held()) return unavailableV1();
     process.setgroups([host.servicePrincipal.gid]);
     process.setgid(host.servicePrincipal.gid);
     process.setuid(host.servicePrincipal.uid);
@@ -600,18 +883,32 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
       expectedGid: host.servicePrincipal.gid,
     })) return unavailableV1();
     await server.start();
+    if (!lifecycleLease.held()) return unavailableV1();
     server.activateServicePrincipal();
   } catch (error) {
-    await server.close().catch(() => undefined);
-    host.close();
+    await closeProviderProductionStrongObjectGatewayResourcesInternalV1({
+      closeServer: async () => server?.close(),
+      closeHost: () => host?.close(),
+      closeLifecycleLease: () => lifecycleLease.close(),
+    }).catch(() => undefined);
     throw error;
   }
+  let closePromise: Promise<void> | undefined;
+  const closeAll = (): Promise<void> => {
+    closePromise ??=
+      closeProviderProductionStrongObjectGatewayResourcesInternalV1({
+        closeServer: () => server!.close(),
+        closeHost: () => host!.close(),
+        closeLifecycleLease: () => lifecycleLease.close(),
+      });
+    return closePromise;
+  };
+  void lifecycleLease.lost.then(() => {
+    if (closePromise === undefined) void closeAll().catch(() => undefined);
+  });
   return Object.freeze({
     profile: "provider_production_strong_object_gateway_service_v1" as const,
     verifiedProviderId: host.verifiedProviderId,
-    async close(): Promise<void> {
-      await server.close();
-      host.close();
-    },
+    close: closeAll,
   });
 }

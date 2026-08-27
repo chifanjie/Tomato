@@ -216,8 +216,19 @@ export {
 export type {
   ProviderRuntimeDurableAcceptanceCurrentCandidateV1,
   ProviderRuntimeDurableAcceptanceCurrentDiagnosticV1,
+  ProviderRuntimeDurableLifecycleProjectionV1,
   VerifyProviderRuntimeDurableAcceptanceCurrentOptionsV1,
 } from "./durable-acceptance-current.js";
+export {
+  PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_ARTIFACT_KEY_V1,
+  PROVIDER_RUNTIME_DURABLE_BUSINESS_HEAD_PROFILE_V1,
+  PROVIDER_RUNTIME_DURABLE_LIFECYCLE_ARTIFACT_KEYS_V1,
+  projectProviderRuntimeDurableLifecycleArtifactSetV1,
+} from "./durable-lifecycle-artifacts.js";
+export type {
+  ProviderRuntimeDurableBusinessHeadV1,
+  ProviderRuntimeDurableLifecycleArtifactSetProjectionV1,
+} from "./durable-lifecycle-artifacts.js";
 export {
   PROVIDER_RUNTIME_PRINCIPAL_KERNEL_ACCEPTANCE_IDENTITY_LIVE_REQUIRED_NEXT_V1,
   PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1,

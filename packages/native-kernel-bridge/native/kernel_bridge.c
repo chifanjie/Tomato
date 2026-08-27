@@ -24,6 +24,7 @@
 #include "safe_git_runner_internal.h"
 #if defined(__linux__)
 #include <linux/fs.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
@@ -379,6 +380,8 @@ struct provider_exact_object_node {
   struct stat snapshot;
 };
 
+struct provider_exact_object_source;
+
 /*
  * Process-local, non-serializable publication authority.  Every root-to-parent
  * descriptor remains open for the lifetime of the object.  The canonical path
@@ -388,18 +391,27 @@ struct provider_exact_object_node {
 struct provider_exact_object_publisher {
   int closed;
   int test_parent_fsync_failure_armed;
+  int test_post_link_parent_change_armed;
+  int test_pre_link_parent_aba_armed;
   uid_t expected_owner_uid;
   gid_t expected_owner_gid;
   size_t node_count;
   struct provider_exact_object_node nodes[PROVIDER_EXACT_OBJECT_NODE_LIMIT];
   char canonical_parent_path[PATH_MAX + 1];
+  char test_pre_link_parent_aba_peer_path[PATH_MAX + 1];
+  struct provider_exact_object_source *outstanding_source;
 };
 
 struct provider_exact_object_source {
   int closed;
   int file_descriptor;
+  int mutation_watch_descriptor;
   struct provider_exact_object_publisher *publisher;
+  napi_ref publisher_reference;
   struct stat snapshot;
+  size_t parent_node_count;
+  int parent_watch_ids[PROVIDER_EXACT_OBJECT_NODE_LIMIT];
+  struct timespec parent_change_times[PROVIDER_EXACT_OBJECT_NODE_LIMIT];
 };
 
 static const napi_type_tag SAFE_GIT_BINDING_TYPE_TAG = {
@@ -7990,6 +8002,8 @@ static void provider_exact_object_publisher_release(
   publisher->node_count = 0;
   safe_git_secure_zero(publisher->canonical_parent_path,
                        sizeof(publisher->canonical_parent_path));
+  safe_git_secure_zero(publisher->test_pre_link_parent_aba_peer_path,
+                       sizeof(publisher->test_pre_link_parent_aba_peer_path));
   publisher->closed = 1;
 }
 
@@ -8004,13 +8018,30 @@ static void provider_exact_object_publisher_finalizer(napi_env env, void *data,
 }
 
 static void provider_exact_object_source_release(
-    struct provider_exact_object_source *source) {
+    napi_env env, struct provider_exact_object_source *source) {
   if (source == NULL || source->closed) return;
   if (source->file_descriptor >= 0) {
     (void)close(source->file_descriptor);
     source->file_descriptor = -1;
   }
+  if (source->mutation_watch_descriptor >= 0) {
+    (void)close(source->mutation_watch_descriptor);
+    source->mutation_watch_descriptor = -1;
+  }
   safe_git_secure_zero(&source->snapshot, sizeof(source->snapshot));
+  safe_git_secure_zero(source->parent_watch_ids,
+                       sizeof(source->parent_watch_ids));
+  safe_git_secure_zero(source->parent_change_times,
+                       sizeof(source->parent_change_times));
+  source->parent_node_count = 0;
+  if (source->publisher != NULL &&
+      source->publisher->outstanding_source == source) {
+    source->publisher->outstanding_source = NULL;
+  }
+  if (source->publisher_reference != NULL) {
+    (void)napi_delete_reference(env, source->publisher_reference);
+    source->publisher_reference = NULL;
+  }
   source->publisher = NULL;
   source->closed = 1;
 }
@@ -8022,7 +8053,7 @@ static void provider_exact_object_source_finalizer(napi_env env, void *data,
       (struct provider_exact_object_source *)data;
   (void)env;
   (void)hint;
-  provider_exact_object_source_release(source);
+  provider_exact_object_source_release(env, source);
   free(source);
 }
 
@@ -8034,6 +8065,258 @@ static int provider_exact_object_directory_identity_matches(
          expected->st_uid == observed->st_uid &&
          expected->st_gid == observed->st_gid &&
          expected->st_mode == observed->st_mode;
+}
+
+static int provider_exact_object_change_time_matches(
+    const struct timespec *expected, const struct stat *observed) {
+  return expected->tv_sec == observed->st_ctim.tv_sec &&
+         expected->tv_nsec == observed->st_ctim.tv_nsec;
+}
+
+#define PROVIDER_EXACT_OBJECT_PARENT_WATCH_MASK                              \
+  (IN_ATTRIB | IN_CLOSE_WRITE | IN_CREATE | IN_DELETE | IN_DELETE_SELF |    \
+   IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_UNMOUNT)
+
+static int provider_exact_object_parent_watch_has_no_events(
+    struct provider_exact_object_source *source) {
+  char buffer[4096]
+      __attribute__((aligned(__alignof__(struct inotify_event))));
+  if (source == NULL || source->mutation_watch_descriptor < 0) return 0;
+  for (;;) {
+    ssize_t length =
+        read(source->mutation_watch_descriptor, buffer, sizeof(buffer));
+    if (length < 0 && errno == EINTR) continue;
+    if (length < 0 && errno == EAGAIN) {
+      safe_git_secure_zero(buffer, sizeof(buffer));
+      return 1;
+    }
+    safe_git_secure_zero(buffer, sizeof(buffer));
+    return 0;
+  }
+}
+
+static int provider_exact_object_initialize_parent_watches(
+    struct provider_exact_object_source *source) {
+  struct provider_exact_object_publisher *publisher;
+  char descriptor_path[64];
+  size_t index;
+  size_t prior;
+  int written;
+  int watch_descriptor;
+  if (source == NULL || source->closed || source->publisher == NULL ||
+      source->mutation_watch_descriptor >= 0) {
+    return 0;
+  }
+  publisher = source->publisher;
+  if (publisher->closed || publisher->node_count < 2 ||
+      publisher->node_count > PROVIDER_EXACT_OBJECT_NODE_LIMIT) {
+    return 0;
+  }
+  source->mutation_watch_descriptor = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+  if (source->mutation_watch_descriptor < 0) return 0;
+  source->parent_node_count = publisher->node_count;
+  for (index = 0; index < publisher->node_count; index += 1) {
+    written = snprintf(descriptor_path, sizeof(descriptor_path),
+                       "/proc/self/fd/%d",
+                       publisher->nodes[index].file_descriptor);
+    if (written < 1 || written >= (int)sizeof(descriptor_path)) return 0;
+    watch_descriptor = inotify_add_watch(
+        source->mutation_watch_descriptor, descriptor_path,
+        PROVIDER_EXACT_OBJECT_PARENT_WATCH_MASK | IN_ONLYDIR);
+    safe_git_secure_zero(descriptor_path, sizeof(descriptor_path));
+    if (watch_descriptor < 0) return 0;
+    for (prior = 0; prior < index; prior += 1) {
+      if (source->parent_watch_ids[prior] == watch_descriptor) return 0;
+    }
+    source->parent_watch_ids[index] = watch_descriptor;
+  }
+  return provider_exact_object_parent_watch_has_no_events(source);
+}
+
+/*
+ * ctime cannot attribute the final parent's expected link mutation. A
+ * retained watch on every chain directory covers clock-tick coalescing and
+ * pathname ABA from staging through publication. Exactly one final-parent
+ * CREATE for our fixed name is admissible; every other queued mutation fails.
+ */
+static int provider_exact_object_consume_expected_link_event(
+    struct provider_exact_object_source *source, const char *final_name) {
+  char buffer[4096]
+      __attribute__((aligned(__alignof__(struct inotify_event))));
+  int expected_create_count = 0;
+  int final_watch;
+  size_t final_name_length;
+  if (source == NULL || source->mutation_watch_descriptor < 0 ||
+      source->parent_node_count < 2 || final_name == NULL) {
+    return 0;
+  }
+  final_name_length = strlen(final_name);
+  if (final_name_length < 1 || final_name_length > NAME_MAX) return 0;
+  final_watch = source->parent_watch_ids[source->parent_node_count - 1];
+  for (;;) {
+    ssize_t length =
+        read(source->mutation_watch_descriptor, buffer, sizeof(buffer));
+    size_t offset = 0;
+    if (length < 0 && errno == EINTR) continue;
+    if (length < 0 && errno == EAGAIN) break;
+    if (length <= 0) return 0;
+    while (offset < (size_t)length) {
+      const struct inotify_event *event =
+          (const struct inotify_event *)(buffer + offset);
+      size_t event_size;
+      if ((size_t)length - offset < sizeof(struct inotify_event)) {
+        safe_git_secure_zero(buffer, sizeof(buffer));
+        return 0;
+      }
+      event_size = sizeof(struct inotify_event) + event->len;
+      if (event_size > (size_t)length - offset ||
+          event->len < final_name_length + 1) {
+        safe_git_secure_zero(buffer, sizeof(buffer));
+        return 0;
+      }
+      if (event->wd == final_watch && event->mask == IN_CREATE &&
+          memcmp(event->name, final_name, final_name_length) == 0 &&
+          event->name[final_name_length] == '\0') {
+        expected_create_count += 1;
+      } else {
+        safe_git_secure_zero(buffer, sizeof(buffer));
+        return 0;
+      }
+      if (expected_create_count > 1) {
+        safe_git_secure_zero(buffer, sizeof(buffer));
+        return 0;
+      }
+      offset += event_size;
+    }
+  }
+  safe_git_secure_zero(buffer, sizeof(buffer));
+  return expected_create_count == 1;
+}
+
+static int provider_exact_object_revalidate_parent_chain(
+    struct provider_exact_object_publisher *publisher);
+
+/*
+ * Bind one staged source to the nanosecond ctime of every retained
+ * root-to-parent descriptor. Linux does not expose an API that can set ctime;
+ * rename/reparent/exchange can only advance it. The open descriptors also keep
+ * an unlinked directory inode allocated, so unlink/recreate cannot recycle its
+ * inode into this capability while the source is live.
+ */
+static int provider_exact_object_bind_source_parent_chain(
+    struct provider_exact_object_source *source) {
+  struct provider_exact_object_publisher *publisher;
+  struct stat observed;
+  size_t index;
+  if (source == NULL || source->closed || source->publisher == NULL) return 0;
+  publisher = source->publisher;
+  if (publisher->closed || publisher->node_count < 2 ||
+      publisher->node_count > PROVIDER_EXACT_OBJECT_NODE_LIMIT ||
+      source->mutation_watch_descriptor < 0 ||
+      source->parent_node_count != publisher->node_count ||
+      !provider_exact_object_revalidate_parent_chain(publisher)) {
+    return 0;
+  }
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (source->parent_watch_ids[index] < 0 ||
+        fstat(publisher->nodes[index].file_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed)) {
+      return 0;
+    }
+    source->parent_change_times[index] = observed.st_ctim;
+  }
+  if (!provider_exact_object_revalidate_parent_chain(publisher)) return 0;
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstat(publisher->nodes[index].file_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed) ||
+        !provider_exact_object_change_time_matches(
+            &source->parent_change_times[index], &observed)) {
+      return 0;
+    }
+  }
+  return provider_exact_object_parent_watch_has_no_events(source);
+}
+
+static int provider_exact_object_source_parent_chain_matches(
+    struct provider_exact_object_source *source) {
+  struct provider_exact_object_publisher *publisher;
+  struct stat observed;
+  size_t index;
+  if (source == NULL || source->closed || source->publisher == NULL) return 0;
+  publisher = source->publisher;
+  if (publisher->closed || source->parent_node_count != publisher->node_count ||
+      !provider_exact_object_revalidate_parent_chain(publisher)) {
+    return 0;
+  }
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (source->parent_watch_ids[index] < 0 ||
+        fstat(publisher->nodes[index].file_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed) ||
+        !provider_exact_object_change_time_matches(
+            &source->parent_change_times[index], &observed)) {
+      return 0;
+    }
+  }
+  return provider_exact_object_parent_watch_has_no_events(source);
+}
+
+static int provider_exact_object_capture_post_link_parent_chain(
+    struct provider_exact_object_source *source,
+    struct timespec observed_change_times[PROVIDER_EXACT_OBJECT_NODE_LIMIT]) {
+  struct provider_exact_object_publisher *publisher;
+  struct stat observed;
+  size_t index;
+  if (source == NULL || source->closed || source->publisher == NULL) return 0;
+  publisher = source->publisher;
+  if (publisher->closed || source->parent_node_count != publisher->node_count ||
+      !provider_exact_object_revalidate_parent_chain(publisher)) {
+    return 0;
+  }
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstat(publisher->nodes[index].file_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed) ||
+        (index + 1 < publisher->node_count &&
+         !provider_exact_object_change_time_matches(
+             &source->parent_change_times[index], &observed))) {
+      return 0;
+    }
+    observed_change_times[index] = observed.st_ctim;
+  }
+  return 1;
+}
+
+static int provider_exact_object_post_link_parent_chain_matches(
+    struct provider_exact_object_source *source,
+    const struct timespec
+        observed_change_times[PROVIDER_EXACT_OBJECT_NODE_LIMIT]) {
+  struct provider_exact_object_publisher *publisher;
+  struct stat observed;
+  size_t index;
+  if (source == NULL || source->closed || source->publisher == NULL) return 0;
+  publisher = source->publisher;
+  if (publisher->closed || source->parent_node_count != publisher->node_count ||
+      !provider_exact_object_revalidate_parent_chain(publisher)) {
+    return 0;
+  }
+  for (index = 0; index < publisher->node_count; index += 1) {
+    memset(&observed, 0, sizeof(observed));
+    if (fstat(publisher->nodes[index].file_descriptor, &observed) != 0 ||
+        !provider_exact_object_directory_identity_matches(
+            &publisher->nodes[index].snapshot, &observed) ||
+        !provider_exact_object_change_time_matches(
+            &observed_change_times[index], &observed)) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 static int provider_exact_object_managed_parent_admitted(
@@ -8372,7 +8655,7 @@ static napi_value stage_provider_exact_object(napi_env env,
           napi_ok ||
       argument_count != 2 ||
       !provider_exact_object_unwrap_publisher(env, arguments[0], &publisher) ||
-      publisher->closed ||
+      publisher->closed || publisher->outstanding_source != NULL ||
       geteuid() != publisher->expected_owner_uid ||
       getegid() != publisher->expected_owner_gid ||
       napi_get_buffer_info(env, arguments[1], &bytes, &length) != napi_ok ||
@@ -8407,22 +8690,35 @@ static napi_value stage_provider_exact_object(napi_env env,
     (void)close(file_descriptor);
     return throw_provider_exact_object_unavailable(env);
   }
+  source->file_descriptor = -1;
+  source->mutation_watch_descriptor = -1;
+  for (offset = 0; offset < PROVIDER_EXACT_OBJECT_NODE_LIMIT; offset += 1) {
+    source->parent_watch_ids[offset] = -1;
+  }
   source->file_descriptor = file_descriptor;
   source->publisher = publisher;
+  if (napi_create_reference(env, arguments[0], 1,
+                            &source->publisher_reference) != napi_ok) {
+    provider_exact_object_source_release(env, source);
+    free(source);
+    return throw_provider_exact_object_unavailable(env);
+  }
+  publisher->outstanding_source = source;
   if (fstat(file_descriptor, &source->snapshot) != 0 ||
       source->snapshot.st_size != (off_t)length ||
       !provider_exact_object_source_admitted(source) ||
-      !provider_exact_object_revalidate_parent_chain(publisher) ||
+      !provider_exact_object_initialize_parent_watches(source) ||
+      !provider_exact_object_bind_source_parent_chain(source) ||
       napi_create_object(env, &object) != napi_ok ||
       napi_wrap(env, object, source, provider_exact_object_source_finalizer,
                 NULL, NULL) != napi_ok) {
-    provider_exact_object_source_release(source);
+    provider_exact_object_source_release(env, source);
     free(source);
     return throw_provider_exact_object_unavailable(env);
   }
   if (napi_type_tag_object(env, object,
                            &PROVIDER_EXACT_OBJECT_SOURCE_TYPE_TAG) != napi_ok) {
-    provider_exact_object_source_release(source);
+    provider_exact_object_source_release(env, source);
     return throw_provider_exact_object_unavailable(env);
   }
   return object;
@@ -8504,6 +8800,116 @@ static int provider_exact_object_fsync_parent(
   }
   return fsync(parent_descriptor) == 0;
 }
+
+static int provider_exact_object_linked_source_identity_matches(
+    const struct provider_exact_object_source *source,
+    const struct stat *observed, nlink_t expected_link_count) {
+  return source != NULL && observed != NULL &&
+         S_ISREG(observed->st_mode) &&
+         observed->st_dev == source->snapshot.st_dev &&
+         observed->st_ino == source->snapshot.st_ino &&
+         observed->st_mode == source->snapshot.st_mode &&
+         observed->st_uid == source->snapshot.st_uid &&
+         observed->st_gid == source->snapshot.st_gid &&
+         observed->st_size == source->snapshot.st_size &&
+         observed->st_nlink == expected_link_count;
+}
+
+static int provider_exact_object_rollback_linked_source(
+    struct provider_exact_object_source *source, int parent_descriptor,
+    const char *final_name) {
+  struct stat held;
+  struct stat projected;
+  struct stat after;
+  memset(&held, 0, sizeof(held));
+  memset(&projected, 0, sizeof(projected));
+  memset(&after, 0, sizeof(after));
+  if (source == NULL || final_name == NULL ||
+      fstat(source->file_descriptor, &held) != 0 ||
+      fstatat(parent_descriptor, final_name, &projected,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      !provider_exact_object_linked_source_identity_matches(source, &held, 1) ||
+      !provider_exact_object_linked_source_identity_matches(
+          source, &projected, 1) ||
+      held.st_dev != projected.st_dev || held.st_ino != projected.st_ino ||
+      unlinkat(parent_descriptor, final_name, 0) != 0 ||
+      fstat(source->file_descriptor, &after) != 0 ||
+      !provider_exact_object_linked_source_identity_matches(source, &after, 0)) {
+    return 0;
+  }
+  return fsync(parent_descriptor) == 0;
+}
+
+static int provider_exact_object_apply_test_post_link_parent_change(
+    struct provider_exact_object_publisher *publisher,
+    int parent_descriptor, const struct timespec *captured_change_time) {
+  mode_t original_mode;
+  mode_t changed_mode;
+  struct stat observed;
+  struct timespec delay;
+  size_t attempt;
+  if (!publisher->test_post_link_parent_change_armed) return 1;
+  publisher->test_post_link_parent_change_armed = 0;
+  original_mode = publisher->nodes[publisher->node_count - 1].snapshot.st_mode &
+                  (mode_t)07777;
+  changed_mode = original_mode ^ (mode_t)0001;
+  for (attempt = 0; attempt < 1000; attempt += 1) {
+    delay.tv_sec = 0;
+    delay.tv_nsec = 1000000;
+    while (nanosleep(&delay, NULL) != 0 && errno == EINTR) {
+    }
+    memset(&observed, 0, sizeof(observed));
+    if (fchmod(parent_descriptor, changed_mode) != 0 ||
+        fchmod(parent_descriptor, original_mode) != 0 ||
+        fstat(parent_descriptor, &observed) != 0) {
+      return 0;
+    }
+    if (!provider_exact_object_change_time_matches(captured_change_time,
+                                                   &observed)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int provider_exact_object_test_exchange_parent_paths(
+    const char *left, const char *right) {
+#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE)
+  int result;
+  do {
+    result = (int)syscall(SYS_renameat2, AT_FDCWD, left, AT_FDCWD, right,
+                          RENAME_EXCHANGE);
+  } while (result != 0 && errno == EINTR);
+  return result == 0;
+#else
+  (void)left;
+  (void)right;
+  return 0;
+#endif
+}
+
+static int provider_exact_object_apply_test_pre_link_parent_aba(
+    struct provider_exact_object_publisher *publisher) {
+  int first_exchange;
+  int second_exchange;
+  if (!publisher->test_pre_link_parent_aba_armed) return 1;
+  publisher->test_pre_link_parent_aba_armed = 0;
+  first_exchange = provider_exact_object_test_exchange_parent_paths(
+      publisher->canonical_parent_path,
+      publisher->test_pre_link_parent_aba_peer_path);
+  second_exchange = first_exchange &&
+                    provider_exact_object_test_exchange_parent_paths(
+                        publisher->canonical_parent_path,
+                        publisher->test_pre_link_parent_aba_peer_path);
+  if (first_exchange && !second_exchange) {
+    (void)provider_exact_object_test_exchange_parent_paths(
+        publisher->canonical_parent_path,
+        publisher->test_pre_link_parent_aba_peer_path);
+  }
+  safe_git_secure_zero(publisher->test_pre_link_parent_aba_peer_path,
+                       sizeof(publisher->test_pre_link_parent_aba_peer_path));
+  return first_exchange && second_exchange;
+}
 #endif
 
 static napi_value commit_provider_exact_object(napi_env env,
@@ -8518,7 +8924,11 @@ static napi_value commit_provider_exact_object(napi_env env,
   int link_result;
   int link_error;
   int parent_descriptor;
+  int post_link_parent_admitted;
+  struct timespec
+      post_link_change_times[PROVIDER_EXACT_OBJECT_NODE_LIMIT];
   memset(final_name, 0, sizeof(final_name));
+  memset(post_link_change_times, 0, sizeof(post_link_change_times));
 #if defined(__linux__)
   if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
           napi_ok ||
@@ -8532,15 +8942,22 @@ static napi_value commit_provider_exact_object(napi_env env,
   }
   /* A source is a single-attempt capability, including rejected attempts. */
   source_admitted = provider_exact_object_source_admitted(source);
-  parent_admitted = provider_exact_object_revalidate_parent_chain(publisher);
+  parent_admitted =
+      provider_exact_object_source_parent_chain_matches(source);
   if (!source_admitted) {
-    provider_exact_object_source_release(source);
+    provider_exact_object_source_release(env, source);
     safe_git_secure_zero(final_name, sizeof(final_name));
     return provider_exact_object_commit_result(
         env, 0, "staging_authority_changed");
   }
   if (!parent_admitted) {
-    provider_exact_object_source_release(source);
+    provider_exact_object_source_release(env, source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return provider_exact_object_commit_result(
+        env, 0, "parent_path_projection_changed");
+  }
+  if (!provider_exact_object_apply_test_pre_link_parent_aba(publisher)) {
+    provider_exact_object_source_release(env, source);
     safe_git_secure_zero(final_name, sizeof(final_name));
     return provider_exact_object_commit_result(
         env, 0, "parent_path_projection_changed");
@@ -8552,8 +8969,14 @@ static napi_value commit_provider_exact_object(napi_env env,
                        final_name, AT_EMPTY_PATH);
   link_error = errno;
   if (link_result != 0) {
-    provider_exact_object_source_release(source);
+    int parent_unchanged =
+        provider_exact_object_parent_watch_has_no_events(source);
+    provider_exact_object_source_release(env, source);
     safe_git_secure_zero(final_name, sizeof(final_name));
+    if (!parent_unchanged) {
+      return provider_exact_object_commit_result(
+          env, 0, "parent_path_projection_changed");
+    }
     if (link_error == EEXIST) {
       /*
        * EEXIST is also the recovery observation for a prior link whose parent
@@ -8569,12 +8992,52 @@ static napi_value commit_provider_exact_object(napi_env env,
     return provider_exact_object_commit_result(env, 0,
                                                 "profile_unsupported");
   }
+  post_link_parent_admitted =
+      provider_exact_object_consume_expected_link_event(source, final_name) &&
+      provider_exact_object_capture_post_link_parent_chain(
+          source, post_link_change_times) &&
+      provider_exact_object_apply_test_post_link_parent_change(
+          publisher, parent_descriptor,
+          &post_link_change_times[publisher->node_count - 1]) &&
+      provider_exact_object_post_link_parent_chain_matches(
+          source, post_link_change_times) &&
+      provider_exact_object_parent_watch_has_no_events(source);
+  if (!post_link_parent_admitted) {
+    int rolled_back = provider_exact_object_rollback_linked_source(
+        source, parent_descriptor, final_name);
+    safe_git_secure_zero(post_link_change_times,
+                         sizeof(post_link_change_times));
+    provider_exact_object_source_release(env, source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return rolled_back
+               ? provider_exact_object_commit_result(
+                     env, 0, "parent_path_projection_changed")
+               : provider_exact_object_commit_result(env, -1, NULL);
+  }
   if (!provider_exact_object_fsync_parent(publisher, parent_descriptor)) {
-    provider_exact_object_source_release(source);
+    safe_git_secure_zero(post_link_change_times,
+                         sizeof(post_link_change_times));
+    provider_exact_object_source_release(env, source);
     safe_git_secure_zero(final_name, sizeof(final_name));
     return provider_exact_object_commit_result(env, -1, NULL);
   }
-  provider_exact_object_source_release(source);
+  if (!provider_exact_object_post_link_parent_chain_matches(
+          source, post_link_change_times) ||
+      !provider_exact_object_parent_watch_has_no_events(source)) {
+    int rolled_back = provider_exact_object_rollback_linked_source(
+        source, parent_descriptor, final_name);
+    safe_git_secure_zero(post_link_change_times,
+                         sizeof(post_link_change_times));
+    provider_exact_object_source_release(env, source);
+    safe_git_secure_zero(final_name, sizeof(final_name));
+    return rolled_back
+               ? provider_exact_object_commit_result(
+                     env, 0, "parent_path_projection_changed")
+               : provider_exact_object_commit_result(env, -1, NULL);
+  }
+  safe_git_secure_zero(post_link_change_times,
+                       sizeof(post_link_change_times));
+  provider_exact_object_source_release(env, source);
   safe_git_secure_zero(final_name, sizeof(final_name));
   return provider_exact_object_commit_result(env, 1, NULL);
 #else
@@ -8588,6 +9051,9 @@ static napi_value commit_provider_exact_object(napi_env env,
   (void)link_result;
   (void)link_error;
   (void)parent_descriptor;
+  (void)post_link_parent_admitted;
+  safe_git_secure_zero(post_link_change_times,
+                       sizeof(post_link_change_times));
   safe_git_secure_zero(final_name, sizeof(final_name));
   return throw_provider_exact_object_unavailable(env);
 #endif
@@ -8608,6 +9074,72 @@ static napi_value arm_test_provider_exact_object_parent_fsync_failure(
     return throw_provider_exact_object_unavailable(env);
   }
   publisher->test_parent_fsync_failure_armed = 1;
+  return result;
+}
+
+static napi_value arm_test_provider_exact_object_post_link_parent_change(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 1;
+  napi_value argument;
+  napi_value result;
+  struct provider_exact_object_publisher *publisher = NULL;
+  if (napi_get_cb_info(env, info, &argument_count, &argument, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 1 ||
+      !provider_exact_object_unwrap_publisher(env, argument, &publisher) ||
+      publisher->closed || publisher->test_post_link_parent_change_armed ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    return throw_provider_exact_object_unavailable(env);
+  }
+  publisher->test_post_link_parent_change_armed = 1;
+  return result;
+}
+
+static napi_value arm_test_provider_exact_object_pre_link_parent_aba(
+    napi_env env, napi_callback_info info) {
+  size_t argument_count = 2;
+  napi_value arguments[2];
+  napi_value result;
+  struct provider_exact_object_publisher *publisher = NULL;
+  struct stat peer_metadata;
+  char peer_path[PATH_MAX + 1];
+  int peer_descriptor = -1;
+  int admitted = 0;
+  memset(&peer_metadata, 0, sizeof(peer_metadata));
+  memset(peer_path, 0, sizeof(peer_path));
+  if (napi_get_cb_info(env, info, &argument_count, arguments, NULL, NULL) !=
+          napi_ok ||
+      argument_count != 2 ||
+      !provider_exact_object_unwrap_publisher(env, arguments[0], &publisher) ||
+      !provider_exact_object_read_parent_path(env, arguments[1], peer_path) ||
+      publisher->closed || publisher->outstanding_source == NULL ||
+      publisher->test_pre_link_parent_aba_armed ||
+      strcmp(peer_path, publisher->canonical_parent_path) == 0 ||
+      napi_get_boolean(env, true, &result) != napi_ok) {
+    safe_git_secure_zero(peer_path, sizeof(peer_path));
+    return throw_provider_exact_object_unavailable(env);
+  }
+#if defined(__linux__)
+  peer_descriptor =
+      open(peer_path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (peer_descriptor >= 0 && fstat(peer_descriptor, &peer_metadata) == 0 &&
+      provider_exact_object_managed_parent_admitted(
+          publisher, peer_descriptor, &peer_metadata) &&
+      peer_metadata.st_dev ==
+          publisher->nodes[publisher->node_count - 1].snapshot.st_dev) {
+    admitted = 1;
+  }
+#endif
+  if (peer_descriptor >= 0) (void)close(peer_descriptor);
+  safe_git_secure_zero(&peer_metadata, sizeof(peer_metadata));
+  if (!admitted) {
+    safe_git_secure_zero(peer_path, sizeof(peer_path));
+    return throw_provider_exact_object_unavailable(env);
+  }
+  memcpy(publisher->test_pre_link_parent_aba_peer_path, peer_path,
+         strlen(peer_path) + 1);
+  safe_git_secure_zero(peer_path, sizeof(peer_path));
+  publisher->test_pre_link_parent_aba_armed = 1;
   return result;
 }
 
@@ -8640,7 +9172,7 @@ static napi_value close_provider_exact_object_source(
       !provider_exact_object_unwrap_source(env, argument, &source)) {
     return throw_provider_exact_object_unavailable(env);
   }
-  provider_exact_object_source_release(source);
+  provider_exact_object_source_release(env, source);
   if (napi_get_boolean(env, true, &result) != napi_ok) {
     return throw_provider_exact_object_unavailable(env);
   }
@@ -8862,6 +9394,12 @@ NAPI_MODULE_INIT() {
        NULL, NULL, napi_default, NULL},
       {"armTestProviderExactObjectParentFsyncFailure", NULL,
        arm_test_provider_exact_object_parent_fsync_failure, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"armTestProviderExactObjectPostLinkParentChange", NULL,
+       arm_test_provider_exact_object_post_link_parent_change, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"armTestProviderExactObjectPreLinkParentAba", NULL,
+       arm_test_provider_exact_object_pre_link_parent_aba, NULL, NULL, NULL,
        napi_default, NULL},
       {"closeProviderExactObjectSource", NULL,
        close_provider_exact_object_source, NULL, NULL, NULL, napi_default,

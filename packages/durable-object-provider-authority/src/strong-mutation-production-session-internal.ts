@@ -22,6 +22,7 @@ import {
 
 import {
   assertProviderStrongMutationBrokerStoreCapabilityInternalV1,
+  type ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1,
   type ProviderStrongMutationBrokerStoreInternalV1,
 } from "./strong-mutation-broker-core-internal.js";
 import {
@@ -66,6 +67,12 @@ export interface ProviderStrongMutationProductionSessionCallbacksInternalV1 {
   readonly resolveGrant: (
     resolution: ProviderStrongMutationProductionGrantResolutionInternalV1,
   ) => Promise<boolean>;
+  readonly inspectLegacyOutcomeAuthority: (
+    inspection: Readonly<{
+      readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+      readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+    }>,
+  ) => Promise<ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 | false>;
 }
 
 export type ProviderStrongMutationProductionGrantDecisionInternalV1 =
@@ -280,6 +287,26 @@ export function createProviderStrongMutationProductionSessionCallbacksInternalV1
     }
   };
 
+  const inspectLegacyOutcomeAuthority = async (
+    inspection: Readonly<{
+      readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+      readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+    }>,
+  ): Promise<ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 | false> => {
+    try {
+      const request = ProviderRuntimeIpcStrongMutationRequestV1Schema.parse(
+        inspection.request,
+      );
+      const response = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+        inspection.response,
+      );
+      if (!exactResponseContextV1(response, request)) return false;
+      return await broker.inspectLegacyOutcomeAuthority({ request, response });
+    } catch {
+      return false;
+    }
+  };
+
   return Object.freeze({
     profile: "provider_strong_mutation_production_session_callbacks_v1" as const,
     executionFence:
@@ -287,5 +314,6 @@ export function createProviderStrongMutationProductionSessionCallbacksInternalV1
     strongWrites: "unlocked" as const,
     consumeGrant,
     resolveGrant,
+    inspectLegacyOutcomeAuthority,
   });
 }

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "gate": "WP5-1P/C09 aggregate",
+  "fullLanes": [
+    "package-build",
+    "package-typecheck",
+    "all-vitest",
+    "packed-distribution"
+  ],
+  "distributionScript": "scripts/test-distribution.mjs",
+  "assertions": [
+    {
+      "id": "acceptance-committed-positive",
+      "class": "positive",
+      "area": "acceptance",
+      "file": "test/provider-acceptance.test.ts",
+      "fullName": "formal Provider Acceptance production wire binds a complete committed current, receipt, projections, pins, and token messages"
+    },
+    {
+      "id": "acceptance-drift-negative",
+      "class": "negative",
+      "area": "acceptance",
+      "file": "test/provider-acceptance.test.ts",
+      "fullName": "formal Provider Acceptance production wire rejects state, current-read, request-digest, and committed publication drift"
+    },
+    {
+      "id": "formal-plan-positive",
+      "class": "positive",
+      "area": "formal-plan",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-reference-candidate.test.ts",
+      "fullName": "D-44 branch-specific formal Plan/Pin reference candidate derives the formal reservation descriptor and keeps the public runtime exact3"
+    },
+    {
+      "id": "formal-plan-tamper-negative",
+      "class": "negative",
+      "area": "formal-plan",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-reference-candidate.test.ts",
+      "fullName": "D-44 branch-specific formal Plan/Pin reference candidate rejects detached/tampered Plan-Pin projections and exposes one opaque error"
+    },
+    {
+      "id": "compound-publication-replay-positive",
+      "class": "positive",
+      "area": "compound-publication",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-compound-publication-reference-machine-internal.test.ts",
+      "fullName": "same-Identity compound publication reference machine commits the complete state with one immutable receipt and replays that first receipt"
+    },
+    {
+      "id": "compound-publication-stale-negative",
+      "class": "negative",
+      "area": "compound-publication",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-compound-publication-reference-machine-internal.test.ts",
+      "fullName": "same-Identity compound publication reference machine returns stale without changing any publication state"
+    },
+    {
+      "id": "destination-zero-live-positive",
+      "class": "positive",
+      "area": "destination-zero-live",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-destination-universe-zero-live-reference-machine-internal.test.ts",
+      "fullName": "same-Identity destination universe zero-live reference closure forms an exact destination universe and exposes one Registry continuation"
+    },
+    {
+      "id": "destination-zero-live-omitted-plan-negative",
+      "class": "negative",
+      "area": "destination-zero-live",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-destination-universe-zero-live-reference-machine-internal.test.ts",
+      "fullName": "same-Identity destination universe zero-live reference closure fails closed when the completed metadata omits a Plan publication"
+    },
+    {
+      "id": "terminal-seal-replay-positive",
+      "class": "positive",
+      "area": "terminal-seal",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-terminal-journal-seal-reference-machine-internal.test.ts",
+      "fullName": "same-Identity terminal journal seal reference machine atomically records tombstone, ready and sealed head with exact replay"
+    },
+    {
+      "id": "terminal-seal-stale-negative",
+      "class": "negative",
+      "area": "terminal-seal",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-terminal-journal-seal-reference-machine-internal.test.ts",
+      "fullName": "same-Identity terminal journal seal reference machine does not write when the expected journal revision is stale"
+    },
+    {
+      "id": "prepared-catalog-positive",
+      "class": "positive",
+      "area": "prepared-catalog",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-43 same-cohort prepared Catalog successor integration validates one externally root-signed Catalog successor after a fresh D-42 while all twelve sinks stay zero"
+    },
+    {
+      "id": "prepared-catalog-pin-negative",
+      "class": "negative",
+      "area": "prepared-catalog",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-43 same-cohort prepared Catalog successor integration burns a signed Catalog source after an expected Pin mismatch before fresh D-42"
+    },
+    {
+      "id": "formal-plan-publication-positive",
+      "class": "positive",
+      "area": "formal-plan-publication",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-44 formal Plan and compound publication reference integration derives the formal Plan from a fresh D-43 and commits, then replays the same nonce byte-identically"
+    },
+    {
+      "id": "formal-plan-publication-tamper-negative",
+      "class": "negative",
+      "area": "formal-plan-publication",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-44 formal Plan and compound publication reference integration rejects a tampered formal Plan content digest derived from the fresh D-43 closure"
+    },
+    {
+      "id": "migration-only-acceptance-positive",
+      "class": "positive",
+      "area": "migration-only-acceptance",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-45 migration-only Acceptance compare-append reference integration appends one strict identity-keyed migration-only Acceptance after D-44 and irreversibly retires the D-40 writer"
+    },
+    {
+      "id": "migration-only-acceptance-stale-negative",
+      "class": "negative",
+      "area": "migration-only-acceptance",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "D-45 migration-only Acceptance compare-append reference integration fails stale when another D-45 operation wins the irreversible D-40 handoff"
+    },
+    {
+      "id": "final-strong-ready-positive",
+      "class": "positive",
+      "area": "final-strong-ready",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "same-Identity migration through final destination strong-ready executes every exact formal-Plan object, seals terminal metadata, and activates only the destination strong writer"
+    },
+    {
+      "id": "final-strong-ready-root-signature-negative",
+      "class": "negative",
+      "area": "final-strong-ready",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "same-Identity migration through final destination strong-ready rejects an invalid steady Root signature while the source-drained Registry tip remains current"
+    },
+    {
+      "id": "durable-execution-positive",
+      "class": "positive",
+      "area": "durable-execution",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "durable migration orchestrator vertical smoke runs lifecycle, copies the formal-Plan objects, and commits four durable phases"
+    },
+    {
+      "id": "durable-execution-stale-negative",
+      "class": "negative",
+      "area": "durable-execution",
+      "file": "test/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.integration.test.ts",
+      "fullName": "durable migration orchestrator vertical smoke returns a durable stale result before copying when the journal revision moved"
+    }
+  ]
+}

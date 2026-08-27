@@ -32,11 +32,14 @@ import {
   brokerResolveRequestV1,
   TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
   canonicalDigestOracleV1,
+  currentAcceptanceIdentityV1,
   resignStrongMutationResponseV1,
+  strongMutationPrincipalAttestationV1,
   strongMutationCompareRequestV1,
   strongMutationCompareResponseV1,
   strongMutationRequestV1,
   strongMutationResponseV1,
+  strongMutationTrustEvidenceV1,
   strongMutationTrustedConfigurationV1,
   strongMutationTrustVerifierV1,
 } from "./strong-mutation-broker-fixtures.js";
@@ -258,6 +261,129 @@ async function expectIntegrityFailureV1(
 }
 
 describe("strong-mutation broker authenticated recovery closure", () => {
+  it("opens a legacy append-ordered same-nonce alias snapshot and selects its first authority", async () => {
+    const fixture = await fixtureV1();
+    const aliasPrincipal = strongMutationPrincipalAttestationV1(
+      currentAcceptanceIdentityV1(fixture.current),
+      { claimsOverrides: { challenge: "e".repeat(64) } },
+    );
+    const aliasRequest = strongMutationRequestV1(fixture.current, {
+      principalAttestation: aliasPrincipal,
+      requestId: "e".repeat(32),
+    });
+    expect(aliasRequest.operationNonce).toBe(fixture.request.operationNonce);
+    expect(aliasRequest.requestDigest).toBe(fixture.request.requestDigest);
+    expect(aliasRequest.bindingDigest).not.toBe(fixture.request.bindingDigest);
+    brokerVerifierByLayoutV1.set(
+      fixture.capability,
+      await strongMutationTrustVerifierV1((query) =>
+        strongMutationTrustEvidenceV1(query.acceptanceIdentity, {
+          principalAttestation:
+            query.principalAttestationDigest ===
+                aliasRequest.principalAttestationDigest
+              ? aliasPrincipal
+              : fixture.intent.principalAttestation,
+        })
+      ),
+    );
+    const aliasBroker =
+      await openProviderStrongMutationBrokerStoreForTestInternalV1(
+        fixture.capability,
+        { clock: testAuthorityClockV1 },
+      );
+    const alias = await aliasBroker.begin(aliasRequest, aliasPrincipal);
+    if (alias.resolution !== "recorded") throw new Error("expected alias");
+    const originalSnapshot = JSON.parse(
+      await readFile(fixture.snapshotPath, "utf8"),
+    );
+    const originalPublication = JSON.parse(
+      await readFile(fixture.publicationPath, "utf8"),
+    );
+    await rewriteAuthenticatedBrokerClosureV1(
+      fixture,
+      (payload) => {
+        payload.previousSnapshotContentDigest =
+          originalSnapshot.snapshotContentDigest;
+        payload.intents.push(cloneJsonV1(alias.intent));
+        payload.snapshotRevision = 2;
+        payload.accounting = accountingOracleV1(payload.intents);
+      },
+      (payload) => {
+        payload.previousPublicationContentDigest =
+          originalPublication.publicationContentDigest;
+      },
+    );
+    const reopened =
+      await openProviderStrongMutationBrokerStoreForTestInternalV1(
+        fixture.capability,
+        { clock: testAuthorityClockV1 },
+      );
+    const firstAuthority = await reopened.inspectLegacyOutcomeAuthority({
+      request: fixture.request,
+      response: strongMutationResponseV1(fixture.request),
+    });
+    const aliasAuthority = await reopened.inspectLegacyOutcomeAuthority({
+      request: aliasRequest,
+      response: strongMutationResponseV1(aliasRequest),
+    });
+    expect(firstAuthority).toEqual({
+      intentOrdinal: 1,
+      firstIntentOrdinal: 1,
+      firstBindingDigest: fixture.request.bindingDigest,
+    });
+    expect(aliasAuthority).toEqual({
+      intentOrdinal: 2,
+      firstIntentOrdinal: 1,
+      firstBindingDigest: fixture.request.bindingDigest,
+    });
+  });
+
+  it("rejects an authenticated legacy snapshot that reused a nonce for different logical requests", async () => {
+    const fixture = await fixtureV1();
+    const firstLogical = strongMutationRequestV1(fixture.current, {
+      nonceDigit: "d",
+      requestId: "1".repeat(32),
+      body: "first legacy logical request",
+    });
+    const firstBegun = await fixture.broker.begin(firstLogical);
+    if (firstBegun.resolution !== "recorded") {
+      throw new Error("expected first logical intent");
+    }
+    const foreign = await fixtureV1();
+    const conflictingLogical = strongMutationRequestV1(foreign.current, {
+      nonceDigit: "d",
+      requestId: "2".repeat(32),
+      body: "conflicting legacy logical request",
+    });
+    const conflictingBegun = await foreign.broker.begin(conflictingLogical);
+    if (conflictingBegun.resolution !== "recorded") {
+      throw new Error("expected conflicting logical intent");
+    }
+    expect(conflictingLogical.operationNonce).toBe(firstLogical.operationNonce);
+    expect(conflictingLogical.requestDigest).not.toBe(firstLogical.requestDigest);
+    const originalSnapshot = JSON.parse(
+      await readFile(fixture.snapshotPath, "utf8"),
+    );
+    const originalPublication = JSON.parse(
+      await readFile(fixture.publicationPath, "utf8"),
+    );
+    await rewriteAuthenticatedBrokerClosureV1(
+      fixture,
+      (payload) => {
+        payload.previousSnapshotContentDigest =
+          originalSnapshot.snapshotContentDigest;
+        payload.intents.push(cloneJsonV1(conflictingBegun.intent));
+        payload.snapshotRevision = 3;
+        payload.accounting = accountingOracleV1(payload.intents);
+      },
+      (payload) => {
+        payload.previousPublicationContentDigest =
+          originalPublication.publicationContentDigest;
+      },
+    );
+    await expectIntegrityFailureV1(fixture.capability);
+  });
+
   it.each([
     { name: "snapshot", locator: BROKER_SNAPSHOT },
     { name: "publication pin", locator: BROKER_PUBLICATION },

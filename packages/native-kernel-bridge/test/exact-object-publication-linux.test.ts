@@ -15,6 +15,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   armTestProviderRuntimeNativeExactObjectParentFsyncFailureV1,
+  armTestProviderRuntimeNativeExactObjectPreLinkParentAbaV1,
+  armTestProviderRuntimeNativeExactObjectPostLinkParentChangeV1,
   closeProviderRuntimeNativeExactObjectPublisherV1,
   closeProviderRuntimeNativeExactObjectSourceV1,
   commitProviderRuntimeNativeExactObjectV1,
@@ -120,6 +122,16 @@ describe("native exact-object architecture", () => {
       "linkat(source->file_descriptor, \"\", parent_descriptor,",
     );
     expect(commit).toContain("AT_EMPTY_PATH");
+    expect(source).toContain("inotify_init1(IN_NONBLOCK | IN_CLOEXEC)");
+    expect(source).toContain("provider_exact_object_initialize_parent_watches(source)");
+    expect(commit).toContain(
+      "provider_exact_object_consume_expected_link_event(source, final_name)",
+    );
+    expect(commit.indexOf(
+      "provider_exact_object_apply_test_pre_link_parent_aba(publisher)",
+    )).toBeLessThan(commit.indexOf(
+      "linkat(source->file_descriptor, \"\", parent_descriptor,",
+    ));
     expect(commit).not.toMatch(/\brename(?:at2)?\s*\(/u);
     expect(commit).not.toMatch(/\blink\s*\(/u);
   });
@@ -145,6 +157,63 @@ describe.runIf(runRealExt4V1)("native exact-object publication on real ext4", ()
       reason: "final_collision",
     });
     expect(await readdir(parent)).toEqual([finalNameV1]);
+  });
+
+  it("allows only one outstanding source per publisher", async () => {
+    const parent = await fixtureV1();
+    const publisher = openPublisherV1(parent);
+    const first = stageV1(publisher, Buffer.from("first", "utf8"));
+    expect(() => stageProviderRuntimeNativeExactObjectV1(
+      publisher,
+      Buffer.from("second", "utf8"),
+    )).toThrowError(expect.objectContaining({
+      code: "ERR_PROVIDER_RUNTIME_NATIVE_EXACT_OBJECT_UNAVAILABLE",
+    }));
+    closeProviderRuntimeNativeExactObjectSourceV1(first);
+    const replacement = stageV1(publisher, Buffer.from("replacement", "utf8"));
+    closeProviderRuntimeNativeExactObjectSourceV1(replacement);
+  });
+
+  it("keeps an uninvoked source closeable after final-name validation rejects", async () => {
+    const parent = await fixtureV1();
+    const publisher = openPublisherV1(parent);
+    const source = stageV1(
+      publisher,
+      Buffer.from("invalid-final-name", "utf8"),
+    );
+    expect(() => commitProviderRuntimeNativeExactObjectV1(
+      publisher,
+      source,
+      "not-a-content-addressed-name.blob",
+    )).toThrowError(expect.objectContaining({
+      code: "ERR_PROVIDER_RUNTIME_NATIVE_EXACT_OBJECT_UNAVAILABLE",
+    }));
+    closeProviderRuntimeNativeExactObjectSourceV1(source);
+    const replacement = stageV1(
+      publisher,
+      Buffer.from("replacement-after-invalid-name", "utf8"),
+    );
+    closeProviderRuntimeNativeExactObjectSourceV1(replacement);
+    expect(await readdir(parent)).toEqual([]);
+  });
+
+  it("rolls back the exact link when the parent projection changes post-link", async () => {
+    const parent = await fixtureV1();
+    const publisher = openPublisherV1(parent);
+    const source = stageV1(
+      publisher,
+      Buffer.from("post-link-projection-change", "utf8"),
+    );
+    armTestProviderRuntimeNativeExactObjectPostLinkParentChangeV1(publisher);
+    expect(commitProviderRuntimeNativeExactObjectV1(
+      publisher,
+      source,
+      finalNameV1,
+    )).toEqual({
+      status: "not_committed",
+      reason: "parent_path_projection_changed",
+    });
+    expect(await readdir(parent)).toEqual([]);
   });
 
   it("keeps post-link parent-fsync failure indeterminate until durable collision recovery", async () => {
@@ -228,6 +297,61 @@ describe.runIf(runRealExt4V1)("native exact-object publication on real ext4", ()
     )).toThrowError(expect.objectContaining({
       code: "ERR_PROVIDER_RUNTIME_NATIVE_EXACT_OBJECT_UNAVAILABLE",
     }));
+    expect(await readdir(left)).toEqual([]);
+    expect(await readdir(right)).toEqual([]);
+  });
+
+  it("rejects a double rename-exchange pathname ABA after staging", async () => {
+    const root = await fixtureV1();
+    const left = join(root, "left");
+    const right = join(root, "right");
+    await mkdir(left, { mode: 0o700 });
+    await mkdir(right, { mode: 0o700 });
+    const publisher = openPublisherV1(left);
+    const source = stageV1(
+      publisher,
+      Buffer.from("double-exchange-aba", "utf8"),
+    );
+
+    renameExchangeV1(left, right);
+    renameExchangeV1(left, right);
+
+    expect(commitProviderRuntimeNativeExactObjectV1(
+      publisher,
+      source,
+      finalNameV1,
+    )).toEqual({
+      status: "not_committed",
+      reason: "parent_path_projection_changed",
+    });
+    expect(await readdir(left)).toEqual([]);
+    expect(await readdir(right)).toEqual([]);
+  });
+
+  it("rejects pathname ABA in the exact precheck-to-link window", async () => {
+    const root = await fixtureV1();
+    const left = join(root, "left");
+    const right = join(root, "right");
+    await mkdir(left, { mode: 0o700 });
+    await mkdir(right, { mode: 0o700 });
+    const publisher = openPublisherV1(left);
+    const source = stageV1(
+      publisher,
+      Buffer.from("prelink-double-exchange-aba", "utf8"),
+    );
+    armTestProviderRuntimeNativeExactObjectPreLinkParentAbaV1(
+      publisher,
+      right,
+    );
+
+    expect(commitProviderRuntimeNativeExactObjectV1(
+      publisher,
+      source,
+      finalNameV1,
+    )).toEqual({
+      status: "not_committed",
+      reason: "parent_path_projection_changed",
+    });
     expect(await readdir(left)).toEqual([]);
     expect(await readdir(right)).toEqual([]);
   });

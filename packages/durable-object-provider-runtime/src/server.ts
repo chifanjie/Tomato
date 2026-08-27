@@ -55,8 +55,9 @@ import {
   type ProviderRuntimeIpcStrongMutationRequestV1,
   type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
-import type {
-  ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+import {
+  verifyProviderServiceFormalAcceptanceEnvelopeWithIdentityCapabilityInternalV1,
+  type ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
 } from "@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal";
 import {
   ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
@@ -79,11 +80,17 @@ import {
 import {
   consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1,
+  hasProviderRuntimeCurrentFormalAcceptanceResolverInternalV1,
+  inspectProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1,
+  resolveProviderRuntimeCurrentFormalAcceptanceInternalV1,
   resolveProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   takeProviderRuntimeStrongMutationExecutionAuthorizationInternalV1,
   type ProviderRuntimeStrongMutationSessionCapabilityInternalV1,
   type ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
 } from "./strong-mutation-session-authority-internal.js";
+import {
+  projectProviderRuntimeDurableLifecycleArtifactsV1,
+} from "./durable-acceptance-current.js";
 
 const ZERO_AUTH_TAG_V1 = `hmac-sha256:${"0".repeat(64)}` as const;
 const ZERO_REQUEST_ID_V1 = "0".repeat(32);
@@ -913,26 +920,59 @@ export class DurableObjectProviderRuntimeServerV1 {
     if (capability === undefined || state.phase !== "final_strong_ready") {
       return undefined;
     }
-    try {
-      const closure = state.artifacts.finalStrongReadyAcceptance;
-      if (
-        closure === null ||
-        typeof closure !== "object" ||
-        Array.isArray(closure)
-      ) {
+    const verifier = this.#strongMutationAuthorityVerifier;
+    if (
+      this.#mutationPolicy !== "acceptance_authority_session_required" ||
+      verifier === undefined ||
+      !hasProviderRuntimeCurrentFormalAcceptanceResolverInternalV1(verifier)
+    ) {
+      try {
+        const closure = state.artifacts.finalStrongReadyAcceptance;
+        if (
+          closure === null ||
+          typeof closure !== "object" ||
+          Array.isArray(closure)
+        ) return undefined;
+        const envelope =
+          ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
+            (closure as Record<string, unknown>)
+              .finalStrongReadyAcceptanceEnvelope,
+          );
+        if (
+          !(await verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+            capability,
+            envelope,
+          ))
+        ) return undefined;
+        return ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse({
+          generationId: envelope.generationId,
+          contentDigest: envelope.contentDigest,
+          acceptanceOrdinal: envelope.payload.acceptanceOrdinal,
+          installationIdentityGenerationId:
+            envelope.installationIdentityGenerationId,
+        });
+      } catch {
         return undefined;
       }
-      const envelope =
-        ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
-          (closure as Record<string, unknown>)
-            .finalStrongReadyAcceptanceEnvelope,
+    }
+    try {
+      const binding =
+        await resolveProviderRuntimeCurrentFormalAcceptanceInternalV1(
+          verifier,
         );
+      if (binding === undefined) return undefined;
       const verified =
-        await verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+        await verifyProviderServiceFormalAcceptanceEnvelopeWithIdentityCapabilityInternalV1(
           capability,
-          envelope,
+          binding.envelope,
         );
       if (!verified) return undefined;
+      projectProviderRuntimeDurableLifecycleArtifactsV1({
+        journalState: state,
+        expectedAcceptanceEnvelope: binding.envelope,
+        expectedAcceptancePin: binding.pin,
+      });
+      const envelope = binding.envelope;
       return ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse({
         generationId: envelope.generationId,
         contentDigest: envelope.contentDigest,
@@ -1002,6 +1042,10 @@ export class DurableObjectProviderRuntimeServerV1 {
             : await this.store.recoverStrongMutationOutcomeV1(
               request,
               authorization,
+              (payload) => this.#createStrongMutationResponseV1(request, {
+                ok: true,
+                payload,
+              }),
             );
         }
       } catch (error) {
@@ -1096,7 +1140,49 @@ export class DurableObjectProviderRuntimeServerV1 {
   async #recoverDurableStrongMutationOutcomesV1(): Promise<void> {
     const verifier = this.#strongMutationAuthorityVerifier;
     if (verifier === undefined) return;
+    const migrationRequired =
+      await this.store.strongMutationNonceReceiptMigrationRequiredV1();
     const outcomes = await this.store.inspectStrongMutationOutcomesForRecoveryV1();
+    const migrationSelections = new Map<
+      string,
+      Readonly<{
+        readonly bindingDigest: string;
+        readonly intentOrdinal: number;
+        readonly firstIntentOrdinal: number;
+        readonly firstBindingDigest: string;
+      }>
+    >();
+    if (migrationRequired) {
+      for (const outcome of outcomes) {
+        const authority =
+          await inspectProviderRuntimeStrongMutationLegacyOutcomeAuthorityInternalV1(
+            verifier,
+            { request: outcome.request, response: outcome.response },
+          );
+        if (authority === undefined) {
+          throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+        }
+        const prior = migrationSelections.get(outcome.request.operationNonce);
+        if (
+          prior !== undefined &&
+          (prior.firstBindingDigest !== authority.firstBindingDigest ||
+            prior.firstIntentOrdinal !== authority.firstIntentOrdinal)
+        ) {
+          throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+        }
+        if (prior === undefined || authority.intentOrdinal < prior.intentOrdinal) {
+          migrationSelections.set(
+            outcome.request.operationNonce,
+            Object.freeze({
+              bindingDigest: outcome.request.bindingDigest,
+              intentOrdinal: authority.intentOrdinal,
+              firstIntentOrdinal: authority.firstIntentOrdinal,
+              firstBindingDigest: authority.firstBindingDigest,
+            }),
+          );
+        }
+      }
+    }
     for (const outcome of outcomes) {
       const request = outcome.request;
       const grant = request.authorityGrant.payload;
@@ -1147,6 +1233,10 @@ export class DurableObjectProviderRuntimeServerV1 {
         response = await this.store.recoverStrongMutationOutcomeV1(
           request,
           transfer.authorization,
+          (payload) => this.#createStrongMutationResponseV1(request, {
+            ok: true,
+            payload,
+          }),
         );
       }
       if (
@@ -1158,6 +1248,16 @@ export class DurableObjectProviderRuntimeServerV1 {
           response,
         )
       ) throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
+    if (migrationRequired) {
+      await this.store.finalizeStrongMutationNonceReceiptMigrationV1(
+        [...migrationSelections].map(([operationNonce, selection]) =>
+          Object.freeze({
+            operationNonce,
+            bindingDigest: selection.bindingDigest,
+          })
+        ),
+      );
     }
   }
 

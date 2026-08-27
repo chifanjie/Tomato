@@ -1458,12 +1458,28 @@ describe("TaskEngine persistent integration", () => {
     let committedCheck:
       | Awaited<ReturnType<typeof executeStrongChangeCheckV1>>
       | undefined;
+    const abortedOperations: Array<{
+      operation: "check_change" | "record_verification";
+      idempotencyKey: string;
+    }> = [];
     const authority: StrongChangeIntelligenceAuthorityV1 = {
       captureTaskBaseline: creation.captureTaskBaseline,
+      async reserveOperationTime(_input, proposedAt) {
+        return proposedAt;
+      },
+      async abortReservedOperation(input) {
+        abortedOperations.push({
+          operation: input.operation,
+          idempotencyKey: input.idempotencyKey,
+        });
+      },
       async prepareCheck() {
         return checkPreparation;
       },
       async commitCheck(request) {
+        if (request.idempotencyKey === "strong-check-preactivation-failure") {
+          throw new Error("simulated failure before Provider activation");
+        }
         committedCheck = {
           profile: "strong_change_check_outcome_v1",
           changeCheck: request.changeCheck,
@@ -1552,6 +1568,24 @@ describe("TaskEngine persistent integration", () => {
         };
       },
     };
+
+    await expect(executeStrongChangeCheckV1(
+      authority,
+      {
+        profile: "check_changes_strong_v1",
+        taskId: checkManifest.taskId,
+        actualSnapshotId: snapshot.snapshotId,
+        includeWorktree: true,
+        expectedRevision: 5,
+        idempotencyKey: "strong-check-preactivation-failure",
+        actor: ACTOR,
+      },
+      () => new Date("2026-08-25T00:00:06.000Z"),
+    )).rejects.toThrow(/before Provider activation/u);
+    expect(abortedOperations).toEqual([{
+      operation: "check_change",
+      idempotencyKey: "strong-check-preactivation-failure",
+    }]);
 
     const check = await executeStrongChangeCheckV1(
       authority,

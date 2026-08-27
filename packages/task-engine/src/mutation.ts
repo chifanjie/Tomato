@@ -25,6 +25,7 @@ import {
   type PersistedClaimV1,
   type PersistedEvidenceV1,
   type StrongVerificationRecordV1,
+  type StrongImpactConclusionV1,
   type VerificationRecordV1,
 } from "@understand-code/contracts";
 
@@ -46,6 +47,7 @@ interface MutableTaskData {
   claims: PersistedClaimV1[];
   evidence: PersistedEvidenceV1[];
   impactPaths: Extract<TaskArtifactBundleV1, { impactPaths: unknown }>["impactPaths"];
+  impactConclusion?: StrongImpactConclusionV1;
   changeChecks: Array<ChangeCheckV1 | EvidenceBackedChangeCheckV1>;
   verificationRecords: Array<VerificationRecordV1 | StrongVerificationRecordV1>;
 }
@@ -78,6 +80,9 @@ function dataFromRead(read: ReadTaskBundleResult): MutableTaskData {
     evidence: full === undefined ? [] : structuredClone(full.evidence),
     impactPaths:
       full === undefined ? [] : structuredClone(full.impactPaths),
+    ...(full !== undefined && "impactConclusion" in full
+      ? { impactConclusion: structuredClone(full.impactConclusion) }
+      : {}),
     changeChecks:
       full === undefined ? [] : structuredClone(full.changeChecks),
     verificationRecords:
@@ -1062,6 +1067,9 @@ export async function applyTaskUpdate(
     claims: data.claims,
     evidence: data.evidence,
     impactPaths: data.impactPaths,
+    ...(data.impactConclusion === undefined
+      ? {}
+      : { impactConclusion: data.impactConclusion }),
     ...(check === undefined ? {} : { changeCheck: check }),
     ...(check === undefined || data.verificationRecords.length === 0
       ? {}

@@ -15,6 +15,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import {
@@ -98,6 +99,20 @@ afterEach(async () => {
   roots.clear();
 });
 
+async function ownerOnlyFixtureRootV1(): Promise<string> {
+  const canonicalHome = await realpath(homedir());
+  const fixtureParent = await mkdtemp(join(
+    canonicalHome,
+    ".uc-provider-lifecycle-",
+  ));
+  roots.add(fixtureParent);
+  await chmod(fixtureParent, 0o700);
+  const fixtureRoot = join(fixtureParent, "fixture");
+  await mkdir(fixtureRoot, { mode: 0o700 });
+  await chmod(fixtureRoot, 0o700);
+  return await realpath(fixtureRoot);
+}
+
 interface LifecycleFixtureV1 {
   readonly root: string;
   readonly installationRoot: string;
@@ -131,13 +146,7 @@ async function fixtureV1(options?: {
     phase: ProviderServiceInstallationDurablePhaseInternalV1,
   ) => void | Promise<void>;
 }): Promise<LifecycleFixtureV1> {
-  const createdRoot = await mkdtemp(join(
-    process.cwd(),
-    ".uc-provider-lifecycle-",
-  ));
-  roots.add(createdRoot);
-  const root = await realpath(createdRoot);
-  await chmod(root, 0o700);
+  const root = await ownerOnlyFixtureRootV1();
   const authorityUid = process.getuid?.() ?? 501;
   const authorityGid = process.getgid?.() ?? authorityUid;
   const principalUid = authorityUid > 0 ? authorityUid : 501;
@@ -401,6 +410,14 @@ describe("provider service owned-manifest lifecycle", () => {
     await writeFile(durablePath, "retained durable state", { mode: 0o600 });
     await writeFile(fixture.readinessPath, "ephemeral-v1", { mode: 0o600 });
     await writeFile(fixture.readinessPath, "ephemeral-v2", { mode: 0o600 });
+    // The live service, not the installation authority, publishes readiness.
+    // Root-only Linux runs otherwise leave this fixture root-owned and
+    // correctly trigger the uninstall tamper guard.
+    await chown(
+      fixture.readinessPath,
+      fixture.configV1.payload.principal.uid,
+      fixture.configV1.payload.principal.gid,
+    );
     await expect(
       doctorProviderServiceInstallationWithPrivilegeInternalV1(
         fixture.capability,

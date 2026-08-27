@@ -52,8 +52,21 @@ const TRANSACTION_PROFILE_V1 =
   "provider_production_strong_client_trust_transaction_v1" as const;
 const TRANSACTION_FILE_V1 =
   ".provider-production-strong-client-trust-transaction-v1.json" as const;
-const MAX_FILE_BYTES_V1 = 16 * 1024 * 1024;
-const MAX_TRANSACTION_BYTES_V1 = 64 * 1024 * 1024;
+const TRANSACTION_SNAPSHOT_FILE_V1 = `${TRANSACTION_FILE_V1}.snapshot` as const;
+const TRANSACTION_DESCRIPTOR_FILE_V1 = `${TRANSACTION_FILE_V1}.descriptor` as const;
+const TRANSACTION_ROLLBACK_FILE_V1 = `${TRANSACTION_FILE_V1}.rollback` as const;
+const TRANSACTION_ROLLBACK_DESCRIPTOR_FILE_V1 = `${TRANSACTION_FILE_V1}.rollback-descriptor` as const;
+const ROLLBACK_SNAPSHOT_FILE_V1 = `${PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_ROLLBACK_FILE_V1}.snapshot` as const;
+const ROLLBACK_DESCRIPTOR_FILE_V1 = `${PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_ROLLBACK_FILE_V1}.descriptor` as const;
+// Aligned with acceptance-store-core-internal's frozen physical snapshot cap.
+const MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1 = 300 * 1024 * 1024;
+const MAX_DESCRIPTOR_PHYSICAL_BYTES_V1 = 1024 * 1024;
+const MAX_ROLLBACK_PHYSICAL_BYTES_V1 = 64 * 1024;
+// Transactions contain only bounded paths, sizes and sha256 digests. Large
+// bytes live in separately fsynced root-owned blobs so restart parsing cannot
+// amplify base64/JSON memory.
+const MAX_TRANSACTION_BYTES_V1 = 256 * 1024;
+const MAX_PATH_BYTES_V1 = 4096;
 const O_CLOEXEC_V1 =
   (fsConstants as Readonly<Record<string, number>>)["O_CLOEXEC"] ?? 0;
 
@@ -114,9 +127,16 @@ interface TransactionPayloadV1 {
   readonly gatewaySocketPath: string;
   readonly serviceUid: number;
   readonly callerGid: number;
-  readonly snapshotBytes: `base64url:${string}` | null;
-  readonly descriptorBytes: `base64url:${string}` | null;
-  readonly rollbackBytes: `base64url:${string}` | null;
+  readonly snapshotBytes: TransactionBlobReferenceV1 | null;
+  readonly descriptorBytes: TransactionBlobReferenceV1 | null;
+  readonly rollbackBytes: TransactionBlobReferenceV1 | null;
+  readonly rollbackDescriptorBytes: TransactionBlobReferenceV1 | null;
+}
+
+interface TransactionBlobReferenceV1 {
+  readonly path: string;
+  readonly byteLength: number;
+  readonly contentDigest: ContentDigestV1;
 }
 
 function failV1(message: string): never {
@@ -126,7 +146,8 @@ function failV1(message: string): never {
 function exactPathV1(value: unknown, label: string): string {
   if (
     typeof value !== "string" || value.includes("\0") ||
-    !isAbsolute(value) || resolve(value) !== value || value === "/"
+    !isAbsolute(value) || resolve(value) !== value || value === "/" ||
+    Buffer.byteLength(value, "utf8") > MAX_PATH_BYTES_V1
   ) return failV1(`${label} is invalid`);
   return value;
 }
@@ -137,6 +158,46 @@ function kernelIdV1(value: unknown, label: string): number {
     (value as number) > 0xffff_ffff
   ) return failV1(`${label} is invalid`);
   return value as number;
+}
+
+function assertCanonicalInputBudgetV1(value: unknown, maximumBytes: number): void {
+  let bytes = 0;
+  const active = new Set<object>();
+  const add = (amount: number): void => {
+    bytes += amount;
+    if (!Number.isSafeInteger(bytes) || bytes > maximumBytes) {
+      failV1("production strong client trust snapshot is too large");
+    }
+  };
+  const stringBytes = (input: string): number => {
+    let result = Buffer.byteLength(input, "utf8") + 2;
+    for (let index = 0; index < input.length; index += 1) {
+      const code = input.charCodeAt(index);
+      if (code === 0x22 || code === 0x5c || code === 0x08 || code === 0x09 ||
+        code === 0x0a || code === 0x0c || code === 0x0d) result += 1;
+      else if (code < 0x20) result += 5;
+    }
+    return result;
+  };
+  const visit = (input: unknown): void => {
+    if (input === null) { add(4); return; }
+    if (typeof input === "string") { add(stringBytes(input)); return; }
+    if (typeof input === "boolean") { add(input ? 4 : 5); return; }
+    if (typeof input === "number") { add(String(input).length); return; }
+    if (typeof input !== "object") failV1("production strong client trust value is invalid");
+    if (active.has(input)) failV1("production strong client trust value is cyclic");
+    active.add(input);
+    if (Array.isArray(input)) {
+      add(2 + Math.max(0, input.length - 1));
+      for (const item of input) visit(item);
+    } else {
+      const entries = Object.entries(input as Record<string, unknown>);
+      add(2 + Math.max(0, entries.length - 1));
+      for (const [key, item] of entries) { add(stringBytes(key) + 1); visit(item); }
+    }
+    active.delete(input);
+  };
+  visit(value);
 }
 
 function sha256V1(bytes: Uint8Array): ContentDigestV1 {
@@ -196,6 +257,18 @@ async function assertRootInstallationV1(root: string): Promise<void> {
 const TRANSACTION_LOCK_FILE_V1 =
   ".provider-production-strong-client-trust-lifecycle.lock" as const;
 
+export function providerProductionStrongClientLifecycleLockPathV1(
+  canonicalInstallationRoot: string,
+): string {
+  return join(
+    exactPathV1(
+      canonicalInstallationRoot,
+      "production strong client installation root",
+    ),
+    TRANSACTION_LOCK_FILE_V1,
+  );
+}
+
 async function ensureLifecycleLockFileV1(path: string): Promise<void> {
   try {
     const metadata = await lstat(path, { bigint: true });
@@ -234,7 +307,9 @@ async function withInstallationGlobalLifecycleMutexV1<T>(
     "production strong client installation root",
   );
   await assertRootInstallationV1(canonicalRoot);
-  const lockPath = join(canonicalRoot, TRANSACTION_LOCK_FILE_V1);
+  const lockPath = providerProductionStrongClientLifecycleLockPathV1(
+    canonicalRoot,
+  );
   await ensureLifecycleLockFileV1(lockPath);
   const child: ChildProcessWithoutNullStreams = spawn(
     "/usr/bin/flock",
@@ -264,7 +339,11 @@ async function withInstallationGlobalLifecycleMutexV1<T>(
   readyBuffer.fill(0);
   if (!ready) {
     child.kill();
-    await new Promise<void>((resolvePromise) => child.once("close", () => resolvePromise()));
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolvePromise) =>
+        child.once("close", () => resolvePromise())
+      );
+    }
     return failV1(
       spawnError === undefined
         ? "production strong client trust lifecycle is busy"
@@ -284,7 +363,7 @@ async function withInstallationGlobalLifecycleMutexV1<T>(
 
 async function readExactRootFileV1(
   path: string,
-  maximumBytes = MAX_FILE_BYTES_V1,
+  maximumBytes: number,
 ): Promise<Buffer> {
   const handle = await open(
     path,
@@ -332,7 +411,7 @@ async function atomicWriteRootFileV1(
   bytes: Uint8Array,
   mode: number,
   replace: boolean,
-  maximumBytes = MAX_FILE_BYTES_V1,
+  maximumBytes: number,
 ): Promise<void> {
   if (bytes.byteLength < 1 || bytes.byteLength > maximumBytes) {
     failV1("production strong client lifecycle bytes are invalid");
@@ -371,7 +450,7 @@ async function atomicWriteRootFileV1(
     }
     if (!replace) {
       try {
-        const existing = await readExactRootFileV1(path);
+        const existing = await readExactRootFileV1(path, maximumBytes);
         try {
           const metadata = await lstat(path);
           if (
@@ -414,7 +493,7 @@ async function atomicWriteRootFileV1(
           !(typeof error === "object" && error !== null && "code" in error &&
             (error as { readonly code?: unknown }).code === "EEXIST")
         ) throw error;
-        const existing = await readExactRootFileV1(path);
+        const existing = await readExactRootFileV1(path, maximumBytes);
         try {
           if (!existing.equals(bytes)) {
             failV1("production strong client lifecycle target already exists");
@@ -484,6 +563,7 @@ function generateFilesV1(
     ),
     callerPrincipal,
   });
+  assertCanonicalInputBudgetV1(payload, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1);
   const payloadBytes = canonicalBytesV1(payload);
   const snapshot = Object.freeze({
     schemaVersion: 1 as const,
@@ -495,6 +575,13 @@ function generateFilesV1(
   });
   payloadBytes.fill(0);
   const snapshotBytes = canonicalBytesV1(snapshot);
+  if (
+    snapshotBytes.byteLength < 1 ||
+    snapshotBytes.byteLength > MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1
+  ) {
+    snapshotBytes.fill(0);
+    failV1("production strong client trust snapshot is too large");
+  }
   const snapshotPath = exactPathV1(
     join(root, PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1),
     "production strong client trust path",
@@ -527,6 +614,14 @@ function generateFilesV1(
       descriptorPayload,
     ])),
   }));
+  if (
+    descriptorBytes.byteLength < 1 ||
+    descriptorBytes.byteLength > MAX_DESCRIPTOR_PHYSICAL_BYTES_V1
+  ) {
+    snapshotBytes.fill(0);
+    descriptorBytes.fill(0);
+    failV1("production strong client descriptor is too large");
+  }
   return Object.freeze({
     snapshotPath,
     descriptorPath,
@@ -557,20 +652,46 @@ function transactionPathV1(root: string): string {
   return join(root, TRANSACTION_FILE_V1);
 }
 
-function encodedBytesV1(bytes: Uint8Array | null): `base64url:${string}` | null {
-  return bytes === null ? null : `base64url:${Buffer.from(bytes).toString("base64url")}`;
+function transactionBlobPathV1(
+  root: string,
+  kind: "snapshot" | "descriptor" | "rollback" | "rollback-descriptor",
+): string {
+  return join(root, kind === "snapshot" ? TRANSACTION_SNAPSHOT_FILE_V1
+    : kind === "descriptor" ? TRANSACTION_DESCRIPTOR_FILE_V1
+    : kind === "rollback" ? TRANSACTION_ROLLBACK_FILE_V1
+    : TRANSACTION_ROLLBACK_DESCRIPTOR_FILE_V1);
 }
 
-function decodedBytesV1(
+function parseTransactionBlobReferenceV1(
   value: unknown,
-  label: string,
-): Buffer | null {
+  root: string,
+  kind: "snapshot" | "descriptor" | "rollback" | "rollback-descriptor",
+  maximumBytes: number,
+): TransactionBlobReferenceV1 | null {
   if (value === null) return null;
-  if (typeof value !== "string" || !value.startsWith("base64url:")) {
-    return failV1(`${label} is invalid`);
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return failV1(`transaction ${kind} reference is invalid`);
   }
-  const bytes = Buffer.from(value.slice("base64url:".length), "base64url");
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES_V1) {
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).sort().join("\0") !==
+      ["path", "byteLength", "contentDigest"].sort().join("\0") ||
+    record.path !== transactionBlobPathV1(root, kind) ||
+    !Number.isSafeInteger(record.byteLength) || (record.byteLength as number) < 1 ||
+    (record.byteLength as number) > maximumBytes ||
+    ContentDigestV1Schema.safeParse(record.contentDigest).success === false
+  ) return failV1(`transaction ${kind} reference is invalid`);
+  return record as unknown as TransactionBlobReferenceV1;
+}
+
+async function readTransactionBlobV1(
+  reference: TransactionBlobReferenceV1 | null,
+  maximumBytes: number,
+  label: string,
+): Promise<Buffer | null> {
+  if (reference === null) return null;
+  const bytes = await readExactRootFileV1(reference.path, maximumBytes);
+  if (bytes.byteLength !== reference.byteLength || sha256V1(bytes) !== reference.contentDigest) {
     bytes.fill(0);
     return failV1(`${label} is invalid`);
   }
@@ -625,7 +746,7 @@ async function advanceTransactionV1(
   return next;
 }
 
-function transactionPayloadV1(input: {
+async function transactionPayloadV1(input: {
   readonly operation: TransactionOperationV1;
   readonly files: Pick<
     GeneratedFilesV1,
@@ -641,24 +762,47 @@ function transactionPayloadV1(input: {
   readonly snapshotBytes: Uint8Array | null;
   readonly descriptorBytes: Uint8Array | null;
   readonly rollbackBytes: Uint8Array | null;
-}): TransactionPayloadV1 {
-  return Object.freeze({
-    schemaVersion: 1 as const,
-    profile: TRANSACTION_PROFILE_V1,
-    operation: input.operation,
-    phase: "prepared",
-    installationRoot: input.root,
-    snapshotPath: input.files.snapshotPath,
-    descriptorPath: input.files.descriptorPath,
-    rollbackPath: input.files.rollbackPath,
-    gatewayDirectoryPath: input.files.gatewayDirectoryPath,
-    gatewaySocketPath: input.files.gatewaySocketPath,
-    serviceUid: input.files.servicePrincipal.uid,
-    callerGid: input.files.callerPrincipal.gid,
-    snapshotBytes: encodedBytesV1(input.snapshotBytes),
-    descriptorBytes: encodedBytesV1(input.descriptorBytes),
-    rollbackBytes: encodedBytesV1(input.rollbackBytes),
-  });
+  readonly rollbackDescriptorBytes?: Uint8Array | null;
+}): Promise<TransactionPayloadV1> {
+  const stagedPaths: string[] = [];
+  const stage = async (
+    kind: "snapshot" | "descriptor" | "rollback" | "rollback-descriptor",
+    bytes: Uint8Array | null,
+    maximumBytes: number,
+  ): Promise<TransactionBlobReferenceV1 | null> => {
+    if (bytes === null) return null;
+    if (bytes.byteLength < 1 || bytes.byteLength > maximumBytes) {
+      return failV1(`transaction ${kind} bytes are invalid`);
+    }
+    const path = transactionBlobPathV1(input.root, kind);
+    await atomicWriteRootFileV1(path, bytes, 0o600, true, maximumBytes);
+    stagedPaths.push(path);
+    await observeTransactionPhaseForTestV1(`transaction_${kind.replace("-", "_")}_staged`);
+    return Object.freeze({ path, byteLength: bytes.byteLength, contentDigest: sha256V1(bytes) });
+  };
+  try {
+    return Object.freeze({
+      schemaVersion: 1 as const,
+      profile: TRANSACTION_PROFILE_V1,
+      operation: input.operation,
+      phase: "prepared",
+      installationRoot: input.root,
+      snapshotPath: input.files.snapshotPath,
+      descriptorPath: input.files.descriptorPath,
+      rollbackPath: input.files.rollbackPath,
+      gatewayDirectoryPath: input.files.gatewayDirectoryPath,
+      gatewaySocketPath: input.files.gatewaySocketPath,
+      serviceUid: input.files.servicePrincipal.uid,
+      callerGid: input.files.callerPrincipal.gid,
+      snapshotBytes: await stage("snapshot", input.snapshotBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1),
+      descriptorBytes: await stage("descriptor", input.descriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1),
+      rollbackBytes: await stage("rollback", input.rollbackBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1),
+      rollbackDescriptorBytes: await stage("rollback-descriptor", input.rollbackDescriptorBytes ?? null, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1),
+    });
+  } catch (error) {
+    for (const path of stagedPaths) await unlinkExactRootFileIfPresentV1(path).catch(() => undefined);
+    throw error;
+  }
 }
 
 function parseTransactionPayloadV1(
@@ -680,7 +824,7 @@ function parseTransactionPayloadV1(
     "schemaVersion", "profile", "operation", "phase", "installationRoot",
     "snapshotPath", "descriptorPath", "rollbackPath", "gatewayDirectoryPath",
     "gatewaySocketPath", "serviceUid", "callerGid", "snapshotBytes",
-    "descriptorBytes", "rollbackBytes",
+    "descriptorBytes", "rollbackBytes", "rollbackDescriptorBytes",
   ].sort();
   if (
     Object.keys(payload).sort().join("\0") !== keys.join("\0") ||
@@ -701,9 +845,19 @@ function parseTransactionPayloadV1(
   ) return failV1("production strong client transaction is invalid");
   kernelIdV1(payload.serviceUid, "transaction service uid");
   kernelIdV1(payload.callerGid, "transaction caller gid");
-  decodedBytesV1(payload.snapshotBytes, "transaction snapshot")?.fill(0);
-  decodedBytesV1(payload.descriptorBytes, "transaction descriptor")?.fill(0);
-  decodedBytesV1(payload.rollbackBytes, "transaction rollback")?.fill(0);
+  const allowedPhases: Readonly<Record<TransactionOperationV1, readonly string[]>> = {
+    install: ["prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed"],
+    rotate: ["prepared", "gateway_directory_durable", "rollback_durable", "snapshot_durable", "descriptor_durable", "completed"],
+    rollback: ["prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed"],
+    uninstall: ["prepared", "descriptor_removed", "rollback_removed", "rollback_snapshot_removed", "rollback_descriptor_removed", "snapshot_removed", "gateway_directory_removed", "completed"],
+  };
+  if (!allowedPhases[payload.operation as TransactionOperationV1].includes(payload.phase as string)) {
+    return failV1("production strong client transaction phase is invalid");
+  }
+  parseTransactionBlobReferenceV1(payload.snapshotBytes, root, "snapshot", MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1);
+  parseTransactionBlobReferenceV1(payload.descriptorBytes, root, "descriptor", MAX_DESCRIPTOR_PHYSICAL_BYTES_V1);
+  parseTransactionBlobReferenceV1(payload.rollbackBytes, root, "rollback", MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1);
+  parseTransactionBlobReferenceV1(payload.rollbackDescriptorBytes, root, "rollback-descriptor", MAX_DESCRIPTOR_PHYSICAL_BYTES_V1);
   return payload as unknown as TransactionPayloadV1;
 }
 
@@ -781,55 +935,109 @@ async function unlinkExactRootFileIfPresentV1(path: string): Promise<void> {
   }
 }
 
+async function assertGatewayStoppedBeforeUninstallCutV1(
+  gatewaySocketPath: string,
+): Promise<void> {
+  try {
+    const socket = await lstat(gatewaySocketPath);
+    if (socket.isSocket()) {
+      failV1("production strong client gateway must be stopped before uninstall");
+    }
+    failV1("production strong client gateway path is invalid");
+  } catch (error) {
+    if (
+      typeof error === "object" && error !== null && "code" in error &&
+      (error as { readonly code?: unknown }).code === "ENOENT"
+    ) return;
+    throw error;
+  }
+}
+
 async function convergeTransactionV1(
   initial: TransactionPayloadV1,
 ): Promise<TransactionPayloadV1> {
   let payload = initial;
-  const snapshot = decodedBytesV1(payload.snapshotBytes, "transaction snapshot");
-  const descriptor = decodedBytesV1(payload.descriptorBytes, "transaction descriptor");
-  const rollback = decodedBytesV1(payload.rollbackBytes, "transaction rollback");
-  try {
+  const cleanupTransactionBlobsV1 = async (): Promise<void> => {
+    for (const kind of ["snapshot", "descriptor", "rollback", "rollback-descriptor"] as const) {
+      await unlinkExactRootFileIfPresentV1(transactionBlobPathV1(payload.installationRoot, kind));
+      await observeTransactionPhaseForTestV1(`transaction_${kind.replace("-", "_")}_cleaned`);
+    }
+  };
+  if (payload.phase === "completed") {
+    await cleanupTransactionBlobsV1();
+    await unlinkExactRootFileV1(transactionPathV1(payload.installationRoot));
+    return payload;
+  }
+  const requireBlob = async (
+    reference: TransactionBlobReferenceV1 | null,
+    maximumBytes: number,
+    label: string,
+  ): Promise<Buffer> => {
+    const bytes = await readTransactionBlobV1(reference, maximumBytes, label);
+    return bytes ?? failV1("production strong client transaction is invalid");
+  };
+  {
     if (payload.operation !== "uninstall") {
-      if (snapshot === null || descriptor === null) {
+      if (payload.snapshotBytes === null || payload.descriptorBytes === null) {
         return failV1("production strong client transaction is invalid");
       }
       await ensureGatewayDirectoryV1(payload);
       payload = await advanceTransactionV1(payload, "gateway_directory_durable");
     }
     if (payload.operation === "rotate") {
-      if (rollback === null) return failV1("production strong client transaction is invalid");
-      await atomicWriteRootFileV1(payload.rollbackPath, rollback, 0o600, true);
+      const rollback = await requireBlob(payload.rollbackBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1, "transaction rollback snapshot");
+      const rollbackDescriptor = await requireBlob(payload.rollbackDescriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1, "transaction rollback descriptor");
+      try {
+        const priorSnapshotPath = join(payload.installationRoot, ROLLBACK_SNAPSHOT_FILE_V1);
+        const priorDescriptorPath = join(payload.installationRoot, ROLLBACK_DESCRIPTOR_FILE_V1);
+        await atomicWriteRootFileV1(priorSnapshotPath, rollback, 0o600, true, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1);
+        await atomicWriteRootFileV1(priorDescriptorPath, rollbackDescriptor, 0o600, true, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1);
+        const manifest = canonicalBytesV1(Object.freeze({
+          schemaVersion: 1 as const, profile: ROLLBACK_PROFILE_V1,
+          snapshot: Object.freeze({ path: priorSnapshotPath, byteLength: rollback.byteLength, contentDigest: sha256V1(rollback) }),
+          descriptor: Object.freeze({ path: priorDescriptorPath, byteLength: rollbackDescriptor.byteLength, contentDigest: sha256V1(rollbackDescriptor) }),
+          contentDigest: sha256V1(canonicalBytesV1([ROLLBACK_PROFILE_V1, sha256V1(rollback), sha256V1(rollbackDescriptor)])),
+        }));
+        try { await atomicWriteRootFileV1(payload.rollbackPath, manifest, 0o600, true, MAX_ROLLBACK_PHYSICAL_BYTES_V1); }
+        finally { manifest.fill(0); }
+      } finally { rollback.fill(0); rollbackDescriptor.fill(0); }
       payload = await advanceTransactionV1(payload, "rollback_durable");
     }
     if (payload.operation === "install") {
-      await atomicWriteRootFileV1(payload.snapshotPath, snapshot!, 0o600, false);
+      const snapshot = await requireBlob(payload.snapshotBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1, "transaction snapshot");
+      try { await atomicWriteRootFileV1(payload.snapshotPath, snapshot, 0o600, false, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1); }
+      finally { snapshot.fill(0); }
       payload = await advanceTransactionV1(payload, "snapshot_durable");
-      await atomicWriteRootFileV1(payload.descriptorPath, descriptor!, 0o644, false);
+      const descriptor = await requireBlob(payload.descriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1, "transaction descriptor");
+      try { await atomicWriteRootFileV1(payload.descriptorPath, descriptor, 0o644, false, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1); }
+      finally { descriptor.fill(0); }
       payload = await advanceTransactionV1(payload, "descriptor_durable");
     } else if (payload.operation === "rotate" || payload.operation === "rollback") {
-      await atomicWriteRootFileV1(payload.snapshotPath, snapshot!, 0o600, true);
+      const snapshot = await requireBlob(payload.snapshotBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1, "transaction snapshot");
+      try { await atomicWriteRootFileV1(payload.snapshotPath, snapshot, 0o600, true, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1); }
+      finally { snapshot.fill(0); }
       payload = await advanceTransactionV1(payload, "snapshot_durable");
-      await atomicWriteRootFileV1(payload.descriptorPath, descriptor!, 0o644, true);
+      const descriptor = await requireBlob(payload.descriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1, "transaction descriptor");
+      try { await atomicWriteRootFileV1(payload.descriptorPath, descriptor, 0o644, true, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1); }
+      finally { descriptor.fill(0); }
       payload = await advanceTransactionV1(payload, "descriptor_durable");
     } else {
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
       await unlinkExactRootFileIfPresentV1(payload.descriptorPath);
       payload = await advanceTransactionV1(payload, "descriptor_removed");
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
       await unlinkExactRootFileIfPresentV1(payload.rollbackPath);
       payload = await advanceTransactionV1(payload, "rollback_removed");
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
+      await unlinkExactRootFileIfPresentV1(join(payload.installationRoot, ROLLBACK_SNAPSHOT_FILE_V1));
+      payload = await advanceTransactionV1(payload, "rollback_snapshot_removed");
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
+      await unlinkExactRootFileIfPresentV1(join(payload.installationRoot, ROLLBACK_DESCRIPTOR_FILE_V1));
+      payload = await advanceTransactionV1(payload, "rollback_descriptor_removed");
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
       await unlinkExactRootFileIfPresentV1(payload.snapshotPath);
       payload = await advanceTransactionV1(payload, "snapshot_removed");
-      try {
-        const socket = await lstat(payload.gatewaySocketPath);
-        if (socket.isSocket()) {
-          failV1("production strong client gateway must be stopped before uninstall");
-        }
-        failV1("production strong client gateway path is invalid");
-      } catch (error) {
-        if (
-          !(typeof error === "object" && error !== null && "code" in error &&
-            (error as { readonly code?: unknown }).code === "ENOENT")
-        ) throw error;
-      }
+      await assertGatewayStoppedBeforeUninstallCutV1(payload.gatewaySocketPath);
       try {
         const gatewayDirectory = await lstat(payload.gatewayDirectoryPath);
         if (
@@ -850,27 +1058,53 @@ async function convergeTransactionV1(
       payload = await advanceTransactionV1(payload, "gateway_directory_removed");
     }
     payload = await advanceTransactionV1(payload, "completed");
+    await cleanupTransactionBlobsV1();
     await unlinkExactRootFileV1(transactionPathV1(payload.installationRoot));
     return payload;
-  } finally {
-    snapshot?.fill(0);
-    descriptor?.fill(0);
-    rollback?.fill(0);
   }
 }
 
 async function recoverTransactionV1(root: string): Promise<TransactionPayloadV1 | undefined> {
   const pending = await readTransactionV1(root);
-  return pending === undefined ? undefined : convergeTransactionV1(pending);
+  if (pending !== undefined) return convergeTransactionV1(pending);
+  for (const kind of ["snapshot", "descriptor", "rollback", "rollback-descriptor"] as const) {
+    await unlinkExactRootFileIfPresentV1(transactionBlobPathV1(root, kind));
+  }
+  return undefined;
 }
 
-async function exactFileEqualsV1(path: string, expected: Uint8Array): Promise<boolean> {
+async function exactFileEqualsV1(
+  path: string,
+  expected: Uint8Array,
+  maximumBytes: number,
+): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    const bytes = await readExactRootFileV1(path);
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | O_CLOEXEC_V1);
+    const before = await handle.stat({ bigint: true });
+    if (
+      !before.isFile() || before.uid !== 0n || before.nlink !== 1n ||
+      (before.mode & 0o022n) !== 0n || before.size !== BigInt(expected.byteLength) ||
+      before.size < 1n || before.size > BigInt(maximumBytes)
+    ) return false;
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, expected.byteLength));
     try {
-      return bytes.equals(expected);
+      for (let offset = 0; offset < expected.byteLength;) {
+        const length = Math.min(chunk.byteLength, expected.byteLength - offset);
+        const { bytesRead } = await handle.read(chunk, 0, length, offset);
+        if (bytesRead !== length || !chunk.subarray(0, length).equals(expected.subarray(offset, offset + length))) {
+          return false;
+        }
+        offset += length;
+      }
+      const after = await handle.stat({ bigint: true });
+      const projected = await lstat(path, { bigint: true });
+      return after.dev === before.dev && after.ino === before.ino &&
+        after.size === before.size && after.mtimeNs === before.mtimeNs &&
+        after.ctimeNs === before.ctimeNs && projected.dev === before.dev &&
+        projected.ino === before.ino && !projected.isSymbolicLink();
     } finally {
-      bytes.fill(0);
+      chunk.fill(0);
     }
   } catch (error) {
     if (
@@ -878,12 +1112,14 @@ async function exactFileEqualsV1(path: string, expected: Uint8Array): Promise<bo
       (error as { readonly code?: unknown }).code === "ENOENT"
     ) return false;
     throw error;
+  } finally {
+    await handle?.close();
   }
 }
 
-async function exactRootFileExistsV1(path: string): Promise<boolean> {
+async function exactRootFileExistsV1(path: string, maximumBytes: number): Promise<boolean> {
   try {
-    const bytes = await readExactRootFileV1(path);
+    const bytes = await readExactRootFileV1(path, maximumBytes);
     bytes.fill(0);
     return true;
   } catch (error) {
@@ -948,12 +1184,12 @@ async function installProviderProductionStrongClientTrustUnlockedV1(
   const files = generateFilesV1(input);
   try {
     if (
-      await exactFileEqualsV1(files.snapshotPath, files.snapshotBytes) &&
-      await exactFileEqualsV1(files.descriptorPath, files.descriptorBytes)
+      await exactFileEqualsV1(files.snapshotPath, files.snapshotBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1) &&
+      await exactFileEqualsV1(files.descriptorPath, files.descriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1)
     ) {
       return resultV1("installed", files);
     }
-    const transaction = transactionPayloadV1({
+    const transaction = await transactionPayloadV1({
       operation: "install",
       files,
       root,
@@ -982,32 +1218,21 @@ async function rotateProviderProductionStrongClientTrustUnlockedV1(
   const files = generateFilesV1(input);
   let currentSnapshot: Buffer | undefined;
   let currentDescriptor: Buffer | undefined;
-  let rollbackBytes: Buffer | undefined;
   try {
     if (
-      await exactFileEqualsV1(files.snapshotPath, files.snapshotBytes) &&
-      await exactFileEqualsV1(files.descriptorPath, files.descriptorBytes)
+      await exactFileEqualsV1(files.snapshotPath, files.snapshotBytes, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1) &&
+      await exactFileEqualsV1(files.descriptorPath, files.descriptorBytes, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1)
     ) return resultV1("rotated", files);
-    currentSnapshot = await readExactRootFileV1(files.snapshotPath);
-    currentDescriptor = await readExactRootFileV1(files.descriptorPath);
-    rollbackBytes = canonicalBytesV1(Object.freeze({
-      schemaVersion: 1 as const,
-      profile: ROLLBACK_PROFILE_V1,
-      snapshot: `base64url:${currentSnapshot.toString("base64url")}`,
-      descriptor: `base64url:${currentDescriptor.toString("base64url")}`,
-      contentDigest: sha256V1(canonicalBytesV1([
-        ROLLBACK_PROFILE_V1,
-        sha256V1(currentSnapshot),
-        sha256V1(currentDescriptor),
-      ])),
-    }));
-    const transaction = transactionPayloadV1({
+    currentSnapshot = await readExactRootFileV1(files.snapshotPath, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1);
+    currentDescriptor = await readExactRootFileV1(files.descriptorPath, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1);
+    const transaction = await transactionPayloadV1({
       operation: "rotate",
       files,
       root,
       snapshotBytes: files.snapshotBytes,
       descriptorBytes: files.descriptorBytes,
-      rollbackBytes,
+      rollbackBytes: currentSnapshot,
+      rollbackDescriptorBytes: currentDescriptor,
     });
     await persistTransactionV1(transaction, false);
     await convergeTransactionV1(transaction);
@@ -1015,16 +1240,15 @@ async function rotateProviderProductionStrongClientTrustUnlockedV1(
   } finally {
     currentSnapshot?.fill(0);
     currentDescriptor?.fill(0);
-    rollbackBytes?.fill(0);
     files.snapshotBytes.fill(0);
     files.descriptorBytes.fill(0);
   }
 }
 
-function decodeRollbackV1(bytes: Buffer): {
+async function decodeRollbackV1(root: string, bytes: Buffer): Promise<{
   readonly snapshot: Buffer;
   readonly descriptor: Buffer;
-} {
+}> {
   let value: unknown;
   try {
     value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -1040,16 +1264,32 @@ function decodeRollbackV1(bytes: Buffer): {
       ["contentDigest", "descriptor", "profile", "schemaVersion", "snapshot"]
         .sort().join("\0") ||
     record.schemaVersion !== 1 || record.profile !== ROLLBACK_PROFILE_V1 ||
-    typeof record.snapshot !== "string" ||
-    !record.snapshot.startsWith("base64url:") ||
-    typeof record.descriptor !== "string" ||
-    !record.descriptor.startsWith("base64url:")
+    typeof record.snapshot !== "object" || record.snapshot === null ||
+    typeof record.descriptor !== "object" || record.descriptor === null
   ) return failV1("production strong client rollback is invalid");
-  const snapshot = Buffer.from(record.snapshot.slice(10), "base64url");
-  const descriptor = Buffer.from(record.descriptor.slice(10), "base64url");
+  const parse = (input: unknown, path: string, maximumBytes: number): TransactionBlobReferenceV1 => {
+    const candidate = input as Record<string, unknown>;
+    if (Object.keys(candidate).sort().join("\0") !== ["path", "byteLength", "contentDigest"].sort().join("\0") ||
+      candidate.path !== path || !Number.isSafeInteger(candidate.byteLength) ||
+      (candidate.byteLength as number) < 1 || (candidate.byteLength as number) > maximumBytes ||
+      !ContentDigestV1Schema.safeParse(candidate.contentDigest).success) {
+      return failV1("production strong client rollback is invalid");
+    }
+    return candidate as unknown as TransactionBlobReferenceV1;
+  };
+  const snapshot = await readTransactionBlobV1(
+    parse(record.snapshot, join(root, ROLLBACK_SNAPSHOT_FILE_V1), MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1),
+    MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1, "rollback snapshot",
+  ) as Buffer;
+  const descriptor = await readTransactionBlobV1(
+    parse(record.descriptor, join(root, ROLLBACK_DESCRIPTOR_FILE_V1), MAX_DESCRIPTOR_PHYSICAL_BYTES_V1),
+    MAX_DESCRIPTOR_PHYSICAL_BYTES_V1, "rollback descriptor",
+  ) as Buffer;
   if (
-    snapshot.byteLength < 1 || snapshot.byteLength > MAX_FILE_BYTES_V1 ||
-    descriptor.byteLength < 1 || descriptor.byteLength > MAX_FILE_BYTES_V1 ||
+    snapshot.byteLength < 1 ||
+    snapshot.byteLength > MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1 ||
+    descriptor.byteLength < 1 ||
+    descriptor.byteLength > MAX_DESCRIPTOR_PHYSICAL_BYTES_V1 ||
     record.contentDigest !== sha256V1(canonicalBytesV1([
       ROLLBACK_PROFILE_V1,
       sha256V1(snapshot),
@@ -1072,8 +1312,8 @@ async function rollbackProviderProductionStrongClientTrustUnlockedV1(
   const snapshotPath = join(root, PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_FILE_V1);
   const descriptorPath = providerProductionStrongClientDescriptorPathV1(root);
   const rollbackPath = join(root, PROVIDER_PRODUCTION_STRONG_CLIENT_TRUST_ROLLBACK_FILE_V1);
-  const rollbackBytes = await readExactRootFileV1(rollbackPath);
-  const previous = decodeRollbackV1(rollbackBytes);
+  const rollbackBytes = await readExactRootFileV1(rollbackPath, MAX_ROLLBACK_PHYSICAL_BYTES_V1);
+  const previous = await decodeRollbackV1(root, rollbackBytes);
   const binding = descriptorLifecycleBindingV1(previous.descriptor);
   const gatewayDirectoryPath = providerProductionStrongClientGatewayDirectoryPathV1(root);
   const gatewaySocketPath = providerProductionStrongClientGatewaySocketPathV1(root);
@@ -1084,7 +1324,7 @@ async function rollbackProviderProductionStrongClientTrustUnlockedV1(
     return failV1("production strong client rollback is invalid");
   }
   try {
-    const transaction = transactionPayloadV1({
+    const transaction = await transactionPayloadV1({
       operation: "rollback",
       root,
       files: {
@@ -1140,14 +1380,16 @@ async function uninstallProviderProductionStrongClientTrustUnlockedV1(
   const gatewaySocketPath = providerProductionStrongClientGatewaySocketPathV1(root);
   let descriptorBytes: Buffer;
   try {
-    descriptorBytes = await readExactRootFileV1(descriptorPath);
+    descriptorBytes = await readExactRootFileV1(descriptorPath, MAX_DESCRIPTOR_PHYSICAL_BYTES_V1);
   } catch (error) {
     if (
       typeof error === "object" && error !== null && "code" in error &&
       (error as { readonly code?: unknown }).code === "ENOENT" &&
-      !(await exactRootFileExistsV1(snapshotPath)) &&
-      !(await exactRootFileExistsV1(rollbackPath))
+      !(await exactRootFileExistsV1(snapshotPath, MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1)) &&
+      !(await exactRootFileExistsV1(rollbackPath, MAX_ROLLBACK_PHYSICAL_BYTES_V1))
     ) {
+      await unlinkExactRootFileIfPresentV1(join(root, ROLLBACK_SNAPSHOT_FILE_V1));
+      await unlinkExactRootFileIfPresentV1(join(root, ROLLBACK_DESCRIPTOR_FILE_V1));
       try {
         await rmdir(gatewayDirectoryPath);
       } catch (directoryError) {
@@ -1166,7 +1408,10 @@ async function uninstallProviderProductionStrongClientTrustUnlockedV1(
     if (binding.gatewaySocketPath !== gatewaySocketPath) {
       return failV1("production strong client descriptor is invalid");
     }
-    const transaction = transactionPayloadV1({
+    // The first live-gateway refusal must precede journal creation. Recovery
+    // repeats the same guard before every destructive cut in convergeTransactionV1.
+    await assertGatewayStoppedBeforeUninstallCutV1(gatewaySocketPath);
+    const transaction = await transactionPayloadV1({
       operation: "uninstall",
       root,
       files: {
@@ -1198,6 +1443,18 @@ export function installProviderProductionStrongClientTrustV1(
     () => installProviderProductionStrongClientTrustUnlockedV1(input),
   );
 }
+
+export const providerProductionStrongClientTrustLifecycleLimitsInternalV1 =
+  Object.freeze({
+    maximumSnapshotPhysicalBytes: MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1,
+    maximumDescriptorPhysicalBytes: MAX_DESCRIPTOR_PHYSICAL_BYTES_V1,
+    maximumRollbackManifestPhysicalBytes: MAX_ROLLBACK_PHYSICAL_BYTES_V1,
+    maximumTransactionJournalPhysicalBytes: MAX_TRANSACTION_BYTES_V1,
+    acceptsSnapshotByteLength(byteLength: number): boolean {
+      return Number.isSafeInteger(byteLength) && byteLength >= 1 &&
+        byteLength <= MAX_TRUST_SNAPSHOT_PHYSICAL_BYTES_V1;
+    },
+  });
 
 export function rotateProviderProductionStrongClientTrustV1(
   input: InstallProviderProductionStrongClientTrustV1Input,

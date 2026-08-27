@@ -84,6 +84,9 @@ function taskRead(revision = 5) {
 
 function provider(): StrongChangeProviderAuthorityV1 {
   return {
+    async inspectState() {
+      return { revision: 0 };
+    },
     async readExactObject() {
       throw new Error("not reached");
     },
@@ -117,6 +120,7 @@ function storeForTask(revision = 5): {
     store: {
       readTaskBundle: vi.fn(async () => taskRead(revision)),
       readArtifact,
+      abortReservedStrongOperationIntent: vi.fn(async () => false),
     } as unknown as ArtifactStore,
     readArtifact,
   };

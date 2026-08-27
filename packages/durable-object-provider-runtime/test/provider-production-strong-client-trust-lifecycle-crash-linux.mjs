@@ -7,6 +7,7 @@ import {
   rm,
 } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +16,7 @@ import {
   installProviderProductionStrongClientTrustV1,
   providerProductionStrongClientDescriptorPathV1,
   providerProductionStrongClientGatewayDirectoryPathV1,
+  providerProductionStrongClientGatewaySocketPathV1,
   rollbackProviderProductionStrongClientTrustV1,
   rotateProviderProductionStrongClientTrustV1,
   uninstallProviderProductionStrongClientTrustV1,
@@ -78,11 +80,14 @@ function fixture(root, version) {
       canonicalTargetRoot: `${root}-target`,
       targetProfileId: `provider-target-profile:${"d".repeat(64)}`,
       targetFingerprintDigest: `sha256:${
-        version === "v1" ? "e".repeat(64) : version === "v2" ? "f".repeat(64) : "9".repeat(64)
+        version.endsWith("v1") ? "e".repeat(64) : version.endsWith("v2") ? "f".repeat(64) : "9".repeat(64)
       }`,
       acceptanceHistory: [{ generation: version }],
       currentAcceptance: { generation: version },
-      registryHistory: { generation: version },
+      registryHistory: {
+        generation: version,
+        ...(version.startsWith("large-") ? { padding: "x".repeat(17 * 1024 * 1024) } : {}),
+      },
       grantKeyPath: join(runtimeRoot, "grant.pk8"),
       callerPrincipal: { uid: 42103, gid: 42104 },
     },
@@ -135,13 +140,56 @@ function runWorker(action, root, version, crashPhase) {
   throw new Error(`lifecycle worker remained busy for ${action}/${crashPhase ?? "normal"}`);
 }
 
+function runWorkerExpectStoppedGatewayRefusal(root) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const result = spawnSync(process.execPath, [self, "--worker", "uninstall", root, "v1"], {
+      encoding: "utf8",
+      env: { ...process.env, NODE_ENV: "production" },
+    });
+    if (result.status !== 0 && /trust lifecycle is busy/u.test(result.stderr)) {
+      continue;
+    }
+    if (
+      result.status !== 0 &&
+      /gateway must be stopped before uninstall/u.test(result.stderr)
+    ) return;
+    throw new Error(`live gateway uninstall was not refused: ${result.stderr}`);
+  }
+  throw new Error("lifecycle worker remained busy during live gateway refusal");
+}
+
+async function listenGateway(socketPath) {
+  const server = createServer();
+  await new Promise((resolvePromise, rejectPromise) => {
+    server.once("error", rejectPromise);
+    server.listen(socketPath, resolvePromise);
+  });
+  return server;
+}
+
+async function stopGateway(server, socketPath) {
+  await new Promise((resolvePromise, rejectPromise) => {
+    server.close((error) => error === undefined ? resolvePromise() : rejectPromise(error));
+  });
+  await rm(socketPath, { force: true });
+}
+
+async function assertMissing(path, message) {
+  try {
+    await lstat(path);
+    throw new Error(message);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
 async function assertVersion(root, version) {
   const snapshot = JSON.parse(await readFile(
     join(root, "provider-production-strong-client-trust-v1.json"),
     "utf8",
   ));
   const expected = `sha256:${
-    version === "v1" ? "e".repeat(64) : version === "v2" ? "f".repeat(64) : "9".repeat(64)
+    version.endsWith("v1") ? "e".repeat(64) : version.endsWith("v2") ? "f".repeat(64) : "9".repeat(64)
   }`;
   if (snapshot.payload.targetFingerprintDigest !== expected) {
     throw new Error("recovered lifecycle snapshot version is invalid");
@@ -190,10 +238,10 @@ async function snapshotVersion(root) {
 }
 
 const phaseMatrix = {
-  install: ["prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed"],
-  rotate: ["prepared", "gateway_directory_durable", "rollback_durable", "snapshot_durable", "descriptor_durable", "completed"],
-  rollback: ["prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed"],
-  uninstall: ["prepared", "descriptor_removed", "rollback_removed", "snapshot_removed", "gateway_directory_removed", "completed"],
+  install: ["transaction_snapshot_staged", "transaction_descriptor_staged", "prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed", "transaction_snapshot_cleaned", "transaction_descriptor_cleaned"],
+  rotate: ["transaction_snapshot_staged", "transaction_descriptor_staged", "transaction_rollback_staged", "transaction_rollback_descriptor_staged", "prepared", "gateway_directory_durable", "rollback_durable", "snapshot_durable", "descriptor_durable", "completed", "transaction_snapshot_cleaned", "transaction_descriptor_cleaned", "transaction_rollback_cleaned", "transaction_rollback_descriptor_cleaned"],
+  rollback: ["transaction_snapshot_staged", "transaction_descriptor_staged", "prepared", "gateway_directory_durable", "snapshot_durable", "descriptor_durable", "completed", "transaction_snapshot_cleaned", "transaction_descriptor_cleaned"],
+  uninstall: ["prepared", "descriptor_removed", "rollback_removed", "rollback_snapshot_removed", "rollback_descriptor_removed", "snapshot_removed", "gateway_directory_removed", "completed"],
 };
 
 let verifiedCuts = 0;
@@ -213,6 +261,12 @@ for (const [action, phases] of Object.entries(phaseMatrix)) {
           join(root, "provider-production-strong-client-trust-v1.json"),
           providerProductionStrongClientDescriptorPathV1(root),
           providerProductionStrongClientGatewayDirectoryPathV1(root),
+          join(root, ".provider-production-strong-client-trust-rollback-v1.json"),
+          join(root, ".provider-production-strong-client-trust-rollback-v1.json.snapshot"),
+          join(root, ".provider-production-strong-client-trust-rollback-v1.json.descriptor"),
+          ...["", ".snapshot", ".descriptor", ".rollback", ".rollback-descriptor"].map(
+            (suffix) => join(root, `.provider-production-strong-client-trust-transaction-v1.json${suffix}`),
+          ),
         ]) {
           try {
             await lstat(path);
@@ -320,6 +374,170 @@ try {
   await rm(`${uninstallRaceRoot}-runtime`, { recursive: true, force: true });
 }
 
+const transactionFile = ".provider-production-strong-client-trust-transaction-v1.json";
+const liveGatewayRoot = await mkdtemp(join(tmpdir(), "uc-step15-trust-live-gateway-"));
+await chmod(liveGatewayRoot, 0o700);
+let liveGatewayUninstallVerified = false;
+let liveGatewayServer;
+try {
+  runWorker("install", liveGatewayRoot, "v1");
+  runWorker("rotate", liveGatewayRoot, "v2");
+  const snapshotPath = join(liveGatewayRoot, "provider-production-strong-client-trust-v1.json");
+  const descriptorPath = providerProductionStrongClientDescriptorPathV1(liveGatewayRoot);
+  const rollbackPath = join(liveGatewayRoot, ".provider-production-strong-client-trust-rollback-v1.json");
+  const socketPath = providerProductionStrongClientGatewaySocketPathV1(liveGatewayRoot);
+  const [snapshotBefore, descriptorBefore, rollbackBefore] = await Promise.all([
+    readFile(snapshotPath),
+    readFile(descriptorPath),
+    readFile(rollbackPath),
+  ]);
+  liveGatewayServer = await listenGateway(socketPath);
+  runWorkerExpectStoppedGatewayRefusal(liveGatewayRoot);
+  const [snapshotAfter, descriptorAfter, rollbackAfter] = await Promise.all([
+    readFile(snapshotPath),
+    readFile(descriptorPath),
+    readFile(rollbackPath),
+  ]);
+  if (
+    !snapshotAfter.equals(snapshotBefore) ||
+    !descriptorAfter.equals(descriptorBefore) ||
+    !rollbackAfter.equals(rollbackBefore)
+  ) throw new Error("live gateway refusal changed managed trust bytes");
+  await assertMissing(
+    join(liveGatewayRoot, transactionFile),
+    "live gateway refusal created an uninstall transaction",
+  );
+  await stopGateway(liveGatewayServer, socketPath);
+  liveGatewayServer = undefined;
+  runWorker("uninstall", liveGatewayRoot, "v1");
+  liveGatewayUninstallVerified = true;
+} finally {
+  if (liveGatewayServer !== undefined) {
+    await stopGateway(
+      liveGatewayServer,
+      providerProductionStrongClientGatewaySocketPathV1(liveGatewayRoot),
+    );
+  }
+  await rm(providerProductionStrongClientDescriptorPathV1(liveGatewayRoot), { force: true });
+  await rm(providerProductionStrongClientGatewayDirectoryPathV1(liveGatewayRoot), { recursive: true, force: true });
+  await rm(liveGatewayRoot, { recursive: true, force: true });
+  await rm(`${liveGatewayRoot}-runtime`, { recursive: true, force: true });
+}
+
+const partialUninstallRoot = await mkdtemp(join(tmpdir(), "uc-step15-trust-partial-uninstall-"));
+await chmod(partialUninstallRoot, 0o700);
+let partialUninstallLiveGatewayVerified = false;
+let partialGatewayServer;
+try {
+  runWorker("install", partialUninstallRoot, "v1");
+  runWorker("rotate", partialUninstallRoot, "v2");
+  runWorker("uninstall", partialUninstallRoot, "v1", "descriptor_removed");
+  const snapshotPath = join(partialUninstallRoot, "provider-production-strong-client-trust-v1.json");
+  const descriptorPath = providerProductionStrongClientDescriptorPathV1(partialUninstallRoot);
+  const rollbackPath = join(partialUninstallRoot, ".provider-production-strong-client-trust-rollback-v1.json");
+  const journalPath = join(partialUninstallRoot, transactionFile);
+  const socketPath = providerProductionStrongClientGatewaySocketPathV1(partialUninstallRoot);
+  const [snapshotBefore, rollbackBefore, journalBefore] = await Promise.all([
+    readFile(snapshotPath),
+    readFile(rollbackPath),
+    readFile(journalPath),
+  ]);
+  await assertMissing(descriptorPath, "partial uninstall retained its removed descriptor");
+  partialGatewayServer = await listenGateway(socketPath);
+  runWorkerExpectStoppedGatewayRefusal(partialUninstallRoot);
+  const [snapshotAfter, rollbackAfter, journalAfter] = await Promise.all([
+    readFile(snapshotPath),
+    readFile(rollbackPath),
+    readFile(journalPath),
+  ]);
+  if (
+    !snapshotAfter.equals(snapshotBefore) ||
+    !rollbackAfter.equals(rollbackBefore) ||
+    !journalAfter.equals(journalBefore)
+  ) throw new Error("live gateway advanced a partial uninstall transaction");
+  await assertMissing(descriptorPath, "partial uninstall recreated its descriptor");
+  await stopGateway(partialGatewayServer, socketPath);
+  partialGatewayServer = undefined;
+  runWorker("uninstall", partialUninstallRoot, "v1");
+  for (const path of [snapshotPath, descriptorPath, rollbackPath, journalPath]) {
+    await assertMissing(path, "stopped-gateway recovery retained uninstall state");
+  }
+  partialUninstallLiveGatewayVerified = true;
+} finally {
+  if (partialGatewayServer !== undefined) {
+    await stopGateway(
+      partialGatewayServer,
+      providerProductionStrongClientGatewaySocketPathV1(partialUninstallRoot),
+    );
+  }
+  await rm(providerProductionStrongClientDescriptorPathV1(partialUninstallRoot), { force: true });
+  await rm(providerProductionStrongClientGatewayDirectoryPathV1(partialUninstallRoot), { recursive: true, force: true });
+  await rm(partialUninstallRoot, { recursive: true, force: true });
+  await rm(`${partialUninstallRoot}-runtime`, { recursive: true, force: true });
+}
+
+const largeLifecycleRoot = await mkdtemp(join(tmpdir(), "uc-step15-trust-large-"));
+await chmod(largeLifecycleRoot, 0o700);
+let largeLifecycleVerified = false;
+try {
+  runWorker("install", largeLifecycleRoot, "large-v1");
+  const largeSnapshotPath = join(largeLifecycleRoot, "provider-production-strong-client-trust-v1.json");
+  if ((await lstat(largeSnapshotPath)).size <= 16 * 1024 * 1024) {
+    throw new Error("large lifecycle fixture did not cross the legacy 16 MiB cap");
+  }
+  runWorker("rotate", largeLifecycleRoot, "large-v2", "snapshot_durable");
+  runWorker("rotate", largeLifecycleRoot, "large-v2");
+  runWorker("rollback", largeLifecycleRoot, "large-v1");
+  if (await snapshotVersion(largeLifecycleRoot) !== "large-v1") {
+    throw new Error("large lifecycle rollback did not restore the prior trust snapshot");
+  }
+  runWorker("uninstall", largeLifecycleRoot, "large-v1");
+  largeLifecycleVerified = true;
+} finally {
+  await rm(providerProductionStrongClientDescriptorPathV1(largeLifecycleRoot), { force: true });
+  await rm(providerProductionStrongClientGatewayDirectoryPathV1(largeLifecycleRoot), { recursive: true, force: true });
+  await rm(largeLifecycleRoot, { recursive: true, force: true });
+  await rm(`${largeLifecycleRoot}-runtime`, { recursive: true, force: true });
+}
+
+const rawRollbackGuardRoot = await mkdtemp(join(tmpdir(), "uc-step15-trust-raw-rollback-guard-"));
+await chmod(rawRollbackGuardRoot, 0o700);
+let rawRollbackGatewayGuardVerified = false;
+let rawRollbackGatewayServer;
+try {
+  runWorker("install", rawRollbackGuardRoot, "v1");
+  runWorker("rotate", rawRollbackGuardRoot, "v2");
+  runWorker("uninstall", rawRollbackGuardRoot, "v1", "rollback_removed");
+  const socketPath = providerProductionStrongClientGatewaySocketPathV1(rawRollbackGuardRoot);
+  const journalPath = join(rawRollbackGuardRoot, transactionFile);
+  const priorSnapshotPath = join(rawRollbackGuardRoot, ".provider-production-strong-client-trust-rollback-v1.json.snapshot");
+  const priorDescriptorPath = join(rawRollbackGuardRoot, ".provider-production-strong-client-trust-rollback-v1.json.descriptor");
+  const [journalBefore, priorSnapshotBefore, priorDescriptorBefore] = await Promise.all([
+    readFile(journalPath), readFile(priorSnapshotPath), readFile(priorDescriptorPath),
+  ]);
+  rawRollbackGatewayServer = await listenGateway(socketPath);
+  runWorkerExpectStoppedGatewayRefusal(rawRollbackGuardRoot);
+  const [journalAfter, priorSnapshotAfter, priorDescriptorAfter] = await Promise.all([
+    readFile(journalPath), readFile(priorSnapshotPath), readFile(priorDescriptorPath),
+  ]);
+  if (!journalAfter.equals(journalBefore) || !priorSnapshotAfter.equals(priorSnapshotBefore) ||
+    !priorDescriptorAfter.equals(priorDescriptorBefore)) {
+    throw new Error("live gateway advanced raw rollback deletion cuts");
+  }
+  await stopGateway(rawRollbackGatewayServer, socketPath);
+  rawRollbackGatewayServer = undefined;
+  runWorker("uninstall", rawRollbackGuardRoot, "v1");
+  rawRollbackGatewayGuardVerified = true;
+} finally {
+  if (rawRollbackGatewayServer !== undefined) {
+    await stopGateway(rawRollbackGatewayServer, providerProductionStrongClientGatewaySocketPathV1(rawRollbackGuardRoot));
+  }
+  await rm(providerProductionStrongClientDescriptorPathV1(rawRollbackGuardRoot), { force: true });
+  await rm(providerProductionStrongClientGatewayDirectoryPathV1(rawRollbackGuardRoot), { recursive: true, force: true });
+  await rm(rawRollbackGuardRoot, { recursive: true, force: true });
+  await rm(`${rawRollbackGuardRoot}-runtime`, { recursive: true, force: true });
+}
+
 process.stdout.write(`${JSON.stringify({
   profile: "provider_production_strong_client_trust_lifecycle_crash_linux_v1",
   status: "verified",
@@ -329,4 +547,8 @@ process.stdout.write(`${JSON.stringify({
   rejectedForeignDirectories,
   rotateRaceVerified,
   uninstallRaceVerified,
+  liveGatewayUninstallVerified,
+  partialUninstallLiveGatewayVerified,
+  largeLifecycleVerified,
+  rawRollbackGatewayGuardVerified,
 })}\n`);

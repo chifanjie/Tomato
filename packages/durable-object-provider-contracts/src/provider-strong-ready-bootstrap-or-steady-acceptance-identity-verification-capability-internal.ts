@@ -42,6 +42,11 @@ import {
   ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema,
   type ProviderStrongReadyAcceptanceStateUnsignedCandidateV1,
 } from "./provider-strong-ready-acceptance-candidate.js";
+import {
+  ProviderAcceptanceStateUnsignedV1Schema,
+  ProviderAcceptanceStateV1Schema,
+  type ProviderAcceptanceStateUnsignedV1,
+} from "./provider-acceptance.js";
 
 const CapturedFunctionPrototypeBindV1 = Function.prototype.bind;
 const CapturedFunctionPrototypeCallV1 = Function.prototype.call;
@@ -158,6 +163,16 @@ const parseUnsignedAcceptanceStateV1 = bindMethodAtBootstrapV1(
   ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema.parse,
   ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema,
 ) as (value: unknown) => ProviderStrongReadyAcceptanceStateUnsignedCandidateV1;
+const parseSignedFormalAcceptanceStateV1 = bindMethodAtBootstrapV1(
+  ProviderAcceptanceStateV1Schema.parse,
+  ProviderAcceptanceStateV1Schema,
+) as (value: unknown) => ReturnType<
+  typeof ProviderAcceptanceStateV1Schema.parse
+>;
+const parseUnsignedFormalAcceptanceStateV1 = bindMethodAtBootstrapV1(
+  ProviderAcceptanceStateUnsignedV1Schema.parse,
+  ProviderAcceptanceStateUnsignedV1Schema,
+) as (value: unknown) => ProviderAcceptanceStateUnsignedV1;
 
 const CapturedUtf8EncoderV1 = CapturedObjectFreezeV1(
   new CapturedTextEncoderV1(),
@@ -733,6 +748,28 @@ function projectUnsignedAcceptanceStateV1(
   }
 }
 
+function projectUnsignedFormalAcceptanceStateV1(
+  input: unknown,
+): ProviderAcceptanceStateUnsignedV1 {
+  try {
+    const signed = parseSignedFormalAcceptanceStateV1(input);
+    return parseUnsignedFormalAcceptanceStateV1(createFrozenRecordV1([
+      ["profile", signed.profile],
+      ["generationId", signed.generationId],
+      [
+        "installationIdentityGenerationId",
+        signed.installationIdentityGenerationId,
+      ],
+      ["acceptanceOrdinal", signed.acceptanceOrdinal],
+      ["predecessor", signed.predecessor],
+      ["configuration", signed.configuration],
+      ["acceptedAt", signed.acceptedAt],
+    ]));
+  } catch {
+    return parseUnsignedFormalAcceptanceStateV1(input);
+  }
+}
+
 const MIGRATION_ONLY_ACCEPTANCE_UNSIGNED_KEYS_INTERNAL_V1 =
   CapturedObjectFreezeV1([
     "profile",
@@ -863,6 +900,31 @@ export function verifyProviderAcceptanceStateTokenWithIdentityCapabilityInternal
       capability,
       installationIdentityGenerationId,
       input,
+    ),
+    suppliedToken,
+  );
+}
+
+/**
+ * Formal Acceptance variant of the opaque Installation Identity verifier.
+ * It intentionally uses the official formal schema projection rather than
+ * the older reference-candidate projection above.
+ */
+export function verifyProviderFormalAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+  capability: unknown,
+  installationIdentityGenerationId: unknown,
+  input: unknown,
+  suppliedToken: unknown,
+): Promise<boolean> {
+  return verifyProjectedTokenV1(
+    deriveProjectedTokenV1(
+      capability,
+      installationIdentityGenerationId,
+      PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1,
+      () => projectUnsignedFormalAcceptanceStateV1(input),
+      (projection) =>
+        (projection as ProviderAcceptanceStateUnsignedV1)
+          .installationIdentityGenerationId,
     ),
     suppliedToken,
   );

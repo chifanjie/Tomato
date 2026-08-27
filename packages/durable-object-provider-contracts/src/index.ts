@@ -439,3 +439,13 @@ export type {
   InstallationIdentityRetainedTrustStructureValidationV1,
   ValidateInstallationIdentityRetainedTrustStructureV1Input,
 } from "./installation-bootstrap-trust.js";
+export {
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanEnvelopeReferenceCandidateV1Schema,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPinReferenceCandidateV1Schema,
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanContentDigestV1,
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPinV1,
+} from "./provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-reference-candidate-wire.js";
+export type {
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanEnvelopeReferenceCandidateV1,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPinReferenceCandidateV1,
+} from "./provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-reference-candidate-wire.js";

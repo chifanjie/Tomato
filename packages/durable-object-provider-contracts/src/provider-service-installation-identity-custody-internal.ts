@@ -14,7 +14,11 @@ import type {
 import {
   mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1,
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
+  verifyProviderFormalAcceptanceStateTokenWithIdentityCapabilityInternalV1,
 } from "./provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.js";
+import {
+  ProviderAcceptanceStateEnvelopeV1Schema,
+} from "./provider-acceptance.js";
 import { sha256InternalV1 } from "./sha256.js";
 
 const SHA256_BLOCK_BYTES_V1 = 64;
@@ -72,4 +76,24 @@ export function mintProviderServiceInstallationIdentityVerificationCapabilityInt
       },
     },
   });
+}
+
+/** Verify one exact formal Acceptance without exposing Installation Identity key bytes. */
+export async function verifyProviderServiceFormalAcceptanceEnvelopeWithIdentityCapabilityInternalV1(
+  capability: ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+  envelopeInput: unknown,
+): Promise<boolean> {
+  try {
+    const envelope = ProviderAcceptanceStateEnvelopeV1Schema.parse(
+      envelopeInput,
+    );
+    return await verifyProviderFormalAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+      capability,
+      envelope.installationIdentityGenerationId,
+      envelope.payload,
+      envelope.payload.acceptanceToken,
+    );
+  } catch {
+    return false;
+  }
 }

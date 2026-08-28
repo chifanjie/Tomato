@@ -290,9 +290,16 @@ export interface ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1 {
   readonly bundleDigest: Sha256ContentDigestInternalV1;
 }
 
+export interface ProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1 {
+  readonly intentCount: number;
+  readonly pendingCount: number;
+  readonly bundles:
+    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[];
+}
+
 interface ProviderStrongMutationBrokerStoreCapabilityInternalV1 {
-  readonly exportResolvedReceiptBundles: () => Promise<
-    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+  readonly exportResolvedReceiptLedgerView: () => Promise<
+    ProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1
   >;
 }
 
@@ -314,11 +321,21 @@ export async function exportProviderStrongMutationBrokerResolvedReceiptBundlesIn
 ): Promise<
   readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
 > {
+  return (
+    await exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(
+      store,
+    )
+  ).bundles;
+}
+
+export async function exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(
+  store: ProviderStrongMutationBrokerStoreInternalV1,
+): Promise<ProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1> {
   const capability = brokerStoreCapabilitiesV1.get(store as object);
   if (capability === undefined) {
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
   }
-  return capability.exportResolvedReceiptBundles();
+  return capability.exportResolvedReceiptLedgerView();
 }
 
 export interface ProviderStrongMutationBrokerSnapshotInspectionInternalV1 {
@@ -514,6 +531,22 @@ function resolvedReceiptBundlesV1(
         : []
     ),
   );
+}
+
+function resolvedReceiptLedgerViewV1(
+  snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined,
+): ProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1 {
+  const intents = snapshot?.envelope.payload.intents ?? [];
+  const bundles = resolvedReceiptBundlesV1(snapshot);
+  const pendingCount = intents.reduce(
+    (count, intent) => count + (intent.state === "pending" ? 1 : 0),
+    0,
+  );
+  return Object.freeze({
+    intentCount: intents.length,
+    pendingCount,
+    bundles,
+  });
 }
 
 function sameCanonicalV1(left: unknown, right: unknown): boolean {
@@ -2141,7 +2174,7 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
   brokerStoreCapabilitiesV1.set(
     store,
     Object.freeze({
-      exportResolvedReceiptBundles: async () => {
+      exportResolvedReceiptLedgerView: async () => {
         if (executionFenceCapability === undefined) {
           throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
         }
@@ -2151,7 +2184,7 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
           executionFenceCapability,
           {},
           (_view, converged) =>
-            resolvedReceiptBundlesV1(converged.snapshot),
+            resolvedReceiptLedgerViewV1(converged.snapshot),
         );
       },
     }),

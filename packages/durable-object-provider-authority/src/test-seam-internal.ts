@@ -27,10 +27,18 @@ import {
   type ProviderAcceptanceAuthorityLayoutInternalV1,
 } from "./platform-layout.js";
 import {
+  beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+  completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   createProviderProductionStrongAuthorityServiceCoreInternalV1,
   exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1,
+  type BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
   type OpenedProviderProductionStrongAuthorityServiceInternalV1,
   type ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+  type ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1,
+  type ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+  type ProviderProductionStrongAuthorityStep16TrustedProviderIdentityInternalV1,
+  type ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
+  type ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1,
 } from "./provider-production-strong-authority-service.js";
 import {
   classifyProviderStrongMutationBrokerAdmissionInternalV1,
@@ -83,6 +91,21 @@ const TEST_LAYOUTS_V1 = new WeakMap<
   object,
   ProviderAcceptanceAuthorityLayoutInternalV1
 >();
+const TEST_TRUSTED_HOST_CALL_WITNESSES_V1 = new WeakMap<
+  object,
+  ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1
+>();
+
+function openTrustedHostCallWitnessForTestInternalV1(
+  witness:
+    ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
+): ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1 | undefined {
+  const opened = TEST_TRUSTED_HOST_CALL_WITNESSES_V1.get(witness as object);
+  if (opened !== undefined) {
+    TEST_TRUSTED_HOST_CALL_WITNESSES_V1.delete(witness as object);
+  }
+  return opened;
+}
 
 function requireTestProcessV1(): void {
   if (process.env.NODE_ENV !== "test") {
@@ -459,16 +482,23 @@ export function exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestI
 
 export function createProviderProductionStrongAuthorityServiceForTestInternalV1(
   broker: ProviderStrongMutationBrokerStoreInternalV1,
+  trustedProviderIdentity:
+    ProviderProductionStrongAuthorityStep16TrustedProviderIdentityInternalV1,
   lifecycle: Readonly<{
     readonly closeServer?: () => Promise<void>;
     readonly closeExactObjectAuthority?: () => Promise<void>;
+    readonly enableTrustedHostCallWitnesses?: boolean;
   }> = {},
 ): OpenedProviderProductionStrongAuthorityServiceInternalV1 {
   requireTestProcessV1();
   return createProviderProductionStrongAuthorityServiceCoreInternalV1(
     broker,
+    trustedProviderIdentity,
     lifecycle.closeServer ?? (async () => undefined),
     lifecycle.closeExactObjectAuthority ?? (async () => undefined),
+    lifecycle.enableTrustedHostCallWitnesses === false
+      ? undefined
+      : openTrustedHostCallWitnessForTestInternalV1,
   );
 }
 
@@ -482,6 +512,60 @@ export function exportProviderProductionStrongAuthorityResolvedReceiptBundlesFor
   return exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1(
     capability,
   );
+}
+
+export function beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+  input:
+    BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+): Promise<
+  ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+> {
+  requireTestProcessV1();
+  return beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+    capability,
+    input,
+  );
+}
+
+export function completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+  witness:
+    ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
+): Promise<
+  readonly ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1[]
+> {
+  requireTestProcessV1();
+  return completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+    capability,
+    witness,
+  );
+}
+
+export function mintProviderProductionStrongAuthorityTrustedHostCallWitnessForTestInternalV1(
+  input: ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1,
+): ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1 {
+  requireTestProcessV1();
+  const opened = Object.freeze({
+    host: input.host,
+    sessionIdDigest: input.sessionIdDigest,
+    callIdDigest: input.callIdDigest,
+    expectedProviderOperations: Object.freeze(
+      input.expectedProviderOperations.map((operation) =>
+        Object.freeze({
+          operation: operation.operation,
+          operationNonce: operation.operationNonce,
+          requestDigest: operation.requestDigest,
+        })
+      ),
+    ),
+  });
+  const witness = Object.freeze(Object.create(null)) as
+    ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1;
+  TEST_TRUSTED_HOST_CALL_WITNESSES_V1.set(witness, opened);
+  return witness;
 }
 
 export function classifyProviderStrongMutationBrokerAdmissionForTestInternalV1(
@@ -503,6 +587,12 @@ export type {
   ProviderStrongMutationBrokerAdmissionResultInternalV1,
   ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1,
   ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+  ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+  ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1,
+  ProviderProductionStrongAuthorityStep16TrustedProviderIdentityInternalV1,
+  ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
+  ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1,
+  BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
   ProviderStrongMutationExecutionFenceCapabilityInternalV1,
   RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
   ProviderStrongMutationProductionSessionCallbacksInternalV1,

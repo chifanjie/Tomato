@@ -28,6 +28,11 @@
       "import": "./dist/canonical-json.js",
       "default": "./dist/canonical-json.js"
     },
+    "./alpha-gold-verifier": {
+      "types": "./dist/alpha-gold-verifier.d.ts",
+      "import": "./dist/alpha-gold-verifier.js",
+      "default": "./dist/alpha-gold-verifier.js"
+    },
     "./artifact-envelope": {
       "types": "./dist/artifact-envelope.d.ts",
       "import": "./dist/artifact-envelope.js",

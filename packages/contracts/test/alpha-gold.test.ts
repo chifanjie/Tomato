@@ -21,11 +21,14 @@ import {
   Step16DualHostEvidenceV1Schema,
 } from "../src/alpha-gold.js";
 import {
+  assembleStep16DualHostEligibleEvidenceV1,
   createStep16GoldRootVerificationMessageV1,
   deriveStep16GoldReceiptInventoryDigestV1,
   deriveStep16GoldVerifierKeyIdV1,
+  step16GoldReceiptInventoryV1,
+  Step16GoldClosingVerificationError,
   verifyStep16DualHostEligibleEvidenceV1,
-} from "../scripts/alpha-gold-verifier.mjs";
+} from "../src/alpha-gold-verifier.js";
 import { generateContractJsonSchemasV1 } from "../src/json-schema.js";
 
 const corpusPath = fileURLToPath(
@@ -630,38 +633,127 @@ describe("Step 16 Alpha Gold corpus", () => {
     expect(compileSchema("step16-dual-host-evidence")(evidence)).toBe(true);
   });
 
-  it("requires the trusted root verifier to sign the complete receipt inventory", () => {
-    const evidence = mutableClone(eligibleEvidenceFixture());
+  it("assembles and verifies only the complete externally signed receipt inventory", async () => {
+    const inventory = step16GoldReceiptInventoryV1(eligibleEvidenceFixture());
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
     const trustedSpki = publicKey.export({ format: "der", type: "spki" })
       .toString("base64");
+    const signedMessages: Uint8Array[] = [];
+    const evidence = await assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventory,
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer(message) {
+        signedMessages.push(message.slice());
+        return new Uint8Array(sign(null, Buffer.from(message), privateKey));
+      },
+    });
     const receipt = evidence.proof.rootVerification;
-    receipt.verifierKeyId = deriveStep16GoldVerifierKeyIdV1(trustedSpki);
-    receipt.receiptInventoryDigest =
-      deriveStep16GoldReceiptInventoryDigestV1(evidence);
-    receipt.signature = `ed25519:${sign(
-      null,
-      Buffer.from(createStep16GoldRootVerificationMessageV1(
+    expect(signedMessages).toHaveLength(1);
+    expect(receipt.verifierKeyId).toBe(
+      await deriveStep16GoldVerifierKeyIdV1(trustedSpki),
+    );
+    expect(receipt.receiptInventoryDigest).toBe(
+      await deriveStep16GoldReceiptInventoryDigestV1(evidence),
+    );
+    expect(Buffer.from(signedMessages[0] ?? []).toString("utf8")).toBe(
+      createStep16GoldRootVerificationMessageV1(
         receipt.verifierKeyId,
         receipt.receiptInventoryDigest,
-      )),
-      privateKey,
-    ).toString("hex")}`;
-    expect(verifyStep16DualHostEligibleEvidenceV1(evidence, trustedSpki))
+      ),
+    );
+    expect(await verifyStep16DualHostEligibleEvidenceV1(evidence, trustedSpki))
       .toBe(true);
 
     const tampered = mutableClone(evidence);
     tampered.proof.slots["alpha-a-slot-01"].hosts.codex.stages.repoPulse
       .realHostCallReceiptDigest = digest("f");
-    expect(verifyStep16DualHostEligibleEvidenceV1(tampered, trustedSpki))
+    expect(await verifyStep16DualHostEligibleEvidenceV1(tampered, trustedSpki))
       .toBe(false);
 
     const otherKey = generateKeyPairSync("ed25519").publicKey.export({
       format: "der",
       type: "spki",
     }).toString("base64");
-    expect(verifyStep16DualHostEligibleEvidenceV1(evidence, otherKey))
+    expect(await verifyStep16DualHostEligibleEvidenceV1(evidence, otherKey))
       .toBe(false);
+  });
+
+  it("fails closed before or after the external signer on malformed closing input", async () => {
+    const inventory = step16GoldReceiptInventoryV1(eligibleEvidenceFixture());
+    const trusted = generateKeyPairSync("ed25519");
+    const trustedSpki = trusted.publicKey.export({
+      format: "der",
+      type: "spki",
+    }).toString("base64");
+    let signerCalls = 0;
+    const signer = (message: Uint8Array) => {
+      signerCalls += 1;
+      return new Uint8Array(sign(null, Buffer.from(message), trusted.privateKey));
+    };
+
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: {},
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer,
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+    expect(signerCalls).toBe(0);
+
+    const inventoryWithReceipt = mutableClone(inventory);
+    inventoryWithReceipt.proof.rootVerification =
+      eligibleEvidenceFixture().proof.rootVerification;
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventoryWithReceipt,
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer,
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+    expect(signerCalls).toBe(0);
+
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventory,
+      trustedVerifierPublicKeySpkiBase64: `${trustedSpki}\n`,
+      signer,
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+    expect(signerCalls).toBe(0);
+
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventory,
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer: () => new Uint8Array(63),
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventory,
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer: () => {
+        throw new Error("external signer unavailable");
+      },
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+
+    const untrusted = generateKeyPairSync("ed25519");
+    await expect(assembleStep16DualHostEligibleEvidenceV1({
+      receiptInventory: inventory,
+      trustedVerifierPublicKeySpkiBase64: trustedSpki,
+      signer: (message) => new Uint8Array(sign(
+        null,
+        Buffer.from(message),
+        untrusted.privateKey,
+      )),
+    })).rejects.toBeInstanceOf(Step16GoldClosingVerificationError);
+
+    await expect(verifyStep16DualHostEligibleEvidenceV1({}, trustedSpki))
+      .resolves.toBe(false);
+    await expect(verifyStep16DualHostEligibleEvidenceV1(
+      eligibleEvidenceFixture(),
+      "not-base64",
+    )).resolves.toBe(false);
+  });
+
+  it("keeps the scripts verifier as an async thin adapter", async () => {
+    const script = await import("../scripts/alpha-gold-verifier.mjs");
+    await expect(script.verifyStep16DualHostEligibleEvidenceV1(
+      {},
+      "not-base64",
+    )).resolves.toBe(false);
   });
 
   it("rejects incomplete or forged eligible transport in Zod and Ajv", () => {

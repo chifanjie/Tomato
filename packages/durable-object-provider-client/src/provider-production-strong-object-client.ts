@@ -90,6 +90,7 @@ import {
 import {
   ProviderRuntimeStrongMutationClientErrorInternalV1,
   exchangeProviderRuntimeStrongMutationSameSocketInternalV1,
+  type ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input,
 } from "./provider-runtime-strong-mutation-transport-internal.js";
 import {
   createDurableObjectProviderRuntimeClientV1,
@@ -204,6 +205,13 @@ export interface OpenProviderProductionStrongObjectClientV1Input {
   /** The only selector. Authority comes from its signed installation closure. */
   readonly canonicalInstallationRoot: string;
 }
+
+export type ProviderProductionStrongObjectOperationPlanObserverInternalV1 =
+  NonNullable<
+    ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input[
+      "observeProviderOperationPlan"
+    ]
+  >;
 
 export interface ProviderProductionStrongWriteExactObjectV1Input {
   readonly locator: ProviderRuntimeIpcFixedObjectLocatorV1;
@@ -363,6 +371,12 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   close(): void;
 }
 
+export interface OpenProviderProductionStrongObjectHostCoreInternalV1Input {
+  readonly publicInput: OpenProviderProductionStrongObjectClientV1Input;
+  readonly observeProviderOperationPlan?:
+    ProviderProductionStrongObjectOperationPlanObserverInternalV1;
+}
+
 interface ProductionSelectionV1 {
   readonly canonicalInstallationRoot: string;
   readonly serviceConfig: ProviderServiceHandoffConfigV1;
@@ -415,12 +429,101 @@ interface ProductionStrongBusinessHeadInternalV1 {
   readonly artifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
 }
 
-interface ProductionClientStateV1 {
+export interface ProviderProductionStrongObjectOperationPlanObserverStateInternalV1 {
+  readonly observeProviderOperationPlan?:
+    ProviderProductionStrongObjectOperationPlanObserverInternalV1;
+}
+
+export type ProviderProductionStrongObjectOperationPlanObserverSnapshotInternalV1 =
+  | Readonly<{
+      readonly status: "valid";
+      readonly observeProviderOperationPlan:
+        | ProviderProductionStrongObjectOperationPlanObserverInternalV1
+        | undefined;
+    }>
+  | Readonly<{ readonly status: "invalid" }>;
+
+export function snapshotProviderProductionStrongObjectOperationPlanObserverInternalV1(
+  input: object,
+): ProviderProductionStrongObjectOperationPlanObserverSnapshotInternalV1 {
+  let hasOwnObserver: boolean;
+  try {
+    hasOwnObserver = Object.hasOwn(input, "observeProviderOperationPlan");
+  } catch {
+    return Object.freeze({ status: "invalid" });
+  }
+  if (!hasOwnObserver) {
+    return Object.freeze({
+      status: "valid",
+      observeProviderOperationPlan: undefined,
+    });
+  }
+  let descriptor: PropertyDescriptor | undefined;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(
+      input,
+      "observeProviderOperationPlan",
+    );
+  } catch {
+    return Object.freeze({ status: "invalid" });
+  }
+  if (
+    descriptor === undefined ||
+    !Object.hasOwn(descriptor, "value") ||
+    (descriptor.value !== undefined &&
+      typeof descriptor.value !== "function")
+  ) return Object.freeze({ status: "invalid" });
+  return Object.freeze({
+    status: "valid",
+    observeProviderOperationPlan: descriptor.value as
+      ProviderProductionStrongObjectOperationPlanObserverInternalV1,
+  });
+}
+
+export function captureProviderProductionStrongObjectOperationPlanObserverStateInternalV1(
+  input: object,
+): ProviderProductionStrongObjectOperationPlanObserverStateInternalV1 {
+  const snapshot =
+    snapshotProviderProductionStrongObjectOperationPlanObserverInternalV1(
+      input,
+    );
+  if (snapshot.status !== "valid") {
+    return productionFailV1("strong object operation plan observer is invalid");
+  }
+  return Object.freeze(Object.assign(
+    Object.create(null) as
+      ProviderProductionStrongObjectOperationPlanObserverStateInternalV1,
+    {
+      observeProviderOperationPlan: snapshot.observeProviderOperationPlan,
+    },
+  ));
+}
+
+interface ProductionClientStateV1
+  extends ProviderProductionStrongObjectOperationPlanObserverStateInternalV1 {
   readonly selection: ProductionSelectionV1;
   readonly runtimeClient: DurableObjectProviderRuntimeClientV1;
   readonly grantKey: Uint8Array;
   readonly ownerCommitmentKey: Uint8Array;
   readonly timeoutMs: number;
+}
+
+export function bindProviderProductionStrongObjectOperationPlanObserverInternalV1(
+  state: ProviderProductionStrongObjectOperationPlanObserverStateInternalV1,
+  input: Omit<
+    ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input,
+    "observeProviderOperationPlan"
+  >,
+): ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input {
+  const observerState =
+    captureProviderProductionStrongObjectOperationPlanObserverStateInternalV1(
+      state,
+    );
+  return Object.freeze({
+    ...input,
+    observeProviderOperationPlan:
+      observerState.observeProviderOperationPlan,
+  });
 }
 
 const productionClientStatesV1 = new WeakMap<object, ProductionClientStateV1>();
@@ -1727,38 +1830,40 @@ async function strongExchangeV1(
   const request = typeof requestInput === "function"
     ? requestInput(trusted)
     : requestInput;
-  return exchangeProviderRuntimeStrongMutationSameSocketInternalV1({
-    socketPath: state.selection.serviceConfig.payload.socketPath,
-    timeoutMs: state.timeoutMs,
-    expectedPrincipal: {
-      providerId: state.selection.serviceConfig.payload.providerId,
-      capabilityDigest: state.selection.serviceConfig.payload.capabilityDigest,
-      handoffPayloadDigest: state.selection.serviceConfig.payloadDigest,
-      servicePublicKey: CanonicalByteStringV1Schema.parse(
-        state.selection.serviceConfig.publicKey,
-      ),
-      journalHead: {
-        revision: trusted.inspected.state.revision,
-        phase: trusted.inspected.state.phase,
-        mutationDigest: trusted.inspected.state.mutationDigest,
+  return exchangeProviderRuntimeStrongMutationSameSocketInternalV1(
+    bindProviderProductionStrongObjectOperationPlanObserverInternalV1(state, {
+      socketPath: state.selection.serviceConfig.payload.socketPath,
+      timeoutMs: state.timeoutMs,
+      expectedPrincipal: {
+        providerId: state.selection.serviceConfig.payload.providerId,
+        capabilityDigest: state.selection.serviceConfig.payload.capabilityDigest,
+        handoffPayloadDigest: state.selection.serviceConfig.payloadDigest,
+        servicePublicKey: CanonicalByteStringV1Schema.parse(
+          state.selection.serviceConfig.publicKey,
+        ),
+        journalHead: {
+          revision: trusted.inspected.state.revision,
+          phase: trusted.inspected.state.phase,
+          mutationDigest: trusted.inspected.state.mutationDigest,
+        },
+        acceptanceIdentity: state.selection.acceptanceIdentity,
       },
-      acceptanceIdentity: state.selection.acceptanceIdentity,
-    },
-    grantStaticFields: {
-      signerKeyId: state.selection.signerKeyId,
-      targetProfileId: state.selection.targetProfileId,
-      targetFingerprintDigest: state.selection.targetFingerprintDigest,
-      registryManifest: state.selection.registryManifest,
-    },
-    request,
-    async mintSigner(grantFields) {
-      return mintProviderRuntimeStrongMutationAuthorityGrantSignerCapabilityInternalV1({
-        privateKeyPkcs8: new Uint8Array(state.grantKey),
-        expectedPublicKeyBytes: state.selection.signerPublicKeyBytes,
-        grantFields,
-      });
-    },
-  });
+      grantStaticFields: {
+        signerKeyId: state.selection.signerKeyId,
+        targetProfileId: state.selection.targetProfileId,
+        targetFingerprintDigest: state.selection.targetFingerprintDigest,
+        registryManifest: state.selection.registryManifest,
+      },
+      request,
+      async mintSigner(grantFields) {
+        return mintProviderRuntimeStrongMutationAuthorityGrantSignerCapabilityInternalV1({
+          privateKeyPkcs8: new Uint8Array(state.grantKey),
+          expectedPublicKeyBytes: state.selection.signerPublicKeyBytes,
+          grantFields,
+        });
+      },
+    }),
+  );
 }
 
 function validateTrustedProductionStateV1(
@@ -2588,9 +2693,55 @@ async function compareProductionStrongBusinessV1(
  * not unlock it: verified selection lives solely in a private WeakMap and is
  * derived from stable root-owned signed files plus strict Registry history.
  */
-export async function openProviderProductionStrongObjectHostInternalV1(
-  input: OpenProviderProductionStrongObjectClientV1Input,
+export async function openProviderProductionStrongObjectHostCoreInternalV1(
+  coreInput: OpenProviderProductionStrongObjectHostCoreInternalV1Input,
 ): Promise<ProviderProductionStrongObjectHostInternalV1> {
+  if (coreInput === null || typeof coreInput !== "object") {
+    return productionFailV1("strong object Host core input is invalid");
+  }
+  const observerState =
+    captureProviderProductionStrongObjectOperationPlanObserverStateInternalV1(
+      coreInput,
+    );
+  let publicInputDescriptor: PropertyDescriptor | undefined;
+  try {
+    publicInputDescriptor = Object.hasOwn(coreInput, "publicInput")
+      ? Object.getOwnPropertyDescriptor(coreInput, "publicInput")
+      : undefined;
+  } catch {
+    return productionFailV1("strong object Host core input is invalid");
+  }
+  if (
+    publicInputDescriptor === undefined ||
+    !Object.hasOwn(publicInputDescriptor, "value") ||
+    publicInputDescriptor.value === null ||
+    typeof publicInputDescriptor.value !== "object"
+  ) return productionFailV1("strong object Host core input is invalid");
+  const publicInputValue = publicInputDescriptor.value as
+    OpenProviderProductionStrongObjectClientV1Input;
+  let installationRootDescriptor: PropertyDescriptor | undefined;
+  try {
+    installationRootDescriptor = Object.hasOwn(
+      publicInputValue,
+      "canonicalInstallationRoot",
+    )
+      ? Object.getOwnPropertyDescriptor(
+        publicInputValue,
+        "canonicalInstallationRoot",
+      )
+      : undefined;
+  } catch {
+    return productionFailV1("strong object Host core input is invalid");
+  }
+  if (
+    installationRootDescriptor === undefined ||
+    !Object.hasOwn(installationRootDescriptor, "value") ||
+    typeof installationRootDescriptor.value !== "string"
+  ) return productionFailV1("strong object Host core input is invalid");
+  const input = Object.freeze(Object.assign(
+    Object.create(null) as OpenProviderProductionStrongObjectClientV1Input,
+    { canonicalInstallationRoot: installationRootDescriptor.value },
+  ));
   const selection = await verifyProductionSelectionV1(input);
   const timeoutMs = positiveTimeoutV1(undefined);
   // Admission reads the caller-owned key only after a live signed principal;
@@ -2766,6 +2917,17 @@ export async function openProviderProductionStrongObjectHostInternalV1(
     grantKey,
     ownerCommitmentKey,
     timeoutMs,
+    ...observerState,
   }));
   return client;
+}
+
+export async function openProviderProductionStrongObjectHostInternalV1(
+  input: OpenProviderProductionStrongObjectClientV1Input,
+): Promise<ProviderProductionStrongObjectHostInternalV1> {
+  const coreInput = Object.freeze(Object.assign(
+    Object.create(null) as OpenProviderProductionStrongObjectHostCoreInternalV1Input,
+    { publicInput: input },
+  ));
+  return openProviderProductionStrongObjectHostCoreInternalV1(coreInput);
 }

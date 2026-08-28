@@ -1,4 +1,19 @@
-import { createHash } from "node:crypto";
+import {
+  RealHostReceiptNormalizationError,
+  canonicalRealHostJsonInternalV1 as canonicalJson,
+  digestRealHostIdentifierInternalV1 as digestIdentifier,
+  digestRealHostJsonInternalV1 as digestJson,
+  isRealHostJsonRecordInternalV1 as isRecord,
+  parseRealHostJsonlRecordInternalV1,
+  safeRealHostIdentifierInternalV1 as safeIdentifier,
+  sha256RealHostTextInternalV1 as sha256,
+  type RealHostJsonRecordInternalV1 as JsonRecord,
+  type RealHostJsonValueInternalV1 as JsonValue,
+  type RealHostReceiptNormalizationErrorCode,
+} from "./real-host-receipt-primitives-internal.js";
+
+export { RealHostReceiptNormalizationError };
+export type { RealHostReceiptNormalizationErrorCode };
 
 export const REAL_HOST_RECEIPT_SCHEMA_VERSION = 1 as const;
 export const REAL_HOST_ACTION_INPUT_DIGEST_DOMAIN_V1 =
@@ -86,45 +101,11 @@ export interface Step16ExpectedHostEventPlanV1 {
   readonly events: readonly Step16ExpectedHostEventV1[];
 }
 
-export type RealHostReceiptNormalizationErrorCode =
-  | "invalid_transcript"
-  | "invalid_expected_event_plan"
-  | "mixed_session"
-  | "unexpected_event"
-  | "unexpected_tool_call"
-  | "call_pair_mismatch"
-  | "tool_call_failed"
-  | "host_action_failed"
-  | "incomplete_transcript";
-
-export class RealHostReceiptNormalizationError extends Error {
-  readonly code: RealHostReceiptNormalizationErrorCode;
-
-  constructor(code: RealHostReceiptNormalizationErrorCode) {
-    super(`Real Host transcript rejected: ${code}.`);
-    this.name = "RealHostReceiptNormalizationError";
-    this.code = code;
-  }
-}
-
-type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
-
-type JsonRecord = Record<string, JsonValue>;
-
 const SERVER_NAME = "understand-code" as const;
 const CLAUDE_TOOL_PREFIX = `mcp__${SERVER_NAME}__`;
-const RECEIPT_DIGEST_DOMAIN = "understand-code-real-host-events-v1";
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
 const MAX_TRANSCRIPT_EVENTS = 50_000;
 const MAX_PUBLIC_EVENTS = 256;
-const MAX_IDENTIFIER_BYTES = 4_096;
-const MAX_JSON_DEPTH = 128;
 const PUBLISHED_TOOL_NAMES = new Set<string>(UNDERSTAND_CODE_REAL_HOST_TOOL_NAMES_V1);
 const ACTIONS = new Set<string>(["source_mutation", "verification"]);
 const ACTION_MECHANISMS = new Set<string>(["file_change", "command_execution"]);
@@ -143,14 +124,6 @@ function reject(code: RealHostReceiptNormalizationErrorCode): never {
   throw new RealHostReceiptNormalizationError(code);
 }
 
-function isRecord(value: unknown): value is JsonRecord {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
 function hasExactKeys(value: JsonRecord, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const sortedExpected = [...expected].sort();
@@ -158,62 +131,8 @@ function hasExactKeys(value: JsonRecord, expected: readonly string[]): boolean {
     actual.every((key, index) => key === sortedExpected[index]);
 }
 
-function isUnicodeScalarString(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      index += 1;
-    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function safeIdentifier(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    Buffer.byteLength(value, "utf8") <= MAX_IDENTIFIER_BYTES &&
-    isUnicodeScalarString(value) &&
-    !/[\u0000-\u001f\u007f]/u.test(value)
-  );
-}
-
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function canonicalJson(value: JsonValue, depth = 0): string {
-  if (depth > MAX_JSON_DEPTH) reject("invalid_transcript");
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) reject("invalid_transcript");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalJson(entry, depth + 1)).join(",")}]`;
-  }
-  if (!isRecord(value)) reject("invalid_transcript");
-  return `{${Object.keys(value)
-    .sort()
-    .map(
-      (key) =>
-        `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue, depth + 1)}`,
-    )
-    .join(",")}}`;
-}
-
-function sha256(bytes: string): Sha256DigestV1 {
-  return `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
-}
-
-function digestJson(value: JsonValue): Sha256DigestV1 {
-  return sha256(canonicalJson(value));
 }
 
 /**
@@ -249,15 +168,6 @@ function fixedTraversalDigestEqual(
   return difference === 0;
 }
 
-function digestIdentifier(
-  host: RealHostReceiptHostV1,
-  kind: "session" | "event",
-  value: unknown,
-): Sha256DigestV1 {
-  if (!safeIdentifier(value)) reject("invalid_transcript");
-  return sha256(`${RECEIPT_DIGEST_DOMAIN}\u0000${host}\u0000${kind}\u0000${value}`);
-}
-
 function isDigest(value: unknown): value is Sha256DigestV1 {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
@@ -280,17 +190,7 @@ function parseJsonl(transcript: string): readonly JsonRecord[] {
   ) {
     reject("invalid_transcript");
   }
-  return lines.map((line) => {
-    let value: unknown;
-    try {
-      value = JSON.parse(line) as unknown;
-    } catch {
-      reject("invalid_transcript");
-    }
-    if (!isRecord(value)) reject("invalid_transcript");
-    canonicalJson(value);
-    return value;
-  });
+  return lines.map((line) => parseRealHostJsonlRecordInternalV1(line));
 }
 
 /** Validate and freeze the externally trusted event plan before Host execution. */

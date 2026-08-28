@@ -82,6 +82,15 @@ export interface ProviderRuntimeStrongMutationExpectedPrincipalInternalV1 {
     ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1["journalHead"];
   readonly acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1;
 }
+
+export interface ProviderRuntimeStrongMutationOperationPlanInternalV1 {
+  readonly operation:
+    ProviderRuntimeIpcStrongMutationRequestClaimsV1["operation"];
+  readonly operationNonce:
+    ProviderRuntimeIpcStrongMutationRequestClaimsV1["operationNonce"];
+  readonly requestDigest: ContentDigestV1;
+}
+
 export interface ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input {
   readonly socketPath: string;
   readonly timeoutMs?: number;
@@ -96,6 +105,13 @@ export interface ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input 
   readonly grantStaticFields:
     ProviderRuntimeStrongMutationGrantStaticFieldsInternalV1;
   readonly request: ProviderRuntimeIpcStrongMutationRequestClaimsV1;
+  /**
+   * Optional private composition hook for binding one exact Provider operation
+   * before any connection, signing, or mutation side effect is attempted.
+   */
+  readonly observeProviderOperationPlan?: (
+    plan: ProviderRuntimeStrongMutationOperationPlanInternalV1,
+  ) => void | Promise<void>;
   /**
    * Invoked exactly once, only after the signed principal and Acceptance are
    * verified. The returned opaque signer is consumed delete-before-sign.
@@ -114,6 +130,7 @@ type StrongMutationSuccessPayloadInternalV1 = Extract<
 
 export type ProviderRuntimeStrongMutationClientErrorCodeInternalV1 =
   | "invalid_input"
+  | "operation_plan_rejected"
   | "transport_unavailable"
   | "principal_invalid"
   | "signer_unavailable"
@@ -158,6 +175,44 @@ function failV1(
     message,
     options,
   );
+}
+
+function snapshotOperationPlanObserverV1(
+  input: object,
+): ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input[
+  "observeProviderOperationPlan"
+] {
+  let hasOwnObserver: boolean;
+  try {
+    hasOwnObserver = Object.hasOwn(input, "observeProviderOperationPlan");
+  } catch {
+    return failV1("invalid_input", "strong mutation exchange input is invalid");
+  }
+  if (!hasOwnObserver) return undefined;
+  let descriptor: PropertyDescriptor | undefined;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(
+      input,
+      "observeProviderOperationPlan",
+    );
+  } catch {
+    return failV1("invalid_input", "strong mutation exchange input is invalid");
+  }
+  if (
+    descriptor === undefined ||
+    !Object.hasOwn(descriptor, "value") ||
+    (descriptor.value !== undefined &&
+      typeof descriptor.value !== "function")
+  ) {
+    return failV1(
+      "invalid_input",
+      "strong mutation exchange input is invalid",
+    );
+  }
+  return descriptor.value as
+    ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input[
+      "observeProviderOperationPlan"
+    ];
 }
 
 function exactCanonicalEqualV1(left: unknown, right: unknown): boolean {
@@ -736,9 +791,11 @@ async function connectStrongMutationTransportV1(
 export async function exchangeProviderRuntimeStrongMutationSameSocketInternalV1(
   input: ExchangeProviderRuntimeStrongMutationSameSocketInternalV1Input,
 ): Promise<StrongMutationSuccessPayloadInternalV1> {
+  if (input === null || typeof input !== "object") {
+    return failV1("invalid_input", "strong mutation exchange input is invalid");
+  }
+  const observeProviderOperationPlan = snapshotOperationPlanObserverV1(input);
   if (
-    input === null ||
-    typeof input !== "object" ||
     typeof input.socketPath !== "string" ||
     input.socketPath.length === 0 ||
     typeof input.mintSigner !== "function"
@@ -761,6 +818,24 @@ export async function exchangeProviderRuntimeStrongMutationSameSocketInternalV1(
     expected,
     requestClaims,
   );
+  const requestDigest = sha256DigestV1(
+    canonicalizeProviderRuntimeIpcStrongMutationRequestV1(requestClaims),
+  );
+  if (observeProviderOperationPlan !== undefined) {
+    const plan = Object.freeze({
+      operation: requestClaims.operation,
+      operationNonce: requestClaims.operationNonce,
+      requestDigest,
+    });
+    try {
+      await Reflect.apply(observeProviderOperationPlan, undefined, [plan]);
+    } catch {
+      return failV1(
+        "operation_plan_rejected",
+        "strong mutation operation plan was rejected",
+      );
+    }
+  }
 
   let transport: ProviderRuntimeStrongMutationSocketTransportInternalV1;
   try {
@@ -808,9 +883,6 @@ export async function exchangeProviderRuntimeStrongMutationSameSocketInternalV1(
     }
     verifyPrincipalAttestationV1(attestation, challenge, expected);
 
-    const requestDigest = sha256DigestV1(
-      canonicalizeProviderRuntimeIpcStrongMutationRequestV1(requestClaims),
-    );
     const principalAttestationDigest = sha256DigestV1(
       canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1(
         attestation,

@@ -1,7 +1,16 @@
 import path from "node:path";
 
 export * from "./real-host-receipts.js";
-export * from "./real-host-executor.js";
+export {
+  Step16RealHostExecutionErrorV1,
+  runStep16RealHostJsonlSessionV1,
+} from "./real-host-executor.js";
+export type {
+  RunStep16RealHostJsonlSessionV1Input,
+  Step16ExpectedHostActionInputV1,
+  Step16RealHostExecutionErrorCodeV1,
+  Step16RealHostJsonlSessionResultV1,
+} from "./real-host-executor.js";
 
 /** The two host surfaces intentionally share one MCP command contract. */
 export type HostAdapterId = "codex" | "claude";

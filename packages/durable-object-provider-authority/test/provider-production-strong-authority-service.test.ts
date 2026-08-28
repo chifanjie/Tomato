@@ -18,6 +18,9 @@ import {
 } from "../../contracts/dist/step16-host-receipts.js";
 
 import {
+  abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1,
+  appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1,
+  beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1,
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1,
   completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1,
@@ -396,6 +399,273 @@ describe("production strong authority resolved receipt capability", () => {
 });
 
 describe("production Step16 Provider receipt binding window", () => {
+  it("collects three operations before their side effects and binds the exact suffix", async () => {
+    const fixture = await liveStrongAuthorityServiceFixtureV1();
+    const requests = [
+      fixture.request,
+      strongMutationRequestV1(fixture.current, {
+        nonceDigit: "4",
+        principalAttestation: fixture.principalAttestation,
+      }),
+      strongMutationRequestV1(fixture.current, {
+        nonceDigit: "5",
+        principalAttestation: fixture.principalAttestation,
+      }),
+    ];
+    const expectedOperations = requests.map(step16ExpectedOperationV1);
+    const window =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        fixture.receiptExportCapability,
+        { host: "codex" },
+      );
+
+    for (let index = 0; index < requests.length; index += 1) {
+      await appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        window,
+        expectedOperations[index]!,
+      );
+      await resolveStrongMutationV1(fixture, requests[index]!);
+    }
+    const bindings =
+      await completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        window,
+        step16TrustedHostCallWitnessV1(expectedOperations),
+      );
+
+    expect(bindings).toHaveLength(3);
+    expect(bindings.map((binding) => binding.providerOperation)).toMatchObject(
+      expectedOperations,
+    );
+  });
+
+  it("rejects both side effects beyond appends and appends beyond side effects", async () => {
+    const extraSideEffectFixture = await liveStrongAuthorityServiceFixtureV1();
+    const expected = extraSideEffectFixture.request;
+    const inserted = strongMutationRequestV1(extraSideEffectFixture.current, {
+      nonceDigit: "4",
+      principalAttestation: extraSideEffectFixture.principalAttestation,
+    });
+    const shortWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        extraSideEffectFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    await appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      shortWindow,
+      step16ExpectedOperationV1(expected),
+    );
+    await resolveStrongMutationV1(extraSideEffectFixture, expected);
+    await resolveStrongMutationV1(extraSideEffectFixture, inserted);
+    await expect(
+      completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        shortWindow,
+        step16TrustedHostCallWitnessV1([
+          step16ExpectedOperationV1(expected),
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: "namespace_integrity_failed" });
+
+    const missingSideEffectFixture = await liveStrongAuthorityServiceFixtureV1();
+    const first = missingSideEffectFixture.request;
+    const absent = strongMutationRequestV1(missingSideEffectFixture.current, {
+      nonceDigit: "4",
+      principalAttestation: missingSideEffectFixture.principalAttestation,
+    });
+    const longWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        missingSideEffectFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    const longPlan = [
+      step16ExpectedOperationV1(first),
+      step16ExpectedOperationV1(absent),
+    ];
+    for (const operation of longPlan) {
+      await appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        longWindow,
+        operation,
+      );
+    }
+    await resolveStrongMutationV1(missingSideEffectFixture, first);
+    await expect(
+      completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        longWindow,
+        step16TrustedHostCallWitnessV1(longPlan),
+      ),
+    ).rejects.toMatchObject({ code: "namespace_integrity_failed" });
+  });
+
+  it("rejects zero operations and poisons duplicate append until explicit abort", async () => {
+    const zeroFixture = await liveStrongAuthorityServiceFixtureV1();
+    const zeroWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        zeroFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    await expect(
+      completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        zeroWindow,
+        step16TrustedHostCallWitnessV1([]),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    const duplicateFixture = await liveStrongAuthorityServiceFixtureV1();
+    const duplicateWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        duplicateFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    const operation = step16ExpectedOperationV1(duplicateFixture.request);
+    await appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      duplicateWindow,
+      operation,
+    );
+    await expect(
+      appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        duplicateWindow,
+        operation,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        duplicateWindow,
+        {
+          ...operation,
+          operationNonce: "f".repeat(32),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      duplicateWindow,
+    );
+    const replacement =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        duplicateFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    await abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      replacement,
+    );
+  });
+
+  it("rejects append after either abort or successful completion", async () => {
+    const abortedFixture = await liveStrongAuthorityServiceFixtureV1();
+    const abortedWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    await abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      abortedWindow,
+    );
+    await expect(
+      appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedWindow,
+        step16ExpectedOperationV1(abortedFixture.request),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    const completedFixture = await liveStrongAuthorityServiceFixtureV1();
+    const completedWindow =
+      await beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        completedFixture.receiptExportCapability,
+        { host: "codex" },
+      );
+    const completedOperation = step16ExpectedOperationV1(
+      completedFixture.request,
+    );
+    await appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      completedWindow,
+      completedOperation,
+    );
+    await resolveStrongMutationV1(completedFixture, completedFixture.request);
+    const completing =
+      completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      completedWindow,
+      step16TrustedHostCallWitnessV1([completedOperation]),
+    );
+    await expect(
+      appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        completedWindow,
+        completedOperation,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        completedWindow,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(completing).resolves.toHaveLength(1);
+  });
+
+  it("aborts a window once, releases exclusivity, and rejects terminal races", async () => {
+    const abortedFixture = await liveStrongAuthorityServiceFixtureV1();
+    const beginInput = Object.freeze({
+      host: "codex" as const,
+      expectedProviderOperations: Object.freeze([
+        step16ExpectedOperationV1(abortedFixture.request),
+      ]),
+    });
+    const abortedWindow =
+      await beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedFixture.receiptExportCapability,
+        beginInput,
+      );
+
+    await expect(
+      abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedWindow,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedWindow,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedWindow,
+        step16TrustedHostCallWitnessV1(
+          beginInput.expectedProviderOperations,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    const replacement =
+      await beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        abortedFixture.receiptExportCapability,
+        beginInput,
+      );
+    await abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      replacement,
+    );
+
+    const completedFixture = await liveStrongAuthorityServiceFixtureV1();
+    const completedInput = Object.freeze({
+      host: "codex" as const,
+      expectedProviderOperations: Object.freeze([
+        step16ExpectedOperationV1(completedFixture.request),
+      ]),
+    });
+    const completedWindow =
+      await beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        completedFixture.receiptExportCapability,
+        completedInput,
+      );
+    await resolveStrongMutationV1(completedFixture, completedFixture.request);
+    await completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      completedWindow,
+      step16TrustedHostCallWitnessV1(
+        completedInput.expectedProviderOperations,
+      ),
+    );
+    await expect(
+      abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+        completedWindow,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
   it("maps one exact nonempty ledger suffix to frozen contract-safe digests", async () => {
     const fixture = await liveStrongAuthorityServiceFixtureV1();
     await resolveStrongMutationV1(fixture, fixture.request);
@@ -791,7 +1061,10 @@ describe("production Step16 Provider receipt binding window", () => {
   it("keeps every Step16 receipt-binding capability off the public index", () => {
     for (const name of [
       "beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1",
+      "beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1",
+      "appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1",
       "completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1",
+      "abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1",
       "exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1",
     ]) {
       expect(publicAuthorityApi).not.toHaveProperty(name);

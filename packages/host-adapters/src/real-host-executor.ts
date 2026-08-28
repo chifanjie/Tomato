@@ -13,6 +13,10 @@ import {
   type Sha256DigestV1,
   type Step16ExpectedHostEventPlanV1,
 } from "./real-host-receipts.js";
+import type {
+  Step16RealHostObservedCallInternalV1,
+  Step16RealHostStreamObserverInternalV1,
+} from "./step16-real-host-stream-observer-internal.js";
 
 const MAX_STDOUT_BYTES_V1 = 32 * 1024 * 1024;
 const MAX_STDERR_BYTES_V1 = 4 * 1024 * 1024;
@@ -117,9 +121,23 @@ export interface Step16ExpectedHostActionInputV1 {
   readonly input: Readonly<Record<string, unknown>>;
 }
 
+export interface RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options {
+  readonly streamObserver: Step16RealHostStreamObserverInternalV1;
+  readonly onObservedCall: (
+    event: Step16RealHostObservedCallInternalV1,
+  ) => void | Promise<void>;
+}
+
 interface ChildOutcomeV1 {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
+}
+
+interface CompiledSupervisorInternalV1 {
+  readonly streamObserver: Step16RealHostStreamObserverInternalV1;
+  readonly onObservedCall: (
+    event: Step16RealHostObservedCallInternalV1,
+  ) => void | Promise<void>;
 }
 
 function failV1(code: Step16RealHostExecutionErrorCodeV1): never {
@@ -172,6 +190,61 @@ function hasExactKeysV1(
   const sortedExpected = [...expected].sort();
   return actual.length === sortedExpected.length &&
     actual.every((key, index) => key === sortedExpected[index]);
+}
+
+function compileSupervisorInternalV1(
+  value: unknown,
+): CompiledSupervisorInternalV1 {
+  try {
+    if (!isRecordV1(value)) return failV1("invalid_input");
+    const optionDescriptors = Object.getOwnPropertyDescriptors(value);
+    const streamObserverDescriptor = optionDescriptors.streamObserver;
+    const onObservedCallDescriptor = optionDescriptors.onObservedCall;
+    if (
+      Object.keys(value).some((key) =>
+        key !== "streamObserver" &&
+        key !== "onObservedCall"
+      ) ||
+      streamObserverDescriptor === undefined ||
+      !("value" in streamObserverDescriptor) ||
+      onObservedCallDescriptor === undefined ||
+      !("value" in onObservedCallDescriptor) ||
+      typeof onObservedCallDescriptor.value !== "function"
+    ) return failV1("invalid_input");
+    const streamObserverValue = streamObserverDescriptor.value;
+    if (!isRecordV1(streamObserverValue)) return failV1("invalid_input");
+    const observerDescriptors = Object.getOwnPropertyDescriptors(streamObserverValue);
+    const feedDescriptor = observerDescriptors.feed;
+    const finishDescriptor = observerDescriptors.finish;
+    if (
+      feedDescriptor === undefined ||
+      !("value" in feedDescriptor) ||
+      typeof feedDescriptor.value !== "function" ||
+      finishDescriptor === undefined ||
+      !("value" in finishDescriptor) ||
+      typeof finishDescriptor.value !== "function"
+    ) return failV1("invalid_input");
+    const feed = feedDescriptor.value.bind(streamObserverValue) as
+      Step16RealHostStreamObserverInternalV1["feed"];
+    const finish = finishDescriptor.value.bind(streamObserverValue) as
+      Step16RealHostStreamObserverInternalV1["finish"];
+    const onObservedCall = onObservedCallDescriptor.value as
+      CompiledSupervisorInternalV1["onObservedCall"];
+    const compiledObserver: Step16RealHostStreamObserverInternalV1 =
+      Object.freeze({
+        feed: (line: string) => feed(line),
+        finish: () => finish(),
+      });
+    const compiledCallback: CompiledSupervisorInternalV1["onObservedCall"] =
+      (event) => onObservedCall(event);
+    return Object.freeze({
+      streamObserver: compiledObserver,
+      onObservedCall: compiledCallback,
+    });
+  } catch (error) {
+    if (error instanceof Step16RealHostExecutionErrorV1) throw error;
+    return failV1("invalid_input");
+  }
 }
 
 function pathInsideWorkspaceV1(workspace: string, target: string): boolean {
@@ -479,12 +552,9 @@ function decodeUtf8V1(bytes: Uint8Array): string {
   }
 }
 
-/**
- * Execute one real non-interactive Host session without exposing its prompt,
- * environment, raw transcript, or stderr across the process boundary.
- */
-export async function runStep16RealHostJsonlSessionV1(
+async function runStep16RealHostJsonlSessionCoreV1(
   input: RunStep16RealHostJsonlSessionV1Input,
+  supervisor: CompiledSupervisorInternalV1 | undefined,
 ): Promise<Step16RealHostJsonlSessionResultV1> {
   if (
     typeof input !== "object" ||
@@ -543,19 +613,71 @@ export async function runStep16RealHostJsonlSessionV1(
     | "timeout"
     | "stdout_limit_exceeded"
     | "stderr_limit_exceeded"
+    | "invalid_utf8"
+    | "transcript_rejected"
     | undefined;
   let termination: Promise<void> | undefined;
+  let resolveFailureObserved: (() => void) | undefined;
+  const failureObserved = new Promise<void>((resolve) => {
+    resolveFailureObserved = resolve;
+  });
   let stdoutBytes = 0;
   let stderrBytes = 0;
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
+  const stdoutDecoder = supervisor === undefined
+    ? undefined
+    : new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  let stdoutLineBuffer = "";
+  let stdoutEofObserved = false;
+  let stdoutWork = Promise.resolve();
 
   const beginTermination = (
     code: NonNullable<typeof failureCode>,
   ): void => {
     if (failureCode !== undefined) return;
     failureCode = code;
+    resolveFailureObserved?.();
     termination = terminateProcessTreeV1(child);
+  };
+
+  const processObservedText = async (text: string, atEof: boolean): Promise<void> => {
+    if (failureCode !== undefined || supervisor === undefined) return;
+    stdoutLineBuffer += text;
+    const lines = stdoutLineBuffer.split("\n");
+    stdoutLineBuffer = lines.pop() ?? "";
+    if (atEof && stdoutLineBuffer.length > 0) {
+      lines.push(stdoutLineBuffer);
+      stdoutLineBuffer = "";
+    }
+    for (const line of lines) {
+      if (failureCode !== undefined) return;
+      let observed: Step16RealHostObservedCallInternalV1 | undefined;
+      try {
+        observed = supervisor.streamObserver.feed(line);
+      } catch {
+        beginTermination("transcript_rejected");
+        return;
+      }
+      if (observed !== undefined) {
+        try {
+          await supervisor.onObservedCall(observed);
+        } catch {
+          beginTermination("io_failed");
+          return;
+        }
+      }
+    }
+  };
+
+  const enqueueStdoutWork = (work: () => Promise<void>): void => {
+    child.stdout.pause();
+    stdoutWork = stdoutWork
+      .then(work)
+      .catch(() => beginTermination("io_failed"))
+      .then(() => {
+        if (failureCode === undefined) child.stdout.resume();
+      });
   };
 
   child.stdout.on("data", (value: Buffer) => {
@@ -567,6 +689,18 @@ export async function runStep16RealHostJsonlSessionV1(
       return;
     }
     stdoutChunks.push(chunk);
+    if (supervisor !== undefined && stdoutDecoder !== undefined) {
+      enqueueStdoutWork(async () => {
+        let text: string;
+        try {
+          text = stdoutDecoder.decode(chunk, { stream: true });
+        } catch {
+          beginTermination("invalid_utf8");
+          return;
+        }
+        await processObservedText(text, false);
+      });
+    }
   });
   child.stderr.on("data", (value: Buffer) => {
     if (failureCode !== undefined) return;
@@ -579,6 +713,21 @@ export async function runStep16RealHostJsonlSessionV1(
     stderrChunks.push(chunk);
   });
   child.stdout.once("error", () => beginTermination("io_failed"));
+  child.stdout.once("end", () => {
+    stdoutEofObserved = true;
+    if (supervisor !== undefined && stdoutDecoder !== undefined) {
+      enqueueStdoutWork(async () => {
+        let text: string;
+        try {
+          text = stdoutDecoder.decode();
+        } catch {
+          beginTermination("invalid_utf8");
+          return;
+        }
+        await processObservedText(text, true);
+      });
+    }
+  });
   child.stderr.once("error", () => beginTermination("io_failed"));
   child.stdin.once("error", () => {
     stdinWriteFailed = true;
@@ -600,6 +749,9 @@ export async function runStep16RealHostJsonlSessionV1(
   }
 
   const outcome = await completion;
+  if (supervisor !== undefined) {
+    await Promise.race([stdoutWork, failureObserved]);
+  }
   clearTimeout(timer);
   await termination;
   if (failureCode !== undefined) return failV1(failureCode);
@@ -607,6 +759,7 @@ export async function runStep16RealHostJsonlSessionV1(
   if (outcome.signal !== null) return failV1("signaled");
   if (outcome.code !== 0) return failV1("nonzero_exit");
   if (stdinWriteFailed) return failV1("stdin_write_failed");
+  if (supervisor !== undefined && !stdoutEofObserved) return failV1("io_failed");
 
   const stdout = Buffer.concat(stdoutChunks, stdoutBytes);
   const stderr = Buffer.concat(stderrChunks, stderrBytes);
@@ -622,6 +775,17 @@ export async function runStep16RealHostJsonlSessionV1(
   } catch {
     return failV1("transcript_rejected");
   }
+  if (supervisor !== undefined) {
+    let observedReceipt: RealHostTranscriptReceiptV1;
+    try {
+      observedReceipt = supervisor.streamObserver.finish();
+    } catch {
+      return failV1("transcript_rejected");
+    }
+    if (JSON.stringify(observedReceipt) !== JSON.stringify(receipt)) {
+      return failV1("transcript_rejected");
+    }
+  }
 
   return Object.freeze({
     receipt,
@@ -630,4 +794,24 @@ export async function runStep16RealHostJsonlSessionV1(
     executableDigest,
     exit: Object.freeze({ code: 0 as const, signal: null }),
   });
+}
+
+/**
+ * Execute one real non-interactive Host session without exposing its prompt,
+ * environment, raw transcript, or stderr across the process boundary.
+ */
+export async function runStep16RealHostJsonlSessionV1(
+  input: RunStep16RealHostJsonlSessionV1Input,
+): Promise<Step16RealHostJsonlSessionResultV1> {
+  return runStep16RealHostJsonlSessionCoreV1(input, undefined);
+}
+
+export async function runStep16RealHostJsonlSessionWithSupervisorInternalV1(
+  input: RunStep16RealHostJsonlSessionV1Input,
+  options: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options,
+): Promise<Step16RealHostJsonlSessionResultV1> {
+  return runStep16RealHostJsonlSessionCoreV1(
+    input,
+    compileSupervisorInternalV1(options),
+  );
 }

@@ -26,12 +26,14 @@ import {
 import { readProviderRuntimeNativeKernelPeerCredentialsV1 } from "@understand-code/native-kernel-bridge";
 
 import {
-  openProviderProductionStrongObjectHostInternalV1,
+  openProviderProductionStrongObjectHostCoreInternalV1,
   providerProductionStrongIndexPublicationAuthorityInternalV1,
   providerProductionStrongIndexPublicationCompareInputInternalV1,
   providerProductionStrongRefreshAuthorityInternalV1,
   providerProductionStrongRefreshAuthoritySelectorInternalV1,
   providerProductionStrongRefreshPublicationCompareInputInternalV1,
+  snapshotProviderProductionStrongObjectOperationPlanObserverInternalV1,
+  type OpenProviderProductionStrongObjectHostCoreInternalV1Input,
   type OpenProviderProductionStrongObjectClientV1Input,
   type ProviderProductionStrongCompareCommitIndexPublicationV1Input,
   type ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
@@ -39,6 +41,7 @@ import {
   type ProviderProductionStrongRefreshAuthorityInspectionV1,
   type ProviderProductionStrongObjectClientV1,
   type ProviderProductionStrongObjectHostInternalV1,
+  type ProviderProductionStrongObjectOperationPlanObserverInternalV1,
   type ProviderProductionStrongWriteExactObjectV1Input,
 } from "./provider-production-strong-object-client.js";
 
@@ -824,6 +827,83 @@ export interface ProviderProductionStrongObjectGatewayServiceV1 {
   close(): Promise<void>;
 }
 
+export interface StartProviderProductionStrongObjectGatewayServiceCoreInternalV1Input {
+  readonly publicInput: OpenProviderProductionStrongObjectClientV1Input;
+  readonly observeProviderOperationPlan?:
+    ProviderProductionStrongObjectOperationPlanObserverInternalV1;
+}
+
+export function providerProductionStrongObjectGatewayPublicCoreInputInternalV1(
+  input: OpenProviderProductionStrongObjectClientV1Input,
+): StartProviderProductionStrongObjectGatewayServiceCoreInternalV1Input {
+  return Object.freeze(Object.assign(
+    Object.create(null) as
+      StartProviderProductionStrongObjectGatewayServiceCoreInternalV1Input,
+    { publicInput: input },
+  ));
+}
+
+export function providerProductionStrongObjectGatewayHostCoreInputInternalV1(
+  input: StartProviderProductionStrongObjectGatewayServiceCoreInternalV1Input,
+): OpenProviderProductionStrongObjectHostCoreInternalV1Input {
+  if (input === null || typeof input !== "object") return unavailableV1();
+  let publicInputDescriptor: PropertyDescriptor | undefined;
+  try {
+    publicInputDescriptor = Object.hasOwn(input, "publicInput")
+      ? Object.getOwnPropertyDescriptor(input, "publicInput")
+      : undefined;
+  } catch {
+    return unavailableV1();
+  }
+  const observerSnapshot =
+    snapshotProviderProductionStrongObjectOperationPlanObserverInternalV1(
+      input,
+    );
+  if (
+    publicInputDescriptor === undefined ||
+    !Object.hasOwn(publicInputDescriptor, "value") ||
+    publicInputDescriptor.value === null ||
+    typeof publicInputDescriptor.value !== "object" ||
+    observerSnapshot.status !== "valid"
+  ) return unavailableV1();
+  const publicInputValue = publicInputDescriptor.value as
+    OpenProviderProductionStrongObjectClientV1Input;
+  let installationRootDescriptor: PropertyDescriptor | undefined;
+  try {
+    installationRootDescriptor = Object.hasOwn(
+      publicInputValue,
+      "canonicalInstallationRoot",
+    )
+      ? Object.getOwnPropertyDescriptor(
+        publicInputValue,
+        "canonicalInstallationRoot",
+      )
+      : undefined;
+  } catch {
+    return unavailableV1();
+  }
+  if (
+    installationRootDescriptor === undefined ||
+    !Object.hasOwn(installationRootDescriptor, "value") ||
+    typeof installationRootDescriptor.value !== "string"
+  ) return unavailableV1();
+  const publicInput = Object.freeze(Object.assign(
+    Object.create(null) as OpenProviderProductionStrongObjectClientV1Input,
+    {
+      canonicalInstallationRoot: installationRootDescriptor.value,
+    },
+  ));
+  return Object.freeze(Object.assign(
+    Object.create(null) as
+      OpenProviderProductionStrongObjectHostCoreInternalV1Input,
+    {
+      publicInput,
+      observeProviderOperationPlan:
+        observerSnapshot.observeProviderOperationPlan,
+    },
+  ));
+}
+
 class GatewayServerInternalV1 {
   readonly #host: ProviderProductionStrongObjectHostInternalV1;
   readonly #lifecycleLeaseHeld: () => boolean;
@@ -1075,9 +1155,12 @@ class GatewayServerInternalV1 {
  * closure, irreversibly drops to the signed dedicated service principal, and
  * creates the peer-authenticated gateway under that principal before returning.
  */
-export async function startProviderProductionStrongObjectGatewayServiceV1(
-  input: OpenProviderProductionStrongObjectClientV1Input,
+export async function startProviderProductionStrongObjectGatewayServiceCoreInternalV1(
+  coreInput: StartProviderProductionStrongObjectGatewayServiceCoreInternalV1Input,
 ): Promise<ProviderProductionStrongObjectGatewayServiceV1> {
+  const hostCoreInput =
+    providerProductionStrongObjectGatewayHostCoreInputInternalV1(coreInput);
+  const input = hostCoreInput.publicInput;
   if (process.platform !== "linux" || process.geteuid?.() !== 0) unavailableV1();
   const observedDescriptor = await readRootDescriptorV1(
     input.canonicalInstallationRoot,
@@ -1095,7 +1178,9 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
       return unavailableV1();
     }
     await reclaimExactStaleGatewaySocketV1(descriptor);
-    host = await openProviderProductionStrongObjectHostInternalV1(input);
+    host = await openProviderProductionStrongObjectHostCoreInternalV1(
+      hostCoreInput,
+    );
     if (
       host.verifiedInstallationRoot !== descriptor.canonicalInstallationRoot ||
       host.verifiedProviderId !== descriptor.providerId ||
@@ -1156,4 +1241,12 @@ export async function startProviderProductionStrongObjectGatewayServiceV1(
     verifiedProviderId: host.verifiedProviderId,
     close: closeAll,
   });
+}
+
+export async function startProviderProductionStrongObjectGatewayServiceV1(
+  input: OpenProviderProductionStrongObjectClientV1Input,
+): Promise<ProviderProductionStrongObjectGatewayServiceV1> {
+  return startProviderProductionStrongObjectGatewayServiceCoreInternalV1(
+    providerProductionStrongObjectGatewayPublicCoreInputInternalV1(input),
+  );
 }

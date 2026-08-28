@@ -27,14 +27,19 @@ import {
   type ProviderAcceptanceAuthorityLayoutInternalV1,
 } from "./platform-layout.js";
 import {
+  abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+  appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+  beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   beginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   createProviderProductionStrongAuthorityServiceCoreInternalV1,
   exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1,
+  type BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
   type BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
   type OpenedProviderProductionStrongAuthorityServiceInternalV1,
   type ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
   type ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1,
+  type ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
   type ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
   type ProviderProductionStrongAuthorityStep16TrustedProviderIdentityInternalV1,
   type ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
@@ -529,6 +534,34 @@ export function beginProviderProductionStrongAuthorityStep16ReceiptBindingWindow
   );
 }
 
+export function beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+  input:
+    BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+): Promise<
+  ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+> {
+  requireTestProcessV1();
+  return beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+    capability,
+    input,
+  );
+}
+
+export function appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+  operation:
+    ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+    capability,
+    operation,
+  );
+}
+
 export function completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
   capability:
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
@@ -541,6 +574,16 @@ export function completeProviderProductionStrongAuthorityStep16ReceiptBindingWin
   return completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
     capability,
     witness,
+  );
+}
+
+export function abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+    capability,
   );
 }
 

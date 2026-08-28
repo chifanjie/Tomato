@@ -141,6 +141,10 @@ export interface BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindo
     readonly ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1[];
 }
 
+export interface BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input {
+  readonly host: "codex" | "claude";
+}
+
 export interface ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1 {
   readonly host: "codex" | "claude";
   readonly sessionIdDigest: string;
@@ -219,6 +223,12 @@ interface ProviderProductionStrongAuthorityReceiptExportStateInternalV1 {
   ) => Promise<
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   >;
+  readonly beginCollectingStep16ReceiptBindingWindow: (
+    input:
+      BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+  ) => Promise<
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+  >;
 }
 
 const receiptExportCapabilityStatesV1 = new WeakMap<
@@ -226,14 +236,23 @@ const receiptExportCapabilityStatesV1 = new WeakMap<
   ProviderProductionStrongAuthorityReceiptExportStateInternalV1
 >();
 
-const step16ReceiptBindingWindowStatesV1 = new WeakMap<
-  object,
-  (
+interface ProviderProductionStrongAuthorityStep16ReceiptBindingWindowStateInternalV1 {
+  readonly appendExpectedOperation?: (
+    operation:
+      ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
+  ) => Promise<void>;
+  readonly complete: (
     witness:
       ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
   ) => Promise<
     readonly ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1[]
-  >
+  >;
+  readonly abort: () => Promise<void>;
+}
+
+const step16ReceiptBindingWindowStatesV1 = new WeakMap<
+  object,
+  ProviderProductionStrongAuthorityStep16ReceiptBindingWindowStateInternalV1
 >();
 
 export function exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1(
@@ -270,6 +289,40 @@ export function beginProviderProductionStrongAuthorityStep16ReceiptBindingWindow
   return state.beginStep16ReceiptBindingWindow(input);
 }
 
+export function beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+  input:
+    BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+): Promise<
+  ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+> {
+  const state = receiptExportCapabilityStatesV1.get(capability as object);
+  if (state === undefined) {
+    return Promise.reject(
+      new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+    );
+  }
+  return state.beginCollectingStep16ReceiptBindingWindow(input);
+}
+
+export function appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+  operation:
+    ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
+): Promise<void> {
+  const state = step16ReceiptBindingWindowStatesV1.get(
+    capability as object,
+  );
+  if (state?.appendExpectedOperation === undefined) {
+    return Promise.reject(
+      new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+    );
+  }
+  return state.appendExpectedOperation(operation);
+}
+
 export function completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
   capability:
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
@@ -278,16 +331,32 @@ export function completeProviderProductionStrongAuthorityStep16ReceiptBindingWin
 ): Promise<
   readonly ProviderProductionStrongAuthorityStep16ProviderReceiptBindingInternalV1[]
 > {
-  const complete = step16ReceiptBindingWindowStatesV1.get(
+  const state = step16ReceiptBindingWindowStatesV1.get(
     capability as object,
   );
-  if (complete === undefined) {
+  if (state === undefined) {
     return Promise.reject(
       new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
     );
   }
   step16ReceiptBindingWindowStatesV1.delete(capability as object);
-  return complete(witness);
+  return state.complete(witness);
+}
+
+export function abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+): Promise<void> {
+  const state = step16ReceiptBindingWindowStatesV1.get(
+    capability as object,
+  );
+  if (state === undefined) {
+    return Promise.reject(
+      new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+    );
+  }
+  step16ReceiptBindingWindowStatesV1.delete(capability as object);
+  return state.abort();
 }
 
 function exactRecordKeysV1(
@@ -307,33 +376,39 @@ function isStep16DigestV1(value: unknown): value is string {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
 
+function parseStep16ExpectedProviderOperationV1(
+  operation: unknown,
+): ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1 {
+  if (
+    !exactRecordKeysV1(operation, [
+      "operation",
+      "operationNonce",
+      "requestDigest",
+    ]) ||
+    (operation.operation !== "write_object" &&
+      operation.operation !== "compare_commit") ||
+    typeof operation.operationNonce !== "string" ||
+    !/^[0-9a-f]{32}$/u.test(operation.operationNonce) ||
+    !isStep16DigestV1(operation.requestDigest)
+  ) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  return Object.freeze({
+    operation: operation.operation,
+    operationNonce: operation.operationNonce,
+    requestDigest: operation.requestDigest,
+  });
+}
+
 function parseStep16ExpectedProviderOperationsV1(
   value: unknown,
 ): readonly ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 4_096) {
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
   }
-  const expectedProviderOperations = value.map((operation) => {
-    if (
-      !exactRecordKeysV1(operation, [
-        "operation",
-        "operationNonce",
-        "requestDigest",
-      ]) ||
-      (operation.operation !== "write_object" &&
-        operation.operation !== "compare_commit") ||
-      typeof operation.operationNonce !== "string" ||
-      !/^[0-9a-f]{32}$/u.test(operation.operationNonce) ||
-      !isStep16DigestV1(operation.requestDigest)
-    ) {
-      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
-    }
-    return Object.freeze({
-      operation: operation.operation,
-      operationNonce: operation.operationNonce,
-      requestDigest: operation.requestDigest,
-    });
-  });
+  const expectedProviderOperations = value.map((operation) =>
+    parseStep16ExpectedProviderOperationV1(operation)
+  );
   if (
     new Set(expectedProviderOperations.map((entry) => entry.operationNonce))
       .size !== expectedProviderOperations.length
@@ -653,9 +728,11 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
         broker,
       )
     );
-  const beginStep16ReceiptBindingWindow = (
-    input:
-      BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+  const beginStep16ReceiptBindingWindowCore = (
+    host: "codex" | "claude",
+    initialExpectedOperations:
+      readonly ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1[],
+    collecting: boolean,
   ): Promise<
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   > => {
@@ -664,14 +741,7 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
         new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
       );
     }
-    let begin:
-      BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input;
-    try {
-      begin = parseStep16ReceiptBindingWindowBeginInputV1(input);
-    } catch (error) {
-      return Promise.reject(error);
-    }
-    if (step16ReceiptBindingWindowOpen) {
+    if (phase !== "open" || step16ReceiptBindingWindowOpen) {
       return Promise.reject(
         new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
       );
@@ -692,73 +762,145 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
             "namespace_integrity_failed",
           );
         }
+        const expectedProviderOperations = [
+          ...initialExpectedOperations,
+        ];
+        const operationNonces = new Set(
+          expectedProviderOperations.map((operation) =>
+            operation.operationNonce
+          ),
+        );
+        let windowPhase: "open" | "failed" | "settling" = "open";
         const windowCapability = Object.freeze(Object.create(null)) as
           ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1;
+        const state:
+          ProviderProductionStrongAuthorityStep16ReceiptBindingWindowStateInternalV1 =
+          Object.freeze({
+            ...(collecting
+              ? {
+                appendExpectedOperation: async (
+                  operation:
+                    ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
+                ): Promise<void> => {
+                  if (windowPhase !== "open") {
+                    throw new ProviderAcceptanceAuthorityErrorV1(
+                      "invalid_request",
+                    );
+                  }
+                  let parsed:
+                    ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1;
+                  try {
+                    parsed = parseStep16ExpectedProviderOperationV1(operation);
+                  } catch (error) {
+                    windowPhase = "failed";
+                    throw error;
+                  }
+                  if (
+                    expectedProviderOperations.length >= 4_096 ||
+                    operationNonces.has(parsed.operationNonce)
+                  ) {
+                    windowPhase = "failed";
+                    throw new ProviderAcceptanceAuthorityErrorV1(
+                      "invalid_request",
+                    );
+                  }
+                  expectedProviderOperations.push(parsed);
+                  operationNonces.add(parsed.operationNonce);
+                },
+              }
+              : {}),
+            complete: async (
+              witness:
+                ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
+            ) => {
+              if (windowPhase !== "open") {
+                step16ReceiptBindingWindowOpen = false;
+                throw new ProviderAcceptanceAuthorityErrorV1(
+                  "invalid_request",
+                );
+              }
+              windowPhase = "settling";
+              try {
+                if (expectedProviderOperations.length < 1) {
+                  throw new ProviderAcceptanceAuthorityErrorV1(
+                    "invalid_request",
+                  );
+                }
+                const begin = Object.freeze({
+                  host,
+                  expectedProviderOperations: Object.freeze([
+                    ...expectedProviderOperations,
+                  ]),
+                });
+                if (
+                  typeof witness !== "object" || witness === null ||
+                  consumedTrustedHostCallWitnesses.has(witness as object)
+                ) {
+                  throw new ProviderAcceptanceAuthorityErrorV1(
+                    "invalid_request",
+                  );
+                }
+                consumedTrustedHostCallWitnesses.add(witness as object);
+                const openedWitness = openTrustedHostCallWitness(witness);
+                if (openedWitness === undefined) {
+                  throw new ProviderAcceptanceAuthorityErrorV1(
+                    "invalid_request",
+                  );
+                }
+                const completion = parseStep16TrustedHostCallWitnessV1(
+                  openedWitness,
+                );
+                if (completion.host !== begin.host) {
+                  throw new ProviderAcceptanceAuthorityErrorV1(
+                    "invalid_request",
+                  );
+                }
+                if (
+                  !canonicalAuthorityBytesInternalV1(
+                    completion.expectedProviderOperations,
+                  ).equals(
+                    canonicalAuthorityBytesInternalV1(
+                      begin.expectedProviderOperations,
+                    ),
+                  )
+                ) {
+                  throw new ProviderAcceptanceAuthorityErrorV1(
+                    "namespace_integrity_failed",
+                  );
+                }
+                return await runReceiptExport(async () => {
+                  const current =
+                    await exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(
+                      broker,
+                    );
+                  const suffix = exactStep16ReceiptLedgerSuffixV1(
+                    baseline,
+                    current,
+                    begin.expectedProviderOperations,
+                  );
+                  return Object.freeze(
+                    suffix.map((bundle) =>
+                      projectStep16ProviderReceiptBindingV1(
+                        bundle,
+                        begin,
+                        completion,
+                        providerIdentity,
+                      )
+                    ),
+                  );
+                });
+              } finally {
+                step16ReceiptBindingWindowOpen = false;
+              }
+            },
+            abort: async () => {
+              windowPhase = "settling";
+              step16ReceiptBindingWindowOpen = false;
+            },
+          });
         step16ReceiptBindingWindowStatesV1.set(
           windowCapability,
-          async (witness) => {
-            try {
-              if (
-                typeof witness !== "object" || witness === null ||
-                consumedTrustedHostCallWitnesses.has(witness as object)
-              ) {
-                throw new ProviderAcceptanceAuthorityErrorV1(
-                  "invalid_request",
-                );
-              }
-              consumedTrustedHostCallWitnesses.add(witness as object);
-              const openedWitness = openTrustedHostCallWitness(witness);
-              if (openedWitness === undefined) {
-                throw new ProviderAcceptanceAuthorityErrorV1(
-                  "invalid_request",
-                );
-              }
-              const completion = parseStep16TrustedHostCallWitnessV1(
-                openedWitness,
-              );
-              if (completion.host !== begin.host) {
-                throw new ProviderAcceptanceAuthorityErrorV1(
-                  "invalid_request",
-                );
-              }
-              if (
-                !canonicalAuthorityBytesInternalV1(
-                  completion.expectedProviderOperations,
-                ).equals(
-                  canonicalAuthorityBytesInternalV1(
-                    begin.expectedProviderOperations,
-                  ),
-                )
-              ) {
-                throw new ProviderAcceptanceAuthorityErrorV1(
-                  "namespace_integrity_failed",
-                );
-              }
-              return await runReceiptExport(async () => {
-                const current =
-                  await exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(
-                    broker,
-                  );
-                const suffix = exactStep16ReceiptLedgerSuffixV1(
-                  baseline,
-                  current,
-                  begin.expectedProviderOperations,
-                );
-                return Object.freeze(
-                  suffix.map((bundle) =>
-                    projectStep16ProviderReceiptBindingV1(
-                      bundle,
-                      begin,
-                      completion,
-                      providerIdentity,
-                    )
-                  ),
-                );
-              });
-            } finally {
-              step16ReceiptBindingWindowOpen = false;
-            }
-          },
+          state,
         );
         return windowCapability;
       } catch (error) {
@@ -766,6 +908,41 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
         throw error;
       }
     });
+  };
+  const beginStep16ReceiptBindingWindow = (
+    input:
+      BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+  ): Promise<
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+  > => {
+    let begin:
+      BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input;
+    try {
+      begin = parseStep16ReceiptBindingWindowBeginInputV1(input);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    return beginStep16ReceiptBindingWindowCore(
+      begin.host,
+      begin.expectedProviderOperations,
+      false,
+    );
+  };
+  const beginCollectingStep16ReceiptBindingWindow = (
+    input:
+      BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input,
+  ): Promise<
+    ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+  > => {
+    if (
+      !exactRecordKeysV1(input, ["host"]) ||
+      (input.host !== "codex" && input.host !== "claude")
+    ) {
+      return Promise.reject(
+        new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+      );
+    }
+    return beginStep16ReceiptBindingWindowCore(input.host, [], true);
   };
   const close = (): Promise<void> => {
     if (closePromise !== undefined) return closePromise;
@@ -811,6 +988,7 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
     Object.freeze({
       exportBundles,
       beginStep16ReceiptBindingWindow,
+      beginCollectingStep16ReceiptBindingWindow,
     }),
   );
   return Object.freeze({ service, receiptExportCapability });

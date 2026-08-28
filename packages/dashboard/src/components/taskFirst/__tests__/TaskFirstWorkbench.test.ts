@@ -153,6 +153,80 @@ describe("TaskFirstWorkbench", () => {
     await act(async () => root.unmount());
   });
 
+  it("opens responsive drawers, closes them with Escape, and restores trigger focus", async () => {
+    const onSelectSection = vi.fn();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TaskFirstWorkbench, {
+      route,
+      page,
+      onSelectSection,
+    })));
+
+    const navigationTrigger = container.querySelector<HTMLButtonElement>("[data-testid=task-navigation-trigger]");
+    const evidenceTrigger = container.querySelector<HTMLButtonElement>("[data-testid=task-evidence-trigger]");
+    const navigationDrawer = container.querySelector<HTMLElement>("[data-testid=task-navigation-drawer]");
+    const evidenceDrawer = container.querySelector<HTMLElement>("[data-testid=task-evidence-drawer]");
+    const backdrop = container.querySelector<HTMLButtonElement>(".uc-task-backdrop");
+
+    expect(navigationTrigger?.getAttribute("aria-controls")).toBe(navigationDrawer?.id);
+    expect(evidenceTrigger?.getAttribute("aria-controls")).toBe(evidenceDrawer?.id);
+
+    await act(async () => navigationTrigger?.click());
+    expect(navigationTrigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(navigationDrawer?.dataset.open).toBe("true");
+    expect(document.activeElement?.textContent).toBe("关闭");
+
+    backdrop?.focus();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    });
+    expect(navigationDrawer?.contains(document.activeElement)).toBe(true);
+
+    await act(async () => {
+      backdrop?.click();
+      await Promise.resolve();
+    });
+    expect(navigationTrigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(navigationDrawer?.dataset.open).toBe("false");
+    expect(document.activeElement).toBe(navigationTrigger);
+
+    await act(async () => navigationTrigger?.click());
+    const pinButton = [...navigationDrawer?.querySelectorAll<HTMLButtonElement>("button") ?? []]
+      .find((button) => button.textContent === "固定");
+    await act(async () => pinButton?.click());
+    expect(container.querySelector("[data-testid=task-first-workbench]")?.getAttribute("data-pinned-drawer")).toBe("navigation");
+    expect(backdrop?.dataset.pinned).toBe("true");
+    const goalsButton = [...navigationDrawer?.querySelectorAll<HTMLButtonElement>("button") ?? []]
+      .find((button) => button.textContent?.includes("目标"));
+    await act(async () => {
+      goalsButton?.click();
+      await Promise.resolve();
+    });
+    expect(onSelectSection).toHaveBeenCalledWith("goals");
+    expect(navigationDrawer?.dataset.open).toBe("true");
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(navigationDrawer?.dataset.open).toBe("false");
+    expect(document.activeElement).toBe(navigationTrigger);
+
+    await act(async () => evidenceTrigger?.click());
+    expect(evidenceTrigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(evidenceDrawer?.dataset.open).toBe("true");
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(evidenceDrawer?.dataset.open).toBe("false");
+    expect(document.activeElement).toBe(evidenceTrigger);
+
+    await act(async () => root.unmount());
+  });
+
   it("loads a legacy redacted Pulse without rendering private legacy detail", () => {
     const pulseWithLegacyCanaries = Object.assign({}, legacyPulse, {
       evaluatedSnapshotId: LEGACY_SNAPSHOT_CANARY,

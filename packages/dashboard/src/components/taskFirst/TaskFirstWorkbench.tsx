@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { classifyChangeCheckV1 } from "@understand-code/contracts";
 import type {
   CandidateLevelV1,
@@ -35,6 +35,8 @@ export type TaskFirstSection =
   | "reading"
   | "changes"
   | "verification";
+
+type TaskWorkbenchDrawer = "navigation" | "evidence";
 
 /** A route accepted by the Workbench entry points. */
 export type TaskFirstRoute = WorkbenchRouteV1;
@@ -595,7 +597,75 @@ export function TaskFirstWorkbench({
   const status = pulseStatus(pulse, explicitPulseStatus);
   const section = selectedSection(route, page);
   const [localSection, setLocalSection] = useState<TaskFirstSection>(section);
+  const [openDrawer, setOpenDrawer] = useState<TaskWorkbenchDrawer | null>(null);
+  const [pinnedDrawer, setPinnedDrawer] = useState<TaskWorkbenchDrawer | null>(null);
+  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
+  const navigationCloseRef = useRef<HTMLButtonElement>(null);
+  const evidenceCloseRef = useRef<HTMLButtonElement>(null);
+  const navigationDrawerRef = useRef<HTMLElement>(null);
+  const evidenceDrawerRef = useRef<HTMLElement>(null);
+  const sectionTitleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => setLocalSection(section), [section]);
+  useEffect(() => {
+    if (!openDrawer) return;
+
+    const closeButton = openDrawer === "navigation" ? navigationCloseRef : evidenceCloseRef;
+    closeButton.current?.focus();
+  }, [openDrawer]);
+
+  useEffect(() => {
+    if (!openDrawer) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        const trigger = openDrawer === "navigation" ? navigationTriggerRef : evidenceTriggerRef;
+        setOpenDrawer(null);
+        setPinnedDrawer(null);
+        queueMicrotask(() => trigger.current?.focus());
+        return;
+      }
+
+      if (event.key !== "Tab" || pinnedDrawer === openDrawer) return;
+      const drawer = openDrawer === "navigation" ? navigationDrawerRef.current : evidenceDrawerRef.current;
+      if (!drawer) return;
+      const focusable = [...drawer.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => {
+        const style = window.getComputedStyle(element);
+        return style.display !== "none" && style.visibility !== "hidden";
+      });
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!drawer.contains(active) || (!event.shiftKey && active === last)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [openDrawer, pinnedDrawer]);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const desktop = window.matchMedia("(min-width: 1280px)");
+    const handleDesktop = (event: MediaQueryListEvent) => {
+      if (!event.matches) return;
+      setOpenDrawer((current) => {
+        if (current) queueMicrotask(() => sectionTitleRef.current?.focus());
+        return null;
+      });
+      setPinnedDrawer(null);
+    };
+    desktop.addEventListener("change", handleDesktop);
+    return () => desktop.removeEventListener("change", handleDesktop);
+  }, []);
   const activeSectionId = onSelectSection ? section : localSection;
   const staleCopy = staleMessage(stale);
   const failure = errorMessage(error);
@@ -604,6 +674,24 @@ export function TaskFirstWorkbench({
   const selectedEvidenceIsRelated = route.evidenceId !== undefined && (
     selectedFinding ? selectedFinding.evidenceIds.includes(route.evidenceId) : route.findingId === undefined
   );
+
+  const closeDrawer = () => {
+    if (!openDrawer) return;
+    const trigger = openDrawer === "navigation" ? navigationTriggerRef : evidenceTriggerRef;
+    setOpenDrawer(null);
+    setPinnedDrawer(null);
+    queueMicrotask(() => trigger.current?.focus());
+  };
+
+  const toggleDrawer = (drawer: TaskWorkbenchDrawer) => {
+    if (openDrawer === drawer) {
+      setOpenDrawer(null);
+      setPinnedDrawer(null);
+      return;
+    }
+    setPinnedDrawer(null);
+    setOpenDrawer(drawer);
+  };
 
   const renderPage = () => {
     if (loading) return <StatePanel state="loading" />;
@@ -651,6 +739,8 @@ export function TaskFirstWorkbench({
       className="uc-task-workbench flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-root text-text-primary"
       data-testid="task-first-workbench"
       data-state={loading ? "loading" : failure ? "error" : !page ? "empty" : staleCopy ? "stale" : "ready"}
+      data-drawer-open={openDrawer !== null}
+      data-pinned-drawer={pinnedDrawer ?? undefined}
     >
       <header className="border-b border-border-subtle bg-surface px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-start justify-between gap-4">
@@ -707,10 +797,72 @@ export function TaskFirstWorkbench({
         </div>
       )}
 
-      <div className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-none grid-cols-[minmax(0,1fr)] gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)] xl:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)_minmax(16rem,22rem)]">
-        <nav className="uc-panel min-w-0 max-w-full self-start overflow-hidden p-2" aria-label="任务章节">
-          <p className="px-3 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-text-muted">任务导航</p>
-          <div className="flex max-w-full gap-1 overflow-x-auto overscroll-x-contain lg:block">
+      <div className="uc-task-drawer-toolbar mx-auto w-full max-w-[1600px] gap-2 px-4 pt-4 sm:px-6" role="toolbar" aria-label="任务工作台面板">
+        <button
+          ref={navigationTriggerRef}
+          type="button"
+          className="uc-task-drawer-trigger"
+          aria-controls="task-workbench-navigation"
+          aria-expanded={openDrawer === "navigation"}
+          data-testid="task-navigation-trigger"
+          onClick={() => toggleDrawer("navigation")}
+        >
+          任务导航
+        </button>
+        <button
+          ref={evidenceTriggerRef}
+          type="button"
+          className="uc-task-drawer-trigger"
+          aria-controls="task-workbench-evidence"
+          aria-expanded={openDrawer === "evidence"}
+          data-testid="task-evidence-trigger"
+          onClick={() => toggleDrawer("evidence")}
+        >
+          证据与状态
+        </button>
+      </div>
+
+      <button
+        type="button"
+        className="uc-task-backdrop"
+        data-open={openDrawer !== null}
+        data-pinned={pinnedDrawer !== null && pinnedDrawer === openDrawer}
+        aria-label="关闭任务工作台面板"
+        tabIndex={openDrawer === null ? -1 : 0}
+        onClick={closeDrawer}
+      />
+
+      <div className="uc-task-layout mx-auto grid min-h-0 w-full max-w-[1600px] flex-none gap-4 p-4 sm:p-6">
+        <nav
+          ref={navigationDrawerRef}
+          id="task-workbench-navigation"
+          className="uc-task-navigation uc-panel min-w-0 max-w-full self-start overflow-hidden p-2"
+          aria-label="任务章节"
+          data-open={openDrawer === "navigation"}
+          data-testid="task-navigation-drawer"
+        >
+          <div className="uc-task-drawer-header">
+            <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-muted">任务导航</p>
+            <div className="uc-task-drawer-actions">
+              <button
+                type="button"
+                className="uc-task-drawer-pin"
+                aria-pressed={pinnedDrawer === "navigation"}
+                onClick={() => setPinnedDrawer((current) => current === "navigation" ? null : "navigation")}
+              >
+                {pinnedDrawer === "navigation" ? "取消固定" : "固定"}
+              </button>
+              <button
+                ref={navigationCloseRef}
+                type="button"
+                className="uc-task-drawer-close"
+                onClick={closeDrawer}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+          <div className="grid max-w-full gap-1">
             {SECTION_ITEMS.map((item) => {
               const selected = activeSectionId === item.id;
               return (
@@ -722,8 +874,12 @@ export function TaskFirstWorkbench({
                   onClick={() => {
                     setLocalSection(item.id);
                     onSelectSection?.(item.id);
+                    if (openDrawer === "navigation" && pinnedDrawer !== "navigation") {
+                      setOpenDrawer(null);
+                      queueMicrotask(() => navigationTriggerRef.current?.focus());
+                    }
                   }}
-                  className={`min-h-11 shrink-0 rounded-md px-3 py-2 text-left text-sm font-semibold transition-colors lg:block lg:w-full ${selected ? "bg-accent/15 text-accent" : "text-text-secondary hover:bg-elevated hover:text-text-primary"}`}
+                  className={`min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-semibold transition-colors ${selected ? "bg-accent/15 text-accent" : "text-text-secondary hover:bg-elevated hover:text-text-primary"}`}
                 >
                   <span className="block">{item.label}</span>
                   <span className="mt-0.5 block text-xs font-normal opacity-75">{item.secondary}</span>
@@ -738,7 +894,7 @@ export function TaskFirstWorkbench({
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">任务简报</p>
-                <h2 id="task-first-section-title" className="mt-1 text-lg font-semibold text-text-primary">{activeSection.label} · {activeSection.secondary}</h2>
+                <h2 ref={sectionTitleRef} id="task-first-section-title" tabIndex={-1} className="mt-1 text-lg font-semibold text-text-primary">{activeSection.label} · {activeSection.secondary}</h2>
               </div>
               {task && <span className="uc-status-badge" data-severity={task.status === "blocked" || task.status === "stale" ? "problem" : task.status === "verified" ? "ok" : "warning"}>{TASK_LABELS[task.status]}</span>}
             </div>
@@ -747,7 +903,34 @@ export function TaskFirstWorkbench({
           </div>
         </section>
 
-        <aside className="min-w-0 xl:block">
+        <aside
+          ref={evidenceDrawerRef}
+          id="task-workbench-evidence"
+          className="uc-task-evidence-rail min-w-0"
+          data-open={openDrawer === "evidence"}
+          data-testid="task-evidence-drawer"
+        >
+          <div className="uc-task-drawer-header uc-task-drawer-only">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">证据与状态</p>
+            <div className="uc-task-drawer-actions">
+              <button
+                type="button"
+                className="uc-task-drawer-pin"
+                aria-pressed={pinnedDrawer === "evidence"}
+                onClick={() => setPinnedDrawer((current) => current === "evidence" ? null : "evidence")}
+              >
+                {pinnedDrawer === "evidence" ? "取消固定" : "固定"}
+              </button>
+              <button
+                ref={evidenceCloseRef}
+                type="button"
+                className="uc-task-drawer-close"
+                onClick={closeDrawer}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
           <PulseCard pulse={pulse} status={status} />
           <section className="uc-panel mt-4 p-4" aria-label="只读边界">
             <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">证据工作台</p>

@@ -2,11 +2,13 @@ import { createHash, createHmac } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   access,
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -351,6 +353,17 @@ function readArgs(command: SafeGitReadCommandV1): readonly string[] {
       return ["cat-file", "-p", command.request.objectId];
     case "cat_file_type_v1":
       return ["cat-file", "-t", "--", command.request.objectId];
+    case "diff_committed_name_status_v1":
+      return [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-status",
+        "-z",
+        "--no-renames",
+        `${command.request.baselineCommit}..${command.request.headCommit}`,
+        "--",
+      ];
     case "ls_files_stage_v1":
       return ["ls-files", "--stage", "-z"];
     default:
@@ -437,6 +450,7 @@ describe("production strong Change Intelligence vertical", () => {
     for (const [relative, bytes] of Object.entries(sources)) {
       await writeFile(path.join(root, relative), bytes, "utf8");
     }
+    await symlink("planned.ts", path.join(root, "src/unrelated-link.ts"));
     await writeFile(path.join(root, ".gitignore"), ".understand-code/\n", "utf8");
     await git(root, ["init", "-q", "-b", "feature/step15-e2e"]);
     await git(root, ["add", "."]);
@@ -529,10 +543,13 @@ describe("production strong Change Intelligence vertical", () => {
     let driftAtSession: number | undefined;
     let driftPath: string | undefined;
     let driftBytes: string | undefined;
+    let deleteLeaseAtSessionClose: number | undefined;
+    let leaseRefToDelete: string | undefined;
     const contextProvider = await RepositoryTaskContextProvider.open({
       canonicalRoot: root,
       openStrongSafeGitReadSession: async () => {
         sessionCount += 1;
+        const openedSession = sessionCount;
         if (
           driftAtSession === sessionCount &&
           driftPath !== undefined && driftBytes !== undefined
@@ -600,7 +617,14 @@ describe("production strong Change Intelligence vertical", () => {
             lease(request, false),
           recoverTaskBaselineLease: (request: SafeGitTaskBaselineLeaseCreateRequestV1) =>
             lease(request, true),
-          async close() {},
+          async close() {
+            if (
+              deleteLeaseAtSessionClose === openedSession &&
+              leaseRefToDelete !== undefined
+            ) {
+              await git(root, ["update-ref", "-d", leaseRefToDelete]);
+            }
+          },
         };
       },
     });
@@ -711,6 +735,9 @@ describe("production strong Change Intelligence vertical", () => {
     const omittedAfter = omittedBefore.replace("baseline", "actual-covered");
     const unplannedPath = "src/unplanned.ts";
     const unplannedAfter = "export const unplanned = \"actual\";\n";
+    // Git records a regular file as 100755 when any executable bit is set,
+    // not only when the owner-executable bit is present.
+    await chmod(path.join(root, completedPath), 0o611);
     await writeFile(path.join(root, completedPath), completedAfter, "utf8");
     if (classificationMode === "unknown") {
       await writeFile(path.join(root, "src/ambiguous.ts"), ambiguousAfter, "utf8");
@@ -773,6 +800,44 @@ describe("production strong Change Intelligence vertical", () => {
 
     const providerBeforeDrift = providerStore.inspectState().revision;
     const revisionBeforeDrift = revision;
+    const leaseRefs = (await git(root, [
+      "for-each-ref", "--format=%(refname)",
+      "refs/understand-code/task-baselines/",
+    ])).toString("utf8").trim().split("\n").filter(Boolean);
+    expect(leaseRefs).toHaveLength(1);
+    await git(root, ["update-ref", "-d", leaseRefs[0]!]);
+    await expect(engine.checkChanges(checkInput, authorization)).rejects
+      .toThrow(/baseline lease disappeared/u);
+    expect(providerStore.inspectState().revision).toBe(providerBeforeDrift);
+    expect((await store.readTaskBundle(built.task.taskId)).bundle.manifest.revision)
+      .toBe(revisionBeforeDrift);
+    await git(root, [
+      "update-ref", "--create-reflog", leaseRefs[0]!, head, "0".repeat(40),
+    ]);
+
+    deleteLeaseAtSessionClose = sessionCount + 2;
+    leaseRefToDelete = leaseRefs[0]!;
+    await expect(engine.checkChanges(checkInput, authorization)).rejects
+      .toMatchObject({ code: "strong_change_provider_invalid" });
+    expect((await gitRaw(root, [
+      "show-ref", "--verify", "--hash", leaseRefs[0]!,
+    ])).exitCode).not.toBe(0);
+    expect(providerStore.inspectState().revision).toBe(providerBeforeDrift);
+    expect((await store.readTaskBundle(built.task.taskId)).bundle.manifest.revision)
+      .toBe(revisionBeforeDrift);
+    deleteLeaseAtSessionClose = undefined;
+    leaseRefToDelete = undefined;
+    await git(root, [
+      "update-ref", "--create-reflog", leaseRefs[0]!, head, "0".repeat(40),
+    ]);
+
+    await git(root, ["add", "--", completedPath]);
+    await expect(engine.checkChanges(checkInput, authorization)).rejects.toThrow();
+    expect(providerStore.inspectState().revision).toBe(providerBeforeDrift);
+    expect((await store.readTaskBundle(built.task.taskId)).bundle.manifest.revision)
+      .toBe(revisionBeforeDrift);
+    await git(root, ["restore", "--staged", "--", completedPath]);
+
     driftAtSession = sessionCount + 2;
     driftPath = completedPath;
     driftBytes = `${completedAfter}// TOCTOU drift\n`;
@@ -827,6 +892,11 @@ describe("production strong Change Intelligence vertical", () => {
     expect(checked.changeCheck.analysis.actualChanges.some((item) =>
       item.path === completedPath && item.newSymbolRefs.length > 0
     )).toBe(true);
+    expect(
+      checked.changeCheck.analysis.repositoryDelta.paths.find(
+        (item) => item.path === completedPath,
+      )?.effectiveChange?.after,
+    ).toMatchObject({ status: "content", mode: "100755" });
     for (const claim of checked.findingClaims) {
       for (const evidenceId of claim.evidenceIds) {
         expect(checked.evidence.find((item) => item.id === evidenceId)?.claimIds)
@@ -919,6 +989,438 @@ describe("production strong Change Intelligence vertical", () => {
     expect(publicAndProviderBytes).not.toContain(secret);
     expect(publicAndProviderBytes).not.toContain(root);
     expect(publicAndProviderBytes).not.toContain(sentinel);
+    },
+    60_000,
+  );
+
+  it(
+    "derives the complete A..C committed Delta from the pinned Task baseline when the actual Snapshot change list is empty",
+    async () => {
+      const root = await mkdtemp(
+        path.join(tmpdir(), "task-engine-committed-delta-e2e-"),
+      );
+      const providerRoot = await mkdtemp(
+        path.join(tmpdir(), "provider-committed-delta-e2e-"),
+      );
+      temporaryRoots.push(root, providerRoot);
+      await mkdir(path.join(root, "src"), { recursive: true });
+      const sources: Record<string, string> = {
+        "src/entry.ts": "export function entryPoint() {\n  return \"baseline\";\n}\n",
+        "src/planned.ts": "export function plannedTarget() {\n  return \"baseline\";\n}\n",
+        "src/omitted.ts": "export function omittedTarget() {\n  return \"baseline\";\n}\n",
+        "src/context.ts": "export function contextTarget() {\n  return \"baseline\";\n}\n",
+        "src/ambiguous.ts": "export class AmbiguousService {\n  ambiguousMethod(): string {\n    return \"baseline\";\n  }\n}\n",
+      };
+      for (const [relative, bytes] of Object.entries(sources)) {
+        await writeFile(path.join(root, relative), bytes, "utf8");
+      }
+      await writeFile(
+        path.join(root, ".gitignore"),
+        ".understand-code/\n",
+        "utf8",
+      );
+      await git(root, ["init", "-q", "-b", "feature/committed-delta-e2e"]);
+      await git(root, ["add", "."]);
+      await git(root, [
+        "-c", "user.name=Committed Delta Fixture",
+        "-c", "user.email=committed-delta@example.invalid",
+        "commit", "-q", "-m", "baseline A",
+      ]);
+      const baselineCommit = (await git(root, ["rev-parse", "HEAD"]))
+        .toString("ascii").trim();
+      const baselineGraphBytes = Buffer.from(
+        `${JSON.stringify(graphFixture(baselineCommit))}\n`,
+        "utf8",
+      );
+      await mkdir(path.join(root, ".understand-code"), { recursive: true });
+      await writeFile(
+        path.join(root, ".understand-code/knowledge-graph.json"),
+        baselineGraphBytes,
+      );
+
+      const baseline = snapshot(baselineCommit, [], "baseline");
+      const store = await ArtifactStore.open(root, {
+        repositoryId: REPOSITORY_ID,
+        worktreeId: WORKTREE_ID,
+        producerVersion: PRODUCER_VERSION,
+        clock: () => new Date("2026-08-26T01:00:03.000Z"),
+      });
+      await store.initialize();
+      await store.persistArtifact(snapshotArtifact(baseline));
+      await store.persistArtifact(pulseArtifact(baseline, 0));
+      await publishGraphDescriptor(
+        store,
+        baselineGraphBytes,
+        baseline.snapshotId,
+        0,
+      );
+
+      const providerStore = new DurableObjectProviderRuntimeStoreV1({
+        rootPath: providerRoot,
+        providerId: PROVIDER_ID,
+      });
+      await providerStore.initialize();
+      const provider: StrongChangeProviderAuthorityV1 = {
+        async inspectState() {
+          return { revision: providerStore.inspectState().revision };
+        },
+        readExactObject: ({ locator }) => providerStore.readFixedObject(
+          locator as unknown as Parameters<
+            typeof providerStore.readFixedObject
+          >[0],
+        ),
+        async writeExactObject(input) {
+          const result = await providerStore.writeFixedObject(
+            input.locator as unknown as Parameters<
+              typeof providerStore.writeFixedObject
+            >[0],
+            input.logicalBytes,
+            input.bytes,
+          );
+          return {
+            resolution: result.resolution,
+            verifiedContentDigest: result.verifiedContentDigest,
+          };
+        },
+        async compareCommit(input) {
+          const result = await providerStore.compareCommit(
+            input as Parameters<typeof providerStore.compareCommit>[0],
+          );
+          return {
+            resolution: result.resolution,
+            committedRevision: result.state.revision,
+            artifacts: result.state.artifacts,
+          };
+        },
+      };
+
+      let inflateCommitReads = false;
+      let inflatedCommitReadCount = 0;
+      let observedSessionCount = 0;
+      const observedCommands: Array<{
+        session: number;
+        command: SafeGitReadCommandV1;
+      }> = [];
+      const contextProvider = await RepositoryTaskContextProvider.open({
+        canonicalRoot: root,
+        openStrongSafeGitReadSession: async () => {
+          observedSessionCount += 1;
+          const observedSession = observedSessionCount;
+          const executor = {
+            async execute(
+              command: SafeGitReadCommandV1,
+            ): Promise<SafeGitReadExecutionResultV1> {
+              observedCommands.push({ session: observedSession, command });
+              const result = await gitRaw(root, readArgs(command));
+              const inflateThisRead =
+                inflateCommitReads &&
+                command.request.profile === "cat_file_object_v1" &&
+                /^tree [0-9a-f]{40,64}\n/u.test(
+                  result.stdout.toString("ascii", 0, 80),
+                );
+              if (inflateThisRead) inflatedCommitReadCount += 1;
+              const stdout = inflateThisRead
+                  ? Buffer.concat([
+                      result.stdout,
+                      Buffer.alloc(34 * 1024 * 1024),
+                    ])
+                  : result.stdout;
+              return {
+                stdout,
+                stderr: result.stderr,
+                exitCode: result.exitCode,
+              };
+            },
+          };
+          const lease = async (
+            request: SafeGitTaskBaselineLeaseCreateRequestV1,
+            recovery: boolean,
+          ) => {
+            const intent = createSafeGitTaskBaselineLeaseIntentV1({
+              repositoryId: REPOSITORY_ID,
+              worktreeId: WORKTREE_ID,
+              taskId: request.taskId,
+              baselineSnapshotId: request.baselineSnapshotId,
+              objectFormat: "sha1",
+              commit: request.commit,
+              markerNonce: request.markerNonce,
+            });
+            const existing = await gitRaw(root, [
+              "show-ref", "--verify", "--hash", intent.refName,
+            ]);
+            if (existing.exitCode === 0) {
+              if (existing.stdout.toString("ascii").trim() !== request.commit) {
+                throw new Error("baseline lease ref conflicts");
+              }
+              return {
+                resolution: "replayed" as const,
+                leaseId: intent.leaseId,
+                refName: intent.refName,
+                objectId: intent.objectId,
+              };
+            }
+            if (recovery) {
+              throw new Error("baseline lease disappeared during recovery");
+            }
+            await git(root, [
+              "update-ref", "--create-reflog", intent.refName,
+              request.commit, "0".repeat(40),
+            ]);
+            return {
+              resolution: "created" as const,
+              leaseId: intent.leaseId,
+              refName: intent.refName,
+              objectId: intent.objectId,
+            };
+          };
+          return {
+            executor,
+            async executeGitObjectType(objectId: string) {
+              const result = (await git(root, [
+                "cat-file", "-t", "--", objectId,
+              ])).toString("ascii").trim();
+              if (
+                result !== "blob" &&
+                result !== "tree" &&
+                result !== "commit"
+              ) {
+                throw new Error("unexpected Git object type");
+              }
+              return result;
+            },
+            createTaskBaselineLease: (
+              request: SafeGitTaskBaselineLeaseCreateRequestV1,
+            ) => lease(request, false),
+            recoverTaskBaselineLease: (
+              request: SafeGitTaskBaselineLeaseCreateRequestV1,
+            ) => lease(request, true),
+            async close() {},
+          };
+        },
+      });
+      const ownerKeyAuthority = {
+        provenance: "provider_installation_owner_v1" as const,
+        async commit(
+          domain:
+            | "record-verification-full-input-v1"
+            | "verification-detail-semantic-v1",
+          value: string,
+        ) {
+          return `hmac-sha256:${createHmac(
+            "sha256",
+            "committed-delta-owner-key",
+          ).update(domain).update("\0").update(value).digest("hex")}`;
+        },
+      };
+      const materialAuthority = new RepositoryStrongChangeMaterialAuthorityV1({
+        store,
+        repositoryContextProvider: contextProvider,
+        provider,
+        providerId: PROVIDER_ID,
+        ownerKeyAuthority,
+      });
+      const strongAuthority = new ArtifactStoreStrongChangeAuthorityV1(store, {
+        provider,
+        materialAuthority,
+        providerId: PROVIDER_ID,
+      });
+      let engineTime = Date.parse("2026-08-26T01:20:00.000Z");
+      const engine = new TaskEngine(store, {
+        contextProvider,
+        strongChangeAuthority: strongAuthority,
+        clock: () => new Date(engineTime++),
+      });
+      const authorization: AuthorizationContext = {
+        actor: ACTOR,
+        repositoryId: REPOSITORY_ID,
+        worktreeId: WORKTREE_ID,
+        capabilities: [
+          "task:create",
+          "task:update",
+          "task:confirm",
+          "task:accept",
+          "task:supersede",
+        ],
+      };
+
+      const built = await engine.buildTaskBrief({
+        task: "Update planned target, preserve omitted target, and inspect the ambiguous service",
+        expectedRevision: 0,
+        idempotencyKey: "committed-delta-build",
+        actor: ACTOR,
+        tokenBudget: 8_000,
+        maxCandidates: 20,
+        maxImpactDepth: 4,
+      }, authorization);
+      const committedPaths = [...new Set(
+        built.brief.plannedChanges
+          .filter((item) =>
+            item.expectation === "required_change" &&
+            sources[item.filePath] !== undefined &&
+            item.filePath !== "src/ambiguous.ts"
+          )
+          .map((item) => item.filePath),
+      )].slice(0, 2);
+      expect(committedPaths).toHaveLength(2);
+      const firstPath = committedPaths[0]!;
+      const secondPath = committedPaths[1]!;
+
+      let revision = built.task.revision;
+      const update = async (
+        action: Parameters<TaskEngine["updateTask"]>[0]["action"],
+        idempotencyKey: string,
+      ) => {
+        const result = await engine.updateTask({
+          taskId: built.task.taskId,
+          action,
+          expectedRevision: revision,
+          idempotencyKey,
+          actor: ACTOR,
+        }, authorization);
+        revision = result.task.revision;
+      };
+      await update({
+        type: "confirm_goal",
+        claimId: built.brief.goalClaimId,
+        contextGenerationId: built.brief.contextGenerationId,
+      }, "committed-delta-confirm-goal");
+      await update({
+        type: "confirm_acceptance_criteria",
+        claimIds: built.brief.acceptanceClaimIds,
+        contextGenerationId: built.brief.contextGenerationId,
+      }, "committed-delta-confirm-acceptance");
+      await update({
+        type: "confirm_plan",
+        plannedChangeIds: built.brief.plannedChanges.map((item) => item.id),
+        contextGenerationId: built.brief.contextGenerationId,
+      }, "committed-delta-confirm-plan");
+      await update(
+        { type: "transition_status", to: "planned" },
+        "committed-delta-planned",
+      );
+      await update(
+        { type: "transition_status", to: "in_progress" },
+        "committed-delta-in-progress",
+      );
+
+      const firstBefore = sources[firstPath]!;
+      const firstAfter = firstBefore.replace("baseline", "commit-b");
+      await writeFile(path.join(root, firstPath), firstAfter, "utf8");
+      await git(root, ["add", "--", firstPath]);
+      await git(root, [
+        "-c", "user.name=Committed Delta Fixture",
+        "-c", "user.email=committed-delta@example.invalid",
+        "commit", "-q", "-m", "commit B",
+      ]);
+      const commitB = (await git(root, ["rev-parse", "HEAD"]))
+        .toString("ascii").trim();
+
+      const secondBefore = sources[secondPath]!;
+      const secondAfter = secondBefore.replace("baseline", "commit-c");
+      await writeFile(path.join(root, secondPath), secondAfter, "utf8");
+      await git(root, ["add", "--", secondPath]);
+      await git(root, [
+        "-c", "user.name=Committed Delta Fixture",
+        "-c", "user.email=committed-delta@example.invalid",
+        "commit", "-q", "-m", "commit C",
+      ]);
+      const commitC = (await git(root, ["rev-parse", "HEAD"]))
+        .toString("ascii").trim();
+      expect(new Set([baselineCommit, commitB, commitC])).toHaveLength(3);
+
+      const actualGraphBytes = Buffer.from(
+        `${JSON.stringify(graphFixture(commitC))}\n`,
+        "utf8",
+      );
+      await writeFile(
+        path.join(root, ".understand-code/knowledge-graph.json"),
+        actualGraphBytes,
+      );
+      expect((await git(root, ["status", "--porcelain"])).byteLength).toBe(0);
+
+      const actual = snapshot(commitC, [], "actual-committed-delta");
+      expect(actual.changes).toEqual([]);
+      await store.persistArtifact(snapshotArtifact(actual));
+      await store.persistArtifact(pulseArtifact(actual, 1), {
+        expectedRevision: 0,
+        idempotencyKey: "committed-delta-actual-pulse",
+        requestDigest: sha256CanonicalJson([
+          "committed-delta-actual-pulse",
+          actual.snapshotId,
+        ]),
+      });
+      await publishGraphDescriptor(
+        store,
+        actualGraphBytes,
+        actual.snapshotId,
+        1,
+      );
+      await update(
+        { type: "transition_status", to: "check_required" },
+        "committed-delta-check-required",
+      );
+
+      const checkInput = {
+        profile: "check_changes_strong_v1",
+        taskId: built.task.taskId,
+        actualSnapshotId: actual.snapshotId,
+        includeWorktree: true,
+        expectedRevision: revision,
+        idempotencyKey: "committed-delta-check",
+        actor: ACTOR,
+      } as const;
+      const providerRevisionBeforeBudgetFailure =
+        providerStore.inspectState().revision;
+      inflateCommitReads = true;
+      await expect(engine.checkChanges(checkInput, authorization)).rejects
+        .toMatchObject({ code: "strong_change_provider_invalid" });
+      expect(inflatedCommitReadCount).toBe(2);
+      expect(providerStore.inspectState().revision).toBe(
+        providerRevisionBeforeBudgetFailure,
+      );
+      inflateCommitReads = false;
+      observedCommands.length = 0;
+
+      const checked = await engine.checkChanges(checkInput, authorization);
+      const objectReadsBySession = new Map<number, string[]>();
+      for (const { session, command } of observedCommands) {
+        if (command.request.profile !== "cat_file_object_v1") continue;
+        const ids = objectReadsBySession.get(session) ?? [];
+        ids.push(command.request.objectId);
+        objectReadsBySession.set(session, ids);
+      }
+      for (const objectReadIds of objectReadsBySession.values()) {
+        expect(new Set(objectReadIds).size).toBe(objectReadIds.length);
+      }
+      const expectedPaths = [...committedPaths].sort();
+      const delta = checked.changeCheck.analysis.repositoryDelta;
+      expect(delta.status).toBe("complete");
+      expect(delta.boundaryIds).toEqual([]);
+      expect(delta.paths.map((item) => item.path).sort()).toEqual(expectedPaths);
+      for (const pathDelta of delta.paths) {
+        expect(pathDelta.segments).toHaveLength(1);
+        expect(pathDelta.segments[0]).toMatchObject({
+          source: "committed",
+          status: "complete",
+          boundaryIds: [],
+        });
+        expect(pathDelta.effectiveChange?.kind).toBe("modified");
+      }
+      expect(
+        checked.changeCheck.analysis.actualChanges
+          .map((item) => item.path)
+          .sort(),
+      ).toEqual(expectedPaths);
+      const diffHunks = checked.evidence.filter(
+        (item) => item.kind === "diff_hunk",
+      );
+      expect(diffHunks.map((item) => item.filePath).sort()).toEqual(
+        expectedPaths,
+      );
+      expect(diffHunks.every((item) =>
+        item.hunk.sourceLayers.length === 1 &&
+        item.hunk.sourceLayers[0] === "committed"
+      )).toBe(true);
     },
     60_000,
   );

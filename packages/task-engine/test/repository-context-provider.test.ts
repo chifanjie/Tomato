@@ -763,6 +763,7 @@ describe("RepositoryTaskContextProvider", () => {
       path: "src/live.ts",
       source: "unstaged",
       kind: "modified",
+      previousContentDigest: digest(baselineLiveSource),
       contentDigest: digest(actualLiveSource),
     });
     expect(withoutUntrackedStagedAddedChange).toEqual({
@@ -856,6 +857,7 @@ describe("RepositoryTaskContextProvider", () => {
       path: "src/live.ts",
       source: "unstaged",
       kind: "modified",
+      previousContentDigest: digest(baselineLiveSource),
       contentDigest: digest(actualLiveSource),
     });
     expect(stagedChange).toEqual({
@@ -944,6 +946,7 @@ describe("RepositoryTaskContextProvider", () => {
       path: "src/staged.ts",
       source: "unstaged",
       kind: "modified",
+      previousContentDigest: digest(actualStagedSource),
       contentDigest: digest(samePathWorktreeSource),
     });
     const duplicatePathChangeIds = duplicatePathSnapshot.changes
@@ -1827,12 +1830,14 @@ describe("RepositoryTaskContextProvider", () => {
       path: "src/removed.ts",
       source: "unstaged",
       kind: "deleted",
+      previousContentDigest: digest(deletedSource),
     });
     expect(modifiedChange).toEqual({
       id: modifiedChange?.id,
       path: "src/task.ts",
       source: "unstaged",
       kind: "modified",
+      previousContentDigest: digest(baselineTaskSource),
       contentDigest: digest(actualTaskSource),
     });
     const actualChangeIds = actualSnapshot.changes
@@ -2042,12 +2047,14 @@ describe("RepositoryTaskContextProvider", () => {
       path: "src/removed.ts",
       source: "unstaged",
       kind: "deleted",
+      previousContentDigest: digest(deletedSource),
     });
     expect(modifiedChange).toEqual({
       id: modifiedChange?.id,
       path: "src/task.ts",
       source: "unstaged",
       kind: "modified",
+      previousContentDigest: digest(baselineTaskSource),
       contentDigest: digest(actualTaskSource),
     });
     const actualChangeIds = actualSnapshot.changes

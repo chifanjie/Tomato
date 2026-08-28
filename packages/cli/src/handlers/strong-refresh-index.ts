@@ -33,6 +33,8 @@ import {
   type ProviderProductionStrongCompareCommitV1Input,
   type ProviderProductionStrongObjectClientV1,
   type ProviderProductionStrongIndexPublicationAuthorityInputV1,
+  type ProviderProductionStrongRefreshAuthorityInputV1,
+  type ProviderProductionStrongRefreshAuthorityV1,
 } from "@understand-code/durable-object-provider-client";
 import {
   canonicalizeJcsSafeIntegerV1,
@@ -43,10 +45,13 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import {
   bootstrapSafeGitDescriptorBoundCandidateV1,
+  createSafeGitLayeredContentReadSessionV1,
   getRepositorySnapshotDetailedWithSafeGitCapabilityV1,
   isSensitiveRepositoryPath,
+  readSafeGitLayeredRepositoryChangeContentV1,
   readStableRepositoryFile,
   type RepositorySnapshotCapture,
+  type SafeGitReadExecutorV1,
   type SafeGitRepositoryIdentityInspectionV1,
 } from "@understand-code/repository-state";
 
@@ -70,6 +75,10 @@ import {
 
 const PRODUCTION_SAFE_GIT_EXECUTABLE_V1 = "/opt/understand-code/bin/git";
 const MAX_CHANGED_SOURCE_BYTES_V1 = 64 * 1024 * 1024;
+const MAX_CHANGED_SOURCE_PATHS_V1 = 4_096;
+const MAX_CHANGED_SOURCE_METADATA_BYTES_V1 = 64 * 1024 * 1024;
+const MAX_CHANGED_SOURCE_BLOB_BYTES_V1 = MAX_CHANGED_SOURCE_BYTES_V1;
+const MAX_CHANGED_SOURCE_COMMANDS_V1 = 16_384;
 const FATAL_UTF8_DECODER_V1 = new TextDecoder("utf-8", { fatal: true });
 const REFRESH_PROVIDER_PHASE_V1 = "strong_refresh_index_v1";
 
@@ -93,7 +102,14 @@ interface RecoveredProviderCutV1 extends StrongRefreshCutV1 {
   readonly revision: number;
   readonly operationNonce: string;
   readonly artifacts: ProviderArtifactsV1;
+  readonly publicationStatus: "prepared" | "finalized";
   readonly indexGeneration?: RepositoryIndexGenerationBindingV1;
+}
+
+interface ObservedProviderRefreshAuthorityV1 {
+  readonly observedProviderRevision: number;
+  readonly authority: ProviderProductionStrongRefreshAuthorityV1 | undefined;
+  readonly cut: StrongRefreshCutV1 | undefined;
 }
 
 function digestBytesV1(value: string | Buffer): ContentDigestV1 {
@@ -123,6 +139,39 @@ function exactCanonicalEqualV1(left: unknown, right: unknown): boolean {
     canonicalizeJcsSafeIntegerV1(right);
 }
 
+function optionalExactCanonicalEqualV1(
+  left: unknown | undefined,
+  right: unknown | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return exactCanonicalEqualV1(left, right);
+}
+
+function pulseArtifactSemanticV1(pulse: StrongPulseArtifactV1): unknown {
+  const { revision: _revision, ...semantic } = pulse;
+  return semantic;
+}
+
+function pulseArtifactSemanticEqualV1(
+  left: StrongPulseArtifactV1,
+  right: StrongPulseArtifactV1,
+): boolean {
+  return exactCanonicalEqualV1(
+    pulseArtifactSemanticV1(left),
+    pulseArtifactSemanticV1(right),
+  );
+}
+
+function withLocalPulseRevisionV1(
+  pulse: StrongPulseArtifactV1,
+  revision: number,
+): StrongPulseArtifactV1 {
+  return RepoPulseArtifactV1Schema.parse({
+    ...pulse,
+    revision,
+  }) as StrongPulseArtifactV1;
+}
+
 function artifactNotFoundV1(error: unknown): boolean {
   return error instanceof ArtifactStoreError && error.code === "artifact_not_found";
 }
@@ -149,10 +198,45 @@ function containsHighConfidenceSecretV1(content: string): boolean {
     /\bgh[pousr]_[A-Za-z0-9]{36,}\b/u.test(content);
 }
 
+function securityScanPolicyDigestV1(): ContentDigestV1 {
+  return sha256CanonicalJson({
+    profile: "repository-source-security-scan-v1",
+    maxChangedSourceBytesTotal: MAX_CHANGED_SOURCE_BYTES_V1,
+    maxChangedSourcePaths: MAX_CHANGED_SOURCE_PATHS_V1,
+    maxLayeredMetadataBytes: MAX_CHANGED_SOURCE_METADATA_BYTES_V1,
+    maxLayeredBlobBytes: MAX_CHANGED_SOURCE_BLOB_BYTES_V1,
+    maxLayeredCommands: MAX_CHANGED_SOURCE_COMMANDS_V1,
+    pathPolicy: "repository-sensitive-path-v1",
+    textPolicy: "fatal-utf8-no-control-v1",
+    secretPolicy: "high-confidence-secret-signatures-v1",
+  });
+}
+
 async function preflightChangedSourcesV1(
   canonicalRoot: string,
   capture: RepositorySnapshotCapture,
+  executor: SafeGitReadExecutorV1,
 ): Promise<void> {
+  const layeredSession = createSafeGitLayeredContentReadSessionV1(executor, {
+    maxMetadataBytes: MAX_CHANGED_SOURCE_METADATA_BYTES_V1,
+    maxBlobBytes: MAX_CHANGED_SOURCE_BLOB_BYTES_V1,
+    maxCommands: MAX_CHANGED_SOURCE_COMMANDS_V1,
+  });
+  const sourcesByPath = new Map<string, Set<string>>();
+  const changedPaths = new Set<string>();
+  for (const change of capture.snapshot.changes) {
+    const sources = sourcesByPath.get(change.path) ?? new Set<string>();
+    sources.add(change.source);
+    sourcesByPath.set(change.path, sources);
+    changedPaths.add(change.path);
+    if (change.oldPath !== undefined) changedPaths.add(change.oldPath);
+    if (changedPaths.size > MAX_CHANGED_SOURCE_PATHS_V1) {
+      denySourceV1("too_large");
+    }
+  }
+  const headCommit = capture.snapshot.headCommit;
+  if (headCommit === undefined) failCaptureV1(capture);
+  let scannedBytes = 0;
   for (const change of capture.snapshot.changes) {
     const pathResult = PathSafeRepositoryRelativePathV1Schema.safeParse(change.path);
     const oldPathResult = change.oldPath === undefined
@@ -167,27 +251,72 @@ async function preflightChangedSourcesV1(
     ) {
       denySourceV1("redacted");
     }
+    if (change.source === "conflict") {
+      denySourceV1("redacted");
+    }
     if (
-      change.source === "committed" ||
-      change.source === "staged" ||
-      change.source === "conflict"
+      change.source === "staged" &&
+      change.kind !== "deleted" &&
+      change.contentDigest === undefined
     ) {
       denySourceV1("redacted");
     }
-    if (change.kind === "deleted") continue;
+    const pathSources = sourcesByPath.get(change.path)!;
+    if (
+      (change.source === "committed" &&
+        [...pathSources].some((source) => source !== "committed")) ||
+      (change.source === "staged" &&
+        [...pathSources].some((source) =>
+          source === "unstaged" || source === "untracked" || source === "conflict"
+        ))
+    ) denySourceV1("redacted");
 
     let bytes: Buffer;
-    try {
-      bytes = await readStableRepositoryFile(
-        canonicalRoot,
-        change.path,
-        MAX_CHANGED_SOURCE_BYTES_V1,
-      );
-    } catch (error) {
-      const code = isRecordV1(error) ? error["code"] : undefined;
-      if (code === "too_large") denySourceV1("too_large");
-      denySourceV1("symlink_escape");
+    if (change.source === "committed" || change.source === "staged") {
+      const remainingBytes = MAX_CHANGED_SOURCE_BYTES_V1 - scannedBytes;
+      if (remainingBytes <= 0) denySourceV1("too_large");
+      try {
+        const exact = await readSafeGitLayeredRepositoryChangeContentV1(
+          executor,
+          headCommit,
+          change,
+          {
+            maxBytes: remainingBytes,
+            session: layeredSession,
+            ...(change.source === "staged" && change.kind !== "deleted"
+              ? {
+                  expectedContentDigest:
+                    change.contentDigest as `sha256:${string}`,
+                }
+              : {}),
+          },
+        );
+        if (exact.status === "absent") continue;
+        if (exact.status !== "content") denySourceV1("redacted");
+        bytes = exact.bytes;
+      } catch (error) {
+        const code = isRecordV1(error) ? error["code"] : undefined;
+        if (code === "budget_exceeded") denySourceV1("too_large");
+        denySourceV1("redacted");
+      }
+    } else {
+      if (change.kind === "deleted") continue;
+      const remainingBytes = MAX_CHANGED_SOURCE_BYTES_V1 - scannedBytes;
+      if (remainingBytes <= 0) denySourceV1("too_large");
+      try {
+        bytes = await readStableRepositoryFile(
+          canonicalRoot,
+          change.path,
+          remainingBytes,
+        );
+      } catch (error) {
+        const code = isRecordV1(error) ? error["code"] : undefined;
+        if (code === "too_large") denySourceV1("too_large");
+        denySourceV1("symlink_escape");
+      }
     }
+    scannedBytes += bytes.byteLength;
+    if (scannedBytes > MAX_CHANGED_SOURCE_BYTES_V1) denySourceV1("too_large");
     if (
       change.contentDigest !== undefined &&
       digestBytesV1(bytes) !== change.contentDigest
@@ -288,6 +417,49 @@ async function ownerCommitmentV1(
   );
 }
 
+async function assertProviderAuthenticatedSnapshotV1(
+  provider: ProviderProductionStrongObjectClientV1,
+  identity: SafeGitRepositoryIdentityInspectionV1,
+  snapshot: StrongRepositorySnapshotV1,
+): Promise<void> {
+  if (
+    snapshot.repositoryId !== identity.repositoryId ||
+    snapshot.worktreeId !== identity.worktreeId ||
+    snapshot.rootIdentity !== identity.rootIdentity ||
+    snapshot.objectFormat !== identity.objectFormat ||
+    snapshot.headState.kind !== "commit" ||
+    snapshot.captureStatus !== "complete" ||
+    snapshot.redactedChanges.length !== 0 ||
+    snapshot.unknownStates.length !== 0 ||
+    snapshot.securityScanPolicyDigest !== securityScanPolicyDigestV1()
+  ) {
+    throw new TypeError("Published refresh baseline identity is invalid");
+  }
+  const expectedRepositoryStateToken = await ownerCommitmentV1(
+    provider,
+    "repository-state-semantic-v1",
+    {
+      repositoryId: snapshot.repositoryId,
+      worktreeId: snapshot.worktreeId,
+      rootIdentity: snapshot.rootIdentity,
+      branchState: snapshot.branchState,
+      objectFormat: snapshot.objectFormat,
+      headCommit: snapshot.headState.commit,
+      baseCommit: snapshot.baseCommit ?? null,
+      mergeBase: snapshot.mergeBase ?? null,
+      indexToken: snapshot.indexToken,
+      worktreeToken: snapshot.worktreeToken,
+      untrackedToken: snapshot.untrackedToken,
+      ignoreToken: snapshot.ignoreToken,
+      securityScanPolicyDigest: snapshot.securityScanPolicyDigest,
+      safeGitExecutionDigest: snapshot.safeGitExecutionDigest,
+    },
+  );
+  if (expectedRepositoryStateToken !== snapshot.repositoryStateToken) {
+    throw new TypeError("Published refresh baseline Provider commitment is invalid");
+  }
+}
+
 async function buildStrongSnapshotV1(
   provider: ProviderProductionStrongObjectClientV1,
   identity: SafeGitRepositoryIdentityInspectionV1,
@@ -328,13 +500,7 @@ async function buildStrongSnapshotV1(
         digest: capture.snapshot.ignoreDigest,
       }),
     ]);
-  const securityScanPolicyDigest = sha256CanonicalJson({
-    profile: "repository-source-security-scan-v1",
-    maxChangedSourceBytes: MAX_CHANGED_SOURCE_BYTES_V1,
-    pathPolicy: "repository-sensitive-path-v1",
-    textPolicy: "fatal-utf8-no-control-v1",
-    secretPolicy: "high-confidence-secret-signatures-v1",
-  });
+  const securityScanPolicyDigest = securityScanPolicyDigestV1();
   const safeGitExecutionDigest = sha256CanonicalJson({
     profile: "descriptor-bound-safe-git-execution-v1",
     inspection: safeGitInspection,
@@ -411,6 +577,30 @@ async function buildStrongSnapshotV1(
 function snapshotSemanticV1(snapshot: StrongRepositorySnapshotV1): unknown {
   const { snapshotId: _snapshotId, createdAt: _createdAt, ...semantic } = snapshot;
   return semantic;
+}
+
+function assertRecoveredSnapshotMatchesCurrentAbsoluteStateV1(
+  recovered: StrongRepositorySnapshotV1,
+  current: StrongRepositorySnapshotV1,
+): void {
+  if (
+    recovered.repositoryId !== current.repositoryId ||
+    recovered.worktreeId !== current.worktreeId ||
+    recovered.rootIdentity !== current.rootIdentity ||
+    !exactCanonicalEqualV1(recovered.branchState, current.branchState) ||
+    recovered.objectFormat !== current.objectFormat ||
+    !exactCanonicalEqualV1(recovered.headState, current.headState) ||
+    recovered.indexToken !== current.indexToken ||
+    recovered.worktreeToken !== current.worktreeToken ||
+    recovered.untrackedToken !== current.untrackedToken ||
+    recovered.ignoreToken !== current.ignoreToken ||
+    recovered.securityScanPolicyDigest !== current.securityScanPolicyDigest ||
+    recovered.safeGitExecutionDigest !== current.safeGitExecutionDigest
+  ) {
+    throw new TypeError(
+      "Recovered Provider refresh cut no longer matches repository state",
+    );
+  }
 }
 
 function changeSummaryV1(snapshot: StrongRepositorySnapshotV1) {
@@ -599,25 +789,98 @@ async function readProviderCutObjectV1(
   return parseStrongCutV1(parseCanonicalJcsSafeIntegerUtf8V1(bytes));
 }
 
+async function observeProviderRefreshAuthorityV1(
+  provider: ProviderProductionStrongObjectClientV1,
+  identity: SafeGitRepositoryIdentityInspectionV1,
+): Promise<ObservedProviderRefreshAuthorityV1> {
+  const inspected = await provider.inspectStrongRefreshAuthority(
+    identity.repositoryId,
+    identity.worktreeId,
+  );
+  if (inspected.authority === undefined) {
+    return {
+      observedProviderRevision: inspected.observedProviderRevision,
+      authority: undefined,
+      cut: undefined,
+    };
+  }
+  const authority = inspected.authority;
+  const cut = await readProviderCutObjectV1(provider, authority.cutObject);
+  if (
+    authority.repositoryId !== identity.repositoryId ||
+    authority.worktreeId !== identity.worktreeId ||
+    authority.finalizedProviderRevision > inspected.observedProviderRevision ||
+    authority.snapshotId !== cut.snapshotArtifact.payload.snapshotId ||
+    authority.snapshotContentDigest !== cut.snapshotArtifact.contentDigest ||
+    authority.pulseContentDigest !== cut.pulseArtifact.contentDigest ||
+    cut.pulseArtifact.sourceSnapshotId !== authority.snapshotId
+  ) {
+    throw new TypeError("Provider latest refresh authority is not bound to its exact cut");
+  }
+  await assertProviderAuthenticatedSnapshotV1(
+    provider,
+    identity,
+    cut.snapshotArtifact.payload,
+  );
+  return {
+    observedProviderRevision: inspected.observedProviderRevision,
+    authority,
+    cut,
+  };
+}
+
+function previousRefreshAuthorityV1(
+  authority: ProviderProductionStrongRefreshAuthorityV1 | undefined,
+): ProviderProductionStrongRefreshAuthorityInputV1["previous"] {
+  return authority === undefined
+    ? null
+    : {
+        snapshotId: authority.snapshotId,
+        finalizedProviderRevision: authority.finalizedProviderRevision,
+      };
+}
+
 async function probeRecoveredProviderCutV1(
   provider: ProviderProductionStrongObjectClientV1,
   requestDigest: string,
   idempotencyKeyDigest: string,
-  semanticDigest: string,
+  semanticDigest: string | undefined,
+  observation?: ObservedProviderRefreshAuthorityV1,
 ): Promise<RecoveredProviderCutV1 | undefined> {
   const inspected = await provider.inspectBusinessHead();
   const artifacts = inspected.artifacts;
+  const operation = artifacts["operation"];
   if (
     inspected.phase !== REFRESH_PROVIDER_PHASE_V1 ||
     artifacts["schemaVersion"] !== 1 ||
-    artifacts["operation"] !== "refresh_index" ||
+    (operation !== "refresh_index" &&
+      operation !== "refresh_index_prepared") ||
     artifacts["requestDigest"] !== requestDigest ||
     artifacts["idempotencyKeyDigest"] !== idempotencyKeyDigest ||
-    artifacts["semanticDigest"] !== semanticDigest
+    typeof artifacts["semanticDigest"] !== "string" ||
+    (semanticDigest !== undefined &&
+      artifacts["semanticDigest"] !== semanticDigest)
   ) {
-    return undefined;
+    if (
+      observation?.authority !== undefined &&
+      observation.authority.finalizedProviderRevision === inspected.revision &&
+      exactCanonicalEqualV1(
+        observation.authority.cutObject,
+        artifacts["cutObject"],
+      )
+    ) return undefined;
+    return await probeRecoveredProviderAuthorityCutV1(
+      provider,
+      requestDigest,
+      idempotencyKeyDigest,
+      semanticDigest,
+      observation,
+    );
   }
   const mode = artifacts["mode"];
+  if (operation === "refresh_index_prepared" && mode !== "full") {
+    throw new TypeError("Provider prepared refresh recovery mode is invalid");
+  }
   let indexGeneration: RepositoryIndexGenerationBindingV1 | undefined;
   if (mode === "full") {
     const generationId = artifacts["indexGenerationId"];
@@ -641,11 +904,22 @@ async function probeRecoveredProviderCutV1(
       sourceInventoryDigest: sourceInventoryDigest as `sha256:${string}`,
     };
   }
-  const cut = await readProviderCutObjectV1(provider, artifacts["cutObject"]);
+  const cut =
+    observation?.authority !== undefined &&
+      observation.cut !== undefined &&
+      exactCanonicalEqualV1(
+        observation.authority.cutObject,
+        artifacts["cutObject"],
+      )
+      ? observation.cut
+      : await readProviderCutObjectV1(provider, artifacts["cutObject"]);
   if (
     sha256CanonicalJson(snapshotSemanticV1(cut.snapshotArtifact.payload)) !==
-      semanticDigest ||
-    cut.pulseArtifact.sourceSnapshotId !== cut.snapshotArtifact.sourceSnapshotId
+      artifacts["semanticDigest"] ||
+    cut.pulseArtifact.sourceSnapshotId !== cut.snapshotArtifact.sourceSnapshotId ||
+    artifacts["snapshotId"] !== cut.snapshotArtifact.sourceSnapshotId ||
+    artifacts["snapshotContentDigest"] !== cut.snapshotArtifact.contentDigest ||
+    artifacts["pulseContentDigest"] !== cut.pulseArtifact.contentDigest
   ) {
     throw new TypeError("Provider refresh recovery cut is semantically invalid");
   }
@@ -654,8 +928,98 @@ async function probeRecoveredProviderCutV1(
     revision: inspected.revision,
     operationNonce: inspected.operationNonce,
     artifacts,
+    publicationStatus: operation === "refresh_index"
+      ? "finalized"
+      : "prepared",
     ...(indexGeneration === undefined ? {} : { indexGeneration }),
   };
+}
+
+async function probeRecoveredProviderAuthorityCutV1(
+  provider: ProviderProductionStrongObjectClientV1,
+  requestDigest: string,
+  idempotencyKeyDigest: string,
+  semanticDigestInput: string | undefined,
+  observation?: ObservedProviderRefreshAuthorityV1,
+): Promise<RecoveredProviderCutV1 | undefined> {
+  const authority = observation?.authority;
+  const cut = observation?.cut;
+  if (authority === undefined || cut === undefined) return undefined;
+  const semanticDigest = sha256CanonicalJson(
+    snapshotSemanticV1(cut.snapshotArtifact.payload),
+  );
+  if (
+    semanticDigestInput !== undefined &&
+    semanticDigestInput !== semanticDigest
+  ) return undefined;
+
+  let indexGeneration: RepositoryIndexGenerationBindingV1 | undefined;
+  if (authority.mode === "full") {
+    const indexAuthority = await provider.inspectIndexPublicationAuthority();
+    if (
+      indexAuthority === undefined ||
+      indexAuthority.finalizedProviderRevision !==
+        authority.finalizedProviderRevision ||
+      indexAuthority.sourceSnapshotId !== authority.snapshotId
+    ) return undefined;
+    indexGeneration = {
+      generationId: indexAuthority.generationId,
+      generationManifestDigest:
+        indexAuthority.generationManifestDigest as `sha256:${string}`,
+      sourceInventoryDigest:
+        indexAuthority.sourceInventoryDigest as `sha256:${string}`,
+    };
+  }
+  const artifacts = providerArtifactsV1(
+    "refresh_index",
+    requestDigest,
+    idempotencyKeyDigest,
+    semanticDigest,
+    authority.mode,
+    authority.cutObject,
+    cut,
+    indexGeneration,
+  );
+  const operationNonce = operationNonceV1({
+    domain: authority.mode === "full"
+      ? "strong-refresh-index-finalize-v1"
+      : "strong-refresh-index-commit-v1",
+    ...(authority.mode === "full"
+      ? {
+          expectedPreparedRevision:
+            authority.finalizedProviderRevision - 1,
+        }
+      : {
+          expectedRevision: authority.finalizedProviderRevision - 1,
+        }),
+    idempotencyKeyDigest,
+    requestDigest,
+    semanticDigest,
+    cutContentDigest: authority.cutObject.contentDigest,
+  });
+  const recovered: RecoveredProviderCutV1 = {
+    ...cut,
+    revision: authority.finalizedProviderRevision,
+    operationNonce,
+    artifacts,
+    publicationStatus: "finalized",
+    ...(indexGeneration === undefined ? {} : { indexGeneration }),
+  };
+  const replay = await provider.compareCommit({
+    expectedRevision: recovered.revision - 1,
+    operationNonce: recovered.operationNonce,
+    phase: REFRESH_PROVIDER_PHASE_V1,
+    artifacts: recovered.artifacts,
+  });
+  if (replay.resolution === "stale") return undefined;
+  if (
+    replay.resolution !== "replayed" ||
+    replay.state.revision !== recovered.revision ||
+    !exactCanonicalEqualV1(replay.state.artifacts, recovered.artifacts)
+  ) {
+    throw new TypeError("Provider refresh authority recovery was not exact");
+  }
+  return recovered;
 }
 
 async function readManifestV1(store: ArtifactStore) {
@@ -743,6 +1107,25 @@ function providerArtifactsV1(
   };
 }
 
+function refreshAuthorityInputV1(
+  cut: StrongRefreshCutV1,
+  mode: "incremental" | "full",
+  cutObject: ReturnType<typeof ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse>,
+  previous: ProviderProductionStrongRefreshAuthorityInputV1["previous"],
+): ProviderProductionStrongRefreshAuthorityInputV1 {
+  return {
+    profile: "provider_production_strong_refresh_authority_v1",
+    repositoryId: cut.snapshotArtifact.payload.repositoryId,
+    worktreeId: cut.snapshotArtifact.payload.worktreeId,
+    mode,
+    snapshotId: cut.snapshotArtifact.payload.snapshotId,
+    snapshotContentDigest: cut.snapshotArtifact.contentDigest,
+    pulseContentDigest: cut.pulseArtifact.contentDigest,
+    cutObject,
+    previous,
+  } as unknown as ProviderProductionStrongRefreshAuthorityInputV1;
+}
+
 async function commitProviderCutV1(
   provider: ProviderProductionStrongObjectClientV1,
   cut: StrongRefreshCutV1,
@@ -750,6 +1133,7 @@ async function commitProviderCutV1(
   idempotencyKeyDigest: string,
   semanticDigest: string,
   mode: "incremental" | "full",
+  observation: ObservedProviderRefreshAuthorityV1,
   indexGeneration?: RepositoryIndexGenerationBindingV1,
 ) {
   const cutValue = {
@@ -787,23 +1171,33 @@ async function commitProviderCutV1(
     cut,
     indexGeneration,
   );
-  const inspected = await provider.inspectBusinessHead();
   const operationNonce = operationNonceV1({
     domain: mode === "full"
       ? "strong-refresh-index-prepare-v1"
       : "strong-refresh-index-commit-v1",
-    expectedRevision: inspected.revision,
+    expectedRevision: observation.observedProviderRevision,
     idempotencyKeyDigest,
     requestDigest,
     semanticDigest,
     cutContentDigest: cutObject.contentDigest,
   });
-  const committed = await provider.compareCommit({
-    expectedRevision: inspected.revision,
+  const compareInput = {
+    expectedRevision: observation.observedProviderRevision,
     operationNonce,
     phase: REFRESH_PROVIDER_PHASE_V1,
     artifacts,
-  });
+  };
+  const committed = mode === "full"
+    ? await provider.compareCommit(compareInput)
+    : await provider.compareCommitRefreshPublication({
+        ...compareInput,
+        refreshAuthority: refreshAuthorityInputV1(
+          cut,
+          mode,
+          cutObject,
+          previousRefreshAuthorityV1(observation.authority),
+        ),
+      });
   if (
     committed.resolution === "stale" ||
     committed.state.operationNonce !== operationNonce ||
@@ -813,6 +1207,28 @@ async function commitProviderCutV1(
     throw new TypeError(
       "Provider refresh compare-commit did not publish the exact cut",
     );
+  }
+  if (mode === "incremental") {
+    const refreshAuthority = refreshAuthorityInputV1(
+      cut,
+      mode,
+      cutObject,
+      previousRefreshAuthorityV1(observation.authority),
+    );
+    const inspectedRefresh = await provider.inspectStrongRefreshAuthority(
+      cut.snapshotArtifact.payload.repositoryId,
+      cut.snapshotArtifact.payload.worktreeId,
+    );
+    if (
+      inspectedRefresh.authority === undefined ||
+      inspectedRefresh.observedProviderRevision < committed.state.revision ||
+      !exactCanonicalEqualV1(inspectedRefresh.authority, {
+        ...refreshAuthority,
+        finalizedProviderRevision: committed.state.revision,
+      })
+    ) {
+      throw new TypeError("Provider refresh authority did not finalize exactly");
+    }
   }
   return {
     resolution: committed.resolution,
@@ -831,6 +1247,7 @@ async function finalizeFullProviderCutV1(
   idempotencyKeyDigest: string,
   semanticDigest: string,
   indexGeneration: RepositoryIndexGenerationBindingV1,
+  previousAuthority: ProviderProductionStrongRefreshAuthorityV1 | undefined,
   prepared: Readonly<{
     preparedRevision: number;
     preparedOperationNonce: string;
@@ -847,20 +1264,6 @@ async function finalizeFullProviderCutV1(
     cut,
     indexGeneration,
   );
-  const inspected = await provider.inspectBusinessHead();
-  if (
-    inspected.revision !== prepared.preparedRevision ||
-    inspected.operationNonce !== prepared.preparedOperationNonce ||
-    inspected.phase !== REFRESH_PROVIDER_PHASE_V1 ||
-    !exactCanonicalEqualV1(
-      inspected.artifacts,
-      prepared.preparedArtifacts,
-    )
-  ) {
-    throw new TypeError(
-      "Provider refresh prepared head changed before full finalization",
-    );
-  }
   const operationNonce = operationNonceV1({
     domain: "strong-refresh-index-finalize-v1",
     expectedPreparedRevision: prepared.preparedRevision,
@@ -869,12 +1272,19 @@ async function finalizeFullProviderCutV1(
     semanticDigest,
     cutContentDigest: cutObject.contentDigest,
   });
-  const finalized = await provider.compareCommitIndexPublication({
+  const refreshAuthority = refreshAuthorityInputV1(
+    cut,
+    "full",
+    cutObject,
+    previousRefreshAuthorityV1(previousAuthority),
+  );
+  const finalized = await provider.compareCommitRefreshPublication({
     expectedRevision: prepared.preparedRevision,
     operationNonce,
     phase: REFRESH_PROVIDER_PHASE_V1,
     artifacts,
-    authority: {
+    refreshAuthority,
+    indexPublicationAuthority: {
       profile: "provider_production_strong_index_publication_authority_v1",
       generationId: indexGeneration.generationId,
       generationManifestDigest: indexGeneration.generationManifestDigest,
@@ -893,12 +1303,22 @@ async function finalizeFullProviderCutV1(
     );
   }
   const publicationAuthority = await provider.inspectIndexPublicationAuthority();
+  const inspectedRefresh = await provider.inspectStrongRefreshAuthority(
+    cut.snapshotArtifact.payload.repositoryId,
+    cut.snapshotArtifact.payload.worktreeId,
+  );
   if (publicationAuthority === undefined ||
     publicationAuthority.finalizedProviderRevision !== finalized.state.revision ||
     publicationAuthority.generationId !== indexGeneration.generationId ||
     publicationAuthority.generationManifestDigest !== indexGeneration.generationManifestDigest ||
     publicationAuthority.sourceInventoryDigest !== indexGeneration.sourceInventoryDigest ||
-    publicationAuthority.sourceSnapshotId !== cut.snapshotArtifact.payload.snapshotId) {
+    publicationAuthority.sourceSnapshotId !== cut.snapshotArtifact.payload.snapshotId ||
+    inspectedRefresh.authority === undefined ||
+    inspectedRefresh.observedProviderRevision < finalized.state.revision ||
+    !exactCanonicalEqualV1(inspectedRefresh.authority, {
+      ...refreshAuthority,
+      finalizedProviderRevision: finalized.state.revision,
+    })) {
     throw new TypeError("Provider refresh index authority did not finalize exactly");
   }
   return {
@@ -928,6 +1348,31 @@ async function replayRecoveredProviderCutV1(
     throw new TypeError("Provider refresh recovery replay was not exact");
   }
   return replay.resolution;
+}
+
+async function assertLatestProviderRefreshCutV1(
+  provider: ProviderProductionStrongObjectClientV1,
+  identity: SafeGitRepositoryIdentityInspectionV1,
+  cut: StrongRefreshCutV1,
+  finalizedProviderRevision: number,
+): Promise<void> {
+  const latest = await provider.inspectStrongRefreshAuthority(
+    identity.repositoryId,
+    identity.worktreeId,
+  );
+  const authority = latest.authority;
+  if (
+    authority === undefined ||
+    latest.observedProviderRevision < finalizedProviderRevision ||
+    authority.finalizedProviderRevision !== finalizedProviderRevision ||
+    authority.snapshotId !== cut.snapshotArtifact.payload.snapshotId ||
+    authority.snapshotContentDigest !== cut.snapshotArtifact.contentDigest ||
+    authority.pulseContentDigest !== cut.pulseArtifact.contentDigest
+  ) {
+    throw new TypeError(
+      "Provider refresh authority changed before local publication",
+    );
+  }
 }
 
 function mapIndexFailureV1(error: RepositoryIndexError): never {
@@ -967,12 +1412,31 @@ export async function strongRefreshIndexV1(
     throw error;
   }
   try {
+    const requestDigest = sha256CanonicalJson({
+      operation: "refresh_index",
+      mode: input.mode,
+      expectedSourceSnapshotId: input.expectedSourceSnapshotId ?? null,
+      actor: input.actor,
+    });
+    const idempotencyKeyDigest = sha256CanonicalJson({
+      domain: "refresh-index-idempotency-key-v1",
+      key: input.idempotencyKey,
+    });
     const candidate = await bootstrapSafeGitDescriptorBoundCandidateV1(
       canonicalRoot,
     );
     let identity: SafeGitRepositoryIdentityInspectionV1;
-    let capture: RepositorySnapshotCapture;
+    let capture: RepositorySnapshotCapture | undefined;
     let safeGitInspection: unknown;
+    let store: ArtifactStore;
+    let previousManifest: Awaited<ReturnType<typeof readManifestV1>>;
+    let localSnapshot: StrongSnapshotArtifactV1 | undefined;
+    let currentSnapshot: StrongSnapshotArtifactV1 | undefined;
+    let localPulse: StrongPulseArtifactV1 | undefined;
+    let currentPulse: StrongPulseArtifactV1 | undefined;
+    let providerRefreshObservation: ObservedProviderRefreshAuthorityV1;
+    let recovered: RecoveredProviderCutV1 | undefined;
+    let requiresRecoveredColdBaseline = false;
     let indexPreflight:
       | Awaited<ReturnType<typeof preflightRepositoryIndex>>
       | undefined;
@@ -984,90 +1448,202 @@ export async function strongRefreshIndexV1(
         PRODUCTION_SAFE_GIT_EXECUTABLE_V1,
       );
       await candidate.capability.executeGitVersion();
-      const before =
-        await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
-          canonicalRoot,
-          candidate.capability,
+      providerRefreshObservation = await observeProviderRefreshAuthorityV1(
+        provider,
+        identity,
+      );
+      currentSnapshot = providerRefreshObservation.cut?.snapshotArtifact;
+      currentPulse = providerRefreshObservation.cut?.pulseArtifact;
+      recovered = await probeRecoveredProviderCutV1(
+        provider,
+        requestDigest,
+        idempotencyKeyDigest,
+        undefined,
+        providerRefreshObservation,
+      );
+      if (recovered !== undefined) {
+        await assertProviderAuthenticatedSnapshotV1(
+          provider,
+          identity,
+          recovered.snapshotArtifact.payload,
         );
-      if (
-        before.canonicalRoot !== canonicalRoot ||
-        before.snapshot.captureStatus !== "complete" ||
-        before.snapshot.limitations.length !== 0
-      ) {
-        failCaptureV1(before);
       }
-      await preflightChangedSourcesV1(canonicalRoot, before);
-      if (input.mode === "full") {
-        try {
-          indexPreflight = await preflightRepositoryIndex(canonicalRoot);
-        } catch (error) {
-          if (error instanceof RepositoryIndexError) mapIndexFailureV1(error);
-          throw error;
+      store = await ArtifactStore.open(canonicalRoot, {
+        repositoryId: identity.repositoryId,
+        worktreeId: identity.worktreeId,
+        producerVersion: PRODUCT_VERSION,
+      });
+      previousManifest = await readManifestV1(store);
+      localSnapshot = await readStrongSnapshotV1(
+        store,
+        previousManifest?.latestSnapshotId,
+      );
+      if (
+        previousManifest?.latestSnapshotId !== undefined &&
+        localSnapshot === undefined
+      ) {
+        throw new TypeError("Published refresh baseline Snapshot is unavailable or not strong");
+      }
+      localPulse = await readStrongPulseV1(store);
+      if (
+        localPulse !== undefined &&
+        localPulse.sourceSnapshotId !== localSnapshot?.payload.snapshotId
+      ) {
+        const authenticatedRepairCut = recovered ??
+          providerRefreshObservation.cut;
+        const recoverableSnapshotOnlyCommit =
+          authenticatedRepairCut !== undefined &&
+          localSnapshot !== undefined &&
+          exactCanonicalEqualV1(
+            localSnapshot,
+            authenticatedRepairCut.snapshotArtifact,
+          ) &&
+          authenticatedRepairCut.pulseArtifact.payload.baselineSnapshotId ===
+            localPulse.sourceSnapshotId;
+        if (!recoverableSnapshotOnlyCommit) {
+          throw new TypeError(
+            "Published local refresh Pulse does not match its Snapshot",
+          );
         }
       }
-      const after =
-        await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
-          canonicalRoot,
-          candidate.capability,
+      if (currentSnapshot === undefined) {
+        const providerHead = await provider.inspectBusinessHead();
+        if (
+          providerHead.revision !== 0 ||
+          providerHead.phase !== "strong_business_uninitialized_v1" ||
+          Object.keys(providerHead.artifacts).length !== 0
+        ) {
+          requiresRecoveredColdBaseline = true;
+        }
+      } else {
+        if (
+          localSnapshot?.payload.snapshotId === currentSnapshot.payload.snapshotId &&
+          !exactCanonicalEqualV1(localSnapshot, currentSnapshot)
+        ) {
+          throw new TypeError("Local refresh Snapshot conflicts with Provider authority");
+        }
+      }
+      if (currentSnapshot === undefined && localSnapshot !== undefined) {
+        throw new TypeError(
+          "A local strong Snapshot has no latest Provider refresh authority",
         );
-      assertStableCompleteCaptureV1(canonicalRoot, before, after);
-      safeGitInspection = await candidate.capability.revalidate();
-      capture = before;
+      }
+      if (
+        recovered === undefined &&
+        input.expectedSourceSnapshotId !== undefined &&
+        currentSnapshot?.payload.snapshotId !== input.expectedSourceSnapshotId
+      ) {
+        throw new ToolFailure(
+          artifactUnavailableFailure("stale", "repository_snapshot"),
+        );
+      }
+      {
+        const baselineRef = currentSnapshot?.payload.headState.kind === "commit"
+          ? currentSnapshot.payload.headState.commit
+          : undefined;
+        const snapshotOptions = baselineRef === undefined ? {} : { baselineRef };
+        const before =
+          await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+            canonicalRoot,
+            candidate.capability,
+            snapshotOptions,
+          );
+        if (
+          before.canonicalRoot !== canonicalRoot ||
+          before.snapshot.captureStatus !== "complete" ||
+          before.snapshot.limitations.length !== 0
+        ) {
+          failCaptureV1(before);
+        }
+        await preflightChangedSourcesV1(
+          canonicalRoot,
+          before,
+          candidate.capability.createReadExecutor(),
+        );
+        if (input.mode === "full") {
+          try {
+            indexPreflight = await preflightRepositoryIndex(canonicalRoot);
+          } catch (error) {
+            if (error instanceof RepositoryIndexError) mapIndexFailureV1(error);
+            throw error;
+          }
+        }
+        const after =
+          await getRepositorySnapshotDetailedWithSafeGitCapabilityV1(
+            canonicalRoot,
+            candidate.capability,
+            snapshotOptions,
+          );
+        assertStableCompleteCaptureV1(canonicalRoot, before, after);
+        const manifestAfterCapture = await readManifestV1(store);
+        const localSnapshotAfterCapture = await readStrongSnapshotV1(
+          store,
+          manifestAfterCapture?.latestSnapshotId,
+        );
+        const pulseAfterCapture = await readStrongPulseV1(store);
+        if (
+          previousManifest?.latestSnapshotId !==
+            manifestAfterCapture?.latestSnapshotId ||
+          !optionalExactCanonicalEqualV1(
+            localSnapshot,
+            localSnapshotAfterCapture,
+          ) ||
+          !optionalExactCanonicalEqualV1(localPulse, pulseAfterCapture)
+        ) {
+          throw new ToolFailure(
+            artifactUnavailableFailure("stale", "repository_snapshot"),
+          );
+        }
+        safeGitInspection = await candidate.capability.revalidate();
+        capture = before;
+      }
     } finally {
       await candidate.capability.close();
     }
 
-    const store = await ArtifactStore.open(canonicalRoot, {
-      repositoryId: identity.repositoryId,
-      worktreeId: identity.worktreeId,
-      producerVersion: PRODUCT_VERSION,
-    });
-    let previousManifest = await readManifestV1(store);
-    if (
-      input.expectedSourceSnapshotId !== undefined &&
-      previousManifest?.latestSnapshotId !== input.expectedSourceSnapshotId
-    ) {
-      throw new ToolFailure(
-        artifactUnavailableFailure("stale", "repository_snapshot"),
-      );
-    }
-
-    const provisionalSnapshot = await buildStrongSnapshotV1(
+    const capturedSnapshot = await buildStrongSnapshotV1(
       provider,
       identity,
       safeGitInspection,
-      capture,
-      capture.snapshot.createdAt,
+      capture!,
+      capture!.snapshot.createdAt,
     );
+    if (recovered !== undefined) {
+      assertRecoveredSnapshotMatchesCurrentAbsoluteStateV1(
+        recovered.snapshotArtifact.payload,
+        capturedSnapshot,
+      );
+    }
+    const provisionalSnapshot = recovered?.snapshotArtifact.payload ??
+      capturedSnapshot;
     const semanticDigest = sha256CanonicalJson(
       snapshotSemanticV1(provisionalSnapshot),
     );
-    const requestDigest = sha256CanonicalJson({
-      operation: "refresh_index",
-      mode: input.mode,
-      expectedSourceSnapshotId: input.expectedSourceSnapshotId ?? null,
-      actor: input.actor,
-    });
-    const idempotencyKeyDigest = sha256CanonicalJson({
-      domain: "refresh-index-idempotency-key-v1",
-      key: input.idempotencyKey,
-    });
-    const currentSnapshot = await readStrongSnapshotV1(
-      store,
-      previousManifest?.latestSnapshotId,
-    );
-    const currentPulse = await readStrongPulseV1(store);
-    const recovered = await probeRecoveredProviderCutV1(
-      provider,
-      requestDigest,
-      idempotencyKeyDigest,
-      semanticDigest,
-    );
+    if (recovered?.publicationStatus === "finalized") {
+      const authority = providerRefreshObservation.authority;
+      if (
+        authority === undefined ||
+        authority.finalizedProviderRevision !== recovered.revision ||
+        authority.snapshotId !== recovered.snapshotArtifact.payload.snapshotId ||
+        authority.snapshotContentDigest !== recovered.snapshotArtifact.contentDigest ||
+        authority.pulseContentDigest !== recovered.pulseArtifact.contentDigest ||
+        !exactCanonicalEqualV1(authority.cutObject, recovered.artifacts["cutObject"])
+      ) {
+        throw new TypeError(
+          "Recovered Provider refresh head is not the latest refresh authority",
+        );
+      }
+    }
+    if (requiresRecoveredColdBaseline && recovered === undefined) {
+      throw new TypeError(
+        "A cold local Store has no matching authenticated Provider recovery cut",
+      );
+    }
 
     let cut: StrongRefreshCutV1;
     if (recovered !== undefined) {
       const compatiblePulseRevision = currentPulse === undefined
-        ? recovered.pulseArtifact.revision === 0
+        ? true
         : exactCanonicalEqualV1(currentPulse, recovered.pulseArtifact) ||
           recovered.pulseArtifact.revision === currentPulse.revision + 1;
       if (!compatiblePulseRevision) {
@@ -1086,38 +1662,22 @@ export async function strongRefreshIndexV1(
           currentSnapshot.payload.snapshotId === snapshot.snapshotId
         ? currentSnapshot
         : strongSnapshotArtifactV1(snapshot);
-      let pulseArtifact: StrongPulseArtifactV1;
-      if (
-        currentPulse !== undefined &&
-        currentPulse.sourceSnapshotId === snapshot.snapshotId &&
-        (input.mode === "incremental" ||
-          (currentPulse.payload.artifactFreshness.graph === "fresh" &&
-            currentPulse.payload.artifactFreshness.wiki === "fresh"))
-      ) {
-        parseTrustedStrongRepoPulseV1(
-          currentPulse.payload,
-          snapshot,
-          digestCanonicalJsonV1,
-        );
-        pulseArtifact = currentPulse;
-      } else {
-        const baselineSnapshotId =
-          previousManifest?.latestSnapshotId === undefined ||
-            previousManifest.latestSnapshotId === snapshot.snapshotId
-            ? undefined
-            : previousManifest.latestSnapshotId;
-        const pulse = buildStrongPulseV1(
-          snapshot,
-          input.mode,
-          baselineSnapshotId,
-          snapshot.createdAt,
-        );
-        pulseArtifact = strongPulseArtifactV1(
-          pulse,
-          snapshot,
-          currentPulse === undefined ? 0 : currentPulse.revision + 1,
-        );
-      }
+      const baselineSnapshotId =
+        currentSnapshot?.payload.snapshotId === undefined ||
+          currentSnapshot.payload.snapshotId === snapshot.snapshotId
+          ? undefined
+          : currentSnapshot.payload.snapshotId;
+      const pulse = buildStrongPulseV1(
+        snapshot,
+        input.mode,
+        baselineSnapshotId,
+        snapshot.createdAt,
+      );
+      const pulseArtifact = strongPulseArtifactV1(
+        pulse,
+        snapshot,
+        currentPulse === undefined ? 0 : currentPulse.revision + 1,
+      );
       cut = { snapshotArtifact, pulseArtifact };
     }
 
@@ -1130,24 +1690,41 @@ export async function strongRefreshIndexV1(
     const publishStoreCut = async (): Promise<void> => {
       if (previousManifest === undefined) previousManifest = await store.initialize();
       const snapshotResult = await store.persistArtifact(cut.snapshotArtifact);
-      const pulseResult = await store.persistArtifact(cut.pulseArtifact, {
-        ...(currentPulse === undefined ? {} : { expectedRevision: currentPulse.revision }),
-        idempotencyKey: input.idempotencyKey,
-        requestDigest,
-      });
+      let pulseReplayed = false;
+      if (
+        localPulse !== undefined &&
+        pulseArtifactSemanticEqualV1(localPulse, cut.pulseArtifact)
+      ) {
+        pulseReplayed = true;
+      } else {
+        // Provider revision is the semantic Pulse chain. Local revision is
+        // only the ArtifactStore CAS sequence and may lag or start cold.
+        const localPulseArtifact = withLocalPulseRevisionV1(
+          cut.pulseArtifact,
+          localPulse === undefined ? 0 : localPulse.revision + 1,
+        );
+        const pulseResult = await store.persistArtifact(localPulseArtifact, {
+          ...(localPulse === undefined
+            ? {}
+            : { expectedRevision: localPulse.revision }),
+          idempotencyKey: input.idempotencyKey,
+          requestDigest,
+        });
+        pulseReplayed = pulseResult.replayed;
+      }
       const publishedSnapshot = await readStrongSnapshotV1(store, cut.snapshotArtifact.sourceSnapshotId);
       const publishedPulse = await readStrongPulseV1(store);
       const publishedManifest = await store.readManifest();
       if (publishedSnapshot === undefined || publishedPulse === undefined ||
         publishedManifest.latestSnapshotId !== cut.snapshotArtifact.sourceSnapshotId ||
         !exactCanonicalEqualV1(publishedSnapshot, cut.snapshotArtifact) ||
-        !exactCanonicalEqualV1(publishedPulse, cut.pulseArtifact)) {
+        !pulseArtifactSemanticEqualV1(publishedPulse, cut.pulseArtifact)) {
         throw new TypeError("Published strong refresh cut does not match Provider authority");
       }
       parseTrustedStrongRepoPulseV1(publishedPulse.payload, publishedSnapshot.payload, digestCanonicalJsonV1);
       storePublication = {
         snapshotReplayed: snapshotResult.replayed,
-        pulseReplayed: pulseResult.replayed,
+        pulseReplayed,
         publishedSnapshot,
         publishedPulse,
       };
@@ -1170,7 +1747,10 @@ export async function strongRefreshIndexV1(
         operationId: indexOperationId,
       };
       let primaryFailure: unknown;
-      let finalizedProviderRevision = recovered?.revision;
+      let finalizedProviderRevision =
+        recovered?.publicationStatus === "finalized"
+          ? recovered.revision
+          : undefined;
       try {
         const built = await buildRepositoryIndex({
           ...stagedIndex,
@@ -1198,6 +1778,7 @@ export async function strongRefreshIndexV1(
             idempotencyKeyDigest,
             semanticDigest,
             "full",
+            providerRefreshObservation,
             indexGeneration,
           );
           const finalized = await finalizeFullProviderCutV1(
@@ -1208,11 +1789,40 @@ export async function strongRefreshIndexV1(
             idempotencyKeyDigest,
             semanticDigest,
             indexGeneration,
+            providerRefreshObservation.authority,
             prepared,
           );
           finalizedProviderRevision = finalized.finalizedProviderRevision;
           publishedProviderRevision = finalized.finalizedProviderRevision;
           providerResolution = prepared.resolution;
+        } else if (recovered.publicationStatus === "prepared") {
+          if (recovered.indexGeneration === undefined) {
+            throw new TypeError(
+              "Recovered prepared Provider cut has no index generation binding",
+            );
+          }
+          const recoveredCutObject =
+            ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
+              recovered.artifacts["cutObject"],
+            );
+          const finalized = await finalizeFullProviderCutV1(
+            provider,
+            cut,
+            recoveredCutObject,
+            requestDigest,
+            idempotencyKeyDigest,
+            semanticDigest,
+            indexGeneration,
+            providerRefreshObservation.authority,
+            {
+              preparedRevision: recovered.revision,
+              preparedOperationNonce: recovered.operationNonce,
+              preparedArtifacts: recovered.artifacts,
+            },
+          );
+          finalizedProviderRevision = finalized.finalizedProviderRevision;
+          publishedProviderRevision = finalized.finalizedProviderRevision;
+          providerResolution = finalized.resolution;
         } else {
           if (recovered.indexGeneration === undefined) {
             throw new TypeError(
@@ -1238,6 +1848,12 @@ export async function strongRefreshIndexV1(
         if (finalizedProviderRevision === undefined) {
           throw new TypeError("Full Provider cut has no finalized revision");
         }
+        await assertLatestProviderRefreshCutV1(
+          provider,
+          identity,
+          cut,
+          finalizedProviderRevision,
+        );
         await publishStagedRepositoryIndex({
           ...stagedIndex,
           generation: indexGeneration,
@@ -1267,10 +1883,14 @@ export async function strongRefreshIndexV1(
         idempotencyKeyDigest,
         semanticDigest,
         "incremental",
+        providerRefreshObservation,
       );
       providerResolution = committedIncremental.resolution;
       publishedProviderRevision = committedIncremental.preparedRevision;
     } else {
+      if (recovered.publicationStatus !== "finalized") {
+        throw new TypeError("Incremental refresh cannot recover a prepared cut");
+      }
       providerResolution = await replayRecoveredProviderCutV1(
         provider,
         recovered,
@@ -1282,6 +1902,12 @@ export async function strongRefreshIndexV1(
       if (publishedProviderRevision === undefined) {
         throw new TypeError("Provider refresh has no publication revision");
       }
+      await assertLatestProviderRefreshCutV1(
+        provider,
+        identity,
+        cut,
+        publishedProviderRevision,
+      );
       await publishIncrementalStrongCutV1({
         canonicalRoot,
         providerRevision: publishedProviderRevision,

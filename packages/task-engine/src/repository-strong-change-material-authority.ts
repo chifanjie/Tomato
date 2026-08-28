@@ -35,7 +35,10 @@ import type { GraphNode } from "@understand-code/core";
 
 import { deterministicLineDiff } from "./change-analysis.js";
 import { sha256CanonicalJson } from "./ids.js";
-import { RepositoryTaskContextProvider } from "./repository-context-provider.js";
+import {
+  RepositoryTaskContextProvider,
+  StrongRepositoryAnalysisReadContextV1,
+} from "./repository-context-provider.js";
 import {
   deriveStrongBoundaryIdV1,
   deriveStrongDiffHunkIdentityV1,
@@ -269,12 +272,14 @@ implements StrongChangeMaterialAuthorityV1 {
   async #material(
     baseline: StrongRepositorySnapshotV1,
     actual: StrongRepositorySnapshotV1,
+    readContext = new StrongRepositoryAnalysisReadContextV1(),
   ): Promise<StrongRepositoryAnalysisMaterialV1> {
     const pin = await this.#graphPin(actual.snapshotId);
     const material = await this.#repository.readStrongRepositoryAnalysisMaterial(
       baseline,
       actual,
       pin,
+      readContext,
     );
     const finalPin = await this.#graphPin(actual.snapshotId);
     if (canonicalizeJson(finalPin) !== canonicalizeJson(pin)) {
@@ -286,11 +291,16 @@ implements StrongChangeMaterialAuthorityV1 {
   async #baselinePathMaterial(
     baseline: ProviderPinnedTaskBaselineAuthorityV1,
     entry: InternalTaskBaselineV1["paths"][number],
+    readContext: StrongRepositoryAnalysisReadContextV1,
   ): Promise<StrongRepositoryContentMaterialV1> {
     if (entry.capture.status === "absent") {
       return { status: "absent", path: entry.path };
     }
     if (entry.capture.status === "private_blob") {
+      readContext.chargeKnownRead(
+        entry.capture.size,
+        "baseline private blob exceeds strong analysis budget",
+      );
       const exact = await this.#provider.readExactObject({
         locator: {
           providerId: this.#providerId,
@@ -319,6 +329,7 @@ implements StrongChangeMaterialAuthorityV1 {
       const material = await this.#repository.readStrongBaselinePathMaterial(
         baseline.snapshot,
         entry.path,
+        readContext,
       );
       if (
         material.status !== "content" ||
@@ -334,20 +345,50 @@ implements StrongChangeMaterialAuthorityV1 {
     baseline: ProviderPinnedTaskBaselineAuthorityV1,
     actual: StrongRepositorySnapshotV1,
   ): Promise<StrongRepositoryAnalysisMaterialV1> {
-    const material = await this.#material(baseline.snapshot, actual);
-    if (baseline.baseline.paths.length === 0) return material;
+    const readContext = new StrongRepositoryAnalysisReadContextV1();
+    const frozenHead = baseline.baseline.baselineHead;
+    if (
+      frozenHead.status !== "present" ||
+      baseline.snapshot.headState.kind !== "commit" ||
+      frozenHead.commit !== baseline.snapshot.headState.commit ||
+      frozenHead.gitLease.status !== "pinned" ||
+      frozenHead.gitLease.objectId !== frozenHead.commit ||
+      baseline.baseline.captureSnapshotId !== baseline.snapshot.snapshotId ||
+      baseline.baseline.repositoryId !== baseline.snapshot.repositoryId ||
+      baseline.baseline.worktreeId !== baseline.snapshot.worktreeId
+    ) {
+      throw new Error("task baseline head authority is not pinned to its Snapshot");
+    }
+    const material = await this.#material(
+      baseline.snapshot,
+      actual,
+      readContext,
+    );
+    if (material.baselineTreeObjectId !== frozenHead.treeObjectId) {
+      throw new Error("task baseline tree authority does not match its pinned commit");
+    }
+    if (baseline.baseline.paths.length === 0) {
+      await this.#assertLiveBaselineLease(baseline);
+      return material;
+    }
     const reconciliation: StrongRepositoryChangeMaterialV1[] = [];
     const actualChanges: StrongRepositoryChangeMaterialV1[] = [...material.changes];
     const actualPathItems = new Set(actualChanges.map((item) => item.change.path));
     for (const entry of baseline.baseline.paths) {
-      const before = await this.#baselinePathMaterial(baseline, entry);
+      const before = await this.#baselinePathMaterial(
+        baseline,
+        entry,
+        readContext,
+      );
       const baselineHead = await this.#repository.readStrongBaselinePathMaterial(
         baseline.snapshot,
         entry.path,
+        readContext,
       );
       const actualFinal = await this.#repository.readStrongActualPathMaterial(
         actual,
         entry.path,
+        readContext,
       );
       const existingPathItems = actualChanges.filter((item) => item.change.path === entry.path);
       if (existingPathItems.length > 0) {
@@ -378,6 +419,10 @@ implements StrongChangeMaterialAuthorityV1 {
           .filter((change) => change.path === entry.path)
           .sort((left, right) => (actualSourceOrder[left.source] ?? -1) - (actualSourceOrder[right.source] ?? -1)).at(-1);
         if (selected !== undefined) {
+          readContext.chargeMaterial(
+            (baselineHead.bytes?.byteLength ?? 0) +
+              (actualFinal.bytes?.byteLength ?? 0),
+          );
           actualChanges.push({
             change: {
               ...selected,
@@ -404,12 +449,18 @@ implements StrongChangeMaterialAuthorityV1 {
         ...(before.contentDigest === undefined ? {} : { previousContentDigest: before.contentDigest }),
         ...(baselineHead.contentDigest === undefined ? {} : { contentDigest: baselineHead.contentDigest }),
       } satisfies StrongRepositoryChangeMaterialV1["change"];
+      readContext.chargeMaterial(
+        (before.bytes?.byteLength ?? 0) +
+          (baselineHead.bytes?.byteLength ?? 0),
+      );
       reconciliation.push({ change, before, after: baselineHead });
     }
-    return {
+    const reconciled = {
       ...material,
       changes: [...reconciliation, ...actualChanges],
     };
+    await this.#assertLiveBaselineLease(baseline);
+    return reconciled;
   }
 
   async #graphPin(snapshotId: string): Promise<StrongRepositoryGraphPinV1> {
@@ -768,6 +819,68 @@ implements StrongChangeMaterialAuthorityV1 {
     });
   }
 
+  async #assertLiveBaselineLease(
+    authority: ProviderPinnedTaskBaselineAuthorityV1,
+  ): Promise<void> {
+    const { baseline, snapshot } = authority;
+    const frozenHead = baseline.baselineHead;
+    if (
+      baseline.captureStatus !== "complete" ||
+      snapshot.headState.kind !== "commit" ||
+      frozenHead.status !== "present" ||
+      frozenHead.gitLease.status !== "pinned"
+    ) {
+      throw new Error(
+        "complete strong baseline is missing its durable Git lease authority",
+      );
+    }
+    const markerNonce = nonce("task-baseline-cut-v1", {
+      taskId: baseline.taskId,
+      snapshotId: snapshot.snapshotId,
+      commit: snapshot.headState.commit,
+    });
+    const marker = await this.#store.readStrongBaselineTransactionIntent({
+      taskId: baseline.taskId,
+      markerNonce,
+    });
+    if (marker === undefined) {
+      throw new Error(
+        "complete strong baseline is missing its durable Git lease authority",
+      );
+    }
+    const leaseIntent = this.#repository.createStrongBaselineLeaseIntent({
+      repositoryId: snapshot.repositoryId,
+      worktreeId: snapshot.worktreeId,
+      taskId: baseline.taskId,
+      baselineSnapshotId: snapshot.snapshotId,
+      objectFormat: snapshot.objectFormat,
+      commit: snapshot.headState.commit,
+      markerNonce,
+    });
+    const lease = await this.#repository.recoverStrongBaselineLease({
+      taskId: baseline.taskId,
+      baselineSnapshotId: snapshot.snapshotId,
+      commit: snapshot.headState.commit,
+      expectedAbsent: true,
+      markerNonce,
+      markerContentDigest: ContentDigestSchema.parse(
+        digest(marker),
+      ) as Parameters<
+        RepositoryTaskContextProvider["recoverStrongBaselineLease"]
+      >[0]["markerContentDigest"],
+    });
+    if (
+      lease.leaseId !== leaseIntent.leaseId ||
+      lease.refName !== leaseIntent.refName ||
+      lease.objectId !== leaseIntent.objectId ||
+      frozenHead.gitLease.leaseId !== leaseIntent.leaseId ||
+      frozenHead.gitLease.refName !== leaseIntent.refName ||
+      frozenHead.gitLease.objectId !== leaseIntent.objectId
+    ) {
+      throw new Error("live strong baseline Git lease identity mismatch");
+    }
+  }
+
   async readPinnedTaskBaseline(input: Parameters<StrongChangeMaterialAuthorityV1["readPinnedTaskBaseline"]>[0]): Promise<ProviderPinnedTaskBaselineAuthorityV1> {
     const read = await this.#store.readArtifact("repository_snapshot", {
       snapshotId: input.baselineSnapshotId,
@@ -835,13 +948,17 @@ implements StrongChangeMaterialAuthorityV1 {
         Buffer.from(exact.bytes.slice("base64url:".length), "base64url").toString("utf8") !== canonicalizeJson(baseline)
       ) throw new Error("strong baseline Provider object mismatch");
     }
-    return {
+    const authority = {
       baseline,
       baselineContentDigest,
       snapshot: read.artifact.payload,
       snapshotArtifactId: read.artifact.artifactId,
       snapshotContentDigest: read.artifact.contentDigest,
     };
+    if (baseline.captureStatus === "complete") {
+      await this.#assertLiveBaselineLease(authority);
+    }
+    return authority;
   }
 
   async buildCheckPreparation(input: Parameters<StrongChangeMaterialAuthorityV1["buildCheckPreparation"]>[0]): Promise<StrongChangeCheckPreparationV1> {

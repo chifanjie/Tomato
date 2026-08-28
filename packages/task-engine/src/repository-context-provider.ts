@@ -18,10 +18,12 @@ import {
   resolveRepositoryPath,
 } from "@understand-code/artifact-store/path-guard";
 import {
+  PathSafeRepositoryChangeV1Schema,
   RepositoryRelativePathSchema,
   RepositorySnapshotPersistedPayloadV1Schema,
   RepositorySnapshotV1Schema,
   StrongRepositorySnapshotV1Schema,
+  derivePathSafeRepositoryChangeIdV1,
   type RepositorySnapshotV1,
   type StrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
@@ -41,6 +43,7 @@ import {
   classifySafeGitReadCommandV1,
   createSafeGitTaskBaselineLeaseIntentV1,
   getRepositorySnapshotDetailed,
+  parsePathSafeGitNameStatusV1,
   type SafeGitTaskBaselineLeaseCreateRequestV1,
   type SafeGitTaskBaselineLeaseIntentV1,
   type SafeGitTaskBaselineLeaseV1,
@@ -86,6 +89,9 @@ const MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
 const MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES =
   MAX_CHANGE_ANALYSIS_PATH_BYTES + 256;
+const MAX_STRONG_CHANGE_ANALYSIS_CHANGES = 10_000;
+const MAX_STRONG_CHANGE_ANALYSIS_PATHS = 4_096;
+const MAX_STRONG_CHANGE_ANALYSIS_READS = 50_000;
 const MAX_BOUNDED_CHANGE_PATHS = 16;
 const MAX_BOUNDED_SEMANTIC_BYTES = 32 * 1024 * 1024;
 const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
@@ -99,6 +105,10 @@ const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
   "core.excludesFile=/dev/null",
   "--no-optional-locks",
 ] as const);
+
+function digestCanonicalIdentityJsonV1(value: string): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
 
 export type RepositoryTaskContextProviderErrorCode =
   | "invalid_root"
@@ -129,6 +139,73 @@ export class RepositoryTaskContextProviderError extends Error {
     this.name = "RepositoryTaskContextProviderError";
     this.code = code;
     this.details = details;
+  }
+}
+
+type StrongCachedGitEntryV1 = Readonly<{
+  mode: "100644" | "100755";
+  objectId: string;
+}>;
+
+type StrongCachedIndexEntryV1 =
+  | StrongCachedGitEntryV1
+  | Readonly<{ unsupported: true }>;
+
+/** One fail-closed resource boundary shared by every read in a strong analysis. */
+export class StrongRepositoryAnalysisReadContextV1 {
+  #readBytes = 0;
+  #readCount = 0;
+  #materialBytes = 0;
+
+  readonly gitObjects = new Map<string, Buffer>();
+  readonly gitObjectTypes = new Map<string, "blob" | "tree" | "commit">();
+  readonly parsedTrees = new Map<string, ReadonlyMap<string, StrongTreeEntryV1>>();
+  readonly treeEntries = new Map<string, StrongCachedGitEntryV1 | null>();
+  indexEntries?: ReadonlyMap<string, StrongCachedIndexEntryV1>;
+
+  beginCommand(maxBytes: number, budgetMessage: string): number {
+    if (this.#readCount >= MAX_STRONG_CHANGE_ANALYSIS_READS) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        `${budgetMessage}: strong analysis read-count budget exhausted.`,
+      );
+    }
+    this.#readCount += 1;
+    const remaining = MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES - this.#readBytes;
+    return Math.max(1, Math.min(maxBytes, remaining + 1));
+  }
+
+  completeCommand(bytes: number, budgetMessage: string): void {
+    if (
+      !Number.isSafeInteger(bytes) ||
+      bytes < 0 ||
+      this.#readBytes + bytes > MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        `${budgetMessage}: strong analysis cumulative read-byte budget exhausted.`,
+      );
+    }
+    this.#readBytes += bytes;
+  }
+
+  chargeKnownRead(bytes: number, budgetMessage: string): void {
+    this.beginCommand(bytes, budgetMessage);
+    this.completeCommand(bytes, budgetMessage);
+  }
+
+  chargeMaterial(bytes: number): void {
+    if (
+      !Number.isSafeInteger(bytes) ||
+      bytes < 0 ||
+      this.#materialBytes + bytes > MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The task-baseline exact byte material exceeds the strong analysis budget.",
+      );
+    }
+    this.#materialBytes += bytes;
   }
 }
 
@@ -170,6 +247,7 @@ interface NormalizedOptions {
 
 interface VerifiedFile {
   bytes?: Buffer;
+  mode: "100644" | "100755";
 }
 
 interface OptionalJson {
@@ -265,8 +343,15 @@ async function readStrongSafeGitOutput(
   args: readonly string[],
   maxBytes: number,
   budgetMessage: string,
+  readContext?: StrongRepositoryAnalysisReadContextV1,
 ): Promise<Buffer> {
-  const command = classifySafeGitReadCommandV1(args);
+  const classified = classifySafeGitReadCommandV1(args);
+  const commandLimit = readContext?.beginCommand(maxBytes, budgetMessage) ??
+    maxBytes;
+  const command = Object.freeze({
+    ...classified,
+    stdoutLimitBytes: Math.min(classified.stdoutLimitBytes, commandLimit),
+  });
   const result = await executor.execute(command);
   if (result.exitCode !== 0 || result.stderr.byteLength !== 0) {
     throw new RepositoryTaskContextProviderError(
@@ -276,7 +361,47 @@ async function readStrongSafeGitOutput(
   }
   const bytes = Buffer.from(result.stdout);
   if (bytes.byteLength > maxBytes) throw new RangeError(budgetMessage);
+  readContext?.completeCommand(bytes.byteLength, budgetMessage);
   return bytes;
+}
+
+async function readStrongObjectType(
+  executor: SafeGitReadExecutorV1,
+  objectId: string,
+  objectTypeReader: ((objectId: string) => Promise<"blob" | "tree" | "commit">) | undefined,
+  readContext?: StrongRepositoryAnalysisReadContextV1,
+): Promise<"blob" | "tree" | "commit" | undefined> {
+  const cached = readContext?.gitObjectTypes.get(objectId);
+  if (cached !== undefined) return cached;
+  const actualType = objectTypeReader === undefined
+    ? await (async () => {
+        const typeOutput = await readStrongSafeGitOutput(
+          executor,
+          ["cat-file", "-t", "--", objectId],
+          128,
+          "Git object type read exceeds strong analysis budget",
+          readContext,
+        );
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(typeOutput);
+        if (!/^(?:blob|tree|commit)\n$/u.test(text)) return undefined;
+        return text.slice(0, -1) as "blob" | "tree" | "commit";
+      })()
+    : await (async () => {
+        readContext?.beginCommand(
+          1,
+          "Git object type read exceeds strong analysis budget",
+        );
+        const type = await objectTypeReader(objectId);
+        readContext?.completeCommand(
+          0,
+          "Git object type read exceeds strong analysis budget",
+        );
+        return type;
+      })();
+  if (actualType !== undefined) {
+    readContext?.gitObjectTypes.set(objectId, actualType);
+  }
+  return actualType;
 }
 
 async function readStrongGitObject(
@@ -286,6 +411,7 @@ async function readStrongGitObject(
   budgetMessage: string,
   expectedType?: "blob" | "tree" | "commit",
   objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+  readContext?: StrongRepositoryAnalysisReadContextV1,
 ): Promise<Buffer> {
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(objectId)) {
     throw new RepositoryTaskContextProviderError(
@@ -294,16 +420,12 @@ async function readStrongGitObject(
     );
   }
   if (expectedType !== undefined) {
-    const actualType = objectTypeReader === undefined
-      ? await (async () => {
-          const typeResult = await executor.execute(
-            classifySafeGitReadCommandV1(["cat-file", "-t", "--", objectId]),
-          );
-          const text = new TextDecoder("utf-8", { fatal: true }).decode(typeResult.stdout);
-          if (typeResult.exitCode !== 0 || typeResult.stderr.byteLength !== 0 || !/^(?:blob|tree|commit)\n$/u.test(text)) return undefined;
-          return text.slice(0, -1) as "blob" | "tree" | "commit";
-        })()
-      : await objectTypeReader(objectId);
+    const actualType = await readStrongObjectType(
+      executor,
+      objectId,
+      objectTypeReader,
+      readContext,
+    );
     if (actualType !== expectedType) {
       throw new RepositoryTaskContextProviderError(
         "invalid_snapshot",
@@ -311,18 +433,27 @@ async function readStrongGitObject(
       );
     }
   }
-  return readStrongSafeGitOutput(
+  const cached = readContext?.gitObjects.get(objectId);
+  if (cached !== undefined) {
+    if (cached.byteLength > maxBytes) throw new RangeError(budgetMessage);
+    return cached;
+  }
+  const bytes = await readStrongSafeGitOutput(
     executor,
     ["cat-file", "-p", objectId],
     maxBytes,
     budgetMessage,
+    readContext,
   );
+  readContext?.gitObjects.set(objectId, bytes);
+  return bytes;
 }
 
 async function readStrongCommitTreeObjectId(
   executor: SafeGitReadExecutorV1,
   commit: string,
   objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+  readContext?: StrongRepositoryAnalysisReadContextV1,
 ): Promise<string> {
   const bytes = await readStrongGitObject(
     executor,
@@ -331,6 +462,7 @@ async function readStrongCommitTreeObjectId(
     "Git commit object exceeds strong analysis budget",
     "commit",
     objectTypeReader,
+    readContext,
   );
   const firstLineEnd = bytes.indexOf(0x0a);
   const firstLine = bytes.subarray(0, firstLineEnd < 0 ? bytes.length : firstLineEnd)
@@ -343,41 +475,45 @@ async function readStrongCommitTreeObjectId(
     );
   }
   const treeObjectId = match[1]!;
-  const treeType = objectTypeReader === undefined
-    ? await (async () => {
-        const result = await executor.execute(classifySafeGitReadCommandV1(["cat-file", "-t", "--", treeObjectId]));
-        return result.exitCode === 0 && result.stderr.byteLength === 0 && new TextDecoder("utf-8", { fatal: true }).decode(result.stdout) === "tree\n";
-      })()
-    : await objectTypeReader(treeObjectId) === "tree";
-  if (!treeType) throw new RepositoryTaskContextProviderError("invalid_snapshot", "A commit tree identity is not a tree object.");
+  const treeType = await readStrongObjectType(
+    executor,
+    treeObjectId,
+    objectTypeReader,
+    readContext,
+  );
+  if (treeType !== "tree") {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_snapshot",
+      "A commit tree identity is not a tree object.",
+    );
+  }
   return treeObjectId;
 }
 
-interface StrongTreeEntryV1 {
-  readonly kind: "blob" | "tree";
-  readonly mode: "040000" | "100644" | "100755";
-  readonly objectId: string;
-}
+type StrongTreeEntryV1 =
+  | Readonly<{
+      readonly kind: "blob";
+      readonly mode: "100644" | "100755";
+      readonly objectId: string;
+    }>
+  | Readonly<{
+      readonly kind: "tree";
+      readonly mode: "040000";
+      readonly objectId: string;
+    }>
+  | Readonly<{
+      readonly kind: "unsupported";
+      readonly mode: "120000" | "160000";
+      readonly objectId: string;
+    }>;
 
-function parseStrongTreeEntry(
-  bytes: Buffer,
-  component: string,
-): StrongTreeEntryV1 | undefined {
-  if (
-    component.length === 0 || component === "." || component === ".." ||
-    component.includes("/") || /[\\"\u0000-\u001f\u007f]/u.test(component)
-  ) {
-    throw new RepositoryTaskContextProviderError(
-      "unsafe_repository_path",
-      "A repository path component is not representable by the fixed tree reader.",
-    );
-  }
+function parseStrongTree(bytes: Buffer): ReadonlyMap<string, StrongTreeEntryV1> {
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  const matches: StrongTreeEntryV1[] = [];
+  const entries = new Map<string, StrongTreeEntryV1>();
   const foldedNames = new Set<string>();
   for (const line of text.split("\n")) {
     if (line.length === 0) continue;
-    const match = /^(040000|100644|100755) (tree|blob) ([0-9a-f]{40}|[0-9a-f]{64})\t([^\u0000\r\n]+)$/u.exec(line);
+    const match = /^(040000|100644|100755|120000|160000) (tree|blob|commit) ([0-9a-f]{40}|[0-9a-f]{64})\t([^\u0000\r\n]+)$/u.exec(line);
     if (
       match === null || match[4]!.length === 0 || match[4]!.includes("/") ||
       /[\\"\u0000-\u001f\u007f]/u.test(match[4]!)
@@ -395,24 +531,40 @@ function parseStrongTreeEntry(
       );
     }
     foldedNames.add(folded);
-    const mode = match[1] as StrongTreeEntryV1["mode"];
-    const kind = match[2] as StrongTreeEntryV1["kind"];
-    if ((mode === "040000") !== (kind === "tree")) {
+    const mode = match[1]!;
+    const gitKind = match[2]!;
+    const supportedTree = mode === "040000" && gitKind === "tree";
+    const supportedBlob =
+      (mode === "100644" || mode === "100755") && gitKind === "blob";
+    const unsupportedSymlink = mode === "120000" && gitKind === "blob";
+    const unsupportedGitlink = mode === "160000" && gitKind === "commit";
+    if (
+      !supportedTree && !supportedBlob && !unsupportedSymlink &&
+      !unsupportedGitlink
+    ) {
       throw new RepositoryTaskContextProviderError(
         "invalid_snapshot",
         "A Git tree entry has an invalid mode/type pair.",
       );
     }
-    if (match[4] !== component) continue;
-    matches.push({ mode, kind, objectId: match[3]! });
-  }
-  if (matches.length > 1) {
-    throw new RepositoryTaskContextProviderError(
-      "invalid_snapshot",
-      "A Git tree contains an ambiguous path component.",
+    entries.set(
+      match[4]!,
+      supportedTree
+        ? { mode: "040000", kind: "tree", objectId: match[3]! }
+        : supportedBlob
+          ? {
+              mode: mode as "100644" | "100755",
+              kind: "blob",
+              objectId: match[3]!,
+            }
+          : {
+              mode: mode as "120000" | "160000",
+              kind: "unsupported",
+              objectId: match[3]!,
+            },
     );
   }
-  return matches[0];
+  return entries;
 }
 
 async function readStrongTreeEntry(
@@ -420,6 +572,7 @@ async function readStrongTreeEntry(
   rootTreeObjectId: string,
   relativePath: string,
   objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
+  readContext?: StrongRepositoryAnalysisReadContextV1,
 ): Promise<{ readonly mode: "100644" | "100755"; readonly objectId: string } | undefined> {
   if (!safeChangeAnalysisPath(relativePath)) {
     throw providerErrorForPath(
@@ -428,9 +581,21 @@ async function readStrongTreeEntry(
       relativePath,
     );
   }
+  const cacheKey = `${rootTreeObjectId}\0${relativePath}`;
+  const cached = readContext?.treeEntries.get(cacheKey);
+  if (cached !== undefined) return cached ?? undefined;
   const components = relativePath.split("/");
   let treeObjectId = rootTreeObjectId;
   for (const [index, component] of components.entries()) {
+    if (
+      component.length === 0 || component === "." || component === ".." ||
+      component.includes("/") || /[\\"\u0000-\u001f\u007f]/u.test(component)
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "unsafe_repository_path",
+        "A repository path component is not representable by the fixed tree reader.",
+      );
+    }
     const tree = await readStrongGitObject(
       executor,
       treeObjectId,
@@ -438,70 +603,136 @@ async function readStrongTreeEntry(
       "Git tree object exceeds strong analysis budget",
       "tree",
       objectTypeReader,
+      readContext,
     );
-    const entry = parseStrongTreeEntry(tree, component!);
-    if (entry === undefined) return undefined;
+    let parsedTree = readContext?.parsedTrees.get(treeObjectId);
+    if (parsedTree === undefined) {
+      parsedTree = parseStrongTree(tree);
+      readContext?.parsedTrees.set(treeObjectId, parsedTree);
+    }
+    const entry = parsedTree.get(component!);
+    if (entry === undefined) {
+      readContext?.treeEntries.set(cacheKey, null);
+      return undefined;
+    }
     const final = index === components.length - 1;
     if (!final) {
-      if (entry.kind !== "tree") return undefined;
+      if (entry.kind === "unsupported") {
+        throw new RepositoryTaskContextProviderError(
+          "invalid_snapshot",
+          "A requested Git path traverses an unsupported tree entry.",
+        );
+      }
+      if (entry.kind !== "tree") {
+        readContext?.treeEntries.set(cacheKey, null);
+        return undefined;
+      }
       treeObjectId = entry.objectId;
       continue;
     }
-    if (entry.kind !== "blob" || entry.mode === "040000") return undefined;
-    const blobType = objectTypeReader === undefined
-      ? await (async () => {
-          const result = await executor.execute(classifySafeGitReadCommandV1(["cat-file", "-t", "--", entry.objectId]));
-          return result.exitCode === 0 && result.stderr.byteLength === 0 && new TextDecoder("utf-8", { fatal: true }).decode(result.stdout) === "blob\n";
-        })()
-      : await objectTypeReader(entry.objectId) === "blob";
+    if (entry.kind === "unsupported") {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "A requested Git path resolves to an unsupported entry.",
+      );
+    }
+    if (entry.kind !== "blob") {
+      readContext?.treeEntries.set(cacheKey, null);
+      return undefined;
+    }
+    const blobType = await readStrongObjectType(
+      executor,
+      entry.objectId,
+      objectTypeReader,
+      readContext,
+    ) === "blob";
     if (!blobType) throw new RepositoryTaskContextProviderError("invalid_snapshot", "A tree blob entry has a non-blob object identity.");
-    return { mode: entry.mode, objectId: entry.objectId };
+    const resolved = { mode: entry.mode, objectId: entry.objectId } as const;
+    readContext?.treeEntries.set(cacheKey, resolved);
+    return resolved;
   }
+  readContext?.treeEntries.set(cacheKey, null);
   return undefined;
 }
 
 async function readStrongIndexEntries(
   executor: SafeGitReadExecutorV1,
   objectTypeReader?: (objectId: string) => Promise<"blob" | "tree" | "commit">,
-): Promise<ReadonlyMap<string, { readonly mode: "100644" | "100755"; readonly objectId: string }>> {
+  readContext?: StrongRepositoryAnalysisReadContextV1,
+): Promise<ReadonlyMap<string, StrongCachedIndexEntryV1>> {
+  if (readContext?.indexEntries !== undefined) return readContext.indexEntries;
   const bytes = await readStrongSafeGitOutput(
     executor,
     ["ls-files", "--stage", "-z"],
     MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES,
     "Git index entries exceed strong analysis budget",
+    readContext,
   );
-  const entries = new Map<string, { mode: "100644" | "100755"; objectId: string }>();
+  const entries = new Map<string, StrongCachedIndexEntryV1>();
+  const foldedPaths = new Map<string, string>();
   for (const record of bytes.subarray(0, Math.max(0, bytes.length - (bytes.at(-1) === 0 ? 1 : 0))).toString("utf8").split("\0")) {
     if (record.length === 0) continue;
-    const match = /^(100644|100755) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t(.+)$/u.exec(record);
-    if (match === null || !safeChangeAnalysisPath(match[3]!)) {
+    const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) ([0-3])\t(.+)$/u.exec(record);
+    if (match === null || !safeChangeAnalysisPath(match[4]!)) {
       throw new RepositoryTaskContextProviderError(
         "invalid_snapshot",
         "The fixed Git index projection contains an unsupported entry.",
       );
     }
-    if (entries.has(match[3]!)) {
+    const repositoryPath = match[4]!;
+    const foldedPath = repositoryPath.normalize("NFC").toLowerCase();
+    const existingFoldedPath = foldedPaths.get(foldedPath);
+    if (
+      existingFoldedPath !== undefined && existingFoldedPath !== repositoryPath
+    ) {
       throw new RepositoryTaskContextProviderError(
         "invalid_snapshot",
-        "The fixed Git index projection contains a duplicate entry.",
+        "The fixed Git index projection contains case-ambiguous entries.",
       );
     }
-    entries.set(match[3]!, {
+    foldedPaths.set(foldedPath, repositoryPath);
+    const supported =
+      match[3] === "0" && (match[1] === "100644" || match[1] === "100755");
+    if (!supported || entries.has(repositoryPath)) {
+      entries.set(repositoryPath, { unsupported: true });
+      continue;
+    }
+    entries.set(repositoryPath, {
       mode: match[1] as "100644" | "100755",
       objectId: match[2]!,
     });
     if (objectTypeReader !== undefined) {
-      const actualType = await objectTypeReader(match[2]!);
+      const actualType = await readStrongObjectType(
+        executor,
+        match[2]!,
+        objectTypeReader,
+        readContext,
+      );
       if (actualType !== "blob") {
         throw new RepositoryTaskContextProviderError(
           "invalid_snapshot",
           "A Git index entry does not point to a blob object.",
-          { path: match[3] },
+          { path: repositoryPath },
         );
       }
     }
   }
+  if (readContext !== undefined) readContext.indexEntries = entries;
   return entries;
+}
+
+function requireSupportedStrongIndexEntry(
+  entry: StrongCachedIndexEntryV1,
+  relativePath: string,
+): StrongCachedGitEntryV1 {
+  if ("unsupported" in entry) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_snapshot",
+      "A requested Git Index path resolves to an unsupported entry.",
+      { relativePath },
+    );
+  }
+  return entry;
 }
 
 function safeChangeAnalysisPath(relativePath: string): boolean {
@@ -848,6 +1079,8 @@ async function openVerifiedFile(
     allowMissing: boolean;
     readBytes: boolean;
     maxBytes?: number;
+    readContext?: StrongRepositoryAnalysisReadContextV1;
+    readBudgetMessage?: string;
   },
 ): Promise<VerifiedFile | undefined> {
   let resolved: string;
@@ -904,6 +1137,13 @@ async function openVerifiedFile(
       );
     }
 
+    if (options.readBytes && options.readContext !== undefined) {
+      options.readContext.chargeKnownRead(
+        Number(before.size),
+        options.readBudgetMessage ??
+          "Repository file exceeds strong analysis read budget",
+      );
+    }
     const bytes = options.readBytes ? await handle.readFile() : undefined;
     const after = await handle.stat({ bigint: true });
     let finalPath: string;
@@ -930,7 +1170,14 @@ async function openVerifiedFile(
         relativePath,
       );
     }
-    return { ...(bytes === undefined ? {} : { bytes }) };
+    const executableMask = BigInt(
+      constants.S_IXUSR | constants.S_IXGRP | constants.S_IXOTH,
+    );
+    const executable = (after.mode & executableMask) !== 0n;
+    return {
+      ...(bytes === undefined ? {} : { bytes }),
+      mode: executable ? "100755" : "100644",
+    };
   } finally {
     await handle.close();
   }
@@ -1653,6 +1900,7 @@ implements TaskContextProvider {
   async readStrongBaselinePathMaterial(
     snapshotValue: StrongRepositorySnapshotV1,
     relativePath: string,
+    readContext = new StrongRepositoryAnalysisReadContextV1(),
   ): Promise<StrongRepositoryContentMaterialV1> {
     const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotValue);
     if (
@@ -1680,12 +1928,14 @@ implements TaskContextProvider {
         session.executor,
         snapshot.headState.commit,
         session.executeGitObjectType,
+        readContext,
       );
       const entry = await readStrongTreeEntry(
         session.executor,
         treeObjectId,
         relativePath,
         session.executeGitObjectType,
+        readContext,
       );
       if (entry === undefined) return { status: "absent", path: relativePath };
       return contentMaterial(
@@ -1698,6 +1948,7 @@ implements TaskContextProvider {
           "baseline Git blob exceeds analysis budget",
           "blob",
           session.executeGitObjectType,
+          readContext,
         ),
         entry.mode,
         entry.objectId,
@@ -1713,6 +1964,7 @@ implements TaskContextProvider {
   async readStrongActualPathMaterial(
     snapshotValue: StrongRepositorySnapshotV1,
     relativePath: string,
+    readContext = new StrongRepositoryAnalysisReadContextV1(),
   ): Promise<StrongRepositoryContentMaterialV1> {
     const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotValue);
     if (
@@ -1746,26 +1998,41 @@ implements TaskContextProvider {
           allowMissing: true,
           readBytes: true,
           maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+          readContext,
+          readBudgetMessage: "actual worktree file exceeds strong analysis budget",
         });
         if (file === undefined || file.bytes === undefined) return { status: "absent", path: relativePath };
-        const material = contentMaterial(relativePath, "worktree_raw", file.bytes, "100644");
+        const material = contentMaterial(
+          relativePath,
+          "worktree_raw",
+          file.bytes,
+          file.mode,
+        );
         if (selected.contentDigest !== undefined && material.contentDigest !== selected.contentDigest) {
           throw new RepositoryTaskContextProviderError("snapshot_mismatch", "Actual worktree bytes do not match the Snapshot.", { relativePath });
         }
         return material;
       }
       if (selected?.source === "staged") {
-        const entries = await readStrongIndexEntries(session.executor, session.executeGitObjectType);
+        const entries = await readStrongIndexEntries(
+          session.executor,
+          session.executeGitObjectType,
+          readContext,
+        );
         const entry = entries.get(relativePath);
         if (entry === undefined) return { status: "absent", path: relativePath };
-        const material = contentMaterial(relativePath, "index_blob", await readStrongGitObject(session.executor, entry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual index blob exceeds analysis budget", "blob", session.executeGitObjectType), entry.mode, entry.objectId);
+        const supportedEntry = requireSupportedStrongIndexEntry(
+          entry,
+          relativePath,
+        );
+        const material = contentMaterial(relativePath, "index_blob", await readStrongGitObject(session.executor, supportedEntry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual index blob exceeds analysis budget", "blob", session.executeGitObjectType, readContext), supportedEntry.mode, supportedEntry.objectId);
         if (selected.contentDigest !== undefined && material.contentDigest !== selected.contentDigest) throw new RepositoryTaskContextProviderError("snapshot_mismatch", "Actual index bytes do not match the Snapshot.", { relativePath });
         return material;
       }
-      const treeObjectId = await readStrongCommitTreeObjectId(session.executor, snapshot.headState.commit, session.executeGitObjectType);
-      const entry = await readStrongTreeEntry(session.executor, treeObjectId, relativePath, session.executeGitObjectType);
+      const treeObjectId = await readStrongCommitTreeObjectId(session.executor, snapshot.headState.commit, session.executeGitObjectType, readContext);
+      const entry = await readStrongTreeEntry(session.executor, treeObjectId, relativePath, session.executeGitObjectType, readContext);
       if (entry === undefined) return { status: "absent", path: relativePath };
-      return contentMaterial(relativePath, "git_object", await readStrongGitObject(session.executor, entry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual Git blob exceeds analysis budget", "blob", session.executeGitObjectType), entry.mode, entry.objectId);
+      return contentMaterial(relativePath, "git_object", await readStrongGitObject(session.executor, entry.objectId, CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1, "actual Git blob exceeds analysis budget", "blob", session.executeGitObjectType, readContext), entry.mode, entry.objectId);
     } finally {
       await session.close();
     }
@@ -1834,6 +2101,7 @@ implements TaskContextProvider {
     baselineValue: StrongRepositorySnapshotV1,
     actualValue: StrongRepositorySnapshotV1,
     graphPinValue: StrongRepositoryGraphPinV1,
+    readContext = new StrongRepositoryAnalysisReadContextV1(),
   ): Promise<StrongRepositoryAnalysisMaterialV1> {
     const baseline = StrongRepositorySnapshotV1Schema.parse(baselineValue);
     const actual = StrongRepositorySnapshotV1Schema.parse(actualValue);
@@ -1879,19 +2147,91 @@ implements TaskContextProvider {
       executor,
       baseline.headState.commit,
       session.executeGitObjectType,
+      readContext,
     );
     const actualTreeObjectId = baseline.headState.commit === actual.headState.commit
       ? baselineTreeObjectId
-      : await readStrongCommitTreeObjectId(executor, actual.headState.commit, session.executeGitObjectType);
-    const indexEntries = await readStrongIndexEntries(executor, session.executeGitObjectType);
+      : await readStrongCommitTreeObjectId(executor, actual.headState.commit, session.executeGitObjectType, readContext);
+    const indexEntries = await readStrongIndexEntries(
+      executor,
+      session.executeGitObjectType,
+      readContext,
+    );
+    let committedInventory: ReturnType<typeof parsePathSafeGitNameStatusV1>;
+    try {
+      const committedOutput = await readStrongSafeGitOutput(
+        executor,
+        [
+          "diff",
+          "--no-ext-diff",
+          "--no-textconv",
+          "--name-status",
+          "-z",
+          "--no-renames",
+          `${baseline.headState.commit}..${actual.headState.commit}`,
+          "--",
+        ],
+        MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES,
+        "committed change inventory exceeds analysis budget",
+        readContext,
+      );
+      committedInventory = parsePathSafeGitNameStatusV1(
+        committedOutput,
+        "committed",
+      );
+    } catch (error) {
+      if (error instanceof RepositoryTaskContextProviderError) throw error;
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The task-baseline committed change inventory is unavailable.",
+      );
+    }
+    if (
+      committedInventory.unsafeChangeCount !== 0 ||
+      committedInventory.limitations.length !== 0
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The task-baseline committed change inventory contains an unsafe path boundary.",
+      );
+    }
+    const changes: StrongRepositoryAnalysisMaterialV1["changes"][number][] = [];
+    const analysisChanges: Array<Readonly<{
+      id?: string;
+      path: string;
+      oldPath?: string;
+      source: "committed" | "staged" | "unstaged" | "untracked" | "conflict";
+      kind: "added" | "modified" | "deleted" | "renamed" | "copied" | "type_changed";
+      contentDigest?: string;
+      previousContentDigest?: string;
+    }>> = [
+      ...committedInventory.changes,
+      ...actual.changes.filter((change) => change.source !== "committed"),
+    ];
+    if (analysisChanges.length > MAX_STRONG_CHANGE_ANALYSIS_CHANGES) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The task-baseline change inventory exceeds the strong analysis budget.",
+      );
+    }
+    const analysisPaths = new Set<string>();
+    for (const change of analysisChanges) {
+      analysisPaths.add(change.path);
+      if (change.oldPath !== undefined) analysisPaths.add(change.oldPath);
+      if (analysisPaths.size > MAX_STRONG_CHANGE_ANALYSIS_PATHS) {
+        throw new RepositoryTaskContextProviderError(
+          "invalid_snapshot",
+          "The task-baseline path inventory exceeds the strong analysis budget.",
+        );
+      }
+    }
     const graph = await readPinnedStrongGraph(
       this.#canonicalRoot,
       this.#options.graphPath,
       this.#options.maxGraphBytes,
       graphPin,
     );
-    const changes: StrongRepositoryAnalysisMaterialV1["changes"][number][] = [];
-    for (const change of actual.changes) {
+    for (const change of analysisChanges) {
       if (change.source === "conflict") {
         throw new RepositoryTaskContextProviderError(
           "invalid_snapshot",
@@ -1907,27 +2247,35 @@ implements TaskContextProvider {
         if (entry === undefined) {
           before = { status: "absent", path: beforePath };
         } else {
+          const supportedEntry = requireSupportedStrongIndexEntry(
+            entry,
+            beforePath,
+          );
           before = contentMaterial(
             beforePath,
             "index_blob",
             await readStrongGitObject(
               executor,
-              entry.objectId,
+              supportedEntry.objectId,
               CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
               "Git index blob exceeds analysis budget",
               "blob",
               session.executeGitObjectType,
+              readContext,
             ),
-            entry.mode,
-            entry.objectId,
+            supportedEntry.mode,
+            supportedEntry.objectId,
           );
         }
       } else {
         const entry = await readStrongTreeEntry(
           executor,
-          baselineTreeObjectId,
+          change.source === "committed"
+            ? baselineTreeObjectId
+            : actualTreeObjectId,
           beforePath,
           session.executeGitObjectType,
+          readContext,
         );
         if (entry === undefined) {
           before = { status: "absent", path: beforePath };
@@ -1942,6 +2290,7 @@ implements TaskContextProvider {
               "baseline Git blob exceeds analysis budget",
               "blob",
               session.executeGitObjectType,
+              readContext,
             ),
             entry.mode,
             entry.objectId,
@@ -1957,6 +2306,7 @@ implements TaskContextProvider {
           actualTreeObjectId,
           change.path,
           session.executeGitObjectType,
+          readContext,
         );
         if (entry === undefined) throw new Error("committed change path is absent");
         after = contentMaterial(
@@ -1969,6 +2319,7 @@ implements TaskContextProvider {
             "actual Git blob exceeds analysis budget",
             "blob",
             session.executeGitObjectType,
+            readContext,
           ),
           entry.mode,
           entry.objectId,
@@ -1976,31 +2327,38 @@ implements TaskContextProvider {
       } else if (change.source === "staged") {
         const entry = indexEntries.get(change.path);
         if (entry === undefined) throw new Error("staged change path is absent");
+        const supportedEntry = requireSupportedStrongIndexEntry(
+          entry,
+          change.path,
+        );
         after = contentMaterial(
           change.path,
           "index_blob",
           await readStrongGitObject(
             executor,
-            entry.objectId,
+            supportedEntry.objectId,
             CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
             "Git index blob exceeds analysis budget",
             "blob",
             session.executeGitObjectType,
+            readContext,
           ),
-          entry.mode,
-          entry.objectId,
+          supportedEntry.mode,
+          supportedEntry.objectId,
         );
       } else {
         const file = await openVerifiedFile(this.#canonicalRoot, change.path, {
           allowMissing: false,
           readBytes: true,
           maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+          readContext,
+          readBudgetMessage: "actual worktree file exceeds strong analysis budget",
         });
         after = contentMaterial(
           change.path,
           "worktree_raw",
           file!.bytes!,
-          "100644",
+          file!.mode,
         );
       }
       if (
@@ -2015,7 +2373,35 @@ implements TaskContextProvider {
           { relativePath: change.path },
         );
       }
-      changes.push({ change, before, after });
+      const materialChange = PathSafeRepositoryChangeV1Schema.parse(
+        change.id === undefined
+          ? (() => {
+              const identity = {
+                path: change.path,
+                ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
+                source: change.source,
+                kind: change.kind,
+                ...(after.contentDigest === undefined
+                  ? {}
+                  : { contentDigest: after.contentDigest }),
+                ...(before.contentDigest === undefined
+                  ? {}
+                  : { previousContentDigest: before.contentDigest }),
+              };
+              return {
+                id: derivePathSafeRepositoryChangeIdV1(
+                  identity,
+                  digestCanonicalIdentityJsonV1,
+                ),
+                ...identity,
+              };
+            })()
+          : change,
+      );
+      readContext.chargeMaterial(
+        (before.bytes?.byteLength ?? 0) + (after.bytes?.byteLength ?? 0),
+      );
+      changes.push({ change: materialChange, before, after });
     }
     await readPinnedStrongGraph(
       this.#canonicalRoot,

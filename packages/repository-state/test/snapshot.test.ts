@@ -114,6 +114,7 @@ describe("getRepositorySnapshot", () => {
     expect(unstagedChange).toMatchObject({
       kind: "modified",
       path: "src/state.ts",
+      previousContentDigest: digest(staged),
       contentDigest: digest(worktree),
     });
   });

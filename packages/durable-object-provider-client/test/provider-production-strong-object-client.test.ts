@@ -8,6 +8,10 @@ import {
   deriveProviderAcceptanceStateContentDigestV1,
   deriveProviderAcceptanceStateGenerationIdV1,
 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";
+import {
+  ContentDigestV1Schema,
+  DurableObjectIdentityProviderIdV1Schema,
+} from "@understand-code/durable-object-provider-contracts/primitives";
 
 import {
   providerProductionStrongBusinessCompareInputInternalV1,
@@ -17,6 +21,10 @@ import {
   providerProductionStrongIndexPublicationAuthorityInternalV1,
   providerProductionStrongIndexPublicationCompareInputInternalV1,
   providerProductionStrongIndexPublicationLaneInternalV1,
+  providerProductionStrongRefreshAuthorityInternalV1,
+  providerProductionStrongRefreshAuthorityLaneInternalV1,
+  providerProductionStrongRefreshAuthoritySetInternalV1,
+  providerProductionStrongRefreshPublicationCompareInputInternalV1,
   providerProductionStrongRetainedTrustBudgetInternalV1,
 } from "../src/provider-production-strong-object-client.js";
 
@@ -398,5 +406,378 @@ describe("production strong reserved index publication authority", () => {
     });
     expect(replay.durableArtifacts).toEqual(first.durableArtifacts);
     expect(replay.publicArtifacts).toEqual(compareInput.artifacts);
+  });
+});
+
+describe("production strong monotonic latest-refresh authority", () => {
+  const repositoryA = `repo-hmac-${"2".repeat(64)}` as const;
+  const repositoryB = `repo-hmac-${"1".repeat(64)}` as const;
+  const worktreeA = `worktree-hmac-${"4".repeat(64)}` as const;
+  const worktreeB = `worktree-hmac-${"3".repeat(64)}` as const;
+  const snapshotId = (digit: string) =>
+    `snapshot-${digit.repeat(64)}` as `snapshot-${string}`;
+  const strongDigest = (digit: string) =>
+    ContentDigestV1Schema.parse(digest(digit));
+  const strongProviderId =
+    DurableObjectIdentityProviderIdV1Schema.parse(PROVIDER_ID);
+
+  function refreshCompareV1(input: Readonly<{
+    expectedRevision: number;
+    nonceDigit: string;
+    repositoryId: `repo-hmac-${string}`;
+    worktreeId: `worktree-hmac-${string}`;
+    snapshotDigit: string;
+    mode: "incremental" | "full";
+    previous: null | Readonly<{
+      finalizedProviderRevision: number;
+      snapshotId: `snapshot-${string}`;
+    }>;
+  }>) {
+    const currentSnapshotId = snapshotId(input.snapshotDigit);
+    const cutObject = {
+      providerId: strongProviderId,
+      contentDigest: strongDigest(input.snapshotDigit),
+    } as const;
+    const refreshAuthority = {
+      profile: "provider_production_strong_refresh_authority_v1" as const,
+      repositoryId: input.repositoryId,
+      worktreeId: input.worktreeId,
+      mode: input.mode,
+      snapshotId: currentSnapshotId,
+      snapshotContentDigest: strongDigest("8"),
+      pulseContentDigest: strongDigest("9"),
+      cutObject,
+      previous: input.previous,
+    };
+    const commonArtifacts = {
+      schemaVersion: 1 as const,
+      operation: "refresh_index" as const,
+      requestDigest: strongDigest("d"),
+      idempotencyKeyDigest: strongDigest("e"),
+      semanticDigest: strongDigest("f"),
+      mode: input.mode,
+      snapshotId: currentSnapshotId,
+      snapshotContentDigest: refreshAuthority.snapshotContentDigest,
+      pulseContentDigest: refreshAuthority.pulseContentDigest,
+      cutObject,
+    };
+    const common = {
+      expectedRevision: input.expectedRevision,
+      operationNonce: input.nonceDigit.repeat(32),
+      phase: "strong_refresh_index_v1" as const,
+      refreshAuthority,
+    };
+    if (input.mode === "incremental") {
+      return { ...common, artifacts: commonArtifacts } as const;
+    }
+    const indexPublicationAuthority = {
+      profile:
+        "provider_production_strong_index_publication_authority_v1" as const,
+      generationId: `generation-${"a".repeat(64)}` as const,
+      generationManifestDigest: strongDigest("b"),
+      sourceInventoryDigest: strongDigest("c"),
+      sourceSnapshotId: currentSnapshotId,
+    };
+    return {
+      ...common,
+      artifacts: {
+        ...commonArtifacts,
+        indexGenerationId: indexPublicationAuthority.generationId,
+        indexGenerationManifestDigest:
+          indexPublicationAuthority.generationManifestDigest,
+        indexSourceInventoryDigest:
+          indexPublicationAuthority.sourceInventoryDigest,
+      },
+      indexPublicationAuthority,
+    } as const;
+  }
+
+  function preparedArtifactsV1(
+    compare: ReturnType<typeof refreshCompareV1>,
+  ) {
+    return { ...compare.artifacts, operation: "refresh_index_prepared" };
+  }
+
+  it("strictly parses the public CAS input and rejects unbound authority fields", () => {
+    const compare = refreshCompareV1({
+      expectedRevision: 0,
+      nonceDigit: "1",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "5",
+      mode: "incremental",
+      previous: null,
+    });
+    expect(
+      providerProductionStrongRefreshPublicationCompareInputInternalV1(
+        compare,
+      ),
+    ).toEqual(compare);
+    expect(() =>
+      providerProductionStrongRefreshPublicationCompareInputInternalV1({
+        ...compare,
+        refreshAuthority: {
+          ...compare.refreshAuthority,
+          snapshotContentDigest: strongDigest("7"),
+        },
+      })
+    ).toThrow(/artifacts are not bound/u);
+    expect(() =>
+      providerProductionStrongRefreshPublicationCompareInputInternalV1({
+        ...compare,
+        refreshAuthority: {
+          ...compare.refreshAuthority,
+          unexpected: true,
+        },
+      })
+    ).toThrow(/authority input is invalid/u);
+    expect(() =>
+      providerProductionStrongRefreshPublicationCompareInputInternalV1({
+        ...compare,
+        artifacts: { ...compare.artifacts, unexpected: true },
+      })
+    ).toThrow(/artifacts are not bound/u);
+    expect(() =>
+      providerProductionStrongRefreshPublicationCompareInputInternalV1({
+        ...compare,
+        phase: "strong_verification_v1",
+      })
+    ).toThrow(/phase is invalid/u);
+  });
+
+  it("publishes cold only at exact revision zero and permits exact old replay", () => {
+    const compare = refreshCompareV1({
+      expectedRevision: 0,
+      nonceDigit: "2",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "5",
+      mode: "incremental",
+      previous: null,
+    });
+    const first = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentProviderRevision: 0,
+      currentBusinessUninitialized: true,
+      compareInput: compare,
+    });
+    expect(first.refreshAuthority.finalizedProviderRevision).toBe(1);
+
+    const carried = providerProductionStrongIndexPublicationLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      publicArtifacts: { operation: "task_update", revision: 2 },
+      currentRevision: 2,
+    });
+    const replay = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: carried.durableArtifacts,
+      currentProviderRevision: 2,
+      currentBusinessUninitialized: false,
+      compareInput: compare,
+    });
+    expect(replay.refreshAuthority).toEqual(first.refreshAuthority);
+    expect(replay.refreshAuthorities).toEqual(first.refreshAuthorities);
+
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: refreshCompareV1({
+        expectedRevision: 1,
+        nonceDigit: "3",
+        repositoryId: repositoryA,
+        worktreeId: worktreeA,
+        snapshotDigit: "5",
+        mode: "incremental",
+        previous: null,
+      }),
+    })).toThrow(/cold publication is invalid/u);
+  });
+
+  it("carries the sorted bounded set through ordinary compare and isolates keys", () => {
+    const firstCompare = refreshCompareV1({
+      expectedRevision: 0,
+      nonceDigit: "4",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "5",
+      mode: "incremental",
+      previous: null,
+    });
+    const first = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentProviderRevision: 0,
+      currentBusinessUninitialized: true,
+      compareInput: firstCompare,
+    });
+    const secondCompare = refreshCompareV1({
+      expectedRevision: 1,
+      nonceDigit: "5",
+      repositoryId: repositoryB,
+      worktreeId: worktreeB,
+      snapshotDigit: "6",
+      mode: "incremental",
+      previous: null,
+    });
+    const second = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: secondCompare,
+    });
+    expect(second.refreshAuthorities.map((authority) => [
+      authority.repositoryId,
+      authority.worktreeId,
+    ])).toEqual([
+      [repositoryB, worktreeB],
+      [repositoryA, worktreeA],
+    ]);
+
+    const ordinary = providerProductionStrongIndexPublicationLaneInternalV1({
+      currentArtifacts: second.durableArtifacts,
+      publicArtifacts: { operation: "verification", status: "passed" },
+      currentRevision: 3,
+    });
+    const reservedSet = Object.values(ordinary.durableArtifacts).find(
+      (value) =>
+        typeof value === "object" && value !== null && !Array.isArray(value) &&
+        (value as Record<string, unknown>)["profile"] ===
+          "provider_production_strong_refresh_authority_set_v1",
+    );
+    expect(
+      providerProductionStrongRefreshAuthoritySetInternalV1(reservedSet),
+    ).toEqual(second.refreshAuthorities);
+    expect(() => providerProductionStrongRefreshAuthoritySetInternalV1({
+      profile: "provider_production_strong_refresh_authority_set_v1",
+      authorities: Array.from(
+        { length: 4_097 },
+        () => second.refreshAuthorities[0],
+      ),
+    })).toThrow(/set is invalid/u);
+  });
+
+  it("rejects stale CAS and a wrong exact previous tuple", () => {
+    const firstCompare = refreshCompareV1({
+      expectedRevision: 0,
+      nonceDigit: "6",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "5",
+      mode: "incremental",
+      previous: null,
+    });
+    const first = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentProviderRevision: 0,
+      currentBusinessUninitialized: true,
+      compareInput: firstCompare,
+    });
+    const next = refreshCompareV1({
+      expectedRevision: 1,
+      nonceDigit: "7",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "6",
+      mode: "incremental",
+      previous: {
+        finalizedProviderRevision: 1,
+        snapshotId: snapshotId("5"),
+      },
+    });
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      currentProviderRevision: 2,
+      currentBusinessUninitialized: false,
+      compareInput: next,
+    })).toThrow(/compare is stale/u);
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: first.durableArtifacts,
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: {
+        ...next,
+        refreshAuthority: {
+          ...next.refreshAuthority,
+          previous: {
+            finalizedProviderRevision: 1,
+            snapshotId: snapshotId("7"),
+          },
+        },
+      },
+    })).toThrow(/previous authority is stale/u);
+  });
+
+  it("atomically finalizes one exact prepared full cut and both authorities", () => {
+    const full = refreshCompareV1({
+      expectedRevision: 1,
+      nonceDigit: "8",
+      repositoryId: repositoryA,
+      worktreeId: worktreeA,
+      snapshotDigit: "6",
+      mode: "full",
+      previous: null,
+    });
+    const finalized = providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: preparedArtifactsV1(full),
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: full,
+    });
+    expect(finalized.refreshAuthority.finalizedProviderRevision).toBe(2);
+    expect(finalized.indexPublicationAuthority).toMatchObject({
+      finalizedProviderRevision: 2,
+      sourceSnapshotId: full.refreshAuthority.snapshotId,
+    });
+    expect(finalized.publicArtifacts).toEqual(full.artifacts);
+    expect(Object.keys(finalized.durableArtifacts)).toHaveLength(
+      Object.keys(full.artifacts).length + 2,
+    );
+
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: {
+        ...preparedArtifactsV1(full),
+        snapshotContentDigest: strongDigest("0"),
+      },
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: full,
+    })).toThrow(/no exact prepared head/u);
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: {
+        ...preparedArtifactsV1(full),
+        requestDigest: strongDigest("0"),
+      },
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: full,
+    })).toThrow(/no exact prepared head/u);
+    expect(() => providerProductionStrongRefreshAuthorityLaneInternalV1({
+      currentArtifacts: {
+        ...preparedArtifactsV1(full),
+        unexpected: "prepared-only",
+      },
+      currentProviderRevision: 1,
+      currentBusinessUninitialized: false,
+      compareInput: full,
+    })).toThrow(/no exact prepared head/u);
+  });
+
+  it("rejects malformed stored authorities independently of the public head", () => {
+    const authority = providerProductionStrongRefreshAuthorityInternalV1({
+      ...refreshCompareV1({
+        expectedRevision: 0,
+        nonceDigit: "9",
+        repositoryId: repositoryA,
+        worktreeId: worktreeA,
+        snapshotDigit: "5",
+        mode: "incremental",
+        previous: null,
+      }).refreshAuthority,
+      finalizedProviderRevision: 1,
+    });
+    expect(authority.finalizedProviderRevision).toBe(1);
+    expect(() => providerProductionStrongRefreshAuthorityInternalV1({
+      ...authority,
+      finalizedProviderRevision: 1,
+      previous: {
+        finalizedProviderRevision: 1,
+        snapshotId: authority.snapshotId,
+      },
+    })).toThrow(/not monotonic/u);
   });
 });

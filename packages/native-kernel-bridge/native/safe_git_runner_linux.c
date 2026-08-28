@@ -2495,6 +2495,7 @@ int safe_git_run_linux_read_v1(
   pid_t parent = getpid();
   pid_t child;
   size_t output_limit;
+  size_t profile_output_limit;
   char *const environment[] = {
       (char *)"LC_ALL=C",
       (char *)"LANG=C",
@@ -2519,10 +2520,14 @@ int safe_git_run_linux_read_v1(
       !safe_git_read_directory_fd_is_valid_v1(retained_common_directory_fd) ||
       !safe_git_read_directory_fd_is_valid_v1(
           retained_empty_hooks_directory_fd) ||
-      (output_limit = safe_git_read_output_limit_v1(request->profile)) == 0 ||
+      (profile_output_limit =
+           safe_git_read_output_limit_v1(request->profile)) == 0 ||
+      request->stdout_limit == 0 ||
+      request->stdout_limit > profile_output_limit ||
       !safe_git_build_read_argv_v1(canonical_argv0, request, &argv)) {
     return 0;
   }
+  output_limit = request->stdout_limit;
   memset(result, 0, sizeof(*result));
   result->status = SAFE_GIT_RUNNER_STATUS_UNAVAILABLE_V1;
   result->exit_code = -1;

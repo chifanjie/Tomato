@@ -6024,16 +6024,21 @@ static int safe_git_read_command_request(
   memset(request, 0, sizeof(*request));
   if (napi_is_buffer(env, value, &is_buffer) != napi_ok || !is_buffer ||
       napi_get_buffer_info(env, value, &raw_bytes, &length) != napi_ok ||
-      raw_bytes == NULL || length < 6) {
+      raw_bytes == NULL || length < 10) {
     return 0;
   }
   bytes = (const unsigned char *)raw_bytes;
-  first_length = ((size_t)bytes[2] << 8U) | (size_t)bytes[3];
-  second_length = ((size_t)bytes[4] << 8U) | (size_t)bytes[5];
-  if (bytes[0] != 1 || bytes[1] < 1 || bytes[1] > 16 ||
+  request->stdout_limit = ((size_t)bytes[2] << 24U) |
+                          ((size_t)bytes[3] << 16U) |
+                          ((size_t)bytes[4] << 8U) | (size_t)bytes[5];
+  first_length = ((size_t)bytes[6] << 8U) | (size_t)bytes[7];
+  second_length = ((size_t)bytes[8] << 8U) | (size_t)bytes[9];
+  if (bytes[0] != 2 || bytes[1] < 1 || bytes[1] > 16 ||
+      request->stdout_limit == 0 ||
+      request->stdout_limit > SAFE_GIT_RUNNER_READ_STDOUT_LIMIT_V1 ||
       first_length > SAFE_GIT_RUNNER_READ_REVISION_LIMIT_V1 ||
       second_length > sizeof(request->parameter_two) - 1 ||
-      length != 6 + first_length + second_length) {
+      length != 10 + first_length + second_length) {
     return 0;
   }
   request->profile = (enum safe_git_runner_read_profile_v1)bytes[1];
@@ -6061,10 +6066,10 @@ static int safe_git_read_command_request(
     return 0;
   }
   for (index = 0; index < first_length + second_length; index += 1) {
-    if (bytes[6 + index] == 0) return 0;
+    if (bytes[10 + index] == 0) return 0;
   }
-  memcpy(request->parameter_one, bytes + 6, first_length);
-  memcpy(request->parameter_two, bytes + 6 + first_length, second_length);
+  memcpy(request->parameter_one, bytes + 10, first_length);
+  memcpy(request->parameter_two, bytes + 10 + first_length, second_length);
   return 1;
 }
 
@@ -7500,6 +7505,7 @@ static napi_value create_safe_git_task_baseline_lease(
   }
 
   read_request.profile = SAFE_GIT_RUNNER_READ_REV_PARSE_BASELINE_COMMIT_V1;
+  read_request.stdout_limit = 128;
   memcpy(read_request.parameter_one, request.commit, strlen(request.commit));
   if (!safe_git_run_linux_read_v1(
           executable->file_descriptor, binding->executable.canonical_path,

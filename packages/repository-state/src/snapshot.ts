@@ -111,8 +111,23 @@ interface MutableChange {
   source: RepositoryChangeSourceV1;
   kind: RepositoryChangeKindV1;
   contentDigest?: ContentDigest;
+  previousContentDigest?: ContentDigest;
   gitObjectId?: string;
   privateStateDigest?: ContentDigest;
+}
+
+export interface PathSafeGitNameStatusChangeV1 {
+  readonly path: string;
+  readonly oldPath?: string;
+  readonly source: "committed" | "staged";
+  readonly kind: RepositoryChangeKindV1;
+}
+
+export interface PathSafeGitNameStatusParseV1 {
+  readonly changes: readonly PathSafeGitNameStatusChangeV1[];
+  readonly unsafeChangeCount: number;
+  readonly limitations: readonly string[];
+  readonly diagnostics: readonly RepositoryDiagnostic[];
 }
 
 interface ParsedWorktreeState {
@@ -421,7 +436,13 @@ function parsePorcelainV2(output: Buffer): ParsedWorktreeState {
         );
       }
       if (unstagedKind !== null) {
-        addPathChange(parsed.remainder, "unstaged", unstagedKind);
+        addPathChange(
+          parsed.remainder,
+          "unstaged",
+          unstagedKind,
+          undefined,
+          indexObjectId,
+        );
       }
       if (submodule.startsWith("S") && submodule !== "S...") {
         limitations.push(
@@ -488,6 +509,7 @@ function parsePorcelainV2(output: Buffer): ParsedWorktreeState {
           unstagedKind === "renamed" || unstagedKind === "copied"
             ? oldPath
             : undefined,
+          indexObjectId,
         );
       }
       if (submodule.startsWith("S") && submodule !== "S...") {
@@ -620,6 +642,29 @@ function parseNameStatus(
     unsafeChanges,
     limitations: [...new Set(limitations)].sort(),
     diagnostics,
+  };
+}
+
+/**
+ * Production-safe parser for the fixed `git diff --name-status -z` profiles.
+ * Unsafe paths are never returned as analyzable changes; callers must treat a
+ * non-zero `unsafeChangeCount` as an incomplete boundary or fail closed.
+ */
+export function parsePathSafeGitNameStatusV1(
+  output: Uint8Array,
+  source: "committed" | "staged" = "committed",
+): PathSafeGitNameStatusParseV1 {
+  const parsed = parseNameStatus(Buffer.from(output), source);
+  return {
+    changes: parsed.changes.map((change) => ({
+      path: change.path,
+      ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
+      source: change.source as "committed" | "staged",
+      kind: change.kind,
+    })),
+    unsafeChangeCount: parsed.unsafeChanges.length,
+    limitations: parsed.limitations,
+    diagnostics: parsed.diagnostics,
   };
 }
 
@@ -789,7 +834,6 @@ async function attachContentDigests(
     changes,
     16,
     async (change): Promise<MutableChange> => {
-      if (change.kind === "deleted") return change;
       try {
         if (isSensitiveRepositoryPath(change.path)) {
           const pathDigest = sha256(Buffer.from(change.path, "utf8"));
@@ -805,6 +849,25 @@ async function attachContentDigests(
             ),
           };
         }
+        if (
+          change.source === "unstaged" &&
+          change.gitObjectId !== undefined &&
+          !/^0+$/u.test(change.gitObjectId)
+        ) {
+          const indexContent = await executeGit(
+            ["cat-file", "-p", change.gitObjectId],
+            execution,
+          );
+          const previousContentDigest = sha256(indexContent.stdout);
+          if (change.kind === "deleted") {
+            return { ...change, previousContentDigest };
+          }
+          const contentDigest = await digestForPath(change.path);
+          return contentDigest === undefined
+            ? { ...change, previousContentDigest }
+            : { ...change, previousContentDigest, contentDigest };
+        }
+        if (change.kind === "deleted") return change;
         if (
           change.source === "staged" &&
           change.gitObjectId !== undefined &&

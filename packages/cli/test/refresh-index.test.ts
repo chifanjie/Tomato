@@ -21,6 +21,7 @@ const sideEffects = vi.hoisted(() => {
     bindEmptyHooksDirectory: vi.fn(),
     bindGitExecutable: vi.fn(),
     executeGitVersion: vi.fn(),
+    createReadExecutor: vi.fn(),
     revalidate: vi.fn(),
     close: vi.fn(),
   };
@@ -32,7 +33,9 @@ const sideEffects = vi.hoisted(() => {
     writeExactObject: vi.fn(),
     compareCommit: vi.fn(),
     compareCommitIndexPublication: vi.fn(),
+    compareCommitRefreshPublication: vi.fn(),
     inspectIndexPublicationAuthority: vi.fn(),
+    inspectStrongRefreshAuthority: vi.fn(),
     commitOwnerOnlyState: vi.fn(),
     close: vi.fn(),
   };
@@ -45,7 +48,9 @@ const sideEffects = vi.hoisted(() => {
     openStore: vi.fn(),
     openProvider: vi.fn(),
     bootstrapSafeGit: vi.fn(),
+    createLayeredSession: vi.fn(),
     captureSafeGit: vi.fn(),
+    readLayeredSource: vi.fn(),
     readStableFile: vi.fn(),
     preflightIndex: vi.fn(),
     buildRepositoryIndex: vi.fn(),
@@ -55,6 +60,7 @@ const sideEffects = vi.hoisted(() => {
     legacyCapture: vi.fn(),
     providerRevision: 0,
     providerIndexAuthority: undefined as any,
+    providerRefreshAuthority: undefined as any,
     providerHead: {
       phase: "strong_business_uninitialized_v1",
       operationNonce: "none",
@@ -75,6 +81,7 @@ const sideEffects = vi.hoisted(() => {
     savedSnapshot: undefined as unknown,
     savedPulse: undefined as unknown,
     failNextPersist: false,
+    failNextPulsePersist: false,
   };
 });
 
@@ -96,10 +103,14 @@ vi.mock("@understand-code/durable-object-provider-client", () => ({
 
 vi.mock("@understand-code/repository-state", () => ({
   bootstrapSafeGitDescriptorBoundCandidateV1: sideEffects.bootstrapSafeGit,
+  createSafeGitLayeredContentReadSessionV1:
+    sideEffects.createLayeredSession,
   getRepositorySnapshotDetailedWithSafeGitCapabilityV1:
     sideEffects.captureSafeGit,
   isSensitiveRepositoryPath: (value: string) =>
     value === ".env" || value.endsWith("/.env"),
+  readSafeGitLayeredRepositoryChangeContentV1:
+    sideEffects.readLayeredSource,
   readStableRepositoryFile: sideEffects.readStableFile,
 }));
 
@@ -118,6 +129,7 @@ vi.mock("../src/runtime/context.js", () => ({
 }));
 
 import {
+  derivePathSafeRepositorySnapshotIdV1,
   parseTrustedStrongRepoPulseV1,
   parseTrustedStrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
@@ -138,10 +150,20 @@ const digest = "sha256:" + "b".repeat(64);
 const repositoryId = "repo-hmac-" + "1".repeat(64);
 const worktreeId = "worktree-hmac-" + "2".repeat(64);
 const rootIdentity = "root-hmac-" + "3".repeat(64);
-const ownerToken = "hmac-sha256:" + "4".repeat(64);
-
 function rawCanonicalDigest(value: string): string {
   return "sha256:" + createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function latestProviderCut(): any {
+  const authority = sideEffects.providerRefreshAuthority;
+  const stored = sideEffects.providerObjects.get(
+    authority.cutObject.contentDigest,
+  );
+  if (stored === undefined) throw new Error("latest Provider cut is missing");
+  return JSON.parse(
+    Buffer.from(stored.bytes.slice("base64url:".length), "base64url")
+      .toString("utf8"),
+  );
 }
 
 function capture(overrides: Record<string, unknown> = {}) {
@@ -232,6 +254,13 @@ function installStoreBehavior(): void {
     if (sideEffects.failNextPersist) {
       sideEffects.failNextPersist = false;
       throw new Error("simulated_local_crash");
+    }
+    if (
+      artifact.artifactType === "repo_pulse" &&
+      sideEffects.failNextPulsePersist
+    ) {
+      sideEffects.failNextPulsePersist = false;
+      throw new Error("simulated_local_pulse_crash");
     }
     if (artifact.artifactType === "repository_snapshot") {
       sideEffects.savedSnapshot = artifact;
@@ -331,12 +360,37 @@ function installProviderBehavior(): void {
   sideEffects.provider.inspectIndexPublicationAuthority.mockImplementation(
     async () => sideEffects.providerIndexAuthority,
   );
+  sideEffects.provider.inspectStrongRefreshAuthority.mockImplementation(
+    async () => ({
+      authority: sideEffects.providerRefreshAuthority,
+      observedProviderRevision: sideEffects.providerRevision,
+    }),
+  );
+  sideEffects.provider.compareCommitRefreshPublication.mockImplementation(
+    async (input) => {
+      const result = await sideEffects.provider.compareCommit(input);
+      if (result.resolution === "committed") {
+        sideEffects.providerRefreshAuthority = {
+          ...input.refreshAuthority,
+          finalizedProviderRevision: result.state.revision,
+        };
+        if (input.indexPublicationAuthority !== undefined) {
+          sideEffects.providerIndexAuthority = {
+            ...input.indexPublicationAuthority,
+            finalizedProviderRevision: result.state.revision,
+          };
+        }
+      }
+      return result;
+    },
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   sideEffects.providerRevision = 0;
   sideEffects.providerIndexAuthority = undefined;
+  sideEffects.providerRefreshAuthority = undefined;
   sideEffects.providerHead = {
     phase: "strong_business_uninitialized_v1",
     operationNonce: "none",
@@ -348,6 +402,7 @@ beforeEach(() => {
   sideEffects.savedSnapshot = undefined;
   sideEffects.savedPulse = undefined;
   sideEffects.failNextPersist = false;
+  sideEffects.failNextPulsePersist = false;
 
   sideEffects.openStore.mockResolvedValue(sideEffects.store);
   sideEffects.openProvider.mockResolvedValue(sideEffects.provider);
@@ -366,6 +421,31 @@ beforeEach(() => {
     gitVersion: { major: 2, minor: 51, patch: 0 },
   });
   sideEffects.captureSafeGit.mockResolvedValue(capture());
+  sideEffects.createLayeredSession.mockReturnValue({
+    profile: "safe_git_layered_content_read_session_v1",
+  });
+  sideEffects.capability.createReadExecutor.mockReturnValue({
+    execute: vi.fn(),
+  });
+  sideEffects.readLayeredSource.mockImplementation(
+    async (_executor, _headCommit, change) =>
+      change.kind === "deleted"
+        ? {
+            status: "absent",
+            path: change.path,
+            source: change.source,
+            layer: change.source === "committed" ? "head_tree" : "index",
+          }
+        : {
+            status: "content",
+            path: change.path,
+            source: change.source,
+            layer: change.source === "committed" ? "head_tree" : "index",
+            mode: "100644",
+            objectId: "d".repeat(40),
+            bytes: Buffer.from("safe\n", "utf8"),
+          },
+  );
   sideEffects.readStableFile.mockResolvedValue(Buffer.from("safe\n", "utf8"));
   sideEffects.preflightIndex.mockResolvedValue({
     sourceInventoryDigest: digest,
@@ -385,7 +465,14 @@ beforeEach(() => {
   sideEffects.publishIncrementalStrongCutV1.mockImplementation(
     async (input) => input.publishStoreCut(),
   );
-  sideEffects.provider.commitOwnerOnlyState.mockResolvedValue(ownerToken);
+  sideEffects.provider.commitOwnerOnlyState.mockImplementation(
+    async (domain, value) =>
+      `hmac-sha256:${createHash("sha256")
+        .update(domain, "utf8")
+        .update("\0", "utf8")
+        .update(value, "utf8")
+        .digest("hex")}`,
+  );
   installStoreBehavior();
   installProviderBehavior();
 });
@@ -465,7 +552,9 @@ describe("refreshIndex production strong writer", () => {
     );
     expect(snapshotArtifact.payload.snapshotId).toMatch(/^snapshot-[0-9a-f]{64}$/u);
     expect(snapshotArtifact.payload.repositoryId).toBe(repositoryId);
-    expect(snapshotArtifact.payload.indexToken).toBe(ownerToken);
+    expect(snapshotArtifact.payload.indexToken).toMatch(
+      /^hmac-sha256:[0-9a-f]{64}$/u,
+    );
     expect(snapshotArtifact.payload).not.toHaveProperty("indexDigest");
     expect(pulseArtifact.payload.profile).toBe("repo_pulse_path_safe_v1");
     expect(pulseArtifact.payload.evaluatedSnapshotId).toBe(
@@ -482,7 +571,396 @@ describe("refreshIndex production strong writer", () => {
     );
   });
 
-  it("uses read-only business-head inspection without a mutating recovery probe", async () => {
+  it("uses the last published commit as the next refresh baseline and never false-cleans committed changes", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-committed-baseline-initial",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const publishedBefore = sideEffects.savedSnapshot;
+    const providerCommitsBefore = sideEffects.provider.compareCommit.mock.calls.length;
+    const nextHeadCommit = "c".repeat(40);
+    const committedCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:committed-after-baseline",
+        path: "src/committed.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedCapture.git = {
+      ...committedCapture.git,
+      baselineCommit: headCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    const falseCleanCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: nextHeadCommit,
+      mergeBase: nextHeadCommit,
+      changes: [],
+    });
+    falseCleanCapture.git = {
+      ...falseCleanCapture.git,
+      baselineCommit: nextHeadCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: nextHeadCommit,
+      ahead: 0,
+    };
+    sideEffects.captureSafeGit.mockClear();
+    sideEffects.readLayeredSource.mockClear();
+    sideEffects.readStableFile.mockClear();
+    sideEffects.captureSafeGit.mockImplementation(
+      async (_root, _capability, options) =>
+        options?.baselineRef === headCommit
+          ? committedCapture
+          : falseCleanCapture,
+    );
+
+    const result = await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-committed-baseline-next",
+      actor: "agent:cli-test",
+    }, root, installationRoot) as any;
+
+    expect(result.isError).toBe(false);
+    expect(sideEffects.captureSafeGit).toHaveBeenCalledTimes(2);
+    expect(sideEffects.captureSafeGit).toHaveBeenNthCalledWith(
+      1,
+      root,
+      sideEffects.capability,
+      { baselineRef: headCommit },
+    );
+    expect(sideEffects.captureSafeGit).toHaveBeenNthCalledWith(
+      2,
+      root,
+      sideEffects.capability,
+      { baselineRef: headCommit },
+    );
+    expect(sideEffects.provider.compareCommit).toHaveBeenCalledTimes(
+      providerCommitsBefore + 1,
+    );
+    expect(sideEffects.savedSnapshot).not.toBe(publishedBefore);
+    expect((sideEffects.savedSnapshot as any).payload.changes).toEqual([
+      expect.objectContaining({
+        path: "src/committed.ts",
+        source: "committed",
+        kind: "added",
+      }),
+    ]);
+    expect((sideEffects.savedPulse as any).payload.changeSummary.bySource.committed)
+      .toBe(1);
+    expect(sideEffects.readLayeredSource).toHaveBeenCalledOnce();
+    expect(sideEffects.createLayeredSession).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        maxMetadataBytes: 64 * 1024 * 1024,
+        maxBlobBytes: 64 * 1024 * 1024,
+        maxCommands: 16_384,
+      },
+    );
+    expect(sideEffects.readLayeredSource).toHaveBeenCalledWith(
+      expect.any(Object),
+      nextHeadCommit,
+      expect.objectContaining({
+        path: "src/committed.ts",
+        source: "committed",
+      }),
+      expect.objectContaining({ maxBytes: 64 * 1024 * 1024 }),
+    );
+    expect(sideEffects.readStableFile).not.toHaveBeenCalled();
+  });
+
+  it("binds staged layered reads to the Snapshot content digest", async () => {
+    const stagedContentDigest = rawCanonicalDigest("safe\n");
+    sideEffects.captureSafeGit.mockResolvedValue(capture({
+      changes: [{
+        id: "change:staged-digest-bound",
+        path: "src/staged.ts",
+        source: "staged",
+        kind: "modified",
+        contentDigest: stagedContentDigest,
+      }],
+    }));
+
+    const result = await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-staged-digest-bound",
+      actor: "agent:cli-test",
+    }, root, installationRoot) as any;
+
+    expect(result.isError).toBe(false);
+    expect(sideEffects.readLayeredSource).toHaveBeenCalledWith(
+      expect.any(Object),
+      headCommit,
+      expect.objectContaining({ source: "staged" }),
+      expect.objectContaining({
+        expectedContentDigest: stagedContentDigest,
+        session: expect.objectContaining({
+          profile: "safe_git_layered_content_read_session_v1",
+        }),
+      }),
+    );
+  });
+
+  it("ignores an older legitimate local cut and captures from the latest Provider refresh authority", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-authority-chain-a",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const localSnapshotA = sideEffects.savedSnapshot;
+    const localPulseA = sideEffects.savedPulse;
+    const headB = "c".repeat(40);
+    const committedB = capture({
+      headCommit: headB,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:authority-chain-b",
+        path: "src/authority-b.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedB.git = {
+      ...committedB.git,
+      baselineCommit: headCommit,
+      headCommit: headB,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(committedB);
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-authority-chain-b",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const authorityB = sideEffects.providerRefreshAuthority;
+    const providerPulseRevisionB = latestProviderCut().pulseArtifact.revision;
+    expect(authorityB.snapshotId).toBe(
+      (sideEffects.savedSnapshot as any).payload.snapshotId,
+    );
+    expect(providerPulseRevisionB).toBe(1);
+
+    sideEffects.savedSnapshot = localSnapshotA;
+    sideEffects.savedPulse = localPulseA;
+    const cleanAtB = capture({
+      headCommit: headB,
+      baseCommit: headB,
+      mergeBase: headB,
+      changes: [],
+    });
+    cleanAtB.git = {
+      ...cleanAtB.git,
+      baselineCommit: headB,
+      headCommit: headB,
+      mergeBase: headB,
+      ahead: 0,
+    };
+    sideEffects.captureSafeGit.mockClear();
+    sideEffects.captureSafeGit.mockResolvedValue(cleanAtB);
+
+    const result = await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-authority-chain-c",
+      actor: "agent:cli-test",
+    }, root, installationRoot) as any;
+
+    expect(result.isError).toBe(false);
+    expect(sideEffects.captureSafeGit).toHaveBeenNthCalledWith(
+      1,
+      root,
+      sideEffects.capability,
+      { baselineRef: headB },
+    );
+    expect(sideEffects.providerRefreshAuthority.previous).toEqual({
+      snapshotId: authorityB.snapshotId,
+      finalizedProviderRevision: authorityB.finalizedProviderRevision,
+    });
+    expect(latestProviderCut().pulseArtifact.revision).toBe(
+      providerPulseRevisionB + 1,
+    );
+    expect((sideEffects.savedPulse as any).revision).toBe(
+      (localPulseA as any).revision + 1,
+    );
+  });
+
+  it("recovers a cold local Store from the latest Provider refresh authority", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-provider-cold-recovery-a",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const headB = "c".repeat(40);
+    const captureB = capture({
+      headCommit: headB,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:cold-recovery-b",
+        path: "src/cold-b.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    captureB.git = {
+      ...captureB.git,
+      baselineCommit: headCommit,
+      headCommit: headB,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(captureB);
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-provider-cold-recovery-b",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const providerPulseRevisionB = latestProviderCut().pulseArtifact.revision;
+    expect(providerPulseRevisionB).toBe(1);
+
+    sideEffects.manifestExists = false;
+    sideEffects.savedSnapshot = undefined;
+    sideEffects.savedPulse = undefined;
+    const headC = "d".repeat(40);
+    const captureC = capture({
+      headCommit: headC,
+      baseCommit: headB,
+      mergeBase: headB,
+      changes: [{
+        id: "change:cold-recovery-c",
+        path: "src/cold-c.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    captureC.git = {
+      ...captureC.git,
+      baselineCommit: headB,
+      headCommit: headC,
+      mergeBase: headB,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockClear();
+    sideEffects.captureSafeGit.mockResolvedValue(captureC);
+
+    const result = await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-provider-cold-recovery-c",
+      actor: "agent:cli-test",
+    }, root, installationRoot) as any;
+
+    expect(result.isError).toBe(false);
+    expect(sideEffects.captureSafeGit).toHaveBeenNthCalledWith(
+      1,
+      root,
+      sideEffects.capability,
+      { baselineRef: headB },
+    );
+    expect(latestProviderCut().pulseArtifact.revision).toBe(
+      providerPulseRevisionB + 1,
+    );
+    expect((sideEffects.savedPulse as any).revision).toBe(0);
+  });
+
+  it("fails closed when the manifest baseline artifact is missing", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-missing-baseline-initial",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const manifest = await sideEffects.store.readManifest();
+    sideEffects.savedSnapshot = undefined;
+    sideEffects.store.readManifest.mockResolvedValue(manifest);
+    sideEffects.captureSafeGit.mockClear();
+
+    await expect(refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-missing-baseline-next",
+      actor: "agent:cli-test",
+    }, root, installationRoot)).rejects.toThrow(
+      "Published refresh baseline Snapshot is unavailable or not strong",
+    );
+
+    expect(sideEffects.captureSafeGit).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the manifest baseline is a legacy non-strong Snapshot", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-legacy-baseline-initial",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const published = sideEffects.savedSnapshot as any;
+    const legacyPayload = capture().snapshot;
+    sideEffects.savedSnapshot = {
+      ...published,
+      artifactId: "artifact:repository-snapshot:snapshot:legacy",
+      repositoryId: legacyPayload.repositoryId,
+      worktreeId: legacyPayload.worktreeId,
+      sourceSnapshotId: legacyPayload.snapshotId,
+      createdAt: legacyPayload.createdAt,
+      contentDigest: rawCanonicalDigest(canonicalizeJson(legacyPayload)),
+      payload: legacyPayload,
+    };
+    sideEffects.captureSafeGit.mockClear();
+
+    await expect(refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-legacy-baseline-next",
+      actor: "agent:cli-test",
+    }, root, installationRoot)).rejects.toThrow(
+      "Published refresh baseline Snapshot is unavailable or not strong",
+    );
+
+    expect(sideEffects.captureSafeGit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a local Snapshot/Pulse pair that conflicts while Provider authority remains valid", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-forged-baseline-initial",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const published = sideEffects.savedSnapshot as any;
+    const draft = {
+      ...published.payload,
+      snapshotId: `snapshot-${"0".repeat(64)}`,
+      headState: { kind: "commit", commit: "d".repeat(40) },
+    };
+    const forgedPayload = {
+      ...draft,
+      snapshotId: derivePathSafeRepositorySnapshotIdV1(
+        draft,
+        rawCanonicalDigest,
+      ),
+    };
+    sideEffects.savedSnapshot = {
+      ...published,
+      artifactId: `artifact:repository-snapshot:${forgedPayload.snapshotId}`,
+      sourceSnapshotId: forgedPayload.snapshotId,
+      contentDigest: rawCanonicalDigest(canonicalizeJson(forgedPayload)),
+      payload: forgedPayload,
+    };
+    sideEffects.captureSafeGit.mockClear();
+
+    await expect(refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-forged-baseline-next",
+      actor: "agent:cli-test",
+    }, root, installationRoot)).rejects.toThrow(
+      "Published local refresh Pulse does not match its Snapshot",
+    );
+
+    expect(sideEffects.captureSafeGit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cold local Store when the Provider head cannot authenticate its baseline", async () => {
     sideEffects.providerRevision = 1;
     sideEffects.providerHead = {
       phase: "concurrent_business_phase_v1",
@@ -490,21 +968,19 @@ describe("refreshIndex production strong writer", () => {
       artifacts: { schemaVersion: 1, operation: "concurrent_write" },
     };
 
-    await refreshIndex({
+    await expect(refreshIndex({
       mode: "incremental",
       idempotencyKey: "refresh-read-only-head",
       actor: "agent:cli-test",
-    }, root, installationRoot);
+    }, root, installationRoot)).rejects.toThrow(
+      "A cold local Store has no matching authenticated Provider recovery cut",
+    );
 
-    expect(sideEffects.provider.compareCommit).toHaveBeenCalledOnce();
-    expect(sideEffects.provider.compareCommit.mock.calls[0]![0]).toMatchObject({
-      expectedRevision: 1,
-      artifacts: { operation: "refresh_index" },
-    });
+    expect(sideEffects.provider.compareCommit).not.toHaveBeenCalled();
     expect(sideEffects.provider.compareCommit.mock.calls.some(
       ([request]) => request.artifacts.operation === "refresh_index_probe",
     )).toBe(false);
-    expect(sideEffects.providerRevision).toBe(2);
+    expect(sideEffects.providerRevision).toBe(1);
   });
 
   it("preflights the complete full-index corpus before Provider writes", async () => {
@@ -628,32 +1104,63 @@ describe("refreshIndex production strong writer", () => {
     expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
   });
 
-  it("does not rebase full finalization over a head changed before inspection", async () => {
-    const inspectBusinessHead =
-      sideEffects.provider.inspectBusinessHead.getMockImplementation()!;
-    let inspections = 0;
-    sideEffects.provider.inspectBusinessHead.mockImplementation(async () => {
-      inspections += 1;
-      if (inspections === 3) {
+  it("keeps an incremental capture bound to its pre-scan Provider revision", async () => {
+    const compareRefresh = sideEffects.provider.compareCommitRefreshPublication
+      .getMockImplementation()!;
+    sideEffects.provider.compareCommitRefreshPublication.mockImplementationOnce(
+      async (input) => {
+        sideEffects.providerRevision += 1;
+        sideEffects.providerHead = {
+          phase: "concurrent_business_phase_v1",
+          operationNonce: "concurrent-after-capture",
+          artifacts: { schemaVersion: 1, operation: "concurrent_write" },
+        };
+        return await compareRefresh(input);
+      },
+    );
+
+    await expect(refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-fixed-observation-cas",
+      actor: "agent:cli-test",
+    }, root, installationRoot)).rejects.toThrow(
+      "Provider refresh compare-commit did not publish the exact cut",
+    );
+
+    expect(sideEffects.provider.compareCommitRefreshPublication)
+      .toHaveBeenCalledOnce();
+    expect(
+      sideEffects.provider.compareCommitRefreshPublication.mock.calls[0]![0]
+        .expectedRevision,
+    ).toBe(0);
+    expect(sideEffects.store.initialize).not.toHaveBeenCalled();
+    expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
+  });
+
+  it("does not rebase full finalization over a head changed before its fixed CAS", async () => {
+    const compareRefresh = sideEffects.provider.compareCommitRefreshPublication
+      .getMockImplementation()!;
+    sideEffects.provider.compareCommitRefreshPublication.mockImplementationOnce(
+      async (input) => {
         sideEffects.providerRevision += 1;
         sideEffects.providerHead = {
           phase: "concurrent_business_phase_v1",
           operationNonce: "concurrent-before-finalize",
           artifacts: { schemaVersion: 1, operation: "concurrent_write" },
         };
-      }
-      return await inspectBusinessHead();
-    });
+        return await compareRefresh(input);
+      },
+    );
 
     await expect(refreshIndex({
       mode: "full",
       idempotencyKey: "refresh-no-finalize-rebase",
       actor: "agent:cli-test",
     }, root, installationRoot)).rejects.toThrow(
-      "Provider refresh prepared head changed before full finalization",
+      "Provider refresh finalization did not publish the exact full cut",
     );
 
-    expect(sideEffects.provider.compareCommit).toHaveBeenCalledOnce();
+    expect(sideEffects.provider.compareCommit).toHaveBeenCalledTimes(2);
     expect(sideEffects.provider.compareCommit.mock.calls[0]![0].artifacts)
       .toMatchObject({ operation: "refresh_index_prepared" });
     expect(sideEffects.publishStagedRepositoryIndex).not.toHaveBeenCalled();
@@ -751,6 +1258,59 @@ describe("refreshIndex production strong writer", () => {
       },
     },
     {
+      name: "secret content in the exact committed blob",
+      arrange: () => {
+        sideEffects.captureSafeGit.mockResolvedValue(capture({
+          changes: [{
+            id: "change:committed-secret",
+            path: "src/committed-secret.ts",
+            source: "committed",
+            kind: "added",
+          }],
+        }));
+        sideEffects.readLayeredSource.mockResolvedValue({
+          status: "content",
+          path: "src/committed-secret.ts",
+          source: "committed",
+          layer: "head_tree",
+          mode: "100644",
+          objectId: "d".repeat(40),
+          bytes: Buffer.from(
+            "-----BEGIN PRIVATE KEY-----\n" +
+              "A".repeat(96) +
+              "\n-----END PRIVATE KEY-----\n",
+            "utf8",
+          ),
+        });
+      },
+    },
+    {
+      name: "staged content without an authenticated digest",
+      arrange: () => {
+        sideEffects.captureSafeGit.mockResolvedValue(capture({
+          changes: [{
+            id: "change:staged-missing-digest",
+            path: "src/staged-missing-digest.ts",
+            source: "staged",
+            kind: "modified",
+          }],
+        }));
+      },
+    },
+    {
+      name: "changed path budget",
+      arrange: () => {
+        sideEffects.captureSafeGit.mockResolvedValue(capture({
+          changes: Array.from({ length: 4_097 }, (_, index) => ({
+            id: `change:path-budget-${index}`,
+            path: `src/generated-${index}.ts`,
+            source: "untracked",
+            kind: "added",
+          })),
+        }));
+      },
+    },
+    {
       name: "symlink or special changed source",
       arrange: () => {
         sideEffects.captureSafeGit.mockResolvedValue(capture({
@@ -797,27 +1357,298 @@ describe("refreshIndex production strong writer", () => {
     expect(sideEffects.provider.close).toHaveBeenCalledOnce();
   });
 
-  it("replays the durable Provider cut to reconcile a crash before local publish", async () => {
-    sideEffects.failNextPersist = true;
+  it("replays a finalized real-delta Provider cut without replacing it with the clean recapture", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-crash-replay-baseline",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const baselineSnapshotId =
+      (sideEffects.savedSnapshot as any).payload.snapshotId;
+    const nextHeadCommit = "c".repeat(40);
+    const committedCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:crash-replay-delta",
+        path: "src/crash-replay.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedCapture.git = {
+      ...committedCapture.git,
+      baselineCommit: headCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(committedCapture);
     const input = {
       mode: "incremental" as const,
       idempotencyKey: "refresh-crash-replay",
       actor: "agent:cli-test",
+      expectedSourceSnapshotId: baselineSnapshotId,
     };
+    sideEffects.failNextPersist = true;
     await expect(
       refreshIndex(input, root, installationRoot),
     ).rejects.toThrow("simulated_local_crash");
-    expect(sideEffects.providerRevision).toBe(1);
-    expect(sideEffects.savedSnapshot).toBeUndefined();
+    expect(sideEffects.providerRevision).toBe(2);
+    expect((sideEffects.savedSnapshot as any).payload.changes).toEqual([]);
+
+    sideEffects.captureSafeGit.mockClear();
+    sideEffects.captureSafeGit.mockResolvedValue(capture({
+      headCommit: nextHeadCommit,
+      baseCommit: nextHeadCommit,
+      mergeBase: nextHeadCommit,
+      changes: [],
+    }));
+    const result = await refreshIndex(input, root, installationRoot) as any;
+    expect(result.isError).toBe(false);
+    expect(sideEffects.captureSafeGit).toHaveBeenCalledTimes(2);
+    expect(sideEffects.captureSafeGit).toHaveBeenNthCalledWith(
+      1,
+      root,
+      sideEffects.capability,
+      { baselineRef: nextHeadCommit },
+    );
+    expect(sideEffects.providerRevision).toBe(2);
+    expect((sideEffects.savedSnapshot as any).payload.changes).toEqual([
+      expect.objectContaining({
+        path: "src/crash-replay.ts",
+        source: "committed",
+        kind: "added",
+      }),
+    ]);
+    expect((sideEffects.savedPulse as any).payload.changeSummary.bySource.committed)
+      .toBe(1);
+  });
+
+  it("recovers the authenticated real-delta cut after a later Provider business commit", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-intervening-head-baseline",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const baselineSnapshotId =
+      (sideEffects.savedSnapshot as any).payload.snapshotId;
+    const nextHeadCommit = "c".repeat(40);
+    const committedCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:intervening-head-delta",
+        path: "src/intervening-head.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedCapture.git = {
+      ...committedCapture.git,
+      baselineCommit: headCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(committedCapture);
+    const input = {
+      mode: "incremental" as const,
+      idempotencyKey: "refresh-intervening-head-recovery",
+      actor: "agent:cli-test",
+      expectedSourceSnapshotId: baselineSnapshotId,
+    };
+    sideEffects.failNextPersist = true;
+    await expect(refreshIndex(input, root, installationRoot)).rejects
+      .toThrow("simulated_local_crash");
+    expect(sideEffects.providerRevision).toBe(2);
+
+    await sideEffects.provider.compareCommit({
+      expectedRevision: 2,
+      operationNonce: "intervening-provider-business-head",
+      phase: "intervening_business_phase_v1",
+      artifacts: { schemaVersion: 1, operation: "intervening_business_write" },
+    });
+    expect(sideEffects.providerRevision).toBe(3);
+    sideEffects.captureSafeGit.mockResolvedValue(capture({
+      headCommit: nextHeadCommit,
+      baseCommit: nextHeadCommit,
+      mergeBase: nextHeadCommit,
+      changes: [],
+    }));
 
     const result = await refreshIndex(input, root, installationRoot) as any;
     expect(result.isError).toBe(false);
-    expect(sideEffects.provider.readExactObject).toHaveBeenCalledOnce();
+    expect(sideEffects.providerRevision).toBe(3);
+    expect((sideEffects.savedSnapshot as any).payload.changes).toEqual([
+      expect.objectContaining({
+        path: "src/intervening-head.ts",
+        source: "committed",
+        kind: "added",
+      }),
+    ]);
+    expect((sideEffects.savedPulse as any).payload.changeSummary.bySource.committed)
+      .toBe(1);
+  });
+
+  it("fails closed when recovered replay loses the latest refresh authority lease", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-replay-lease-baseline",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const nextHeadCommit = "c".repeat(40);
+    const committedCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:replay-lease-delta",
+        path: "src/replay-lease.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedCapture.git = {
+      ...committedCapture.git,
+      baselineCommit: headCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(committedCapture);
+    const input = {
+      mode: "incremental" as const,
+      idempotencyKey: "refresh-replay-lease-recovery",
+      actor: "agent:cli-test",
+    };
+    sideEffects.failNextPersist = true;
+    await expect(refreshIndex(input, root, installationRoot)).rejects
+      .toThrow("simulated_local_crash");
+    const persistedCallsBeforeRetry = sideEffects.store.persistArtifact.mock.calls.length;
+    const compareCommit = sideEffects.provider.compareCommit.getMockImplementation()!;
+    sideEffects.provider.compareCommit.mockImplementationOnce(async (request) => {
+      const replay = await compareCommit(request);
+      sideEffects.providerRevision += 1;
+      sideEffects.providerHead = {
+        phase: "concurrent_refresh_phase_v1",
+        operationNonce: "concurrent-refresh-authority",
+        artifacts: { schemaVersion: 1, operation: "concurrent_refresh" },
+      };
+      sideEffects.providerRefreshAuthority = {
+        ...sideEffects.providerRefreshAuthority,
+        finalizedProviderRevision: sideEffects.providerRevision,
+      };
+      return replay;
+    });
+
+    await expect(refreshIndex(input, root, installationRoot)).rejects.toThrow(
+      "Provider refresh authority changed before local publication",
+    );
+    expect(sideEffects.store.persistArtifact.mock.calls.length)
+      .toBe(persistedCallsBeforeRetry);
+  });
+
+  it("repairs a Snapshot-only local half-commit after a later Provider business commit", async () => {
+    await refreshIndex({
+      mode: "incremental",
+      idempotencyKey: "refresh-pulse-crash-baseline",
+      actor: "agent:cli-test",
+    }, root, installationRoot);
+    const baselineSnapshotId =
+      (sideEffects.savedSnapshot as any).payload.snapshotId;
+    const baselinePulse = sideEffects.savedPulse as any;
+    const nextHeadCommit = "c".repeat(40);
+    const committedCapture = capture({
+      headCommit: nextHeadCommit,
+      baseCommit: headCommit,
+      mergeBase: headCommit,
+      changes: [{
+        id: "change:pulse-crash-delta",
+        path: "src/pulse-crash.ts",
+        source: "committed",
+        kind: "added",
+      }],
+    });
+    committedCapture.git = {
+      ...committedCapture.git,
+      baselineCommit: headCommit,
+      headCommit: nextHeadCommit,
+      mergeBase: headCommit,
+      ahead: 1,
+    };
+    sideEffects.captureSafeGit.mockResolvedValue(committedCapture);
+    const input = {
+      mode: "incremental" as const,
+      idempotencyKey: "refresh-pulse-crash-replay",
+      actor: "agent:cli-test",
+      expectedSourceSnapshotId: baselineSnapshotId,
+    };
+    sideEffects.failNextPulsePersist = true;
+
+    await expect(refreshIndex(input, root, installationRoot)).rejects
+      .toThrow("simulated_local_pulse_crash");
+    expect((sideEffects.savedSnapshot as any).payload.changes).toHaveLength(1);
+    expect(sideEffects.savedPulse).toBe(baselinePulse);
+    expect(sideEffects.providerRevision).toBe(2);
+
+    await sideEffects.provider.compareCommit({
+      expectedRevision: 2,
+      operationNonce: "intervening-provider-head-after-pulse-crash",
+      phase: "intervening_business_phase_v1",
+      artifacts: { schemaVersion: 1, operation: "intervening_business_write" },
+    });
+    expect(sideEffects.providerRevision).toBe(3);
+
+    sideEffects.captureSafeGit.mockClear();
+    sideEffects.captureSafeGit.mockResolvedValue(capture({
+      headCommit: nextHeadCommit,
+      baseCommit: nextHeadCommit,
+      mergeBase: nextHeadCommit,
+      changes: [],
+    }));
+    const result = await refreshIndex(input, root, installationRoot) as any;
+
+    expect(result.isError).toBe(false);
+    expect(sideEffects.captureSafeGit).toHaveBeenCalledTimes(2);
+    expect(sideEffects.providerRevision).toBe(3);
+    expect((sideEffects.savedPulse as any).payload.changeSummary.bySource.committed)
+      .toBe(1);
+    expect((sideEffects.savedPulse as any).revision).toBe(
+      baselinePulse.revision + 1,
+    );
+  });
+
+  it("finalizes the exact prepared full cut after a crash without preparing a new head", async () => {
+    const input = {
+      mode: "full" as const,
+      idempotencyKey: "refresh-prepared-crash-recovery",
+      actor: "agent:cli-test",
+    };
+    sideEffects.provider.compareCommitRefreshPublication
+      .mockRejectedValueOnce(new Error("simulated_crash_before_full_finalize"));
+
+    await expect(refreshIndex(input, root, installationRoot)).rejects
+      .toThrow("simulated_crash_before_full_finalize");
     expect(sideEffects.providerRevision).toBe(1);
-    expect(sideEffects.provider.compareCommit.mock.results.some(
-      (resultEntry) => resultEntry.type === "return",
-    )).toBe(true);
-    expect(sideEffects.savedSnapshot).toBeDefined();
-    expect(sideEffects.savedPulse).toBeDefined();
+    expect(sideEffects.providerHead.artifacts).toMatchObject({
+      operation: "refresh_index_prepared",
+    });
+    expect(sideEffects.providerRefreshAuthority).toBeUndefined();
+
+    const result = await refreshIndex(input, root, installationRoot) as any;
+    expect(result.isError).toBe(false);
+    expect(sideEffects.providerRevision).toBe(2);
+    expect(sideEffects.providerRefreshAuthority.finalizedProviderRevision)
+      .toBe(2);
+    expect(
+      sideEffects.provider.compareCommit.mock.calls.filter(
+        ([request]) => request.artifacts.operation === "refresh_index_prepared",
+      ),
+    ).toHaveLength(1);
+    expect(sideEffects.provider.compareCommitRefreshPublication)
+      .toHaveBeenCalledTimes(2);
   });
 });

@@ -613,9 +613,12 @@ function safeGitLeaseRequestV1(
   });
 }
 
-function safeGitReadRequestFromCommandV1(
+function safeGitReadExecutionFromCommandV1(
   command: SafeGitReadCommandV1,
-): SafeGitReadRequestV1 {
+): Readonly<{
+  readonly request: SafeGitReadRequestV1;
+  readonly stdoutLimitBytes: number;
+}> {
   if (
     typeof command !== "object" ||
     command === null ||
@@ -648,7 +651,19 @@ function safeGitReadRequestFromCommandV1(
       throw new SafeGitBootstrapErrorV1("read_execution_invalid");
     }
   }
-  return descriptors.request!.value as SafeGitReadRequestV1;
+  const stdoutLimitBytes = descriptors.stdoutLimitBytes!.value;
+  if (
+    typeof stdoutLimitBytes !== "number" ||
+    !Number.isSafeInteger(stdoutLimitBytes) ||
+    stdoutLimitBytes <= 0 ||
+    stdoutLimitBytes > 64 * 1_024 * 1_024
+  ) {
+    throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+  }
+  return Object.freeze({
+    request: descriptors.request!.value as SafeGitReadRequestV1,
+    stdoutLimitBytes,
+  });
 }
 
 function safeGitReadAbortSignalV1(
@@ -1079,15 +1094,19 @@ class SafeGitBootstrapCapabilityInternalV1
       ) {
         throw new SafeGitBootstrapErrorV1("read_execution_invalid");
       }
-      const request = safeGitReadRequestFromCommandV1(command);
+      const execution = safeGitReadExecutionFromCommandV1(command);
       const signal = safeGitReadAbortSignalV1(options);
       if (isSafeGitReadAbortedV1(signal)) {
         throw new SafeGitBootstrapErrorV1("read_execution_invalid");
       }
       const result = await executeProviderAcceptanceSafeGitReadInternalV1(
         binding,
-        request,
+        execution.request,
+        execution.stdoutLimitBytes,
       );
+      if (result.stdout.byteLength > execution.stdoutLimitBytes) {
+        throw new SafeGitBootstrapErrorV1("read_execution_invalid");
+      }
       if (isSafeGitReadAbortedV1(signal)) {
         throw new SafeGitBootstrapErrorV1("read_execution_invalid");
       }

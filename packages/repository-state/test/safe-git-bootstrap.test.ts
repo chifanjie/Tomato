@@ -51,6 +51,8 @@ const identityAuthorityTestStateV1 = vi.hoisted(() => ({
 
 const safeGitExecutionTestStateV1 = vi.hoisted(() => ({
   executions: 0,
+  outputBytes: 3,
+  outputLimits: [] as number[],
   reads: 0,
   requests: [] as unknown[],
   unavailable: false,
@@ -73,11 +75,13 @@ vi.mock(
       executeProviderAcceptanceSafeGitReadInternalV1: async (
         _binding: NativeSafeGitDescriptorBindingV1,
         request: unknown,
+        stdoutLimitBytes: number,
       ) => {
         safeGitExecutionTestStateV1.reads += 1;
         safeGitExecutionTestStateV1.requests.push(request);
+        safeGitExecutionTestStateV1.outputLimits.push(stdoutLimitBytes);
         return Object.freeze({
-          stdout: Buffer.from("/descriptor-bound/repository\n", "utf8"),
+          stdout: Buffer.alloc(safeGitExecutionTestStateV1.outputBytes),
           stderr: Buffer.alloc(0),
           exitCode: 0,
         });
@@ -150,6 +154,8 @@ afterEach(() => {
   identityAuthorityTestStateV1.executableUnavailable = false;
   identityAuthorityTestStateV1.executablePath = undefined;
   safeGitExecutionTestStateV1.executions = 0;
+  safeGitExecutionTestStateV1.outputBytes = 3;
+  safeGitExecutionTestStateV1.outputLimits.length = 0;
   safeGitExecutionTestStateV1.reads = 0;
   safeGitExecutionTestStateV1.requests.length = 0;
   safeGitExecutionTestStateV1.unavailable = false;
@@ -649,7 +655,63 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
     expect(safeGitExecutionTestStateV1.requests).toEqual([
       { profile: "rev_parse_show_toplevel_v1" },
     ]);
+    expect(safeGitExecutionTestStateV1.outputLimits).toEqual([4 * 1_024]);
     await ready.capability.close();
+  });
+
+  it("passes a reduced stdout limit into the production execution boundary", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-read-output-limit"),
+      "git",
+    );
+    const ready = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await ready.capability.bindRepositoryControl();
+    await ready.capability.bindRepositoryIdentity();
+    await ready.capability.bindEmptyHooksDirectory();
+    await ready.capability.bindGitExecutable(absoluteExecutablePath);
+    await ready.capability.executeGitVersion();
+    const classified = classifySafeGitReadCommandV1([
+      "cat-file",
+      "-p",
+      "a".repeat(40),
+    ]);
+    const bounded = Object.freeze({ ...classified, stdoutLimitBytes: 17 });
+
+    await ready.capability.createReadExecutor().execute(bounded);
+
+    expect(safeGitExecutionTestStateV1.requests).toEqual([
+      { profile: "cat_file_object_v1", objectId: "a".repeat(40) },
+    ]);
+    expect(safeGitExecutionTestStateV1.outputLimits).toEqual([17]);
+    await ready.capability.close();
+  });
+
+  it("poisons the production binding if native output exceeds the requested limit", async () => {
+    const root = initializeRepository();
+    const absoluteExecutablePath = join(
+      temporaryDirectory("safe-git-read-output-overrun"),
+      "git",
+    );
+    const ready = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await ready.capability.bindRepositoryControl();
+    await ready.capability.bindRepositoryIdentity();
+    await ready.capability.bindEmptyHooksDirectory();
+    await ready.capability.bindGitExecutable(absoluteExecutablePath);
+    await ready.capability.executeGitVersion();
+    const classified = classifySafeGitReadCommandV1([
+      "cat-file",
+      "-p",
+      "a".repeat(40),
+    ]);
+    safeGitExecutionTestStateV1.outputBytes = 18;
+
+    await expect(ready.capability.createReadExecutor().execute(
+      Object.freeze({ ...classified, stdoutLimitBytes: 17 }),
+    )).rejects.toMatchObject({ code: "read_execution_invalid" });
+
+    expect(safeGitExecutionTestStateV1.outputLimits).toEqual([17]);
+    expect(ready.capability.closed).toBe(true);
   });
 
   it("rejects accessor and Proxy command DTOs without invoking traps", async () => {

@@ -44,6 +44,7 @@ enum safe_git_runner_read_profile_v1 {
 
 struct safe_git_runner_read_request_v1 {
   enum safe_git_runner_read_profile_v1 profile;
+  size_t stdout_limit;
   char parameter_one[SAFE_GIT_RUNNER_READ_REVISION_LIMIT_V1 + 1];
   char parameter_two[65];
 };

@@ -1195,6 +1195,27 @@ const SAFE_GIT_READ_PROFILE_CODES_V1 = Object.freeze({
   config_global_excludes_file_v1: 15,
 } as const);
 
+const SAFE_GIT_READ_PROFILE_OUTPUT_LIMITS_V1: Readonly<
+  Record<keyof typeof SAFE_GIT_READ_PROFILE_CODES_V1, number>
+> = Object.freeze({
+  rev_parse_show_toplevel_v1: 4 * 1_024,
+  rev_parse_absolute_git_dir_v1: 4 * 1_024,
+  rev_parse_absolute_common_git_dir_v1: 4 * 1_024,
+  status_porcelain_v2_v1: 64 * 1_024 * 1_024,
+  rev_parse_head_commit_v1: 128,
+  symbolic_head_v1: 4 * 1_024,
+  ls_files_stage_v1: 64 * 1_024 * 1_024,
+  rev_parse_baseline_commit_v1: 128,
+  merge_base_v1: 128,
+  rev_list_ahead_behind_v1: 128,
+  diff_committed_name_status_v1: 64 * 1_024 * 1_024,
+  diff_staged_name_status_v1: 64 * 1_024 * 1_024,
+  cat_file_object_v1: 64 * 1_024 * 1_024,
+  cat_file_type_v1: 128,
+  ls_ignore_files_v1: 64 * 1_024 * 1_024,
+  config_global_excludes_file_v1: 4 * 1_024,
+});
+
 const SAFE_GIT_READ_OID_V1 = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const SAFE_GIT_TASK_ID_V1 = /^[0-9A-HJKMNP-TV-Z]{26}$/u;
 const SAFE_GIT_SNAPSHOT_ID_V1 = /^snapshot-[0-9a-f]{64}$/u;
@@ -1204,7 +1225,10 @@ const SAFE_GIT_LEASE_ID_V1 = /^git-lease:[0-9a-f]{22}$/u;
 const SAFE_GIT_LEASE_REF_V1 =
   /^refs\/understand-code\/task-baselines\/[0-9a-f]{22}-[0-9a-f]{32}$/u;
 
-function encodeSafeGitReadRequestV1(request: NativeSafeGitReadRequestV1): Buffer {
+function encodeSafeGitReadRequestV1(
+  request: NativeSafeGitReadRequestV1,
+  stdoutLimitBytes: number,
+): Buffer {
   if (
     typeof request !== "object" ||
     request === null ||
@@ -1240,6 +1264,16 @@ function encodeSafeGitReadRequestV1(request: NativeSafeGitReadRequestV1): Buffer
   };
   const profile = readDataString("profile") as keyof typeof SAFE_GIT_READ_PROFILE_CODES_V1;
   const profileCode = SAFE_GIT_READ_PROFILE_CODES_V1[profile];
+  const profileOutputLimit = SAFE_GIT_READ_PROFILE_OUTPUT_LIMITS_V1[profile];
+  if (
+    profileCode === undefined ||
+    profileOutputLimit === undefined ||
+    !Number.isSafeInteger(stdoutLimitBytes) ||
+    stdoutLimitBytes <= 0 ||
+    stdoutLimitBytes > profileOutputLimit
+  ) {
+    throw safeGitUnavailableV1();
+  }
   let expectedKeys: readonly string[] = ["profile"];
   let first = "";
   let second = "";
@@ -1293,14 +1327,15 @@ function encodeSafeGitReadRequestV1(request: NativeSafeGitReadRequestV1): Buffer
     throw safeGitUnavailableV1();
   }
   const encoded = Buffer.allocUnsafe(
-    6 + firstBytes.byteLength + secondBytes.byteLength,
+    10 + firstBytes.byteLength + secondBytes.byteLength,
   );
-  encoded[0] = 1;
+  encoded[0] = 2;
   encoded[1] = profileCode;
-  encoded.writeUInt16BE(firstBytes.byteLength, 2);
-  encoded.writeUInt16BE(secondBytes.byteLength, 4);
-  firstBytes.copy(encoded, 6);
-  secondBytes.copy(encoded, 6 + firstBytes.byteLength);
+  encoded.writeUInt32BE(stdoutLimitBytes, 2);
+  encoded.writeUInt16BE(firstBytes.byteLength, 6);
+  encoded.writeUInt16BE(secondBytes.byteLength, 8);
+  firstBytes.copy(encoded, 10);
+  secondBytes.copy(encoded, 10 + firstBytes.byteLength);
   return encoded;
 }
 
@@ -2287,6 +2322,7 @@ export function executeNativeSafeGitReadProfileV1(
   authority: NativeInstallationStateAuthorityV1,
   installationIdentityKey: Buffer,
   request: NativeSafeGitReadRequestV1,
+  stdoutLimitBytes: number,
 ): NativeSafeGitReadExecutionResultV1 {
   let nativeBinding: object | undefined;
   let bindingState: NativeSafeGitBindingStateV1 | undefined;
@@ -2304,7 +2340,10 @@ export function executeNativeSafeGitReadProfileV1(
     ) {
       throw safeGitUnavailableV1();
     }
-    const encodedRequest = encodeSafeGitReadRequestV1(request);
+    const encodedRequest = encodeSafeGitReadRequestV1(
+      request,
+      stdoutLimitBytes,
+    );
     return parseSafeGitReadExecutionResultV1(
       loadNativeAddonV1().executeSafeGitReadProfile(
         nativeBinding,

@@ -29,9 +29,14 @@ import {
   openProviderProductionStrongObjectHostInternalV1,
   providerProductionStrongIndexPublicationAuthorityInternalV1,
   providerProductionStrongIndexPublicationCompareInputInternalV1,
+  providerProductionStrongRefreshAuthorityInternalV1,
+  providerProductionStrongRefreshAuthoritySelectorInternalV1,
+  providerProductionStrongRefreshPublicationCompareInputInternalV1,
   type OpenProviderProductionStrongObjectClientV1Input,
   type ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+  type ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
   type ProviderProductionStrongCompareCommitV1Input,
+  type ProviderProductionStrongRefreshAuthorityInspectionV1,
   type ProviderProductionStrongObjectClientV1,
   type ProviderProductionStrongObjectHostInternalV1,
   type ProviderProductionStrongWriteExactObjectV1Input,
@@ -385,6 +390,46 @@ export function providerProductionStrongIndexPublicationGatewayResponseInternalV
     : providerProductionStrongIndexPublicationAuthorityInternalV1(value);
 }
 
+export function providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1(
+  value: unknown,
+) {
+  return providerProductionStrongRefreshAuthoritySelectorInternalV1(value);
+}
+
+export function providerProductionStrongRefreshPublicationGatewayRequestInternalV1(
+  value: unknown,
+): ProviderProductionStrongCompareCommitRefreshPublicationV1Input {
+  return providerProductionStrongRefreshPublicationCompareInputInternalV1(
+    value,
+  );
+}
+
+export function providerProductionStrongRefreshAuthorityGatewayResponseInternalV1(
+  value: unknown,
+): ProviderProductionStrongRefreshAuthorityInspectionV1 {
+  const inspected = recordV1(value);
+  if (
+    inspected === undefined ||
+    !exactKeysV1(inspected, ["authority", "observedProviderRevision"]) ||
+    !Number.isSafeInteger(inspected.observedProviderRevision) ||
+    (inspected.observedProviderRevision as number) < 0
+  ) return unavailableV1();
+  const authority = inspected.authority === null
+    ? undefined
+    : providerProductionStrongRefreshAuthorityInternalV1(
+        inspected.authority,
+      );
+  if (
+    authority !== undefined &&
+    authority.finalizedProviderRevision >
+      (inspected.observedProviderRevision as number)
+  ) return unavailableV1();
+  return Object.freeze({
+    authority,
+    observedProviderRevision: inspected.observedProviderRevision as number,
+  });
+}
+
 function exactPathV1(value: unknown): string {
   if (
     typeof value !== "string" || value.includes("\0") ||
@@ -672,6 +717,37 @@ export async function openProviderProductionStrongObjectClientV1(
         },
       );
     },
+    async inspectStrongRefreshAuthority(
+      repositoryIdInput: string,
+      worktreeIdInput: string,
+    ) {
+      const current = stateV1(client).descriptor;
+      const selector =
+        providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1({
+          repositoryId: repositoryIdInput,
+          worktreeId: worktreeIdInput,
+        });
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => {
+          const inspected =
+            providerProductionStrongRefreshAuthorityGatewayResponseInternalV1(
+            await exchangeV1(
+              current,
+              "inspect_strong_refresh_authority",
+              selector,
+            ),
+            );
+          if (
+            inspected.authority !== undefined &&
+            (
+              inspected.authority.repositoryId !== selector.repositoryId ||
+              inspected.authority.worktreeId !== selector.worktreeId
+            )
+          ) return unavailableV1();
+          return inspected;
+        },
+      );
+    },
     async readExactObject(locatorInput: Parameters<ProviderProductionStrongObjectClientV1["readExactObject"]>[0]) {
       const current = stateV1(client).descriptor;
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(locatorInput);
@@ -709,6 +785,20 @@ export async function openProviderProductionStrongObjectClientV1(
       return providerProductionStrongObjectUnavailableBoundaryInternalV1(
         async () => ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
           await exchangeV1(current, "compare_index_publication", input),
+        ),
+      );
+    },
+    async compareCommitRefreshPublication(
+      inputValue: ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
+    ) {
+      const current = stateV1(client).descriptor;
+      const input =
+        providerProductionStrongRefreshPublicationGatewayRequestInternalV1(
+          inputValue,
+        );
+      return providerProductionStrongObjectUnavailableBoundaryInternalV1(
+        async () => ProviderRuntimeIpcCompareCommitResultV1Schema.parse(
+          await exchangeV1(current, "compare_refresh_publication", input),
         ),
       );
     },
@@ -894,6 +984,21 @@ class GatewayServerInternalV1 {
           if (payload === undefined || !exactKeysV1(payload, [])) return;
           result = (await this.#host.inspectIndexPublicationAuthority()) ?? null;
           break;
+        case "inspect_strong_refresh_authority": {
+          const selector =
+            providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1(
+              payload,
+            );
+          const inspected = await this.#host.inspectStrongRefreshAuthority(
+            selector.repositoryId,
+            selector.worktreeId,
+          );
+          result = {
+            authority: inspected.authority ?? null,
+            observedProviderRevision: inspected.observedProviderRevision,
+          };
+          break;
+        }
         case "read": {
           if (payload === undefined || !exactKeysV1(payload, ["locator"])) return;
           result = await this.#host.readExactObject(
@@ -917,6 +1022,15 @@ class GatewayServerInternalV1 {
           // ordinary `compare` still rejects the reserved artifact key.
           result = await this.#host.compareCommitIndexPublication(
             providerProductionStrongIndexPublicationGatewayRequestInternalV1(
+              payload,
+            ),
+          );
+          break;
+        case "compare_refresh_publication":
+          // One compare-commit advances the latest-refresh authority and, for
+          // full finalization, the index-publication authority atomically.
+          result = await this.#host.compareCommitRefreshPublication(
+            providerProductionStrongRefreshPublicationGatewayRequestInternalV1(
               payload,
             ),
           );

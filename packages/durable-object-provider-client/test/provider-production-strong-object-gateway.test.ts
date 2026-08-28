@@ -13,6 +13,9 @@ import {
   ProviderProductionStrongObjectUnavailableErrorV1,
   providerProductionStrongIndexPublicationGatewayRequestInternalV1,
   providerProductionStrongIndexPublicationGatewayResponseInternalV1,
+  providerProductionStrongRefreshAuthorityGatewayResponseInternalV1,
+  providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1,
+  providerProductionStrongRefreshPublicationGatewayRequestInternalV1,
   providerProductionStrongObjectUnavailableBoundaryInternalV1,
   providerProductionStrongObjectRevisionProjectionInternalV1,
   providerProductionStrongObjectPrivilegeDropIsExactInternalV1,
@@ -159,6 +162,90 @@ describe("production strong object gateway", () => {
         unexpected: true,
       })
     ).toThrow(/index publication authority is invalid/u);
+  });
+
+  it("round-trips the strict latest-refresh selector, CAS, and observation", () => {
+    const repositoryId = `repo-hmac-${"1".repeat(64)}`;
+    const worktreeId = `worktree-hmac-${"2".repeat(64)}`;
+    const snapshotId = `snapshot-${"3".repeat(64)}`;
+    const cutObject = {
+      providerId: "durable-object-provider:gateway-refresh",
+      contentDigest: `sha256:${"4".repeat(64)}`,
+    };
+    const refreshAuthority = {
+      profile: "provider_production_strong_refresh_authority_v1",
+      repositoryId,
+      worktreeId,
+      mode: "incremental",
+      snapshotId,
+      snapshotContentDigest: `sha256:${"5".repeat(64)}`,
+      pulseContentDigest: `sha256:${"6".repeat(64)}`,
+      cutObject,
+      previous: null,
+    };
+    const request = {
+      expectedRevision: 0,
+      operationNonce: "7".repeat(32),
+      phase: "strong_refresh_index_v1",
+      artifacts: {
+        schemaVersion: 1,
+        operation: "refresh_index",
+        requestDigest: `sha256:${"8".repeat(64)}`,
+        idempotencyKeyDigest: `sha256:${"9".repeat(64)}`,
+        semanticDigest: `sha256:${"a".repeat(64)}`,
+        mode: "incremental",
+        snapshotId,
+        snapshotContentDigest: refreshAuthority.snapshotContentDigest,
+        pulseContentDigest: refreshAuthority.pulseContentDigest,
+        cutObject,
+      },
+      refreshAuthority,
+    };
+    expect(
+      providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1({
+        repositoryId,
+        worktreeId,
+      }),
+    ).toEqual({ repositoryId, worktreeId });
+    expect(
+      providerProductionStrongRefreshPublicationGatewayRequestInternalV1(
+        request,
+      ),
+    ).toEqual(request);
+    expect(
+      providerProductionStrongRefreshAuthorityGatewayResponseInternalV1({
+        authority: { ...refreshAuthority, finalizedProviderRevision: 1 },
+        observedProviderRevision: 3,
+      }),
+    ).toEqual({
+      authority: { ...refreshAuthority, finalizedProviderRevision: 1 },
+      observedProviderRevision: 3,
+    });
+    expect(
+      providerProductionStrongRefreshAuthorityGatewayResponseInternalV1({
+        authority: null,
+        observedProviderRevision: 0,
+      }),
+    ).toEqual({ authority: undefined, observedProviderRevision: 0 });
+
+    expect(() =>
+      providerProductionStrongRefreshAuthorityGatewaySelectorInternalV1({
+        repositoryId: "repository:legacy",
+        worktreeId,
+      })
+    ).toThrow(/selector is invalid/u);
+    expect(() =>
+      providerProductionStrongRefreshAuthorityGatewayResponseInternalV1({
+        authority: { ...refreshAuthority, finalizedProviderRevision: 1 },
+        observedProviderRevision: 0,
+      })
+    ).toThrow(/unavailable/u);
+    expect(() =>
+      providerProductionStrongRefreshAuthorityGatewayResponseInternalV1({
+        authority: { ...refreshAuthority, finalizedProviderRevision: 1 },
+        observedProviderRevision: -1,
+      })
+    ).toThrow(/unavailable/u);
   });
 
   it("releases host and lifecycle lease after listener cleanup fails", async () => {

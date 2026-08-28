@@ -228,6 +228,7 @@ export async function executeProviderAcceptanceSafeGitVersionInternalV1(
 export async function executeProviderAcceptanceSafeGitReadInternalV1(
   binding: NativeSafeGitDescriptorBindingV1,
   request: NativeSafeGitReadRequestV1,
+  stdoutLimitBytes: number,
 ): Promise<NativeSafeGitReadExecutionResultV1> {
   try {
     assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1(binding);
@@ -252,6 +253,7 @@ export async function executeProviderAcceptanceSafeGitReadInternalV1(
         authority,
         key,
         request,
+        stdoutLimitBytes,
       );
     });
   } catch {

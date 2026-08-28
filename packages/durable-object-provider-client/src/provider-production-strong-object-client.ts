@@ -180,6 +180,13 @@ const PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_PROFILE_V1 =
   "provider_production_strong_index_publication_authority_v1" as const;
 const PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1 =
   "__understand_code_reserved_index_publication_authority_v1" as const;
+const PRODUCTION_STRONG_REFRESH_AUTHORITY_PROFILE_V1 =
+  "provider_production_strong_refresh_authority_v1" as const;
+const PRODUCTION_STRONG_REFRESH_AUTHORITY_SET_PROFILE_V1 =
+  "provider_production_strong_refresh_authority_set_v1" as const;
+const PRODUCTION_STRONG_REFRESH_AUTHORITY_ARTIFACT_KEY_V1 =
+  "__understand_code_reserved_strong_refresh_authorities_v1" as const;
+const MAX_PRODUCTION_STRONG_REFRESH_AUTHORITIES_V1 = 4_096;
 const MAX_PRODUCTION_ACCEPTANCE_HISTORY_GENERATIONS_V1 = 4_096;
 const MAX_PRODUCTION_TOTAL_TRUST_HISTORY_LOGICAL_BYTES_V1 =
   256 * 1024 * 1024;
@@ -233,6 +240,42 @@ export interface ProviderProductionStrongCompareCommitIndexPublicationV1Input
   readonly authority: ProviderProductionStrongIndexPublicationAuthorityInputV1;
 }
 
+export interface ProviderProductionStrongRefreshAuthorityPreviousV1 {
+  readonly finalizedProviderRevision: number;
+  readonly snapshotId: `snapshot-${string}`;
+}
+
+export interface ProviderProductionStrongRefreshAuthorityV1 {
+  readonly profile: typeof PRODUCTION_STRONG_REFRESH_AUTHORITY_PROFILE_V1;
+  readonly repositoryId: `repo-hmac-${string}`;
+  readonly worktreeId: `worktree-hmac-${string}`;
+  readonly mode: "incremental" | "full";
+  readonly snapshotId: `snapshot-${string}`;
+  readonly snapshotContentDigest: ContentDigestV1;
+  readonly pulseContentDigest: ContentDigestV1;
+  readonly cutObject: ProviderRuntimeIpcFixedObjectLocatorV1;
+  readonly finalizedProviderRevision: number;
+  readonly previous: ProviderProductionStrongRefreshAuthorityPreviousV1 | null;
+}
+
+export type ProviderProductionStrongRefreshAuthorityInputV1 = Omit<
+  ProviderProductionStrongRefreshAuthorityV1,
+  "finalizedProviderRevision"
+>;
+
+export interface ProviderProductionStrongRefreshAuthorityInspectionV1 {
+  readonly authority: ProviderProductionStrongRefreshAuthorityV1 | undefined;
+  readonly observedProviderRevision: number;
+}
+
+export interface ProviderProductionStrongCompareCommitRefreshPublicationV1Input
+  extends ProviderProductionStrongCompareCommitV1Input {
+  readonly refreshAuthority: ProviderProductionStrongRefreshAuthorityInputV1;
+  /** Required for full finalization and forbidden for incremental publication. */
+  readonly indexPublicationAuthority?:
+    ProviderProductionStrongIndexPublicationAuthorityInputV1;
+}
+
 export type ProviderProductionOwnerCommitmentDomainV1 =
   | "record-verification-full-input-v1"
   | "verification-detail-semantic-v1"
@@ -255,6 +298,10 @@ export interface ProviderProductionStrongObjectClientV1 {
   inspectIndexPublicationAuthority(): Promise<
     ProviderProductionStrongIndexPublicationAuthorityV1 | undefined
   >;
+  inspectStrongRefreshAuthority(
+    repositoryId: string,
+    worktreeId: string,
+  ): Promise<ProviderProductionStrongRefreshAuthorityInspectionV1>;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -266,6 +313,9 @@ export interface ProviderProductionStrongObjectClientV1 {
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   compareCommitIndexPublication(
     input: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+  ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
+  compareCommitRefreshPublication(
+    input: ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   commitOwnerOnlyState(
     domain: ProviderProductionOwnerCommitmentDomainV1,
@@ -287,6 +337,10 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   inspectIndexPublicationAuthority(): Promise<
     ProviderProductionStrongIndexPublicationAuthorityV1 | undefined
   >;
+  inspectStrongRefreshAuthority(
+    repositoryId: string,
+    worktreeId: string,
+  ): Promise<ProviderProductionStrongRefreshAuthorityInspectionV1>;
   readExactObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
   ): Promise<ProviderRuntimeIpcReadObjectResultV1>;
@@ -298,6 +352,9 @@ export interface ProviderProductionStrongObjectHostInternalV1 {
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   compareCommitIndexPublication(
     input: ProviderProductionStrongCompareCommitIndexPublicationV1Input,
+  ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
+  compareCommitRefreshPublication(
+    input: ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
   ): Promise<ProviderRuntimeIpcCompareCommitResultV1>;
   commitOwnerOnlyState(
     domain: ProviderProductionOwnerCommitmentDomainV1,
@@ -470,6 +527,183 @@ function exactSnapshotIdV1(value: unknown): value is string {
     !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
+function exactStrongRepositoryIdV1(
+  value: unknown,
+): value is `repo-hmac-${string}` {
+  return typeof value === "string" && /^repo-hmac-[0-9a-f]{64}$/u.test(value);
+}
+
+function exactStrongWorktreeIdV1(
+  value: unknown,
+): value is `worktree-hmac-${string}` {
+  return typeof value === "string" &&
+    /^worktree-hmac-[0-9a-f]{64}$/u.test(value);
+}
+
+function exactStrongSnapshotIdV1(
+  value: unknown,
+): value is `snapshot-${string}` {
+  return typeof value === "string" && /^snapshot-[0-9a-f]{64}$/u.test(value);
+}
+
+function parseProductionStrongRefreshAuthorityPreviousV1(
+  value: unknown,
+): ProviderProductionStrongRefreshAuthorityPreviousV1 | null {
+  if (value === null) return null;
+  const previous = dataRecordV1(value, "strong refresh previous authority");
+  if (
+    !exactKeysV1(previous, ["finalizedProviderRevision", "snapshotId"]) ||
+    !Number.isSafeInteger(previous.finalizedProviderRevision) ||
+    (previous.finalizedProviderRevision as number) < 1 ||
+    !exactStrongSnapshotIdV1(previous.snapshotId)
+  ) return productionFailV1("strong refresh previous authority is invalid");
+  return Object.freeze({
+    finalizedProviderRevision: previous.finalizedProviderRevision as number,
+    snapshotId: previous.snapshotId,
+  });
+}
+
+export function providerProductionStrongRefreshAuthorityInternalV1(
+  value: unknown,
+): ProviderProductionStrongRefreshAuthorityV1 {
+  const authority = dataRecordV1(value, "strong refresh authority");
+  if (
+    !exactKeysV1(authority, [
+      "profile",
+      "repositoryId",
+      "worktreeId",
+      "mode",
+      "snapshotId",
+      "snapshotContentDigest",
+      "pulseContentDigest",
+      "cutObject",
+      "finalizedProviderRevision",
+      "previous",
+    ]) ||
+    authority.profile !== PRODUCTION_STRONG_REFRESH_AUTHORITY_PROFILE_V1 ||
+    !exactStrongRepositoryIdV1(authority.repositoryId) ||
+    !exactStrongWorktreeIdV1(authority.worktreeId) ||
+    (authority.mode !== "incremental" && authority.mode !== "full") ||
+    !exactStrongSnapshotIdV1(authority.snapshotId) ||
+    !Number.isSafeInteger(authority.finalizedProviderRevision) ||
+    (authority.finalizedProviderRevision as number) < 1
+  ) return productionFailV1("strong refresh authority is invalid");
+  let snapshotContentDigest: ContentDigestV1;
+  let pulseContentDigest: ContentDigestV1;
+  let cutObject: ProviderRuntimeIpcFixedObjectLocatorV1;
+  try {
+    snapshotContentDigest = ContentDigestV1Schema.parse(
+      authority.snapshotContentDigest,
+    );
+    pulseContentDigest = ContentDigestV1Schema.parse(
+      authority.pulseContentDigest,
+    );
+    cutObject = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
+      authority.cutObject,
+    );
+  } catch (error) {
+    return productionFailV1("strong refresh authority is invalid", error);
+  }
+  const previous = parseProductionStrongRefreshAuthorityPreviousV1(
+    authority.previous,
+  );
+  if (
+    previous !== null &&
+    previous.finalizedProviderRevision >=
+      (authority.finalizedProviderRevision as number)
+  ) return productionFailV1("strong refresh authority is not monotonic");
+  return Object.freeze({
+    profile: PRODUCTION_STRONG_REFRESH_AUTHORITY_PROFILE_V1,
+    repositoryId: authority.repositoryId,
+    worktreeId: authority.worktreeId,
+    mode: authority.mode,
+    snapshotId: authority.snapshotId,
+    snapshotContentDigest,
+    pulseContentDigest,
+    cutObject: Object.freeze(cutObject),
+    finalizedProviderRevision: authority.finalizedProviderRevision as number,
+    previous,
+  });
+}
+
+function parseProductionStrongRefreshAuthorityInputV1(
+  value: unknown,
+  finalizedProviderRevision: number,
+): ProviderProductionStrongRefreshAuthorityV1 {
+  const authority = dataRecordV1(value, "strong refresh authority input");
+  if (
+    !exactKeysV1(authority, [
+      "profile",
+      "repositoryId",
+      "worktreeId",
+      "mode",
+      "snapshotId",
+      "snapshotContentDigest",
+      "pulseContentDigest",
+      "cutObject",
+      "previous",
+    ])
+  ) return productionFailV1("strong refresh authority input is invalid");
+  return providerProductionStrongRefreshAuthorityInternalV1({
+    ...authority,
+    finalizedProviderRevision,
+  });
+}
+
+function compareProductionStrongRefreshAuthorityKeysV1(
+  left: Pick<ProviderProductionStrongRefreshAuthorityV1, "repositoryId" | "worktreeId">,
+  right: Pick<ProviderProductionStrongRefreshAuthorityV1, "repositoryId" | "worktreeId">,
+): number {
+  if (left.repositoryId !== right.repositoryId) {
+    return left.repositoryId < right.repositoryId ? -1 : 1;
+  }
+  if (left.worktreeId === right.worktreeId) return 0;
+  return left.worktreeId < right.worktreeId ? -1 : 1;
+}
+
+export function providerProductionStrongRefreshAuthoritySetInternalV1(
+  value: unknown,
+): readonly ProviderProductionStrongRefreshAuthorityV1[] {
+  const set = dataRecordV1(value, "strong refresh authority set");
+  if (
+    !exactKeysV1(set, ["profile", "authorities"]) ||
+    set.profile !== PRODUCTION_STRONG_REFRESH_AUTHORITY_SET_PROFILE_V1 ||
+    !Array.isArray(set.authorities) ||
+    set.authorities.length < 1 ||
+    set.authorities.length > MAX_PRODUCTION_STRONG_REFRESH_AUTHORITIES_V1
+  ) return productionFailV1("strong refresh authority set is invalid");
+  const authorities = set.authorities.map(
+    providerProductionStrongRefreshAuthorityInternalV1,
+  );
+  for (let index = 1; index < authorities.length; index += 1) {
+    if (
+      compareProductionStrongRefreshAuthorityKeysV1(
+        authorities[index - 1]!,
+        authorities[index]!,
+      ) >= 0
+    ) return productionFailV1("strong refresh authority set is not sorted");
+  }
+  return Object.freeze(authorities);
+}
+
+export function providerProductionStrongRefreshAuthoritySelectorInternalV1(
+  value: unknown,
+): Readonly<{
+  repositoryId: `repo-hmac-${string}`;
+  worktreeId: `worktree-hmac-${string}`;
+}> {
+  const selector = dataRecordV1(value, "strong refresh authority selector");
+  if (
+    !exactKeysV1(selector, ["repositoryId", "worktreeId"]) ||
+    !exactStrongRepositoryIdV1(selector.repositoryId) ||
+    !exactStrongWorktreeIdV1(selector.worktreeId)
+  ) return productionFailV1("strong refresh authority selector is invalid");
+  return Object.freeze({
+    repositoryId: selector.repositoryId,
+    worktreeId: selector.worktreeId,
+  });
+}
+
 export function providerProductionStrongIndexPublicationAuthorityInternalV1(
   value: unknown,
 ): ProviderProductionStrongIndexPublicationAuthorityV1 {
@@ -547,6 +781,7 @@ function projectProductionStrongBusinessArtifactsV1(
 ): Readonly<{
   publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
   authority?: ProviderProductionStrongIndexPublicationAuthorityV1;
+  refreshAuthorities?: readonly ProviderProductionStrongRefreshAuthorityV1[];
 }> {
   const artifacts = dataRecordV1(
     artifactsInput,
@@ -555,17 +790,28 @@ function projectProductionStrongBusinessArtifactsV1(
   const reserved = artifacts[
     PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1
   ];
+  const reservedRefreshAuthorities = artifacts[
+    PRODUCTION_STRONG_REFRESH_AUTHORITY_ARTIFACT_KEY_V1
+  ];
   const publicArtifacts = Object.freeze(Object.fromEntries(
     Object.entries(artifacts).filter(
       ([key]) =>
-        key !== PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1,
+        key !== PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1 &&
+        key !== PRODUCTION_STRONG_REFRESH_AUTHORITY_ARTIFACT_KEY_V1,
     ),
   ));
-  if (reserved === undefined) return Object.freeze({ publicArtifacts });
+  const authority = reserved === undefined
+    ? undefined
+    : providerProductionStrongIndexPublicationAuthorityInternalV1(reserved);
+  const refreshAuthorities = reservedRefreshAuthorities === undefined
+    ? undefined
+    : providerProductionStrongRefreshAuthoritySetInternalV1(
+        reservedRefreshAuthorities,
+      );
   return Object.freeze({
     publicArtifacts,
-    authority:
-      providerProductionStrongIndexPublicationAuthorityInternalV1(reserved),
+    ...(authority === undefined ? {} : { authority }),
+    ...(refreshAuthorities === undefined ? {} : { refreshAuthorities }),
   });
 }
 
@@ -575,11 +821,16 @@ function createProductionStrongDurableBusinessArtifactsV1(
     | undefined,
   publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
   replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
+  replacementRefreshAuthorities?:
+    readonly ProviderProductionStrongRefreshAuthorityV1[],
 ): Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>> {
-  const currentAuthority = currentArtifacts === undefined
+  const currentProjection = currentArtifacts === undefined
     ? undefined
-    : projectProductionStrongBusinessArtifactsV1(currentArtifacts).authority;
+    : projectProductionStrongBusinessArtifactsV1(currentArtifacts);
+  const currentAuthority = currentProjection?.authority;
   const authority = replacementAuthority ?? currentAuthority;
+  const refreshAuthorities = replacementRefreshAuthorities ??
+    currentProjection?.refreshAuthorities;
   const durableAuthority: ProviderRuntimeIpcJsonValueV1 | undefined =
     authority === undefined
       ? undefined
@@ -591,6 +842,33 @@ function createProductionStrongDurableBusinessArtifactsV1(
           sourceInventoryDigest: authority.sourceInventoryDigest,
           sourceSnapshotId: authority.sourceSnapshotId,
         });
+  const durableRefreshAuthorities: ProviderRuntimeIpcJsonValueV1 | undefined =
+    refreshAuthorities === undefined
+      ? undefined
+      : Object.freeze({
+          profile: PRODUCTION_STRONG_REFRESH_AUTHORITY_SET_PROFILE_V1,
+          authorities: Object.freeze(refreshAuthorities.map(
+            (refreshAuthority) => Object.freeze({
+              profile: refreshAuthority.profile,
+              repositoryId: refreshAuthority.repositoryId,
+              worktreeId: refreshAuthority.worktreeId,
+              mode: refreshAuthority.mode,
+              snapshotId: refreshAuthority.snapshotId,
+              snapshotContentDigest: refreshAuthority.snapshotContentDigest,
+              pulseContentDigest: refreshAuthority.pulseContentDigest,
+              cutObject: refreshAuthority.cutObject,
+              finalizedProviderRevision:
+                refreshAuthority.finalizedProviderRevision,
+              previous: refreshAuthority.previous === null
+                ? null
+                : Object.freeze({
+                    finalizedProviderRevision:
+                      refreshAuthority.previous.finalizedProviderRevision,
+                    snapshotId: refreshAuthority.previous.snapshotId,
+                  }),
+            }),
+          )),
+        });
   return Object.freeze({
     ...publicArtifacts,
     ...(durableAuthority === undefined
@@ -598,6 +876,12 @@ function createProductionStrongDurableBusinessArtifactsV1(
       : {
           [PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1]:
             durableAuthority,
+        }),
+    ...(durableRefreshAuthorities === undefined
+      ? {}
+      : {
+          [PRODUCTION_STRONG_REFRESH_AUTHORITY_ARTIFACT_KEY_V1]:
+            durableRefreshAuthorities,
         }),
   });
 }
@@ -629,6 +913,10 @@ export function providerProductionStrongIndexPublicationLaneInternalV1(
     projection.authority,
     input.currentRevision,
   );
+  assertProductionStrongRefreshAuthorityRevisionsV1(
+    projection.refreshAuthorities,
+    input.currentRevision,
+  );
   return Object.freeze({
     durableArtifacts,
     publicArtifacts: projection.publicArtifacts,
@@ -646,6 +934,19 @@ function assertProductionStrongIndexPublicationRevisionV1(
     authority !== undefined &&
     authority.finalizedProviderRevision > currentRevision
   ) productionFailV1("strong index publication authority revision is invalid");
+}
+
+function assertProductionStrongRefreshAuthorityRevisionsV1(
+  authorities:
+    | readonly ProviderProductionStrongRefreshAuthorityV1[]
+    | undefined,
+  currentRevision: number,
+): void {
+  if (
+    authorities?.some(
+      (authority) => authority.finalizedProviderRevision > currentRevision,
+    ) === true
+  ) productionFailV1("strong refresh authority revision is invalid");
 }
 
 async function readStableFileV1(input: {
@@ -1644,6 +1945,10 @@ function parseProductionStrongBusinessCompareV1(
     Object.prototype.hasOwnProperty.call(
       request.payload.artifacts,
       PRODUCTION_STRONG_INDEX_PUBLICATION_AUTHORITY_ARTIFACT_KEY_V1,
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      request.payload.artifacts,
+      PRODUCTION_STRONG_REFRESH_AUTHORITY_ARTIFACT_KEY_V1,
     )
   ) return productionFailV1("strong compare reserved authority is invalid");
   return request;
@@ -1721,16 +2026,386 @@ export function providerProductionStrongIndexPublicationCompareInputInternalV1(
   });
 }
 
+interface ParsedProductionStrongRefreshPublicationCompareInternalV1 {
+  readonly business: ProductionStrongCompareClaimsInternalV1;
+  readonly refreshAuthority: ProviderProductionStrongRefreshAuthorityV1;
+  readonly indexPublicationAuthority?:
+    ProviderProductionStrongIndexPublicationAuthorityV1;
+}
+
+function exactProductionStrongRefreshArtifactsBindingV1(
+  artifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+  operation: "refresh_index_prepared" | "refresh_index",
+  refreshAuthority: ProviderProductionStrongRefreshAuthorityV1,
+  indexPublicationAuthority?:
+    ProviderProductionStrongIndexPublicationAuthorityV1,
+): boolean {
+  const expectedKeys = [
+    "schemaVersion",
+    "operation",
+    "requestDigest",
+    "idempotencyKeyDigest",
+    "semanticDigest",
+    "mode",
+    "snapshotId",
+    "snapshotContentDigest",
+    "pulseContentDigest",
+    "cutObject",
+    ...(refreshAuthority.mode === "full"
+      ? [
+          "indexGenerationId",
+          "indexGenerationManifestDigest",
+          "indexSourceInventoryDigest",
+        ]
+      : []),
+  ];
+  return exactKeysV1(
+    artifacts as Record<string, unknown>,
+    expectedKeys,
+  ) && artifacts["schemaVersion"] === 1 &&
+    ContentDigestV1Schema.safeParse(artifacts["requestDigest"]).success &&
+    ContentDigestV1Schema.safeParse(artifacts["idempotencyKeyDigest"]).success &&
+    ContentDigestV1Schema.safeParse(artifacts["semanticDigest"]).success &&
+    artifacts["operation"] === operation &&
+    artifacts["mode"] === refreshAuthority.mode &&
+    artifacts["snapshotId"] === refreshAuthority.snapshotId &&
+    artifacts["snapshotContentDigest"] ===
+      refreshAuthority.snapshotContentDigest &&
+    artifacts["pulseContentDigest"] === refreshAuthority.pulseContentDigest &&
+    exactCanonicalEqualV1(artifacts["cutObject"], refreshAuthority.cutObject) &&
+    (refreshAuthority.mode === "incremental"
+      ? indexPublicationAuthority === undefined
+      : indexPublicationAuthority !== undefined &&
+        artifacts["indexGenerationId"] ===
+          indexPublicationAuthority.generationId &&
+        artifacts["indexGenerationManifestDigest"] ===
+          indexPublicationAuthority.generationManifestDigest &&
+        artifacts["indexSourceInventoryDigest"] ===
+          indexPublicationAuthority.sourceInventoryDigest);
+}
+
+function exactProductionStrongRefreshRequestBindingV1(
+  prepared: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+  finalized: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>,
+): boolean {
+  return prepared["schemaVersion"] === finalized["schemaVersion"] &&
+    prepared["requestDigest"] === finalized["requestDigest"] &&
+    prepared["idempotencyKeyDigest"] === finalized["idempotencyKeyDigest"] &&
+    prepared["semanticDigest"] === finalized["semanticDigest"];
+}
+
+function parseProductionStrongRefreshPublicationCompareV1(
+  input: ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
+): ParsedProductionStrongRefreshPublicationCompareInternalV1 {
+  const inputRecord = dataRecordV1(
+    input,
+    "strong refresh publication compare input",
+  );
+  const hasIndexPublicationAuthority = Object.prototype.hasOwnProperty.call(
+    inputRecord,
+    "indexPublicationAuthority",
+  );
+  if (
+    !exactKeysV1(inputRecord, [
+      "expectedRevision",
+      "operationNonce",
+      "phase",
+      "artifacts",
+      "refreshAuthority",
+      ...(hasIndexPublicationAuthority ? ["indexPublicationAuthority"] : []),
+    ])
+  ) {
+    return productionFailV1(
+      "strong refresh publication compare input is invalid",
+    );
+  }
+  const business = parseProductionStrongBusinessCompareV1({
+    expectedRevision: input.expectedRevision,
+    operationNonce: input.operationNonce,
+    phase: input.phase,
+    artifacts: input.artifacts,
+  });
+  if (business.payload.phase !== "strong_refresh_index_v1") {
+    return productionFailV1(
+      "strong refresh publication phase is invalid",
+    );
+  }
+  const finalizedProviderRevision = business.payload.expectedRevision + 1;
+  const refreshAuthority = parseProductionStrongRefreshAuthorityInputV1(
+    input.refreshAuthority,
+    finalizedProviderRevision,
+  );
+  if (
+    (refreshAuthority.mode === "full") !== hasIndexPublicationAuthority
+  ) {
+    return productionFailV1(
+      "strong refresh publication authority mode is invalid",
+    );
+  }
+  const indexPublicationAuthority = hasIndexPublicationAuthority
+    ? parseProductionStrongIndexPublicationAuthorityInputV1(
+        input.indexPublicationAuthority,
+        finalizedProviderRevision,
+      )
+    : undefined;
+  if (
+    indexPublicationAuthority !== undefined &&
+    indexPublicationAuthority.sourceSnapshotId !== refreshAuthority.snapshotId
+  ) {
+    return productionFailV1(
+      "strong refresh publication index authority is not bound to the cut",
+    );
+  }
+  if (!exactProductionStrongRefreshArtifactsBindingV1(
+    business.payload.artifacts,
+    "refresh_index",
+    refreshAuthority,
+    indexPublicationAuthority,
+  )) {
+    return productionFailV1(
+      "strong refresh publication artifacts are not bound to the authority",
+    );
+  }
+  return Object.freeze({
+    business,
+    refreshAuthority,
+    ...(indexPublicationAuthority === undefined
+      ? {}
+      : { indexPublicationAuthority }),
+  });
+}
+
+export function providerProductionStrongRefreshPublicationCompareInputInternalV1(
+  input: unknown,
+): ProviderProductionStrongCompareCommitRefreshPublicationV1Input {
+  const parsed = parseProductionStrongRefreshPublicationCompareV1(
+    input as ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
+  );
+  const refreshAuthority = parsed.refreshAuthority;
+  const indexPublicationAuthority = parsed.indexPublicationAuthority;
+  return Object.freeze({
+    expectedRevision: parsed.business.payload.expectedRevision,
+    operationNonce: parsed.business.operationNonce,
+    phase: parsed.business.payload.phase,
+    artifacts: parsed.business.payload.artifacts,
+    refreshAuthority: Object.freeze({
+      profile: refreshAuthority.profile,
+      repositoryId: refreshAuthority.repositoryId,
+      worktreeId: refreshAuthority.worktreeId,
+      mode: refreshAuthority.mode,
+      snapshotId: refreshAuthority.snapshotId,
+      snapshotContentDigest: refreshAuthority.snapshotContentDigest,
+      pulseContentDigest: refreshAuthority.pulseContentDigest,
+      cutObject: refreshAuthority.cutObject,
+      previous: refreshAuthority.previous,
+    }),
+    ...(indexPublicationAuthority === undefined
+      ? {}
+      : {
+          indexPublicationAuthority: Object.freeze({
+            profile: indexPublicationAuthority.profile,
+            generationId: indexPublicationAuthority.generationId,
+            generationManifestDigest:
+              indexPublicationAuthority.generationManifestDigest,
+            sourceInventoryDigest:
+              indexPublicationAuthority.sourceInventoryDigest,
+            sourceSnapshotId: indexPublicationAuthority.sourceSnapshotId,
+          }),
+        }),
+  });
+}
+
+function sameProductionStrongRefreshAuthorityKeyV1(
+  left: Pick<ProviderProductionStrongRefreshAuthorityV1, "repositoryId" | "worktreeId">,
+  right: Pick<ProviderProductionStrongRefreshAuthorityV1, "repositoryId" | "worktreeId">,
+): boolean {
+  return left.repositoryId === right.repositoryId &&
+    left.worktreeId === right.worktreeId;
+}
+
+function exactProductionStrongRefreshPreviousV1(
+  current: ProviderProductionStrongRefreshAuthorityV1,
+  expected: ProviderProductionStrongRefreshAuthorityPreviousV1 | null,
+): boolean {
+  return expected !== null &&
+    expected.finalizedProviderRevision === current.finalizedProviderRevision &&
+    expected.snapshotId === current.snapshotId;
+}
+
+function nextProductionStrongRefreshAuthoritiesV1(input: Readonly<{
+  currentAuthorities?: readonly ProviderProductionStrongRefreshAuthorityV1[];
+  currentPublicArtifacts?: Readonly<
+    Record<string, ProviderRuntimeIpcJsonValueV1>
+  >;
+  nextPublicArtifacts: Readonly<
+    Record<string, ProviderRuntimeIpcJsonValueV1>
+  >;
+  currentProviderRevision: number;
+  currentBusinessUninitialized: boolean;
+  expectedProviderRevision: number;
+  replacementAuthority: ProviderProductionStrongRefreshAuthorityV1;
+  replacementIndexPublicationAuthority?:
+    ProviderProductionStrongIndexPublicationAuthorityV1;
+}>): readonly ProviderProductionStrongRefreshAuthorityV1[] {
+  assertProductionStrongRefreshAuthorityRevisionsV1(
+    input.currentAuthorities,
+    input.currentProviderRevision,
+  );
+  const currentIndex = input.currentAuthorities?.findIndex((authority) =>
+    sameProductionStrongRefreshAuthorityKeyV1(
+      authority,
+      input.replacementAuthority,
+    )
+  ) ?? -1;
+  const currentAuthority = currentIndex < 0
+    ? undefined
+    : input.currentAuthorities![currentIndex];
+
+  // Reconstructing the current exact authority permits runtime idempotency
+  // replay after ordinary business commits have carried the lane forward.
+  if (
+    currentAuthority !== undefined &&
+    exactCanonicalEqualV1(currentAuthority, input.replacementAuthority)
+  ) return input.currentAuthorities!;
+
+  if (input.expectedProviderRevision !== input.currentProviderRevision) {
+    return productionFailV1("strong refresh authority compare is stale");
+  }
+  if (
+    input.replacementAuthority.mode === "full" &&
+    (
+      input.currentPublicArtifacts === undefined ||
+      !exactProductionStrongRefreshArtifactsBindingV1(
+        input.currentPublicArtifacts,
+        "refresh_index_prepared",
+        input.replacementAuthority,
+        input.replacementIndexPublicationAuthority,
+      ) ||
+      !exactProductionStrongRefreshRequestBindingV1(
+        input.currentPublicArtifacts,
+        input.nextPublicArtifacts,
+      )
+    )
+  ) {
+    return productionFailV1(
+      "strong refresh full publication has no exact prepared head",
+    );
+  }
+  if (input.currentAuthorities === undefined) {
+    if (
+      (
+        input.replacementAuthority.mode === "incremental" &&
+        (
+          input.currentProviderRevision !== 0 ||
+          !input.currentBusinessUninitialized
+        )
+      ) ||
+      input.replacementAuthority.previous !== null
+    ) {
+      return productionFailV1(
+        "strong refresh authority cold publication is invalid",
+      );
+    }
+  } else if (currentAuthority === undefined) {
+    if (input.replacementAuthority.previous !== null) {
+      return productionFailV1(
+        "strong refresh previous authority must be absent",
+      );
+    }
+    if (
+      input.currentAuthorities.length >=
+        MAX_PRODUCTION_STRONG_REFRESH_AUTHORITIES_V1
+    ) return productionFailV1("strong refresh authority set is full");
+  } else if (
+    !exactProductionStrongRefreshPreviousV1(
+      currentAuthority,
+      input.replacementAuthority.previous,
+    )
+  ) {
+    return productionFailV1("strong refresh previous authority is stale");
+  }
+
+  const next = currentIndex < 0
+    ? [...(input.currentAuthorities ?? []), input.replacementAuthority]
+    : input.currentAuthorities!.map((authority, index) =>
+        index === currentIndex ? input.replacementAuthority : authority
+      );
+  next.sort(compareProductionStrongRefreshAuthorityKeysV1);
+  return Object.freeze(next);
+}
+
+/** Focused-test seam for the atomic latest-refresh/index-publication lane. */
+export function providerProductionStrongRefreshAuthorityLaneInternalV1(
+  input: Readonly<{
+    currentArtifacts?: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+    currentProviderRevision: number;
+    currentBusinessUninitialized: boolean;
+    compareInput: ProviderProductionStrongCompareCommitRefreshPublicationV1Input;
+  }>,
+): Readonly<{
+  durableArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+  publicArtifacts: Readonly<Record<string, ProviderRuntimeIpcJsonValueV1>>;
+  refreshAuthorities: readonly ProviderProductionStrongRefreshAuthorityV1[];
+  refreshAuthority: ProviderProductionStrongRefreshAuthorityV1;
+  indexPublicationAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1;
+}> {
+  const parsed = parseProductionStrongRefreshPublicationCompareV1(
+    input.compareInput,
+  );
+  const currentProjection = input.currentArtifacts === undefined
+    ? undefined
+    : projectProductionStrongBusinessArtifactsV1(input.currentArtifacts);
+  const refreshAuthorities = nextProductionStrongRefreshAuthoritiesV1({
+    currentAuthorities: currentProjection?.refreshAuthorities,
+    currentPublicArtifacts: currentProjection?.publicArtifacts,
+    nextPublicArtifacts: parsed.business.payload.artifacts,
+    currentProviderRevision: input.currentProviderRevision,
+    currentBusinessUninitialized: input.currentBusinessUninitialized,
+    expectedProviderRevision: parsed.business.payload.expectedRevision,
+    replacementAuthority: parsed.refreshAuthority,
+    replacementIndexPublicationAuthority: parsed.indexPublicationAuthority,
+  });
+  const durableArtifacts = createProductionStrongDurableBusinessArtifactsV1(
+    input.currentArtifacts,
+    parsed.business.payload.artifacts,
+    parsed.indexPublicationAuthority,
+    refreshAuthorities,
+  );
+  const projection = projectProductionStrongBusinessArtifactsV1(
+    durableArtifacts,
+  );
+  assertProductionStrongIndexPublicationRevisionV1(
+    projection.authority,
+    parsed.business.payload.expectedRevision + 1,
+  );
+  assertProductionStrongRefreshAuthorityRevisionsV1(
+    projection.refreshAuthorities,
+    parsed.business.payload.expectedRevision + 1,
+  );
+  return Object.freeze({
+    durableArtifacts,
+    publicArtifacts: projection.publicArtifacts,
+    refreshAuthorities,
+    refreshAuthority: parsed.refreshAuthority,
+    ...(parsed.indexPublicationAuthority === undefined
+      ? {}
+      : { indexPublicationAuthority: parsed.indexPublicationAuthority }),
+  });
+}
+
 function createProductionStrongRuntimeCompareV1(
   trusted: ReturnType<typeof validateTrustedProductionStateV1>,
   business: ProductionStrongCompareClaimsInternalV1,
   replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
+  replacementRefreshAuthorities?:
+    readonly ProviderProductionStrongRefreshAuthorityV1[],
 ): ProductionStrongCompareClaimsInternalV1 {
   const durableBusinessArtifacts =
     createProductionStrongDurableBusinessArtifactsV1(
       trusted.businessHead?.artifacts,
       business.payload.artifacts,
       replacementAuthority,
+      replacementRefreshAuthorities,
     );
   const request = ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
     operation: "compare_commit",
@@ -1829,19 +2504,70 @@ function projectTrustedProductionIndexPublicationAuthorityV1(
   return authority;
 }
 
+function projectTrustedProductionStrongRefreshAuthorityV1(
+  trusted: ReturnType<typeof validateTrustedProductionStateV1>,
+  repositoryId: `repo-hmac-${string}`,
+  worktreeId: `worktree-hmac-${string}`,
+): ProviderProductionStrongRefreshAuthorityInspectionV1 {
+  const refreshAuthorities = trusted.businessHead === undefined
+    ? undefined
+    : projectProductionStrongBusinessArtifactsV1(
+        trusted.businessHead.artifacts,
+      ).refreshAuthorities;
+  assertProductionStrongRefreshAuthorityRevisionsV1(
+    refreshAuthorities,
+    trusted.inspected.state.revision,
+  );
+  return Object.freeze({
+    authority: refreshAuthorities?.find((authority) =>
+      authority.repositoryId === repositoryId &&
+      authority.worktreeId === worktreeId
+    ),
+    observedProviderRevision: trusted.inspected.state.revision,
+  });
+}
+
 async function compareProductionStrongBusinessV1(
   state: ProductionClientStateV1,
   business: ProductionStrongCompareClaimsInternalV1,
   replacementAuthority?: ProviderProductionStrongIndexPublicationAuthorityV1,
+  replacementRefreshAuthority?: ProviderProductionStrongRefreshAuthorityV1,
 ): Promise<ProviderRuntimeIpcCompareCommitResultV1> {
   let runtimeRequest: ProductionStrongCompareClaimsInternalV1 | undefined;
   const result = await strongExchangeV1(
     state,
     (inspected) => {
+      const currentProjection = inspected.businessHead === undefined
+        ? undefined
+        : projectProductionStrongBusinessArtifactsV1(
+            inspected.businessHead.artifacts,
+          );
+      assertProductionStrongIndexPublicationRevisionV1(
+        currentProjection?.authority,
+        inspected.inspected.state.revision,
+      );
+      assertProductionStrongRefreshAuthorityRevisionsV1(
+        currentProjection?.refreshAuthorities,
+        inspected.inspected.state.revision,
+      );
+      const replacementRefreshAuthorities =
+        replacementRefreshAuthority === undefined
+          ? undefined
+          : nextProductionStrongRefreshAuthoritiesV1({
+              currentAuthorities: currentProjection?.refreshAuthorities,
+              currentPublicArtifacts: currentProjection?.publicArtifacts,
+              nextPublicArtifacts: business.payload.artifacts,
+              currentProviderRevision: inspected.inspected.state.revision,
+              currentBusinessUninitialized: inspected.businessHead === undefined,
+              expectedProviderRevision: business.payload.expectedRevision,
+              replacementAuthority: replacementRefreshAuthority,
+              replacementIndexPublicationAuthority: replacementAuthority,
+            });
       runtimeRequest = createProductionStrongRuntimeCompareV1(
         inspected,
         business,
         replacementAuthority,
+        replacementRefreshAuthorities,
       );
       return runtimeRequest;
     },
@@ -1911,6 +2637,21 @@ export async function openProviderProductionStrongObjectHostInternalV1(
         await inspectTrustedProductionStateV1(productionStateV1(client)),
       );
     },
+    async inspectStrongRefreshAuthority(
+      repositoryIdInput: string,
+      worktreeIdInput: string,
+    ) {
+      const selector =
+        providerProductionStrongRefreshAuthoritySelectorInternalV1({
+          repositoryId: repositoryIdInput,
+          worktreeId: worktreeIdInput,
+        });
+      return projectTrustedProductionStrongRefreshAuthorityV1(
+        await inspectTrustedProductionStateV1(productionStateV1(client)),
+        selector.repositoryId,
+        selector.worktreeId,
+      );
+    },
     async readExactObject(locatorInput: ProviderRuntimeIpcFixedObjectLocatorV1) {
       const state = productionStateV1(client);
       const locator = ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
@@ -1965,6 +2706,24 @@ export async function openProviderProductionStrongObjectHostInternalV1(
         state,
         business,
         authority,
+      );
+    },
+    async compareCommitRefreshPublication(
+      inputValue: ProviderProductionStrongCompareCommitRefreshPublicationV1Input,
+    ) {
+      const state = productionStateV1(client);
+      const parsed = parseProductionStrongRefreshPublicationCompareV1(
+        inputValue,
+      );
+      if (
+        parsed.refreshAuthority.cutObject.providerId !==
+          state.selection.serviceConfig.payload.providerId
+      ) return productionFailV1("strong refresh cut Provider is invalid");
+      return compareProductionStrongBusinessV1(
+        state,
+        parsed.business,
+        parsed.indexPublicationAuthority,
+        parsed.refreshAuthority,
       );
     },
     commitOwnerOnlyState(

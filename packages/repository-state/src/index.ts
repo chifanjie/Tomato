@@ -6,3 +6,4 @@ export * from "./freshness.js";
 export * from "./pulse.js";
 export * from "./surface.js";
 export * from "./safe-git-bootstrap.js";
+export * from "./safe-git-layered-content.js";

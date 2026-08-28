@@ -1,0 +1,63 @@
+{
+  "$id": "urn:understand-code:schema:v1:step16-real-host-tool-call-receipt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "mcp_tool_call"
+    },
+    "server": {
+      "type": "string",
+      "const": "understand-code"
+    },
+    "tool": {
+      "type": "string",
+      "enum": [
+        "get_repo_pulse",
+        "build_task_brief",
+        "get_task_brief",
+        "update_task",
+        "search_context",
+        "get_evidence",
+        "trace_impact",
+        "check_change",
+        "record_verification",
+        "open_workbench",
+        "refresh_index"
+      ]
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "callIdDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "argumentsDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "resultDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "success": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "kind",
+    "server",
+    "tool",
+    "ordinal",
+    "callIdDigest",
+    "argumentsDigest",
+    "resultDigest",
+    "success"
+  ],
+  "additionalProperties": false
+}

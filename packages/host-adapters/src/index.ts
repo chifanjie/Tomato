@@ -1,5 +1,8 @@
 import path from "node:path";
 
+export * from "./real-host-receipts.js";
+export * from "./real-host-executor.js";
+
 /** The two host surfaces intentionally share one MCP command contract. */
 export type HostAdapterId = "codex" | "claude";
 

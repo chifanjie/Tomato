@@ -20,6 +20,7 @@ import {
 import {
   createProviderStrongMutationProductionSessionCallbacksForTestInternalV1,
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1,
   inspectProviderStrongMutationBrokerSnapshotForTestInternalV1 as inspectProviderStrongMutationBrokerSnapshotWithVerifierV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
   openProviderStrongMutationExecutionBrokerStoreForTestInternalV1,
@@ -92,6 +93,15 @@ function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
     capability,
     verifierForLayoutV1(capability),
   );
+}
+
+const RESOLVED_RECEIPT_BUNDLE_DIGEST_DOMAIN_ORACLE_V1 =
+  "understand-code-provider-strong-mutation-broker-resolved-receipt-bundle-v1";
+
+function expectDeepFrozenV1(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const child of Object.values(value)) expectDeepFrozenV1(child);
 }
 
 afterEach(async () => {
@@ -680,6 +690,212 @@ describe("locked strong-mutation broker transaction candidate", () => {
     });
     if (replay.resolution !== "resolved") throw new Error("expected replay");
     expect(replay.intent).toEqual(resolved.intent);
+  });
+
+  it("exports immutable resolved private receipt bundles in durable intent order with independently derived digests", async () => {
+    const { root, capability, current } = await fixtureV1();
+    const principalAttestation = strongMutationPrincipalAttestationV1(
+      currentAcceptanceIdentityV1(current),
+    );
+    const fenceRequest = strongMutationRequestV1(current, {
+      principalAttestation,
+    });
+    const fenceGrant = fenceRequest.authorityGrant.payload;
+    const executionFence =
+      registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
+        profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
+        providerId: fenceGrant.providerId,
+        targetProfileId: fenceGrant.targetProfileId,
+        targetFingerprintDigest: fenceGrant.targetFingerprintDigest,
+        capabilityDigest: fenceGrant.capabilityDigest,
+        installationIdentityGenerationId:
+          fenceGrant.acceptanceIdentity.installationIdentityGenerationId,
+        principal: {
+          uid: 501,
+          gid: 20,
+          handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+        },
+        revalidateExactObjectAuthority(input) {
+          return input.principalAttestation.handoffPayloadDigest ===
+            principalAttestation.handoffPayloadDigest;
+        },
+      });
+    const broker =
+      await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        verifierForLayoutV1(capability),
+        executionFence,
+        { clock: testAuthorityClockV1 },
+      );
+    const pendingRequest = strongMutationRequestV1(current, {
+      nonceDigit: "a",
+      requestId: "a".repeat(32),
+    });
+    const firstResolvedRequest = strongMutationRequestV1(current, {
+      nonceDigit: "b",
+      requestId: "b".repeat(32),
+    });
+    const secondResolvedRequest = strongMutationRequestV1(current, {
+      nonceDigit: "c",
+      requestId: "c".repeat(32),
+    });
+    expectPendingV1(await broker.begin(pendingRequest));
+    const firstPending = expectPendingV1(
+      await broker.begin(firstResolvedRequest),
+    );
+    const secondPending = expectPendingV1(
+      await broker.begin(secondResolvedRequest),
+    );
+    const firstResolveRequest = brokerResolveRequestV1(
+      firstPending,
+      strongMutationResponseV1(firstResolvedRequest),
+    );
+    const secondResolveRequest = brokerResolveRequestV1(
+      secondPending,
+      strongMutationResponseV1(secondResolvedRequest),
+    );
+    const secondResolved = await broker.resolve(secondResolveRequest);
+    const firstResolved = await broker.resolve(firstResolveRequest);
+    if (
+      firstResolved.resolution !== "resolved" ||
+      secondResolved.resolution !== "resolved"
+    ) throw new Error("expected resolved receipts");
+
+    const filesBeforeExport = await allFilesV1(root);
+    const exported =
+      await exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+        broker,
+      );
+    expect(exported.map((bundle) => ({
+      intentOrdinal: bundle.intentOrdinal,
+      grantId: bundle.grantId,
+    }))).toEqual([
+      { intentOrdinal: 2, grantId: firstResolved.intent.grantId },
+      { intentOrdinal: 3, grantId: secondResolved.intent.grantId },
+    ]);
+    expect(exported.some((bundle) =>
+      bundle.grantId === pendingRequest.authorityGrant.grantId
+    )).toBe(false);
+
+    for (
+      const [index, resolved] of [firstResolved, secondResolved].entries()
+    ) {
+      const bundle = exported[index];
+      if (bundle === undefined) throw new Error("expected exported receipt");
+      expect(bundle).toMatchObject({
+        schemaVersion: 1,
+        profile: "provider_strong_mutation_broker_resolved_receipt_bundle_v1",
+        intentOrdinal: index + 2,
+        grantId: resolved.intent.grantId,
+        bindingDigest: resolved.intent.bindingDigest,
+        executionFence:
+          "established_linux_ext4_exact_object_dedicated_os_principal_v1",
+        strongWrites: "unlocked",
+      });
+      expect(bundle.request).toEqual(resolved.intent.request);
+      expect(bundle.response).toEqual(resolved.intent.response);
+      expect(bundle.principalAttestation).toEqual(
+        resolved.intent.principalAttestation,
+      );
+      expect(bundle.authorityGrant).toEqual(
+        resolved.intent.request.authorityGrant,
+      );
+      expect(bundle.authorityGrant).toBe(bundle.request.authorityGrant);
+      expect(bundle.componentDigests).toEqual({
+        request: canonicalDigestOracleV1(bundle.request),
+        response: canonicalDigestOracleV1(bundle.response),
+        principalAttestation: canonicalDigestOracleV1(
+          bundle.principalAttestation,
+        ),
+        authorityGrant: canonicalDigestOracleV1(bundle.authorityGrant),
+      });
+      const { bundleDigest, ...claims } = bundle;
+      expect(bundleDigest).toBe(canonicalDigestOracleV1([
+        RESOLVED_RECEIPT_BUNDLE_DIGEST_DOMAIN_ORACLE_V1,
+        claims,
+      ]));
+    }
+    expectDeepFrozenV1(exported);
+    await expect(allFilesV1(root)).resolves.toEqual(filesBeforeExport);
+
+    await expect(
+      broker.resolve(cloneJsonV1(firstResolveRequest)),
+    ).resolves.toMatchObject({
+      resolution: "resolved",
+      disposition: "replayed",
+    });
+    await expect(
+      exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+        broker,
+      ),
+    ).resolves.toEqual(exported);
+    const reopened =
+      await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        verifierForLayoutV1(capability),
+        executionFence,
+      );
+    await expect(
+      exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+        reopened,
+      ),
+    ).resolves.toEqual(exported);
+  });
+
+  it("fails closed when an unlocked exporter observes locked broker history", async () => {
+    const { capability, current, broker: lockedBroker } = await fixtureV1();
+    const request = strongMutationRequestV1(current);
+    const pending = expectPendingV1(await lockedBroker.begin(request));
+    await lockedBroker.resolve(
+      brokerResolveRequestV1(pending, strongMutationResponseV1(request)),
+    );
+    const principalAttestation = strongMutationPrincipalAttestationV1(
+      currentAcceptanceIdentityV1(current),
+    );
+    const fenceRequest = strongMutationRequestV1(current, {
+      principalAttestation,
+    });
+    const grant = fenceRequest.authorityGrant.payload;
+    const executionFence =
+      registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1({
+        profile: "linux_ext4_exact_object_dedicated_os_principal_v1",
+        providerId: grant.providerId,
+        targetProfileId: grant.targetProfileId,
+        targetFingerprintDigest: grant.targetFingerprintDigest,
+        capabilityDigest: grant.capabilityDigest,
+        installationIdentityGenerationId:
+          grant.acceptanceIdentity.installationIdentityGenerationId,
+        principal: {
+          uid: 501,
+          gid: 20,
+          handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+        },
+        revalidateExactObjectAuthority() {
+          return true;
+        },
+      });
+    const unlockedBroker =
+      await openProviderStrongMutationExecutionBrokerStoreForTestInternalV1(
+        capability,
+        verifierForLayoutV1(capability),
+        executionFence,
+      );
+
+    await expect(
+      exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+        unlockedBroker,
+      ),
+    ).rejects.toMatchObject({ code: "namespace_integrity_failed" });
+  });
+
+  it("rejects a structural broker forgery as a receipt export capability", async () => {
+    const { broker } = await fixtureV1();
+    const forged = Object.freeze({ ...broker }) as typeof broker;
+    await expect(
+      exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+        forged,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
   });
 
   it("loads and joins a multi-intent snapshot without changing existing records", async () => {
@@ -1287,6 +1503,8 @@ describe("locked broker public boundary", () => {
       "resolve",
       "openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1",
       "openProviderStrongMutationBrokerStoreForTestInternalV1",
+      "exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1",
+      "exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1",
       "mintProviderStrongMutationTrustVerifierCapabilityInternalV1",
       "mintProviderStrongMutationTrustVerifierForTestInternalV1",
       "PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1",

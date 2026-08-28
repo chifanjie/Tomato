@@ -78,6 +78,10 @@ const BROKER_INTENT_PROFILE_V1 =
   "provider_strong_mutation_broker_intent_v1" as const;
 const BROKER_RESOLVE_REQUEST_PROFILE_V1 =
   "provider_strong_mutation_broker_resolve_request_v1" as const;
+const BROKER_RESOLVED_RECEIPT_BUNDLE_PROFILE_V1 =
+  "provider_strong_mutation_broker_resolved_receipt_bundle_v1" as const;
+const BROKER_RESOLVED_RECEIPT_BUNDLE_DIGEST_DOMAIN_V1 =
+  "understand-code-provider-strong-mutation-broker-resolved-receipt-bundle-v1";
 const MAX_BROKER_PUBLICATION_PIN_BYTES_V1 = 16 * 1024;
 
 export const PROVIDER_STRONG_MUTATION_BROKER_DOMAINS_INTERNAL_V1 = Object.freeze({
@@ -87,6 +91,8 @@ export const PROVIDER_STRONG_MUTATION_BROKER_DOMAINS_INTERNAL_V1 = Object.freeze
   snapshotToken: BROKER_SNAPSHOT_TOKEN_DOMAIN_V1,
   publicationPinDigest: BROKER_PUBLICATION_PIN_DIGEST_DOMAIN_V1,
   publicationPinToken: BROKER_PUBLICATION_PIN_TOKEN_DOMAIN_V1,
+  resolvedReceiptBundleDigest:
+    BROKER_RESOLVED_RECEIPT_BUNDLE_DIGEST_DOMAIN_V1,
 });
 
 export const PROVIDER_STRONG_MUTATION_BROKER_LIMITS_INTERNAL_V1 = Object.freeze({
@@ -261,7 +267,39 @@ export interface ProviderStrongMutationBrokerStoreInternalV1 {
   ) => Promise<ProviderStrongMutationBrokerLegacyOutcomeAuthorityInternalV1 | false>;
 }
 
-const brokerStoreCapabilitiesV1 = new WeakSet<object>();
+export interface ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1 {
+  readonly schemaVersion: 1;
+  readonly profile: typeof BROKER_RESOLVED_RECEIPT_BUNDLE_PROFILE_V1;
+  readonly intentOrdinal: number;
+  readonly grantId: string;
+  readonly bindingDigest: string;
+  readonly executionFence:
+    "established_linux_ext4_exact_object_dedicated_os_principal_v1";
+  readonly strongWrites: "unlocked";
+  readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
+  readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
+  readonly principalAttestation: ProviderRuntimeIpcPrincipalAttestationV1;
+  readonly authorityGrant:
+    ProviderRuntimeIpcStrongMutationRequestV1["authorityGrant"];
+  readonly componentDigests: Readonly<{
+    readonly request: Sha256ContentDigestInternalV1;
+    readonly response: Sha256ContentDigestInternalV1;
+    readonly principalAttestation: Sha256ContentDigestInternalV1;
+    readonly authorityGrant: Sha256ContentDigestInternalV1;
+  }>;
+  readonly bundleDigest: Sha256ContentDigestInternalV1;
+}
+
+interface ProviderStrongMutationBrokerStoreCapabilityInternalV1 {
+  readonly exportResolvedReceiptBundles: () => Promise<
+    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+  >;
+}
+
+const brokerStoreCapabilitiesV1 = new WeakMap<
+  object,
+  ProviderStrongMutationBrokerStoreCapabilityInternalV1
+>();
 
 export function assertProviderStrongMutationBrokerStoreCapabilityInternalV1(
   store: ProviderStrongMutationBrokerStoreInternalV1,
@@ -269,6 +307,18 @@ export function assertProviderStrongMutationBrokerStoreCapabilityInternalV1(
   if (!brokerStoreCapabilitiesV1.has(store as object)) {
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
   }
+}
+
+export async function exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1(
+  store: ProviderStrongMutationBrokerStoreInternalV1,
+): Promise<
+  readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+> {
+  const capability = brokerStoreCapabilitiesV1.get(store as object);
+  if (capability === undefined) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  return capability.exportResolvedReceiptBundles();
 }
 
 export interface ProviderStrongMutationBrokerSnapshotInspectionInternalV1 {
@@ -377,6 +427,93 @@ function responseContentDigestV1(
   response: ProviderRuntimeIpcStrongMutationResponseV1,
 ): Sha256ContentDigestInternalV1 {
   return sha256DigestInternalV1(canonicalAuthorityBytesInternalV1(response));
+}
+
+function deepFreezeReceiptValueV1<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) deepFreezeReceiptValueV1(child);
+  Object.freeze(value);
+  return value;
+}
+
+function canonicalFrozenReceiptCloneV1<T>(value: T): T {
+  return deepFreezeReceiptValueV1(
+    parseCanonicalAuthorityBytesInternalV1(
+      canonicalAuthorityBytesInternalV1(value),
+    ) as T,
+  );
+}
+
+function resolvedReceiptBundleV1(
+  intent: ProviderStrongMutationBrokerResolvedIntentInternalV1,
+  intentOrdinal: number,
+): ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1 {
+  const request = canonicalFrozenReceiptCloneV1(intent.request);
+  const response = canonicalFrozenReceiptCloneV1(intent.response);
+  const principalAttestation = canonicalFrozenReceiptCloneV1(
+    intent.principalAttestation,
+  );
+  const authorityGrant = request.authorityGrant;
+  const componentDigests = Object.freeze({
+    request: sha256DigestInternalV1(canonicalAuthorityBytesInternalV1(request)),
+    response: sha256DigestInternalV1(
+      canonicalAuthorityBytesInternalV1(response),
+    ),
+    principalAttestation: sha256DigestInternalV1(
+      canonicalAuthorityBytesInternalV1(principalAttestation),
+    ),
+    authorityGrant: sha256DigestInternalV1(
+      canonicalAuthorityBytesInternalV1(authorityGrant),
+    ),
+  });
+  const claims = Object.freeze({
+    schemaVersion: 1 as const,
+    profile: BROKER_RESOLVED_RECEIPT_BUNDLE_PROFILE_V1,
+    intentOrdinal,
+    grantId: intent.grantId,
+    bindingDigest: intent.bindingDigest,
+    executionFence:
+      "established_linux_ext4_exact_object_dedicated_os_principal_v1" as const,
+    strongWrites: "unlocked" as const,
+    request,
+    response,
+    principalAttestation,
+    authorityGrant,
+    componentDigests,
+  });
+  return Object.freeze({
+    ...claims,
+    bundleDigest: digestDomainInternalV1(
+      BROKER_RESOLVED_RECEIPT_BUNDLE_DIGEST_DOMAIN_V1,
+      claims,
+    ),
+  });
+}
+
+function resolvedReceiptBundlesV1(
+  snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined,
+): readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[] {
+  const intents = snapshot?.envelope.payload.intents ?? [];
+  for (const intent of intents) {
+    if (
+      intent.executionFence !==
+        "established_linux_ext4_exact_object_dedicated_os_principal_v1" ||
+      intent.strongWrites !== "unlocked"
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1(
+        "namespace_integrity_failed",
+      );
+    }
+  }
+  return Object.freeze(
+    intents.flatMap((intent, index) =>
+      intent.state === "resolved"
+        ? [resolvedReceiptBundleV1(intent, index + 1)]
+        : []
+    ),
+  );
 }
 
 function sameCanonicalV1(left: unknown, right: unknown): boolean {
@@ -2001,7 +2138,24 @@ async function openProviderStrongMutationBrokerStoreCoreInternalV1(
     resolve,
     inspectLegacyOutcomeAuthority,
   });
-  brokerStoreCapabilitiesV1.add(store);
+  brokerStoreCapabilitiesV1.set(
+    store,
+    Object.freeze({
+      exportResolvedReceiptBundles: async () => {
+        if (executionFenceCapability === undefined) {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
+        return withBrokerViewV1(
+          layout,
+          verifierCapability,
+          executionFenceCapability,
+          {},
+          (_view, converged) =>
+            resolvedReceiptBundlesV1(converged.snapshot),
+        );
+      },
+    }),
+  );
   return store;
 }
 

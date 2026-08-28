@@ -21,6 +21,11 @@ const PATTERN_SAMPLES = new Map<string, string>([
   ],
   ["^[0-9A-HJKMNP-TV-Z]{26}$", "01ARZ3NDEKTSV4RRFFQ69G5FAV"],
   ["^sha256:[0-9a-f]{64}$", `sha256:${"0".repeat(64)}`],
+  ["^[0-9a-f]{32}$", "0".repeat(32)],
+  [
+    "^(?:alpha-a-slot-(?:0[1-9]|1[0-8])|alpha-b-slot-0[1-6])$",
+    "alpha-a-slot-01",
+  ],
   [
     "^ed25519-spki-sha256:[0-9a-f]{64}$",
     `ed25519-spki-sha256:${"0".repeat(64)}`,
@@ -155,6 +160,22 @@ function structuralExample(schema: JsonSchema): unknown {
 }
 
 describe("generated JSON Schema distribution", () => {
+  it("does not publish Step16 schemas whose superRefine semantics are not portable", () => {
+    const unpublished = [
+      "step16-real-host-transcript-receipt",
+      "step16-expected-host-event-plan",
+      "step16-receipt-inventory",
+    ] as const;
+    const generated = generateContractJsonSchemasV1() as Record<string, unknown>;
+    for (const name of unpublished) {
+      expect(CONTRACT_JSON_SCHEMA_SOURCES_V1).not.toHaveProperty(name);
+      expect(generated).not.toHaveProperty(name);
+      expect(() =>
+        readFileSync(join(schemaRoot, `${name}.schema.json`), "utf8")
+      ).toThrow();
+    }
+  });
+
   it("tracks one current draft-2020-12 document for every registered contract", () => {
     for (const [name, schema] of Object.entries(
       CONTRACT_JSON_SCHEMA_SOURCES_V1,

@@ -29,7 +29,11 @@ import {
   withProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1,
 } from "./acceptance-store-core-internal.js";
 import {
+  assertProviderStrongMutationBrokerStoreCapabilityInternalV1,
+  exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1,
   openProviderStrongMutationBrokerStoreWithExecutionFenceAndLayoutCoreInternalV1,
+  type ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1,
+  type ProviderStrongMutationBrokerStoreInternalV1,
 } from "./strong-mutation-broker-core-internal.js";
 import {
   ProviderStrongMutationBrokerServerInternalV1,
@@ -47,6 +51,7 @@ import {
 import {
   resolveProviderAcceptanceAuthorityProductionLayoutInternalV1,
 } from "./platform-layout.js";
+import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
 
 const MAX_SERVICE_CONFIG_BYTES_V1 = 1024 * 1024;
 const O_CLOEXEC_V1 =
@@ -97,6 +102,130 @@ export interface ProviderProductionStrongAuthorityServiceV1 {
     "linux_ext4_exact_object_dedicated_os_principal_v1";
   readonly strongWrites: "unlocked";
   close(): Promise<void>;
+}
+
+export interface ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1 {
+  readonly __providerProductionStrongAuthorityReceiptExportCapabilityInternalV1:
+    true;
+}
+
+export interface OpenedProviderProductionStrongAuthorityServiceInternalV1 {
+  readonly service: ProviderProductionStrongAuthorityServiceV1;
+  readonly receiptExportCapability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1;
+}
+
+const receiptExportCapabilityStatesV1 = new WeakMap<
+  object,
+  () => Promise<
+    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+  >
+>();
+
+export function exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+): Promise<
+  readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+> {
+  const exportBundles = receiptExportCapabilityStatesV1.get(
+    capability as object,
+  );
+  if (exportBundles === undefined) {
+    return Promise.reject(
+      new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+    );
+  }
+  return exportBundles();
+}
+
+/**
+ * Internal construction boundary shared only with the NODE_ENV=test seam.
+ * Both the broker and receipt exporter are identity capabilities; the public
+ * service facade carries lifecycle authority only.
+ */
+export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
+  broker: ProviderStrongMutationBrokerStoreInternalV1,
+  closeServer: () => Promise<void>,
+  closeExactObjectAuthority: () => Promise<void>,
+): OpenedProviderProductionStrongAuthorityServiceInternalV1 {
+  assertProviderStrongMutationBrokerStoreCapabilityInternalV1(broker);
+  if (
+    broker.strongWrites !== "unlocked" ||
+    broker.executionFence !==
+      "established_linux_ext4_exact_object_dedicated_os_principal_v1"
+  ) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+
+  let phase: "open" | "closing" | "closed" = "open";
+  let closePromise: Promise<void> | undefined;
+  const activeExports = new Set<Promise<
+    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+  >>();
+  const exportBundles = (): Promise<
+    readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+  > => {
+    if (phase !== "open") {
+      return Promise.reject(
+        new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
+      );
+    }
+    const operation =
+      exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1(
+        broker,
+      );
+    activeExports.add(operation);
+    void operation.then(
+      () => activeExports.delete(operation),
+      () => activeExports.delete(operation),
+    );
+    return operation;
+  };
+  const close = (): Promise<void> => {
+    if (closePromise !== undefined) return closePromise;
+    phase = "closing";
+    const closing = Promise.resolve().then(async () => {
+      const errors: unknown[] = [];
+      try {
+        await closeServer();
+      } catch (error) {
+        errors.push(error);
+      }
+      await Promise.allSettled([...activeExports]);
+      try {
+        await closeExactObjectAuthority();
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        phase = "closed";
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(
+          errors,
+          "provider strong authority close failed",
+        );
+      }
+    });
+    closePromise = closing;
+    return closing;
+  };
+  const service = Object.freeze({
+    profile: "provider_production_strong_authority_service_v1" as const,
+    authority: "verified_current_acceptance" as const,
+    executionFence:
+      "linux_ext4_exact_object_dedicated_os_principal_v1" as const,
+    strongWrites: "unlocked" as const,
+    close,
+  });
+  const receiptExportCapability = Object.freeze(Object.create(null)) as
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1;
+  receiptExportCapabilityStatesV1.set(
+    receiptExportCapability,
+    exportBundles,
+  );
+  return Object.freeze({ service, receiptExportCapability });
 }
 
 function exactEffectiveAuthorityPrincipalV1(): Readonly<{
@@ -251,9 +380,9 @@ async function readCurrentWriterV1(
  * runtime readiness, current Acceptance, strict Registry evidence, and the
  * native exact-object authority have joined to one Linux/ext4 writer.
  */
-export async function openProviderProductionStrongAuthorityServiceV1(
+export async function openProviderProductionStrongAuthorityServiceWithReceiptExportInternalV1(
   input: OpenProviderProductionStrongAuthorityServiceV1Input,
-): Promise<ProviderProductionStrongAuthorityServiceV1> {
+): Promise<OpenedProviderProductionStrongAuthorityServiceInternalV1> {
   if (typeof input.readTrustEvidence !== "function") {
     throw new TypeError("provider strong authority evidence reader is invalid");
   }
@@ -335,6 +464,14 @@ export async function openProviderProductionStrongAuthorityServiceV1(
       },
     });
     await server.start();
+    return createProviderProductionStrongAuthorityServiceCoreInternalV1(
+      broker,
+      () => server!.close(),
+      () =>
+        closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
+          exactObjectAuthority,
+        ),
+    );
   } catch (error) {
     await server?.close().catch(() => undefined);
     await closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
@@ -342,27 +479,14 @@ export async function openProviderProductionStrongAuthorityServiceV1(
     );
     throw error;
   }
+}
 
-  let closed = false;
-  return Object.freeze({
-    profile: "provider_production_strong_authority_service_v1" as const,
-    authority: "verified_current_acceptance" as const,
-    executionFence:
-      "linux_ext4_exact_object_dedicated_os_principal_v1" as const,
-    strongWrites: "unlocked" as const,
-    async close(): Promise<void> {
-      if (closed) return;
-      closed = true;
-      let closeError: unknown;
-      try {
-        await server!.close();
-      } catch (error) {
-        closeError = error;
-      }
-      await closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
-        exactObjectAuthority,
-      );
-      if (closeError !== undefined) throw closeError;
-    },
-  });
+export async function openProviderProductionStrongAuthorityServiceV1(
+  input: OpenProviderProductionStrongAuthorityServiceV1Input,
+): Promise<ProviderProductionStrongAuthorityServiceV1> {
+  const opened =
+    await openProviderProductionStrongAuthorityServiceWithReceiptExportInternalV1(
+      input,
+    );
+  return opened.service;
 }

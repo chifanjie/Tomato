@@ -20,6 +20,15 @@ import {
   Step16DualHostEvidenceV1Schema,
 } from "../../contracts/dist/alpha-gold.js";
 import {
+  deriveStep16ExpectedHostEventPlanDigestV1 as deriveContractsStep16ExpectedHostEventPlanDigestV1,
+  Step16RealHostTranscriptReceiptV1Schema,
+} from "../../contracts/dist/step16-host-receipts.js";
+import {
+  deriveStep16ExpectedHostEventPlanDigestV1 as deriveHostStep16ExpectedHostEventPlanDigestV1,
+  deriveStep16RealHostActionInputDigestV1,
+  runStep16RealHostJsonlSessionV1,
+} from "../../host-adapters/dist/index.js";
+import {
   openProviderProductionStrongObjectClientV1,
 } from "@understand-code/durable-object-provider-client";
 
@@ -41,6 +50,20 @@ const ACTOR_CODEX = "agent:step16-codex-alpha";
 const ACTOR_CLAUDE = "agent:step16-claude-alpha";
 const MCP_TIMEOUT_MS = 120_000;
 const HOST_ACTIVATION_DIRECTORY = ".understand-code-host";
+const INITIAL_SOURCE = [
+  "export function step16Value(input: number): number {",
+  "  return input + 1;",
+  "}",
+  "",
+].join("\n");
+const UPDATED_SOURCE = [
+  "export function step16Value(input: number): number {",
+  "  return input + 2;",
+  "}",
+  "",
+].join("\n");
+const VERIFICATION_COMMAND =
+  "/opt/understand-code/bin/git diff --check";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -63,6 +86,52 @@ function exactJson(left, right, message) {
     JSON.stringify(canonical(left)) === JSON.stringify(canonical(right)),
     message,
   );
+}
+
+async function expectedHostEventPlan(host, events) {
+  const orderedEvents = events.map((event, index) => Object.freeze({
+    ...event,
+    ordinal: index + 1,
+  }));
+  const hostDigest = deriveHostStep16ExpectedHostEventPlanDigestV1(
+    orderedEvents,
+  );
+  const contractsDigest =
+    await deriveContractsStep16ExpectedHostEventPlanDigestV1(orderedEvents);
+  assert(
+    hostDigest === contractsDigest,
+    `${host} expected event plan digest differs across packages`,
+  );
+  return Object.freeze({
+    expectedEventPlanDigest: hostDigest,
+    events: Object.freeze(orderedEvents),
+  });
+}
+
+async function runRealHostSession(
+  input,
+  host,
+  prompt,
+  events,
+  expectedHostActionInputs = [],
+) {
+  const executor = input.actualHostExecutors[host];
+  const result = await runStep16RealHostJsonlSessionV1({
+    host,
+    executable: executor.executable,
+    expectedExecutableDigest: executor.executableDigest,
+    cwd: input.repositoryRoot,
+    prompt,
+    env: executor.env,
+    expectedEventPlan: await expectedHostEventPlan(host, events),
+    expectedHostActionInputs,
+    timeoutMs: 30 * 60 * 1_000,
+  });
+  assert(
+    result.executableDigest === executor.executableDigest,
+    `${host} executor returned another executable digest`,
+  );
+  return Step16RealHostTranscriptReceiptV1Schema.parse(result.receipt);
 }
 
 async function runCli(cliPath, args, options = {}) {
@@ -258,12 +327,7 @@ async function initializeRepository(repositoryRoot) {
   await mkdir(join(repositoryRoot, "src"), { mode: 0o700 });
   await writeFile(
     join(repositoryRoot, "src", "task.ts"),
-    [
-      "export function step16Value(input: number): number {",
-      "  return input + 1;",
-      "}",
-      "",
-    ].join("\n"),
+    INITIAL_SOURCE,
     { mode: 0o600 },
   );
   await execFileAsync("/opt/understand-code/bin/git", ["init", "--quiet", repositoryRoot]);
@@ -488,6 +552,24 @@ export async function runStep16DualHostStrongAlphaV1(input) {
       actualHostPlugins.claude.installedRoot,
     "Step16 Codex and Claude plugins must be independent installations",
   );
+  const actualHostExecutors = input.actualHostExecutors;
+  assert(
+    actualHostExecutors?.codex !== undefined &&
+      actualHostExecutors?.claude !== undefined &&
+      typeof actualHostExecutors.codex.executable === "string" &&
+      typeof actualHostExecutors.claude.executable === "string" &&
+      typeof actualHostExecutors.codex.executableDigest === "string" &&
+      typeof actualHostExecutors.claude.executableDigest === "string" &&
+      /^sha256:[0-9a-f]{64}$/u.test(
+        actualHostExecutors.codex.executableDigest,
+      ) &&
+      /^sha256:[0-9a-f]{64}$/u.test(
+        actualHostExecutors.claude.executableDigest,
+      ) &&
+      actualHostExecutors.codex.env !== undefined &&
+      actualHostExecutors.claude.env !== undefined,
+    "Step16 real Host executors require Codex and Claude CLI capabilities",
+  );
   const codexRoot = join(
     actualHostPlugins.codex.installedRoot,
     HOST_ACTIVATION_DIRECTORY,
@@ -500,6 +582,9 @@ export async function runStep16DualHostStrongAlphaV1(input) {
   let claude;
   let codexSession;
   let claudeSession;
+  let codexHostTranscriptReceipt;
+  let claudeSourceTranscriptReceipt;
+  let claudeVerificationTranscriptReceipt;
   const lifecycle = [];
   try {
     codex = await installHost(
@@ -581,6 +666,61 @@ export async function runStep16DualHostStrongAlphaV1(input) {
     await stopMcpHost(codexSession);
     codexSession = undefined;
 
+    const taskBriefArguments = Object.freeze({
+      taskId: state.taskId,
+      section: "summary",
+      pageSize: 50,
+    });
+    codexHostTranscriptReceipt = await runRealHostSession(
+      input,
+      "codex",
+      [
+        "This is a fixed Step16 closing-gate observation.",
+        `Call the understand-code MCP tool get_task_brief exactly once with this exact JSON input: ${JSON.stringify(taskBriefArguments)}.`,
+        "Do not call any other tool, do not modify files, and stop after the successful result.",
+      ].join("\n"),
+      [{
+        kind: "mcp_tool_call",
+        server: "understand-code",
+        tool: "get_task_brief",
+      }],
+    );
+
+    const sourceActionInput = Object.freeze({
+      file_path: join(input.repositoryRoot, "src", "task.ts"),
+      content: UPDATED_SOURCE,
+    });
+    claudeSourceTranscriptReceipt = await runRealHostSession(
+      input,
+      "claude",
+      [
+        "This is a fixed Step16 closing-gate source mutation.",
+        `First call mcp__understand-code__get_task_brief exactly once with this exact JSON input: ${JSON.stringify(taskBriefArguments)}.`,
+        `Then call Write exactly once with this exact JSON input: ${JSON.stringify(sourceActionInput)}.`,
+        "Do not call any other tool and stop after Write succeeds.",
+      ].join("\n"),
+      [
+        {
+          kind: "mcp_tool_call",
+          server: "understand-code",
+          tool: "get_task_brief",
+        },
+        {
+          kind: "host_action",
+          action: "source_mutation",
+          mechanism: "file_change",
+          inputDigest:
+            deriveStep16RealHostActionInputDigestV1(sourceActionInput),
+        },
+      ],
+      [{ ordinal: 2, input: sourceActionInput }],
+    );
+    assert(
+      await readFile(join(input.repositoryRoot, "src", "task.ts"), "utf8") ===
+        UPDATED_SOURCE,
+      "real Claude source mutation did not produce the exact Step16 fixture",
+    );
+
     claudeSession = startMcpHost(claude, input.repositoryRoot);
     await initializeHost(claudeSession);
     await listTools(claudeSession);
@@ -592,16 +732,6 @@ export async function runStep16DualHostStrongAlphaV1(input) {
     );
     state.actor = ACTOR_CLAUDE;
 
-    await writeFile(
-      join(input.repositoryRoot, "src", "task.ts"),
-      [
-        "export function step16Value(input: number): number {",
-        "  return input + 2;",
-        "}",
-        "",
-      ].join("\n"),
-      { mode: 0o600 },
-    );
     const actualRefresh = await callTool(claudeSession, "refresh_index", {
       mode: "incremental",
       expectedSourceSnapshotId: initialSnapshotId,
@@ -657,14 +787,40 @@ export async function runStep16DualHostStrongAlphaV1(input) {
       to: "verification_required",
     }, "step16-claude-verification-required");
 
+    await stopMcpHost(claudeSession);
+    claudeSession = undefined;
     const verificationStartedAt = Date.now();
-    await execFileAsync("/opt/understand-code/bin/git", [
-      "-C",
-      input.repositoryRoot,
-      "diff",
-      "--check",
-    ], { encoding: "utf8" });
+    const verificationActionInput = Object.freeze({
+      command: VERIFICATION_COMMAND,
+    });
+    claudeVerificationTranscriptReceipt = await runRealHostSession(
+      input,
+      "claude",
+      [
+        "This is a fixed Step16 closing-gate verification.",
+        `First call mcp__understand-code__get_task_brief exactly once with this exact JSON input: ${JSON.stringify(taskBriefArguments)}.`,
+        `Then call Bash exactly once with this exact JSON input: ${JSON.stringify(verificationActionInput)}.`,
+        "Do not call any other tool and stop after Bash succeeds.",
+      ].join("\n"),
+      [
+        {
+          kind: "mcp_tool_call",
+          server: "understand-code",
+          tool: "get_task_brief",
+        },
+        {
+          kind: "host_action",
+          action: "verification",
+          mechanism: "command_execution",
+          inputDigest:
+            deriveStep16RealHostActionInputDigestV1(verificationActionInput),
+        },
+      ],
+      [{ ordinal: 2, input: verificationActionInput }],
+    );
     const verificationDurationMs = Math.max(0, Date.now() - verificationStartedAt);
+    claudeSession = startMcpHost(claude, input.repositoryRoot);
+    await initializeHost(claudeSession);
     const planEntry = built.brief.verificationPlan[0];
     assert(planEntry !== undefined, "Task Brief emitted no verification plan");
     const verificationInput = {
@@ -677,7 +833,7 @@ export async function runStep16DualHostStrongAlphaV1(input) {
       claimIds: [...planEntry.acceptanceClaimIds].sort(),
       ...(planEntry.method === "manual" ? {} : {
         command: {
-          executable: "git",
+          executable: "/opt/understand-code/bin/git",
           arguments: ["diff", "--check"],
           workingDirectory: "repository_root",
           environmentKeys: [],
@@ -774,8 +930,16 @@ export async function runStep16DualHostStrongAlphaV1(input) {
       status: "blocked",
       hosts: ["codex", "claude"],
       hostExecution: {
-        status: "blocked",
-        blocker: "real_host_tool_call_not_exercised",
+        status: "verified_not_gold",
+        executionSurface: "real_host_cli_jsonl",
+        providerReceiptBinding: "not_bound",
+        transcriptReceipts: {
+          codex: codexHostTranscriptReceipt,
+          claude: [
+            claudeSourceTranscriptReceipt,
+            claudeVerificationTranscriptReceipt,
+          ],
+        },
       },
       syntheticVertical: {
         status: "verified",

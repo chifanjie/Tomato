@@ -404,6 +404,64 @@ const Step16BlockedEvidenceCommonShape = {
   goldGate: AlphaGoldDefinitionsBlockedGateEvidenceV1Schema,
 } as const;
 
+const step16BlockedGetTaskBriefReceiptV1 = (ordinal: 1) => z.strictObject({
+  kind: z.literal("mcp_tool_call"),
+  server: z.literal("understand-code"),
+  tool: z.literal("get_task_brief"),
+  ordinal: z.literal(ordinal),
+  callIdDigest: ContentDigestV1Schema,
+  argumentsDigest: ContentDigestV1Schema,
+  resultDigest: ContentDigestV1Schema,
+  success: z.literal(true),
+});
+
+const step16BlockedHostActionReceiptV1 = (
+  action: "source_mutation" | "verification",
+  mechanism: "file_change" | "command_execution",
+) => z.strictObject({
+  kind: z.literal("host_action"),
+  action: z.literal(action),
+  mechanism: z.literal(mechanism),
+  ordinal: z.literal(2),
+  actionIdDigest: ContentDigestV1Schema,
+  inputDigest: ContentDigestV1Schema,
+  resultDigest: ContentDigestV1Schema,
+  success: z.literal(true),
+});
+
+const Step16BlockedCodexTranscriptReceiptV1Schema = z.strictObject({
+  schemaVersion: SchemaVersionV1Schema,
+  host: z.literal("codex"),
+  sessionIdDigest: ContentDigestV1Schema,
+  events: z.tuple([step16BlockedGetTaskBriefReceiptV1(1)]).and(
+    z.array(z.unknown()).length(1),
+  ),
+});
+
+const Step16BlockedClaudeTranscriptReceiptsV1Schema = z.tuple([
+  z.strictObject({
+    schemaVersion: SchemaVersionV1Schema,
+    host: z.literal("claude"),
+    sessionIdDigest: ContentDigestV1Schema,
+    events: z.tuple([
+      step16BlockedGetTaskBriefReceiptV1(1),
+      step16BlockedHostActionReceiptV1("source_mutation", "file_change"),
+    ]).and(z.array(z.unknown()).length(2)),
+  }),
+  z.strictObject({
+    schemaVersion: SchemaVersionV1Schema,
+    host: z.literal("claude"),
+    sessionIdDigest: ContentDigestV1Schema,
+    events: z.tuple([
+      step16BlockedGetTaskBriefReceiptV1(1),
+      step16BlockedHostActionReceiptV1(
+        "verification",
+        "command_execution",
+      ),
+    ]).and(z.array(z.unknown()).length(2)),
+  }),
+]).and(z.array(z.unknown()).length(2));
+
 export const Step16DualHostBlockedEvidenceV1Schema = z.union([
   z.strictObject({
     ...Step16BlockedEvidenceCommonShape,
@@ -426,6 +484,40 @@ export const Step16DualHostBlockedEvidenceV1Schema = z.union([
     hostExecution: z.strictObject({
       status: z.literal("blocked"),
       blocker: z.literal("real_host_tool_call_not_exercised"),
+    }),
+    syntheticVertical: z.strictObject({
+      status: z.literal("verified"),
+      executionSurface: z.literal("installed_wrapper_stdio"),
+      hostAuthority: z.literal("trusted_installation_wrappers_only"),
+      independentInstallations: z.literal(true),
+      providerBinding: z.literal("self_relative_owned_activation"),
+      ambientSelection: z.literal("poisoned_environment_ignored"),
+    }),
+    rootFailClosed: z.literal("verified_both_hosts_zero_write"),
+    externalSourceMutation: z.literal("verified"),
+    taskId: TaskIdSchema,
+    taskRevision: RevisionSchema,
+    taskStatus: z.literal("verified"),
+    baselineSnapshotId: SnapshotIdSchema,
+    actualSnapshotId: SnapshotIdSchema,
+    evidenceCount: z.number().int().positive(),
+    providerRevision: RevisionSchema,
+    sharedArtifacts: z.literal("byte_equivalent_public_results"),
+    lifecycle: z.enum([
+      "marketplace_installed_selector_verified_clean_close",
+      "marketplace_install_upgrade_reinstall_remove_doctor_clean_close",
+    ]),
+  }),
+  z.strictObject({
+    ...Step16BlockedEvidenceCommonShape,
+    hostExecution: z.strictObject({
+      status: z.literal("verified_not_gold"),
+      executionSurface: z.literal("real_host_cli_jsonl"),
+      providerReceiptBinding: z.literal("not_bound"),
+      transcriptReceipts: z.strictObject({
+        codex: Step16BlockedCodexTranscriptReceiptV1Schema,
+        claude: Step16BlockedClaudeTranscriptReceiptsV1Schema,
+      }),
     }),
     syntheticVertical: z.strictObject({
       status: z.literal("verified"),

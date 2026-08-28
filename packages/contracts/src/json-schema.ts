@@ -62,6 +62,12 @@ import {
   TaskManifestArtifactV1Schema,
   TaskManifestV1Schema,
 } from "./task.js";
+import {
+  Step16ProviderReceiptBindingV1Schema,
+  Step16RealHostActionReceiptV1Schema,
+  Step16RealHostEventV1Schema,
+  Step16RealHostToolCallReceiptV1Schema,
+} from "./step16-host-receipts.js";
 
 export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "alpha-gold-task-corpus": AlphaGoldTaskCorpusV1Schema,
@@ -70,6 +76,10 @@ export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "step16-dual-host-blocked-evidence": Step16DualHostBlockedEvidenceV1Schema,
   "step16-dual-host-eligible-evidence": Step16DualHostEligibleEvidenceV1Schema,
   "step16-dual-host-evidence": Step16DualHostEvidenceV1Schema,
+  "step16-real-host-tool-call-receipt": Step16RealHostToolCallReceiptV1Schema,
+  "step16-real-host-action-receipt": Step16RealHostActionReceiptV1Schema,
+  "step16-real-host-event": Step16RealHostEventV1Schema,
+  "step16-provider-receipt-binding": Step16ProviderReceiptBindingV1Schema,
   "artifact-envelope": ArtifactEnvelopeBaseV1Schema,
   "artifact-descriptor": ArtifactDescriptorV1Schema,
   "artifact-manifest": ArtifactManifestV1Schema,

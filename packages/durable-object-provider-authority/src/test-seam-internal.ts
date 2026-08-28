@@ -27,12 +27,20 @@ import {
   type ProviderAcceptanceAuthorityLayoutInternalV1,
 } from "./platform-layout.js";
 import {
+  createProviderProductionStrongAuthorityServiceCoreInternalV1,
+  exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1,
+  type OpenedProviderProductionStrongAuthorityServiceInternalV1,
+  type ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+} from "./provider-production-strong-authority-service.js";
+import {
   classifyProviderStrongMutationBrokerAdmissionInternalV1,
+  exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1,
   inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1,
   openProviderStrongMutationBrokerStoreWithExecutionFenceAndLayoutCoreInternalV1,
   openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1,
   type ProviderStrongMutationBrokerAdmissionInputInternalV1,
   type ProviderStrongMutationBrokerAdmissionResultInternalV1,
+  type ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1,
   type ProviderStrongMutationBrokerStoreInternalV1,
 } from "./strong-mutation-broker-core-internal.js";
 import {
@@ -438,6 +446,44 @@ export function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
   );
 }
 
+export function exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestInternalV1(
+  broker: ProviderStrongMutationBrokerStoreInternalV1,
+): Promise<
+  readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+> {
+  requireTestProcessV1();
+  return exportProviderStrongMutationBrokerResolvedReceiptBundlesInternalV1(
+    broker,
+  );
+}
+
+export function createProviderProductionStrongAuthorityServiceForTestInternalV1(
+  broker: ProviderStrongMutationBrokerStoreInternalV1,
+  lifecycle: Readonly<{
+    readonly closeServer?: () => Promise<void>;
+    readonly closeExactObjectAuthority?: () => Promise<void>;
+  }> = {},
+): OpenedProviderProductionStrongAuthorityServiceInternalV1 {
+  requireTestProcessV1();
+  return createProviderProductionStrongAuthorityServiceCoreInternalV1(
+    broker,
+    lifecycle.closeServer ?? (async () => undefined),
+    lifecycle.closeExactObjectAuthority ?? (async () => undefined),
+  );
+}
+
+export function exportProviderProductionStrongAuthorityResolvedReceiptBundlesForTestInternalV1(
+  capability:
+    ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+): Promise<
+  readonly ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1[]
+> {
+  requireTestProcessV1();
+  return exportProviderProductionStrongAuthorityResolvedReceiptBundlesInternalV1(
+    capability,
+  );
+}
+
 export function classifyProviderStrongMutationBrokerAdmissionForTestInternalV1(
   input: ProviderStrongMutationBrokerAdmissionInputInternalV1,
 ): ProviderStrongMutationBrokerAdmissionResultInternalV1 {
@@ -455,6 +501,8 @@ export type {
   ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   ProviderStrongMutationBrokerAdmissionInputInternalV1,
   ProviderStrongMutationBrokerAdmissionResultInternalV1,
+  ProviderStrongMutationBrokerResolvedReceiptBundleInternalV1,
+  ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
   ProviderStrongMutationExecutionFenceCapabilityInternalV1,
   RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
   ProviderStrongMutationProductionSessionCallbacksInternalV1,

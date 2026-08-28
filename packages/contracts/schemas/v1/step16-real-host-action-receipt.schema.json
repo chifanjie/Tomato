@@ -1,0 +1,104 @@
+{
+  "$id": "urn:understand-code:schema:v1:step16-real-host-action-receipt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "host_action"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "actionIdDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "inputDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "resultDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "action": {
+          "type": "string",
+          "const": "source_mutation"
+        },
+        "mechanism": {
+          "type": "string",
+          "const": "file_change"
+        }
+      },
+      "required": [
+        "kind",
+        "ordinal",
+        "actionIdDigest",
+        "inputDigest",
+        "resultDigest",
+        "success",
+        "action",
+        "mechanism"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "host_action"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "actionIdDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "inputDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "resultDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "action": {
+          "type": "string",
+          "const": "verification"
+        },
+        "mechanism": {
+          "type": "string",
+          "const": "command_execution"
+        }
+      },
+      "required": [
+        "kind",
+        "ordinal",
+        "actionIdDigest",
+        "inputDigest",
+        "resultDigest",
+        "success",
+        "action",
+        "mechanism"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+  "$id": "urn:understand-code:schema:v1:step16-provider-receipt-binding",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "step16_provider_receipt_binding_v1"
+    },
+    "host": {
+      "type": "string",
+      "enum": [
+        "codex",
+        "claude"
+      ]
+    },
+    "sessionIdDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "callIdDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "providerIdentityDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "receiptLedger": {
+      "type": "object",
+      "properties": {
+        "authority": {
+          "type": "string",
+          "const": "root_owned_private_provider_receipt_ledger"
+        },
+        "locatorPolicy": {
+          "type": "string",
+          "const": "fixed_locator_component_nofollow"
+        },
+        "receiptBundleDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "authority",
+        "locatorPolicy",
+        "receiptBundleDigest"
+      ],
+      "additionalProperties": false
+    },
+    "providerOperation": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "write_object",
+            "compare_commit"
+          ]
+        },
+        "operationNonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "requestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "sessionBindingDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "principalAttestationDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "authorityGrantContentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "responseResolution": {
+          "type": "string",
+          "enum": [
+            "committed",
+            "replayed"
+          ]
+        }
+      },
+      "required": [
+        "operation",
+        "operationNonce",
+        "requestDigest",
+        "sessionBindingDigest",
+        "principalAttestationDigest",
+        "authorityGrantContentDigest",
+        "responseResolution"
+      ],
+      "additionalProperties": false
+    },
+    "componentDigests": {
+      "type": "object",
+      "properties": {
+        "strongMutationRequest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "strongMutationResponse": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "principalAttestation": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "authorityGrantEnvelope": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "authorityGrantSignature": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "responseSignature": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "principalAttestationSignature": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "strongMutationRequest",
+        "strongMutationResponse",
+        "principalAttestation",
+        "authorityGrantEnvelope",
+        "authorityGrantSignature",
+        "responseSignature",
+        "principalAttestationSignature"
+      ],
+      "additionalProperties": false
+    },
+    "privateBundleVerification": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "verified"
+        },
+        "verifierProfile": {
+          "type": "string",
+          "const": "provider_runtime_ipc_full_private_bundle_verifier_v1"
+        },
+        "verifiedBindings": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "request_digest"
+            },
+            {
+              "type": "string",
+              "const": "session_binding"
+            },
+            {
+              "type": "string",
+              "const": "authority_grant_signature"
+            },
+            {
+              "type": "string",
+              "const": "response_signature"
+            },
+            {
+              "type": "string",
+              "const": "principal_attestation_signature"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "verifierProfile",
+        "verifiedBindings"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "host",
+    "sessionIdDigest",
+    "callIdDigest",
+    "providerIdentityDigest",
+    "receiptLedger",
+    "providerOperation",
+    "componentDigests",
+    "privateBundleVerification"
+  ],
+  "additionalProperties": false
+}

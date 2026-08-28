@@ -150,6 +150,93 @@ function blockedOuterEvidence() {
   } as const;
 }
 
+function verifiedNotGoldOuterEvidence() {
+  const getTaskBrief = (nibble: string) => ({
+    kind: "mcp_tool_call",
+    server: "understand-code",
+    tool: "get_task_brief",
+    ordinal: 1,
+    callIdDigest: digest(nibble),
+    argumentsDigest: digest(nibble),
+    resultDigest: digest(nibble),
+    success: true,
+  } as const);
+  const hostAction = (
+    action: "source_mutation" | "verification",
+    mechanism: "file_change" | "command_execution",
+    nibble: string,
+  ) => ({
+    kind: "host_action",
+    action,
+    mechanism,
+    ordinal: 2,
+    actionIdDigest: digest(nibble),
+    inputDigest: digest(nibble),
+    resultDigest: digest(nibble),
+    success: true,
+  } as const);
+  return {
+    schemaVersion: 1,
+    profile: "step16_dual_host_strong_alpha_linux_v1",
+    status: "blocked",
+    hosts: ["codex", "claude"],
+    hostExecution: {
+      status: "verified_not_gold",
+      executionSurface: "real_host_cli_jsonl",
+      providerReceiptBinding: "not_bound",
+      transcriptReceipts: {
+        codex: {
+          schemaVersion: 1,
+          host: "codex",
+          sessionIdDigest: digest("1"),
+          events: [getTaskBrief("2")],
+        },
+        claude: [
+          {
+            schemaVersion: 1,
+            host: "claude",
+            sessionIdDigest: digest("3"),
+            events: [
+              getTaskBrief("4"),
+              hostAction("source_mutation", "file_change", "5"),
+            ],
+          },
+          {
+            schemaVersion: 1,
+            host: "claude",
+            sessionIdDigest: digest("6"),
+            events: [
+              getTaskBrief("7"),
+              hostAction("verification", "command_execution", "8"),
+            ],
+          },
+        ],
+      },
+    },
+    syntheticVertical: {
+      status: "verified",
+      executionSurface: "installed_wrapper_stdio",
+      hostAuthority: "trusted_installation_wrappers_only",
+      independentInstallations: true,
+      providerBinding: "self_relative_owned_activation",
+      ambientSelection: "poisoned_environment_ignored",
+    },
+    toolCount: 11,
+    rootFailClosed: "verified_both_hosts_zero_write",
+    externalSourceMutation: "verified",
+    taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    taskRevision: 8,
+    taskStatus: "verified",
+    baselineSnapshotId: "step16-baseline",
+    actualSnapshotId: "step16-actual",
+    evidenceCount: 1,
+    providerRevision: 8,
+    sharedArtifacts: "byte_equivalent_public_results",
+    lifecycle: "marketplace_installed_selector_verified_clean_close",
+    goldGate: blockedEvidence(),
+  } as const;
+}
+
 function passedHostTaskProof(host: "codex" | "claude", nibble: string) {
   const call = (tool: string) => ({
     status: "passed",
@@ -494,6 +581,40 @@ describe("Step 16 Alpha Gold corpus", () => {
       expect(Step16DualHostEvidenceV1Schema.safeParse(invalid).success)
         .toBe(false);
       expect(validate(invalid)).toBe(false);
+    }
+  });
+
+  it("accepts exact real Host transcripts only as blocked, not Gold evidence", () => {
+    const evidence = verifiedNotGoldOuterEvidence();
+    const validateBlocked = compileSchema("step16-dual-host-blocked-evidence");
+    const validateAny = compileSchema("step16-dual-host-evidence");
+    expect(Step16DualHostBlockedEvidenceV1Schema.parse(evidence).status)
+      .toBe("blocked");
+    expect(validateBlocked(evidence)).toBe(true);
+    expect(validateAny(evidence)).toBe(true);
+
+    for (const mutate of [
+      (value: any) => {
+        value.hostExecution.transcriptReceipts.claude[0].events[1].action =
+          "verification";
+      },
+      (value: any) => {
+        value.hostExecution.transcriptReceipts.codex.events.push(
+          value.hostExecution.transcriptReceipts.codex.events[0],
+        );
+      },
+      (value: any) => {
+        value.hostExecution.providerReceiptBinding = "bound";
+      },
+      (value: any) => {
+        value.status = "eligible";
+      },
+    ]) {
+      const invalid = mutableClone(evidence);
+      mutate(invalid);
+      expect(Step16DualHostEvidenceV1Schema.safeParse(invalid).success)
+        .toBe(false);
+      expect(validateAny(invalid)).toBe(false);
     }
   });
 

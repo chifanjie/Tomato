@@ -1990,6 +1990,15 @@ test(
           );
           return value;
         };
+        const requiredSha256 = (name) => {
+          const value = process.env[name];
+          assert.match(
+            value ?? "",
+            /^sha256:[0-9a-f]{64}$/u,
+            `${name} must be an externally trusted SHA-256 digest`,
+          );
+          return value;
+        };
         const { runStep16DualHostStrongAlphaV1 } = await import(
           "../../durable-object-provider-runtime/test/step16-dual-host-strong-alpha-linux.mjs"
         );
@@ -2024,6 +2033,22 @@ test(
           repositoryRoot: step16RepositoryRoot,
           invalidRoot: required("UNDERSTAND_CODE_STEP16_INVALID_ROOT"),
           corpusPath: required("UNDERSTAND_CODE_STEP16_CORPUS_PATH"),
+          actualHostExecutors: {
+            codex: {
+              executable: codexCli,
+              executableDigest: requiredSha256(
+                "UNDERSTAND_CODE_STEP16_CODEX_CLI_SHA256",
+              ),
+              env: codexEnv,
+            },
+            claude: {
+              executable: claudeCli,
+              executableDigest: requiredSha256(
+                "UNDERSTAND_CODE_STEP16_CLAUDE_CLI_SHA256",
+              ),
+              env: claudeEnv,
+            },
+          },
           verifiedTaskObserver: async ({
             deepLink,
             taskId,
@@ -2077,6 +2102,54 @@ test(
             },
           },
         });
+        assert.equal(step16Evidence.status, "blocked");
+        assert.equal(
+          step16Evidence.hostExecution.status,
+          "verified_not_gold",
+        );
+        assert.equal(
+          step16Evidence.hostExecution.executionSurface,
+          "real_host_cli_jsonl",
+        );
+        assert.equal(
+          step16Evidence.hostExecution.providerReceiptBinding,
+          "not_bound",
+        );
+        assert.equal(
+          step16Evidence.hostExecution.transcriptReceipts.codex.events.some(
+            (event) => event.kind === "mcp_tool_call",
+          ),
+          true,
+        );
+        const claudeHostEvents =
+          step16Evidence.hostExecution.transcriptReceipts.claude.flatMap(
+            (receipt) => receipt.events,
+          );
+        assert.equal(
+          claudeHostEvents.some((event) => event.kind === "mcp_tool_call"),
+          true,
+        );
+        assert.equal(
+          claudeHostEvents.some(
+            (event) =>
+              event.kind === "host_action" &&
+              event.action === "source_mutation",
+          ),
+          true,
+        );
+        assert.equal(
+          claudeHostEvents.some(
+            (event) =>
+              event.kind === "host_action" && event.action === "verification",
+          ),
+          true,
+        );
+        assert.equal(
+          step16Evidence.goldGate.taskDefinitionStatus,
+          "blocked_not_versioned",
+        );
+        assert.equal(step16Evidence.goldGate.g2.status, "blocked");
+        assert.equal(step16Evidence.goldGate.g3.status, "blocked");
       }
 
       const claudeV1InstalledRoot = claudeInstalledRoot;

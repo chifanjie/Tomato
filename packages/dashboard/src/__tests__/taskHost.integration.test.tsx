@@ -86,6 +86,37 @@ describe("Task-first Preview host bridge", () => {
     await act(async () => root.unmount());
   });
 
+  it.each([
+    ["知识库", "wiki"],
+    ["关系图谱", "graph"],
+  ] as const)("opens %s from the empty Task home without inventing Task context", async (label, hash) => {
+    window.history.replaceState(null, "", "/?token=preview-token");
+    vi.stubGlobal("fetch", vi.fn(async () => response(404, {})));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(createElement(App)));
+    const surfaceButton = Array.from(container.querySelectorAll<HTMLButtonElement>(
+      'nav[aria-label="主要界面"] button',
+    )).find((button) => button.textContent === label);
+    expect(surfaceButton).toBeDefined();
+
+    await act(async () => surfaceButton?.click());
+    await act(async () => Promise.resolve());
+
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe(`#${hash}`);
+    expect(container.querySelector('[data-testid="task-context-overlay"]')).toBeNull();
+    expect(container.textContent).not.toContain("目标不可用");
+    const current = container.querySelector<HTMLButtonElement>(
+      'nav[aria-label="主要界面"] button[aria-current="page"]',
+    );
+    expect(current?.textContent).toBe(label);
+    await act(async () => root.unmount());
+  });
+
   it("renders the real persisted Task projection on a Task deep link", async () => {
     window.history.replaceState(null, "", `/tasks/${taskId}?token=preview-token`);
     vi.stubGlobal("fetch", vi.fn(async () => response(200, projection)));
@@ -99,6 +130,16 @@ describe("Task-first Preview host bridge", () => {
     expect(container.querySelector('[data-testid="task-first-workbench"]')).not.toBeNull();
     expect(container.textContent).toContain("Preserve evidence across Agent handoffs");
     expect(container.textContent).toContain("只读");
+
+    const wikiButton = Array.from(container.querySelectorAll<HTMLButtonElement>(
+      'nav[aria-label="主要界面"] button',
+    )).find((button) => button.textContent === "知识库");
+    await act(async () => wikiButton?.click());
+    await act(async () => Promise.resolve());
+
+    expect(window.location.pathname).toBe(`/tasks/${taskId}`);
+    expect(new URLSearchParams(window.location.search).get("surface")).toBe("wiki");
+    expect(container.querySelector('[data-testid="task-context-overlay"]')).not.toBeNull();
     await act(async () => root.unmount());
   });
 

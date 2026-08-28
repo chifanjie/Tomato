@@ -558,12 +558,18 @@ function TaskFirstDashboard({
   }, [cookieMode]);
 
   const navigateToSurface = useCallback((nextSurface: "wiki" | "graph", nextRoute: TaskFirstRoute, focus?: string) => {
+    if (!nextRoute.taskId) {
+      const pathname = cookieMode ? "/workbench" : "/";
+      window.history.pushState(null, "", `${pathname}#${nextSurface}`);
+      window.dispatchEvent(new Event("popstate"));
+      return;
+    }
     const { focus: _oldFocus, ...routeWithoutFocus } = nextRoute;
     navigate({
       ...routeWithoutFocus,
       ...(focus ? { focus } : {}),
     }, nextSurface);
-  }, [navigate]);
+  }, [cookieMode, navigate]);
 
   const selectSection = useCallback((section: TaskFirstSection) => {
     if (!route.taskId) return;

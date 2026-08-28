@@ -22,6 +22,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { assertProviderBackedPackedWorkbenchBrowserV1 } from "./provider-backed-workbench-browser.mjs";
+
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PROCESS_TIMEOUT_MS = 20_000;
@@ -2007,14 +2009,43 @@ test(
             "poison-provider",
           ),
         };
+        const browserProfile = await mkdtemp(
+          path.join(sandbox, "provider-workbench-browser-"),
+        );
+        const step16ProviderInstallationRoot = required(
+          "UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT",
+        );
+        const step16RepositoryRoot = required(
+          "UNDERSTAND_CODE_STEP16_REPOSITORY_ROOT",
+        );
         step16Evidence = await runStep16DualHostStrongAlphaV1({
           callerUid: process.geteuid?.(),
-          providerInstallationRoot: required(
-            "UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT",
-          ),
-          repositoryRoot: required("UNDERSTAND_CODE_STEP16_REPOSITORY_ROOT"),
+          providerInstallationRoot: step16ProviderInstallationRoot,
+          repositoryRoot: step16RepositoryRoot,
           invalidRoot: required("UNDERSTAND_CODE_STEP16_INVALID_ROOT"),
           corpusPath: required("UNDERSTAND_CODE_STEP16_CORPUS_PATH"),
+          verifiedTaskObserver: async ({
+            deepLink,
+            taskId,
+            findingId,
+            evidenceId,
+            actualSnapshotId,
+            taskRevision,
+          }) => {
+            await assertProviderBackedPackedWorkbenchBrowserV1({
+              deepLink,
+              taskId,
+              findingId,
+              evidenceId,
+              actualSnapshotId,
+              taskRevision,
+              userDataDir: browserProfile,
+              forbiddenPaths: [
+                step16ProviderInstallationRoot,
+                step16RepositoryRoot,
+              ],
+            });
+          },
           actualHostPlugins: {
             codex: {
               ...codexV1.server,

@@ -240,6 +240,9 @@ jobs:
 
       - name: Collect Provider and Step16 Linux evidence
         run: |
+          browser_executable="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          test -x "$browser_executable"
+          browser_executable="$(readlink -f "$browser_executable")"
           sudo env "PATH=$PATH" CI=true NODE_ENV=production \
             PROVIDER_EXACT_OBJECT_EXT4_TEST_ROOT=/var/mnt/uc-step15-ext4-root \
             pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match \
@@ -252,6 +255,7 @@ jobs:
           test ! -e "$closing_evidence_path"
           echo "UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH=$closing_evidence_path" >> "$GITHUB_ENV"
           sudo env "PATH=$PATH" \
+            "UNDERSTAND_CODE_BROWSER_EXECUTABLE=$browser_executable" \
             "UNDERSTAND_CODE_CODEX_CLI=${UNDERSTAND_CODE_CODEX_CLI:-}" \
             "UNDERSTAND_CODE_CLAUDE_CLI=${UNDERSTAND_CODE_CLAUDE_CLI:-}" \
             "UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH=$closing_evidence_path" \
@@ -259,6 +263,7 @@ jobs:
             echo $$ > /sys/fs/cgroup/understand-code-safe-git-supervisor-v1/cgroup.procs
             exec env PATH="$PATH" CI=true NODE_ENV=production \
               RUN_STEP15_PROVIDER_E2E=1 RUN_STEP16_DUAL_HOST_E2E=1 \
+              UNDERSTAND_CODE_BROWSER_EXECUTABLE="$UNDERSTAND_CODE_BROWSER_EXECUTABLE" \
               UNDERSTAND_CODE_CODEX_CLI="$UNDERSTAND_CODE_CODEX_CLI" \
               UNDERSTAND_CODE_CLAUDE_CLI="$UNDERSTAND_CODE_CLAUDE_CLI" \
               UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH="$UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH" \

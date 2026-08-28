@@ -10,6 +10,7 @@ import {
 } from "@understand-code/durable-object-provider-client";
 import {
   CheckChangeInputV1Schema,
+  DiffHunkEvidenceV1Schema,
   RecordVerificationInputV1Schema,
   StrongCheckChangesInputV1Schema,
   StrongRecordVerificationInputV1Schema,
@@ -1935,10 +1936,54 @@ const evidenceReader = (
   if (item === undefined) {
     return workbenchEvidenceNotReady(input, "unavailable", "not_found");
   }
-  if (!("filePath" in item) || !("contentHash" in item)) {
-    return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+  let enrichNodeIds = true;
+  let sourceEvidence: FileEvidenceLike;
+  if (item.kind === "diff_hunk") {
+    const parsedDiffHunk = DiffHunkEvidenceV1Schema.safeParse(item);
+    if (!parsedDiffHunk.success) {
+      return workbenchEvidenceNotReady(input, "invalid", "evidence_invalid");
+    }
+    const diffHunk = parsedDiffHunk.data;
+    if (diffHunk.observedAtSnapshotId !== input.snapshotId) {
+      return workbenchEvidenceNotReady(input, "stale", "evidence_stale", {
+        observedSnapshotId: diffHunk.observedAtSnapshotId,
+      });
+    }
+    if (diffHunk.hunk.actualSnapshotId !== input.snapshotId) {
+      return workbenchEvidenceNotReady(input, "stale", "evidence_stale");
+    }
+    if (
+      diffHunk.filePath !== diffHunk.hunk.path ||
+      diffHunk.hunk.afterContent.status !== "content" ||
+      diffHunk.hunk.newSpan.lineCount === 0
+    ) {
+      return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+    }
+    const lastLine =
+      diffHunk.hunk.newSpan.startLine + diffHunk.hunk.newSpan.lineCount - 1;
+    if (!Number.isSafeInteger(lastLine)) {
+      return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+    }
+    sourceEvidence = {
+      id: diffHunk.id,
+      kind: "source",
+      epistemicStatus: diffHunk.epistemicStatus,
+      freshness: diffHunk.freshness,
+      nodeIds: [...new Set(diffHunk.nodeIds)]
+        .sort((left, right) => left.localeCompare(right, "en"))
+        .slice(0, 256),
+      filePath: diffHunk.filePath,
+      lineRange: [diffHunk.hunk.newSpan.startLine, lastLine],
+      contentHash: diffHunk.hunk.afterContent.contentDigest,
+      observedAtSnapshotId: diffHunk.observedAtSnapshotId,
+    };
+    enrichNodeIds = false;
+  } else {
+    if (!("filePath" in item) || !("contentHash" in item)) {
+      return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+    }
+    sourceEvidence = item as FileEvidenceLike;
   }
-  const sourceEvidence = item as FileEvidenceLike;
   if (
     !["source", "config", "test", "document"].includes(sourceEvidence.kind) ||
     !["observed", "inferred"].includes(sourceEvidence.epistemicStatus) ||
@@ -2013,7 +2058,7 @@ const evidenceReader = (
     return workbenchEvidenceNotReady(input, "redacted", "too_large");
   }
   let nodeIds = [...sourceEvidence.nodeIds];
-  if (nodeIds.length === 0) {
+  if (enrichNodeIds && nodeIds.length === 0) {
     let graphRead: PublishedJsonReadV1 = {
       ok: false,
       reason: "read_failed",

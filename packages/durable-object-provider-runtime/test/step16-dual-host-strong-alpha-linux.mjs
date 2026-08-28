@@ -454,6 +454,11 @@ export async function createStep16DualHostBlockedEvidenceV1(input) {
 export async function runStep16DualHostStrongAlphaV1(input) {
   assert(process.platform === "linux", "Step16 dual-Host strong Alpha requires Linux");
   assert(process.geteuid?.() === input.callerUid, "Step16 dual-Host role must run as the caller principal");
+  assert(
+    input.verifiedTaskObserver === undefined ||
+      typeof input.verifiedTaskObserver === "function",
+    "Step16 verified Task observer must be a function",
+  );
   const pinnedGit = await stat("/opt/understand-code/bin/git");
   assert(
     pinnedGit.isFile() && pinnedGit.uid === 0 && pinnedGit.gid === 0 &&
@@ -623,6 +628,23 @@ export async function runStep16DualHostStrongAlphaV1(input) {
     state.revision = checked.committedRevision;
     const evidenceIds = checked.evidence.map((evidence) => evidence.id).sort();
     assert(evidenceIds.length > 0, "strong Change Check emitted no evidence");
+    const browserEvidenceCandidates = checked.evidence.filter((evidence) =>
+      evidence.kind === "diff_hunk" &&
+      evidence.filePath === "src/task.ts" &&
+      evidence.observedAtSnapshotId === actualSnapshotId
+    );
+    assert(
+      browserEvidenceCandidates.length === 1,
+      "strong Change Check must emit one current src/task.ts diff Evidence",
+    );
+    const browserEvidence = browserEvidenceCandidates[0];
+    const browserFinding = [...checked.changeCheck.findings]
+      .filter((finding) => finding.evidenceIds.includes(browserEvidence.id))
+      .sort((left, right) => left.id.localeCompare(right.id, "en"))[0];
+    assert(
+      browserFinding !== undefined,
+      "strong Change Check diff Evidence must belong to a Finding",
+    );
     for (const finding of checked.changeCheck.findings.filter((entry) => entry.blocking)) {
       await updateTask(claudeSession, state, {
         type: "accept_finding",
@@ -700,6 +722,35 @@ export async function runStep16DualHostStrongAlphaV1(input) {
     exactJson(codexEvidence, claudeEvidence, "dual Hosts returned different Evidence artifacts");
     exactJson(codexPulse, claudePulse, "dual Hosts returned different Repository Pulse artifacts");
     assert(codexFinalTask.task.status === "verified", "final shared Task is not verified");
+    if (input.verifiedTaskObserver !== undefined) {
+      const evidenceId = browserEvidence.id;
+      const opened = await callTool(codexSession, "open_workbench", {
+        route: {
+          view: "tasks",
+          taskId: state.taskId,
+          section: "planned_changes",
+          findingId: browserFinding.id,
+        },
+        openBrowser: false,
+      });
+      assert(
+        opened.structuredContent.meta.sourceSnapshotId === actualSnapshotId,
+        "Provider-backed Workbench bound another Snapshot",
+      );
+      assert(
+        opened.structuredContent.result.route.taskId === state.taskId &&
+          opened.structuredContent.result.route.findingId === browserFinding.id,
+        "Provider-backed Workbench returned another Task route",
+      );
+      await input.verifiedTaskObserver(Object.freeze({
+        deepLink: opened.structuredContent.result.deepLink,
+        taskId: state.taskId,
+        findingId: browserFinding.id,
+        evidenceId,
+        actualSnapshotId,
+        taskRevision: codexFinalTask.task.revision,
+      }));
+    }
     await stopMcpHost(codexSession);
     codexSession = undefined;
 

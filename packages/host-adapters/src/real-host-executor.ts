@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import {
   compileStep16ExpectedHostEventPlanV1,
@@ -24,6 +24,10 @@ const DEFAULT_TIMEOUT_MS_V1 = 30 * 60 * 1_000;
 const MAX_TIMEOUT_MS_V1 = 2_147_483_647;
 const TERMINATION_GRACE_MS_V1 = 250;
 const MAX_PATH_BYTES_V1 = 4_096;
+const ABORT_SIGNAL_ABORTED_GETTER_V1 =
+  Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")!.get!;
+const ADD_ABORT_LISTENER_V1 = EventTarget.prototype.addEventListener;
+const REMOVE_ABORT_LISTENER_V1 = EventTarget.prototype.removeEventListener;
 const INJECTING_ENVIRONMENT_KEYS_V1 = new Set<string>([
   "GIT_DIR",
   "GIT_WORK_TREE",
@@ -122,6 +126,9 @@ export interface Step16ExpectedHostActionInputV1 {
 }
 
 export interface RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options {
+  /** Internal Linux root supervisor only; never inherited by the public entry. */
+  readonly childIdentity?: Readonly<{ readonly uid: number; readonly gid: number }>;
+  readonly signal?: AbortSignal;
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
@@ -135,6 +142,8 @@ interface ChildOutcomeV1 {
 }
 
 interface CompiledSupervisorInternalV1 {
+  readonly childIdentity: Readonly<{ readonly uid: number; readonly gid: number }> | undefined;
+  readonly signal: AbortSignal | undefined;
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
@@ -194,6 +203,56 @@ function hasExactKeysV1(
     actual.every((key, index) => key === sortedExpected[index]);
 }
 
+function assertSupervisorIdentityContextV1(
+  childIdentity: CompiledSupervisorInternalV1["childIdentity"],
+): void {
+  const effectiveUid = process.geteuid?.();
+  if (childIdentity === undefined) {
+    if (effectiveUid === 0) return failV1("invalid_input");
+    return;
+  }
+  if (process.platform !== "linux" || effectiveUid !== 0 ||
+    process.getegid?.() !== 0) return failV1("invalid_input");
+}
+
+function compileChildIdentityV1(
+  options: Record<string, unknown>,
+): CompiledSupervisorInternalV1["childIdentity"] {
+  const descriptor = Object.getOwnPropertyDescriptor(options, "childIdentity");
+  if (descriptor === undefined) {
+    assertSupervisorIdentityContextV1(undefined);
+    return undefined;
+  }
+  if (!("value" in descriptor) || descriptor.enumerable !== true ||
+    !isRecordV1(descriptor.value)) return failV1("invalid_input");
+  const value = descriptor.value;
+  const keys = Reflect.ownKeys(value);
+  const uid = Object.getOwnPropertyDescriptor(value, "uid");
+  const gid = Object.getOwnPropertyDescriptor(value, "gid");
+  if (keys.length !== 2 || !keys.every((key) => key === "uid" || key === "gid") ||
+    uid === undefined || !("value" in uid) || uid.enumerable !== true ||
+    gid === undefined || !("value" in gid) || gid.enumerable !== true ||
+    !Number.isSafeInteger(uid.value) || uid.value <= 0 || uid.value > 0x7fff_ffff ||
+    !Number.isSafeInteger(gid.value) || gid.value <= 0 || gid.value > 0x7fff_ffff) {
+    return failV1("invalid_input");
+  }
+  const identity = Object.freeze({ uid: uid.value as number, gid: gid.value as number });
+  assertSupervisorIdentityContextV1(identity);
+  return identity;
+}
+
+function compileAbortSignalV1(options: Record<string, unknown>): AbortSignal | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(options, "signal");
+  if (descriptor === undefined) return undefined;
+  if (!("value" in descriptor) || descriptor.enumerable !== true) return failV1("invalid_input");
+  if (descriptor.value === undefined) return undefined;
+  // Use the captured native getter as a brand check; never read caller-defined
+  // aborted/reason properties or invoke overridden listener methods.
+  const aborted = ABORT_SIGNAL_ABORTED_GETTER_V1.call(descriptor.value);
+  if (aborted) return failV1("io_failed");
+  return descriptor.value as AbortSignal;
+}
+
 function compileSupervisorInternalV1(
   value: unknown,
 ): CompiledSupervisorInternalV1 {
@@ -203,9 +262,9 @@ function compileSupervisorInternalV1(
     const streamObserverDescriptor = optionDescriptors.streamObserver;
     const onObservedCallDescriptor = optionDescriptors.onObservedCall;
     if (
-      Object.keys(value).some((key) =>
+      Reflect.ownKeys(value).some((key) =>
         key !== "streamObserver" &&
-        key !== "onObservedCall"
+        key !== "onObservedCall" && key !== "childIdentity" && key !== "signal"
       ) ||
       streamObserverDescriptor === undefined ||
       !("value" in streamObserverDescriptor) ||
@@ -213,6 +272,8 @@ function compileSupervisorInternalV1(
       !("value" in onObservedCallDescriptor) ||
       typeof onObservedCallDescriptor.value !== "function"
     ) return failV1("invalid_input");
+    const childIdentity = compileChildIdentityV1(value);
+    const signal = compileAbortSignalV1(value);
     const streamObserverValue = streamObserverDescriptor.value;
     if (!isRecordV1(streamObserverValue)) return failV1("invalid_input");
     const observerDescriptors = Object.getOwnPropertyDescriptors(streamObserverValue);
@@ -240,6 +301,8 @@ function compileSupervisorInternalV1(
     const compiledCallback: CompiledSupervisorInternalV1["onObservedCall"] =
       (event, signal) => onObservedCall(event, signal);
     return Object.freeze({
+      childIdentity,
+      signal,
       streamObserver: compiledObserver,
       onObservedCall: compiledCallback,
     });
@@ -325,9 +388,6 @@ function compileHostActionAuthorizationsV1(
   const expectedActions = plan.events.filter((event) =>
     event.kind === "host_action"
   );
-  if (host === "codex" && expectedActions.length > 0) {
-    return failV1("invalid_input");
-  }
   if (value.length !== expectedActions.length) return failV1("invalid_input");
 
   const compiled = expectedActions.map((expected, index) => {
@@ -347,6 +407,9 @@ function compileHostActionAuthorizationsV1(
     if (inputDigest !== expected.inputDigest) return failV1("invalid_input");
 
     if (expected.action === "source_mutation") {
+      // Codex file_change JSONL binds only path/kind, not patch bytes, and may
+      // arrive only after the edit. Do not grant workspace-wide writes for it.
+      if (host === "codex") return failV1("invalid_input");
       const filePath = entry.input.file_path;
       if (
         !canonicalAbsolutePathV1(filePath) ||
@@ -411,7 +474,10 @@ function argvV1(
     ),
   );
   if (host === "codex") {
-    if (actions.length !== 0) return failV1("invalid_input");
+    if (actions.some((action) => action.tool !== "Bash")) return failV1("invalid_input");
+    // Verification uses the unchanged read-only sandbox. Its exact command,
+    // ordinal, paired completion and exit zero are checked by the normalizer;
+    // Claude permission rules below are never used as Codex write authority.
     return Object.freeze([
       ...CODEX_ARGV_PREFIX_V1,
       "-c",
@@ -444,6 +510,55 @@ function sha256DigestV1(bytes: Uint8Array): Sha256DigestV1 {
 
 function isSha256DigestV1(value: unknown): value is Sha256DigestV1 {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+}
+
+interface RootProtectedPathIdentityV1 {
+  readonly path: string;
+  readonly dev: number;
+  readonly ino: number;
+  readonly mode: number;
+  readonly gid: number;
+}
+
+async function rootProtectedExecutablePathV1(
+  executable: string,
+): Promise<readonly RootProtectedPathIdentityV1[]> {
+  const paths = [executable];
+  for (let path = dirname(executable); path !== paths[0]; path = dirname(path)) {
+    paths.unshift(path);
+    if (dirname(path) === path) break;
+  }
+  const identities: RootProtectedPathIdentityV1[] = [];
+  try {
+    for (const path of paths) {
+      const metadata = await lstat(path);
+      const isExecutable = path === executable;
+      if (metadata.isSymbolicLink() || metadata.uid !== 0 ||
+        (metadata.mode & 0o022) !== 0 ||
+        (isExecutable
+          ? !metadata.isFile() || metadata.nlink !== 1 ||
+            (metadata.mode & 0o111) === 0 || (metadata.mode & 0o6000) !== 0
+          : !metadata.isDirectory())) return failV1("invalid_input");
+      identities.push(Object.freeze({
+        path, dev: metadata.dev, ino: metadata.ino, mode: metadata.mode, gid: metadata.gid,
+      }));
+    }
+    return Object.freeze(identities);
+  } catch (error) {
+    if (error instanceof Step16RealHostExecutionErrorV1) throw error;
+    return failV1("invalid_input");
+  }
+}
+
+function sameRootProtectedPathV1(
+  before: readonly RootProtectedPathIdentityV1[],
+  after: readonly RootProtectedPathIdentityV1[],
+): boolean {
+  return before.length === after.length && before.every((entry, index) => {
+    const next = after[index]!;
+    return entry.path === next.path && entry.dev === next.dev && entry.ino === next.ino &&
+      entry.mode === next.mode && entry.gid === next.gid;
+  });
 }
 
 async function attestExecutableV1(
@@ -558,14 +673,19 @@ async function runStep16RealHostJsonlSessionCoreV1(
   input: RunStep16RealHostJsonlSessionV1Input,
   supervisor: CompiledSupervisorInternalV1 | undefined,
 ): Promise<Step16RealHostJsonlSessionResultV1> {
+  if (typeof input !== "object" || input === null) return failV1("invalid_input");
+  // Pin launch primitives before the first await, so a mutable input cannot
+  // redirect spawn after the root-owned path and executable digest were checked.
+  const executable = input.executable;
+  const expectedExecutableDigest = input.expectedExecutableDigest;
+  const cwd = input.cwd;
+  const host = input.host;
+  const prompt = input.prompt;
   if (
-    typeof input !== "object" ||
-    input === null ||
-    !canonicalAbsolutePathV1(input.executable) ||
-    !canonicalAbsolutePathV1(input.cwd) ||
-    typeof input.prompt !== "string" ||
-    input.prompt.length === 0 ||
-    !isUnicodeScalarStringV1(input.prompt)
+    !canonicalAbsolutePathV1(executable) ||
+    !canonicalAbsolutePathV1(cwd) ||
+    typeof prompt !== "string" || prompt.length === 0 ||
+    !isUnicodeScalarStringV1(prompt)
   ) return failV1("invalid_input");
   let expectedEventPlan: Step16ExpectedHostEventPlanV1;
   try {
@@ -576,29 +696,44 @@ async function runStep16RealHostJsonlSessionCoreV1(
     return failV1("invalid_input");
   }
   const actionAuthorizations = compileHostActionAuthorizationsV1(
-    input.host,
-    input.cwd,
+    host,
+    cwd,
     expectedEventPlan,
     input.expectedHostActionInputs,
   );
   const args = argvV1(
-    input.host,
-    input.cwd,
+    host,
+    cwd,
     expectedEventPlan,
     actionAuthorizations,
   );
-  const environment = childEnvironmentV1(input.env, input.host);
+  const environment = childEnvironmentV1(input.env, host);
   const timeoutMs = timeoutV1(input.timeoutMs);
+  const childIdentity = supervisor?.childIdentity;
+  const protectedPath = childIdentity === undefined
+    ? undefined : await rootProtectedExecutablePathV1(executable);
   const executableDigest = await attestExecutableV1(
-    input.executable,
-    input.expectedExecutableDigest,
+    executable,
+    expectedExecutableDigest,
   );
+  if (protectedPath !== undefined &&
+    !sameRootProtectedPathV1(protectedPath, await rootProtectedExecutablePathV1(executable))) {
+    return failV1("invalid_input");
+  }
+  if (supervisor !== undefined) assertSupervisorIdentityContextV1(childIdentity);
+  const externalSignal = supervisor?.signal;
+  if (externalSignal !== undefined && ABORT_SIGNAL_ABORTED_GETTER_V1.call(externalSignal)) {
+    return failV1("io_failed");
+  }
 
   let child: ChildProcessWithoutNullStreams;
   try {
-    child = spawn(input.executable, args, {
-      cwd: input.cwd,
+    child = spawn(executable, args, {
+      cwd,
       env: environment,
+      // libuv clears supplementary groups before applying gid/uid in the child.
+      // The supervising process retains its identity and owns the raw pipes.
+      ...(childIdentity === undefined ? {} : childIdentity),
       detached: process.platform !== "win32",
       shell: false,
       stdio: "pipe",
@@ -811,82 +946,97 @@ async function runStep16RealHostJsonlSessionCoreV1(
     });
   });
   const timer = setTimeout(() => beginTermination("timeout"), timeoutMs);
+  const onExternalAbort = (): void => beginTermination("io_failed");
+  let externalListenerAdded = false;
   try {
-    child.stdin.end(input.prompt, "utf8");
-  } catch {
-    stdinWriteFailed = true;
-    if (supervisor !== undefined) beginTermination("io_failed");
-  }
-
-  const outcome = await completion;
-  if (supervisor !== undefined) {
-    if (spawnFailed) {
-      abortSupervisorWorkV1("spawn_failed");
-    } else if (outcome.signal !== null) {
-      abortSupervisorWorkV1("signaled");
-    } else if (outcome.code !== 0) {
-      abortSupervisorWorkV1("nonzero_exit");
-    } else if (stdinWriteFailed) {
-      abortSupervisorWorkV1("stdin_write_failed");
+    if (externalSignal !== undefined) {
+      try {
+        ADD_ABORT_LISTENER_V1.call(externalSignal, "abort", onExternalAbort, { once: true });
+        externalListenerAdded = true;
+        if (ABORT_SIGNAL_ABORTED_GETTER_V1.call(externalSignal)) onExternalAbort();
+      } catch {
+        beginTermination("io_failed");
+      }
     }
-    await Promise.race([stdoutWork, failureObserved]);
-  }
-  clearTimeout(timer);
-  await termination;
-  if (failureCode !== undefined) return failV1(failureCode);
-  if (spawnFailed) return failAfterSpawnV1("spawn_failed");
-  if (outcome.signal !== null) return failAfterSpawnV1("signaled");
-  if (outcome.code !== 0) return failAfterSpawnV1("nonzero_exit");
-  if (stdinWriteFailed) return failAfterSpawnV1("stdin_write_failed");
-  if (supervisor !== undefined && !stdoutEofObserved) {
-    return failAfterSpawnV1("io_failed");
-  }
-
-  const stdout = Buffer.concat(stdoutChunks, stdoutBytes);
-  const stderr = Buffer.concat(stderrChunks, stderrBytes);
-  let transcript: string;
-  try {
-    transcript = decodeUtf8V1(stdout);
-    decodeUtf8V1(stderr);
-  } catch (error) {
-    supervisorAbortController?.abort(error);
-    throw error;
-  }
-  let receipt: RealHostTranscriptReceiptV1;
-  try {
-    receipt = normalizeStep16RealHostJsonlTranscriptV1(
-      input.host,
-      transcript,
-      expectedEventPlan,
-    );
-  } catch {
-    return failAfterSpawnV1("transcript_rejected");
-  }
-  if (supervisor !== undefined) {
-    let observedReceipt: RealHostTranscriptReceiptV1;
     try {
-      observedReceipt = supervisor.streamObserver.finish();
+      child.stdin.end(prompt, "utf8");
+    } catch {
+      stdinWriteFailed = true;
+      if (supervisor !== undefined) beginTermination("io_failed");
+    }
+
+    const outcome = await completion;
+    if (supervisor !== undefined) {
+      if (spawnFailed) {
+        abortSupervisorWorkV1("spawn_failed");
+      } else if (outcome.signal !== null) {
+        abortSupervisorWorkV1("signaled");
+      } else if (outcome.code !== 0) {
+        abortSupervisorWorkV1("nonzero_exit");
+      } else if (stdinWriteFailed) {
+        abortSupervisorWorkV1("stdin_write_failed");
+      }
+      await Promise.race([stdoutWork, failureObserved]);
+    }
+    clearTimeout(timer);
+    await termination;
+    if (failureCode !== undefined) return failV1(failureCode);
+    if (spawnFailed) return failAfterSpawnV1("spawn_failed");
+    if (outcome.signal !== null) return failAfterSpawnV1("signaled");
+    if (outcome.code !== 0) return failAfterSpawnV1("nonzero_exit");
+    if (stdinWriteFailed) return failAfterSpawnV1("stdin_write_failed");
+    if (supervisor !== undefined && !stdoutEofObserved) {
+      return failAfterSpawnV1("io_failed");
+    }
+
+    const stdout = Buffer.concat(stdoutChunks, stdoutBytes);
+    const stderr = Buffer.concat(stderrChunks, stderrBytes);
+    let transcript: string;
+    try {
+      transcript = decodeUtf8V1(stdout);
+      decodeUtf8V1(stderr);
+    } catch (error) {
+      supervisorAbortController?.abort(error);
+      throw error;
+    }
+    let receipt: RealHostTranscriptReceiptV1;
+    try {
+      receipt = normalizeStep16RealHostJsonlTranscriptV1(host, transcript, expectedEventPlan);
     } catch {
       return failAfterSpawnV1("transcript_rejected");
     }
-    let receiptsMatch = false;
-    try {
-      receiptsMatch = JSON.stringify(observedReceipt) === JSON.stringify(receipt);
-    } catch {
-      return failAfterSpawnV1("transcript_rejected");
+    if (supervisor !== undefined) {
+      let observedReceipt: RealHostTranscriptReceiptV1;
+      try {
+        observedReceipt = supervisor.streamObserver.finish();
+      } catch {
+        return failAfterSpawnV1("transcript_rejected");
+      }
+      let receiptsMatch = false;
+      try {
+        receiptsMatch = JSON.stringify(observedReceipt) === JSON.stringify(receipt);
+      } catch {
+        return failAfterSpawnV1("transcript_rejected");
+      }
+      if (!receiptsMatch) return failAfterSpawnV1("transcript_rejected");
     }
-    if (!receiptsMatch) {
-      return failAfterSpawnV1("transcript_rejected");
+    if (failureCode !== undefined) {
+      await termination;
+      return failV1(failureCode);
+    }
+    return Object.freeze({
+      receipt,
+      rawTranscriptDigest: sha256DigestV1(stdout),
+      stderrDigest: sha256DigestV1(stderr),
+      executableDigest,
+      exit: Object.freeze({ code: 0 as const, signal: null }),
+    });
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal !== undefined && externalListenerAdded) {
+      REMOVE_ABORT_LISTENER_V1.call(externalSignal, "abort", onExternalAbort);
     }
   }
-
-  return Object.freeze({
-    receipt,
-    rawTranscriptDigest: sha256DigestV1(stdout),
-    stderrDigest: sha256DigestV1(stderr),
-    executableDigest,
-    exit: Object.freeze({ code: 0 as const, signal: null }),
-  });
 }
 
 /**

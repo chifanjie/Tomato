@@ -88,6 +88,7 @@ function fixtureV1(input: Readonly<{
   readonly appendExpectedOperation?:
     Step16HostCallWitnessAuthorityCallbacksInternalV1["appendExpectedOperation"];
   readonly complete?: Step16HostCallWitnessAuthorityCallbacksInternalV1["complete"];
+  readonly finalizeRun?: NonNullable<Step16HostCallWitnessAuthorityCallbacksInternalV1["finalizeRun"]>;
 }> = {}) {
   let leaseHeld = input.leaseHeld ?? true;
   const authorityWindow = Object.freeze(Object.create(null)) as
@@ -122,6 +123,7 @@ function fixtureV1(input: Readonly<{
       appendExpectedOperation,
       complete,
       abort,
+      ...(input.finalizeRun === undefined ? {} : { finalizeRun: input.finalizeRun }),
     },
   });
   return {
@@ -158,6 +160,8 @@ async function armV1(
     kind: "arm",
     sequence: 2,
     callOrdinal: 1,
+    sessionIdDigest: SESSION_DIGEST_V1,
+    callIdDigest: CALL_DIGEST_V1,
   });
   return { connection, token };
 }
@@ -222,7 +226,16 @@ describe("Step16 root-only Host-call witness control core", () => {
     expect(token).not.toContain(privateSecret);
     expect(fixture.begin).toHaveBeenCalledWith({
       host: "codex",
+      runNonce: RUN_NONCE_V1,
+      closingPlanDigest: fixture.plan.closingPlanDigest,
+      callOrdinal: 1,
+      eventOrdinal: 3,
+      tool: "update_task",
+      argumentsDigest: digestV1("4"),
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
     });
+    expect(Object.isFrozen(fixture.begin.mock.calls[0]![0])).toBe(true);
     expect(fixture.appendExpectedOperation).toHaveBeenCalledWith(
       expect.any(Object),
       operation,
@@ -244,6 +257,93 @@ describe("Step16 root-only Host-call witness control core", () => {
     expect(JSON.stringify(result)).not.toContain(privateSecret);
     expect(openedAgain).toBeUndefined();
     expect(fixture.abort).not.toHaveBeenCalled();
+  });
+
+  it.each(["sessionIdDigest", "callIdDigest"] as const)(
+    "requires a valid arm %s before opening authority",
+    async (field) => {
+      for (const value of [undefined, "not-a-digest"]) {
+        const fixture = fixtureV1();
+        const connection = await helloV1(fixture);
+        const frame: Record<string, unknown> = {
+          kind: "arm",
+          sequence: 2,
+          callOrdinal: 1,
+          sessionIdDigest: SESSION_DIGEST_V1,
+          callIdDigest: CALL_DIGEST_V1,
+        };
+        if (value === undefined) delete frame[field];
+        else frame[field] = value;
+        await expect(connection.arm(frame)).rejects.toEqual(
+          expectCodeV1("invalid_frame"),
+        );
+        expect(fixture.begin).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each(["sessionIdDigest", "callIdDigest"] as const)(
+    "rejects completion replacing the armed %s before authority complete",
+    async (field) => {
+      const fixture = fixtureV1();
+      const { connection, token } = await armV1(fixture);
+      await observeV1(connection, token, 3);
+      const frame = {
+        kind: "complete",
+        sequence: 4,
+        token,
+        sessionIdDigest: SESSION_DIGEST_V1,
+        callIdDigest: CALL_DIGEST_V1,
+        [field]: digestV1("a"),
+      };
+      await expect(connection.complete(frame)).rejects.toEqual(
+        expectCodeV1("invalid_frame"),
+      );
+      expect(fixture.complete).not.toHaveBeenCalled();
+      expect(fixture.abort).toHaveBeenCalledTimes(1);
+      await expect(connection.complete({ ...frame, sequence: 5 })).rejects
+        .toEqual(expectCodeV1("connection_closed"));
+    },
+  );
+
+  it("snapshots arm identity before awaiting the authority begin", async () => {
+    let resolveBegin!: (
+      value:
+        ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1,
+    ) => void;
+    const begun = new Promise<
+      ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
+    >((resolve) => {
+      resolveBegin = resolve;
+    });
+    const fixture = fixtureV1();
+    fixture.begin.mockImplementationOnce(async () => begun);
+    const connection = await helloV1(fixture);
+    const frame = {
+      kind: "arm",
+      sequence: 2,
+      callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
+    };
+    const arming = connection.arm(frame);
+    frame.sessionIdDigest = digestV1("a");
+    frame.callIdDigest = digestV1("b");
+    resolveBegin(Object.freeze(Object.create(null)) as
+      ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1);
+    const token = await arming;
+    await observeV1(connection, token, 3);
+    await expect(connection.complete({
+      kind: "complete",
+      sequence: 4,
+      token,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
+    })).resolves.toMatchObject({ status: "completed" });
+    expect(fixture.begin.mock.calls[0]![0]).toMatchObject({
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
+    });
   });
 
   it("aggregates three Provider operations in exact observed order", async () => {
@@ -294,6 +394,8 @@ describe("Step16 root-only Host-call witness control core", () => {
         kind: "arm",
         sequence: sequence++,
         callOrdinal,
+        sessionIdDigest: SESSION_DIGEST_V1,
+        callIdDigest: digestV1(callOrdinal === 1 ? "2" : "9"),
       });
       let lastObserved: Awaited<
         ReturnType<typeof connection.observeProviderOperation>
@@ -323,6 +425,8 @@ describe("Step16 root-only Host-call witness control core", () => {
       kind: "arm",
       sequence: sequence++,
       callOrdinal: 3,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: digestV1("a"),
     });
     await expect(connection.observeProviderOperation({
       kind: "observe_provider_operation",
@@ -522,12 +626,16 @@ describe("Step16 root-only Host-call witness control core", () => {
       kind: "arm",
       sequence: 4,
       callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
     })).rejects.toEqual(expectCodeV1("out_of_order"));
     expect(fixture.begin).not.toHaveBeenCalled();
     await expect(connection.arm({
       kind: "arm",
       sequence: 2,
       callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
     })).rejects.toEqual(expectCodeV1("connection_closed"));
   });
 
@@ -629,7 +737,8 @@ describe("Step16 root-only Host-call witness control core", () => {
   });
 
   it("rejects close after only a strict prefix of a multi-call plan", async () => {
-    const fixture = fixtureV1({ calls: planCallsV1(2) });
+    const finalizeRun = vi.fn(async () => undefined);
+    const fixture = fixtureV1({ calls: planCallsV1(2), finalizeRun });
     const { connection, token } = await armV1(fixture);
     await observeV1(connection, token, 3);
     await connection.complete({
@@ -643,10 +752,12 @@ describe("Step16 root-only Host-call witness control core", () => {
     await expect(fixture.server.close()).rejects.toEqual(
       expectCodeV1("incomplete_plan"),
     );
+    expect(finalizeRun).not.toHaveBeenCalled();
   });
 
   it("closes only after every planned call completed successfully", async () => {
-    const fixture = fixtureV1({ calls: planCallsV1(2) });
+    const finalizeRun = vi.fn(async () => undefined);
+    const fixture = fixtureV1({ calls: planCallsV1(2), finalizeRun });
     const { connection, token: firstToken } = await armV1(fixture);
     await observeV1(connection, firstToken, 3);
     await connection.complete({
@@ -660,6 +771,8 @@ describe("Step16 root-only Host-call witness control core", () => {
       kind: "arm",
       sequence: 5,
       callOrdinal: 2,
+      sessionIdDigest: digestV1("8"),
+      callIdDigest: digestV1("9"),
     });
     await observeV1(connection, secondToken, 6);
     await connection.complete({
@@ -673,6 +786,42 @@ describe("Step16 root-only Host-call witness control core", () => {
     await expect(fixture.server.close()).resolves.toBeUndefined();
     await expect(fixture.server.close()).resolves.toBeUndefined();
     expect(fixture.complete).toHaveBeenCalledTimes(2);
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith({
+      runNonce: RUN_NONCE_V1,
+      closingPlanDigest: fixture.plan.closingPlanDigest,
+      callCount: 2,
+    });
+  });
+
+  it("fails closed if durable run finalization rejects and does not retry it", async () => {
+    const finalizeRun = vi.fn(async () => { throw new Error("durable finalization failed"); });
+    const fixture = fixtureV1({ finalizeRun });
+    const { connection, token } = await armV1(fixture);
+    await observeV1(connection, token, 3);
+    await connection.complete({ kind: "complete", sequence: 4, token,
+      sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1 });
+    await expect(fixture.server.close()).rejects.toEqual(expectCodeV1("authority_failed"));
+    await expect(fixture.server.close()).rejects.toEqual(expectCodeV1("authority_failed"));
+    expect(finalizeRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("awaits durable run finalization and rejects lease loss while it is pending", async () => {
+    let finish!: () => void;
+    const finalizeRun = vi.fn(async () => new Promise<void>((resolve) => { finish = resolve; }));
+    const fixture = fixtureV1({ finalizeRun });
+    const { connection, token } = await armV1(fixture);
+    await observeV1(connection, token, 3);
+    await connection.complete({ kind: "complete", sequence: 4, token,
+      sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1 });
+    const closing = fixture.server.close();
+    const settled = vi.fn();
+    void closing.then(settled, settled);
+    await Promise.resolve();
+    expect(finalizeRun).toHaveBeenCalledTimes(1);
+    expect(settled).not.toHaveBeenCalled();
+    fixture.loseLease();
+    finish();
+    await expect(closing).rejects.toEqual(expectCodeV1("connection_closed"));
   });
 
   it("fails closed when authority rejects an extra pending operation", async () => {
@@ -712,12 +861,16 @@ describe("Step16 root-only Host-call witness control core", () => {
       kind: "arm",
       sequence: 2,
       callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
     });
 
     await expect(connection.arm({
       kind: "arm",
       sequence: 3,
       callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
     })).rejects.toEqual(expectCodeV1("connection_busy"));
     resolveBegin(Object.freeze(Object.create(null)) as
       ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1);
@@ -733,6 +886,8 @@ describe("Step16 root-only Host-call witness control core", () => {
       kind: "arm",
       sequence: 2,
       callOrdinal: 1,
+      sessionIdDigest: SESSION_DIGEST_V1,
+      callIdDigest: CALL_DIGEST_V1,
       uid: 0,
       host: "codex",
       expectedProviderOperations: [operationV1()],

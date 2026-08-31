@@ -12,7 +12,18 @@ import {
 import * as publicAuthorityApi from "../src/index.js";
 import {
   assertProviderProductionCompletedStrongReadyConfigurationInternalV1,
+  createProviderProductionStrongAuthorityServiceCoreInternalV1,
+  createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1,
 } from "../src/provider-production-strong-authority-service.js";
+import {
+  createStep16HostCallWitnessServerCoreInternalV1,
+  deriveStep16HostCallWitnessClosingPlanDigestInternalV1,
+  openStep16HostCallWitnessCapabilityInternalV1,
+} from "../src/step16-host-call-witness-server-internal.js";
+import {
+  inspectStep16ReceiptBindingDurableJournalInternalV1,
+  type Step16ReceiptBindingJournalDurabilityHooksInternalV1,
+} from "../src/step16-receipt-binding-journal-internal.js";
 import {
   Step16ProviderReceiptBindingV1Schema,
 } from "../../contracts/dist/step16-host-receipts.js";
@@ -29,6 +40,7 @@ import {
   mintProviderProductionStrongAuthorityTrustedHostCallWitnessForTestInternalV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
   openProviderStrongMutationExecutionBrokerStoreForTestInternalV1,
+  openStep16ReceiptBindingDurableJournalForTestInternalV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
   registerProviderStrongMutationLinuxExt4ExecutionFenceTestCapabilityInternalV1,
 } from "../src/test-seam-internal.js";
@@ -67,6 +79,8 @@ async function liveStrongAuthorityServiceFixtureV1(
     readonly closeServer?: () => Promise<void>;
     readonly closeExactObjectAuthority?: () => Promise<void>;
     readonly enableTrustedHostCallWitnesses?: boolean;
+    readonly durableWitness?: boolean;
+    readonly journalHooks?: Step16ReceiptBindingJournalDurabilityHooksInternalV1;
   }> = {},
 ) {
   const parent = await mkdtemp(join(tmpdir(), "production-strong-authority-"));
@@ -148,20 +162,37 @@ async function liveStrongAuthorityServiceFixtureV1(
       executionFence,
       { clock: testAuthorityClockV1 },
     );
-  const opened = createProviderProductionStrongAuthorityServiceForTestInternalV1(
+  const journal = lifecycle.durableWitness === true
+    ? await openStep16ReceiptBindingDurableJournalForTestInternalV1(
+      capability,
+      lifecycle.journalHooks,
+    )
+    : undefined;
+  const trustedProviderIdentity = Object.freeze({
+    providerId: TEST_BROKER_PROVIDER_ID,
+    installationIdentityDigest: STEP16_INSTALLATION_IDENTITY_DIGEST,
+  });
+  const opened = journal === undefined
+    ? createProviderProductionStrongAuthorityServiceForTestInternalV1(
     broker,
-    Object.freeze({
-      providerId: TEST_BROKER_PROVIDER_ID,
-      installationIdentityDigest: STEP16_INSTALLATION_IDENTITY_DIGEST,
-    }),
+    trustedProviderIdentity,
     lifecycle,
-  );
+    )
+    : createProviderProductionStrongAuthorityServiceCoreInternalV1(
+      broker,
+      trustedProviderIdentity,
+      lifecycle.closeServer ?? (async () => undefined),
+      lifecycle.closeExactObjectAuthority ?? (async () => undefined),
+      openStep16HostCallWitnessCapabilityInternalV1,
+      journal,
+    );
   return {
     broker,
     current,
     principalAttestation,
     request,
     holdNextFenceRevalidation,
+    journal,
     ...opened,
   };
 }
@@ -276,6 +307,304 @@ describe("production strong authority Acceptance", () => {
         configuration,
       )
     ).not.toThrow();
+  });
+});
+
+async function durableWitnessConnectionV1(
+  fixture: Awaited<ReturnType<typeof liveStrongAuthorityServiceFixtureV1>>,
+  hosts: readonly ("codex" | "claude")[] = ["codex"],
+  runNonce = "a".repeat(64),
+) {
+  const calls = hosts.map((host, index) => Object.freeze({
+    host,
+    callOrdinal: index + 1,
+    eventOrdinal: index + 1,
+    tool: "update_task",
+    argumentsDigest: `sha256:${"9".repeat(64)}`,
+  }));
+  const closingPlan = Object.freeze({
+    runNonce,
+    closingPlanDigest: deriveStep16HostCallWitnessClosingPlanDigestInternalV1({ runNonce, calls }),
+    calls,
+  });
+  const authority = createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1(
+    fixture.receiptExportCapability,
+  );
+  const server = createStep16HostCallWitnessServerCoreInternalV1({
+    directSupervisorPid: process.pid,
+    supervisorLease: { held: () => true },
+    closingPlan,
+    authority,
+  });
+  const connection = server.accept({ uid: 0, pid: process.pid });
+  await connection.hello({ kind: "hello", sequence: 1, runNonce, closingPlanDigest: closingPlan.closingPlanDigest });
+  let sequence = 2;
+  return {
+    server,
+    connection,
+    closingPlan,
+    authority,
+    nextSequence: () => sequence++,
+    async finishCall(index: number, request: ReturnType<typeof strongMutationRequestV1>) {
+      const sessionIdDigest = `sha256:${(index + 1).toString(16).repeat(64)}`;
+      const callIdDigest = `sha256:${(index + 5).toString(16).repeat(64)}`;
+      const token = await connection.arm({
+        kind: "arm", sequence: sequence++, callOrdinal: index + 1,
+        sessionIdDigest, callIdDigest,
+      });
+      await connection.observeProviderOperation({
+        kind: "observe_provider_operation", sequence: sequence++, token,
+        ...step16ExpectedOperationV1(request),
+      });
+      await resolveStrongMutationV1(fixture, request);
+      return connection.complete({
+        kind: "complete", sequence: sequence++, token, sessionIdDigest, callIdDigest,
+      });
+    },
+  };
+}
+
+describe("production durable Host witness composition", () => {
+  it("keeps a completed call distinct from an incomplete run", async () => {
+    const fixture = await liveStrongAuthorityServiceFixtureV1({ durableWitness: true });
+    const journal = fixture.journal!;
+    const witness = await durableWitnessConnectionV1(fixture, ["codex", "claude"]);
+    await expect(witness.finishCall(0, fixture.request)).resolves.toMatchObject({ status: "completed" });
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(journal)).toMatchObject({
+      phase: "finalized", totalOperationCount: 1, host: "codex",
+    });
+    await expect(witness.server.close()).rejects.toMatchObject({ code: "incomplete_plan" });
+    // An incomplete close terminates that connection; it cannot be reopened as
+    // a successful run or hide the remaining expected Host call.
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(journal)).not.toMatchObject({ phase: "run_finalized" });
+    await fixture.service.close();
+  });
+
+  it("durably finalizes a cross-Host run and permits only then a fresh run", async () => {
+    const fixture = await liveStrongAuthorityServiceFixtureV1({ durableWitness: true });
+    const journal = fixture.journal!;
+    const witness = await durableWitnessConnectionV1(fixture, ["codex", "claude"]);
+    await witness.finishCall(0, fixture.request);
+    await witness.finishCall(1, strongMutationRequestV1(fixture.current, {
+      nonceDigit: "4", principalAttestation: fixture.principalAttestation,
+    }));
+    const before = await inspectStep16ReceiptBindingDurableJournalInternalV1(journal);
+    expect(before).toMatchObject({ phase: "finalized", host: "claude", totalOperationCount: 2 });
+    await witness.server.close();
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(journal)).toMatchObject({
+      phase: "run_finalized", totalOperationCount: 2,
+    });
+    const next = await durableWitnessConnectionV1(fixture, ["codex"], "b".repeat(64));
+    await next.finishCall(0, strongMutationRequestV1(fixture.current, {
+      nonceDigit: "5", principalAttestation: fixture.principalAttestation,
+    }));
+    await next.server.close();
+    const after = await inspectStep16ReceiptBindingDurableJournalInternalV1(journal);
+    expect(after).toMatchObject({ phase: "run_finalized", totalOperationCount: 1 });
+    expect(after!.revision).toBeGreaterThan(before!.revision);
+    await fixture.service.close();
+  });
+
+  it("withholds the operation ACK until the durable append finishes", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    let hold = false;
+    const appendEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const appendReleased = new Promise<void>((resolve) => { release = resolve; });
+    const fixture = await liveStrongAuthorityServiceFixtureV1({
+      durableWitness: true,
+      journalHooks: { async afterDurablePhase(phase) {
+        if (hold && phase === "directory_fsynced") {
+          hold = false;
+          entered();
+          await appendReleased;
+        }
+      } },
+    });
+    const witness = await durableWitnessConnectionV1(fixture);
+    const token = await witness.connection.arm({
+      kind: "arm", sequence: witness.nextSequence(), callOrdinal: 1,
+      sessionIdDigest: STEP16_CODEX_SESSION_ID_DIGEST, callIdDigest: STEP16_CODEX_CALL_ID_DIGEST,
+    });
+    hold = true;
+    let acknowledged = false;
+    const appending = witness.connection.observeProviderOperation({
+      kind: "observe_provider_operation", sequence: witness.nextSequence(), token,
+      ...step16ExpectedOperationV1(fixture.request),
+    }).then(() => { acknowledged = true; });
+    await appendEntered;
+    expect(acknowledged).toBe(false);
+    await expect(exportProviderProductionStrongAuthorityResolvedReceiptBundlesForTestInternalV1(
+      fixture.receiptExportCapability,
+    )).resolves.toEqual([]);
+    release();
+    await appending;
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(fixture.journal!)).toMatchObject({
+      phase: "armed", totalOperationCount: 1,
+      expectedProviderOperations: [step16ExpectedOperationV1(fixture.request)],
+    });
+    await witness.connection.disconnect();
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(fixture.journal!)).toMatchObject({ phase: "aborted" });
+    await fixture.service.close();
+  });
+
+  it("retains the broker lease until an admitted journal append has stopped", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    let hold = false;
+    const events: string[] = [];
+    const appendEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const appendReleased = new Promise<void>((resolve) => { release = resolve; });
+    const fixture = await liveStrongAuthorityServiceFixtureV1({
+      durableWitness: true,
+      async closeServer() { events.push("release-broker-lease"); },
+      journalHooks: { async afterDurablePhase(phase) {
+        if (hold && phase === "stage_file_fsynced") {
+          hold = false;
+          entered();
+          await appendReleased;
+          events.push("append-stage-released");
+        }
+      } },
+    });
+    const witness = await durableWitnessConnectionV1(fixture);
+    const token = await witness.connection.arm({
+      kind: "arm", sequence: witness.nextSequence(), callOrdinal: 1,
+      sessionIdDigest: STEP16_CODEX_SESSION_ID_DIGEST, callIdDigest: STEP16_CODEX_CALL_ID_DIGEST,
+    });
+    hold = true;
+    const appending = witness.connection.observeProviderOperation({
+      kind: "observe_provider_operation", sequence: witness.nextSequence(), token,
+      ...step16ExpectedOperationV1(fixture.request),
+    });
+    const result = appending.then(() => "unexpected-ack", (error: unknown) => error);
+    await appendEntered;
+    const closing = fixture.service.close();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events).toEqual([]);
+    release();
+    await expect(result).resolves.toMatchObject({ code: "authority_failed" });
+    await closing;
+    expect(events).toEqual(["append-stage-released", "release-broker-lease"]);
+  });
+
+  it("withdraws receipt capabilities synchronously when the lease owner reports loss", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    let hold = false;
+    const appendEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const appendReleased = new Promise<void>((resolve) => { release = resolve; });
+    const fixture = await liveStrongAuthorityServiceFixtureV1({
+      durableWitness: true,
+      journalHooks: { async afterDurablePhase(phase) {
+        if (hold && phase === "stage_file_fsynced") {
+          hold = false;
+          entered();
+          await appendReleased;
+        }
+      } },
+    });
+    const witness = await durableWitnessConnectionV1(fixture);
+    const token = await witness.connection.arm({
+      kind: "arm", sequence: witness.nextSequence(), callOrdinal: 1,
+      sessionIdDigest: STEP16_CODEX_SESSION_ID_DIGEST, callIdDigest: STEP16_CODEX_CALL_ID_DIGEST,
+    });
+    hold = true;
+    const appending = witness.connection.observeProviderOperation({
+      kind: "observe_provider_operation", sequence: witness.nextSequence(), token,
+      ...step16ExpectedOperationV1(fixture.request),
+    });
+    const result = appending.then(() => "unexpected-ack", (error: unknown) => error);
+    await appendEntered;
+    let drained = false;
+    const withdrawal = fixture.quiesceReceiptExportsInternalV1().then(() => { drained = true; });
+    await expect(exportProviderProductionStrongAuthorityResolvedReceiptBundlesForTestInternalV1(
+      fixture.receiptExportCapability,
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      fixture.receiptExportCapability, { host: "claude" },
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    expect(drained).toBe(false);
+    release();
+    await expect(result).resolves.toMatchObject({ code: "authority_failed" });
+    await withdrawal;
+    expect(drained).toBe(true);
+    await fixture.service.close();
+  });
+
+  it.each(["call_complete", "run_finalize"] as const)(
+    "rejects a late %s ACK after receipt authority withdrawal",
+    async (operation) => {
+      let release!: () => void;
+      let entered!: () => void;
+      let hold = false;
+      const writeEntered = new Promise<void>((resolve) => { entered = resolve; });
+      const writeReleased = new Promise<void>((resolve) => { release = resolve; });
+      const fixture = await liveStrongAuthorityServiceFixtureV1({
+        durableWitness: true,
+        journalHooks: { async afterDurablePhase(phase) {
+          if (hold && phase === "stage_file_fsynced") {
+            hold = false;
+            entered();
+            await writeReleased;
+          }
+        } },
+      });
+      const witness = await durableWitnessConnectionV1(fixture);
+      let finish: () => Promise<unknown>;
+      if (operation === "call_complete") {
+        const token = await witness.connection.arm({
+          kind: "arm", sequence: witness.nextSequence(), callOrdinal: 1,
+          sessionIdDigest: STEP16_CODEX_SESSION_ID_DIGEST, callIdDigest: STEP16_CODEX_CALL_ID_DIGEST,
+        });
+        await witness.connection.observeProviderOperation({
+          kind: "observe_provider_operation", sequence: witness.nextSequence(), token,
+          ...step16ExpectedOperationV1(fixture.request),
+        });
+        await resolveStrongMutationV1(fixture, fixture.request);
+        finish = () => witness.connection.complete({
+          kind: "complete", sequence: witness.nextSequence(), token,
+          sessionIdDigest: STEP16_CODEX_SESSION_ID_DIGEST, callIdDigest: STEP16_CODEX_CALL_ID_DIGEST,
+        });
+      } else {
+        await witness.finishCall(0, fixture.request);
+        finish = () => witness.server.close();
+      }
+      hold = true;
+      const result = finish().then(() => "unexpected-ack", (error: unknown) => error);
+      await writeEntered;
+      let drained = false;
+      const withdrawal = fixture.quiesceReceiptExportsInternalV1().then(() => { drained = true; });
+      expect(drained).toBe(false);
+      release();
+      await expect(result).resolves.toMatchObject({ code: "authority_failed" });
+      await withdrawal;
+      expect(drained).toBe(true);
+      await fixture.service.close();
+    },
+  );
+
+  it("refuses whole-run finalization if another broker operation appeared after Host completion", async () => {
+    const fixture = await liveStrongAuthorityServiceFixtureV1({ durableWitness: true });
+    const witness = await durableWitnessConnectionV1(fixture);
+    await witness.finishCall(0, fixture.request);
+    await resolveStrongMutationV1(fixture, strongMutationRequestV1(fixture.current, {
+      nonceDigit: "4", principalAttestation: fixture.principalAttestation,
+    }));
+    await expect(witness.server.close()).rejects.toMatchObject({ code: "authority_failed" });
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(fixture.journal!)).toMatchObject({ phase: "finalized" });
+    await fixture.service.close();
+  });
+
+  it("does not arm a durable production window without the fixed call identity", async () => {
+    const fixture = await liveStrongAuthorityServiceFixtureV1({ durableWitness: true });
+    await expect(beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowForTestInternalV1(
+      fixture.receiptExportCapability, { host: "codex" },
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    expect(await inspectStep16ReceiptBindingDurableJournalInternalV1(fixture.journal!)).toBeUndefined();
+    expect(publicAuthorityApi).not.toHaveProperty("openProviderProductionStrongAuthorityServiceWithStep16ReceiptBindingInternalV1");
+    expect(publicAuthorityApi).not.toHaveProperty("createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1");
+    await fixture.service.close();
   });
 });
 

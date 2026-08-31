@@ -67,9 +67,30 @@ export interface Step16HostCallWitnessSupervisorLeaseInternalV1 {
   held(): boolean;
 }
 
+export interface Step16HostCallWitnessBeginCollectingInputInternalV1 {
+  readonly host: "codex" | "claude";
+  readonly runNonce: string;
+  readonly closingPlanDigest: string;
+  readonly callOrdinal: number;
+  readonly eventOrdinal: number;
+  readonly tool: string;
+  readonly argumentsDigest: string;
+  readonly sessionIdDigest: string;
+  readonly callIdDigest: string;
+}
+
+export interface Step16HostCallWitnessFinalizeRunInputInternalV1 {
+  readonly runNonce: string;
+  readonly closingPlanDigest: string;
+  readonly callCount: number;
+}
+
 export interface Step16HostCallWitnessAuthorityCallbacksInternalV1 {
+  readonly finalizeRun?: (
+    input: Step16HostCallWitnessFinalizeRunInputInternalV1,
+  ) => Promise<void>;
   readonly beginCollecting: (
-    input: Readonly<{ readonly host: "codex" | "claude" }>,
+    input: Step16HostCallWitnessBeginCollectingInputInternalV1,
   ) => Promise<
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   >;
@@ -126,6 +147,8 @@ export interface Step16HostCallWitnessServerCoreInternalV1 {
 interface ActiveWindowInternalV1 {
   readonly token: string;
   readonly call: Step16HostCallWitnessClosingPlanCallInternalV1;
+  readonly sessionIdDigest: string;
+  readonly callIdDigest: string;
   readonly authorityWindow:
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1;
   readonly expectedProviderOperations:
@@ -360,8 +383,14 @@ class Step16HostCallWitnessConnectionCoreInternalV1
     try {
       if (
         this.#phase !== "ready" || this.#activeWindow !== undefined ||
-        !exactRecordKeysV1(frame, ["callOrdinal", "kind", "sequence"]) ||
-        frame.kind !== "arm"
+        !exactRecordKeysV1(frame, [
+          "callOrdinal",
+          "kind",
+          "sequence",
+          "sessionIdDigest",
+          "callIdDigest",
+        ]) || frame.kind !== "arm" ||
+        !isDigestV1(frame.sessionIdDigest) || !isDigestV1(frame.callIdDigest)
       ) {
         await this.#failClosedV1("invalid_frame");
         throw protocolErrorV1("invalid_frame");
@@ -374,10 +403,20 @@ class Step16HostCallWitnessConnectionCoreInternalV1
       }
       let authorityWindow:
         ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1;
-      try {
-        authorityWindow = await this.#authority.beginCollecting(Object.freeze({
+      const beginInput: Step16HostCallWitnessBeginCollectingInputInternalV1 =
+        Object.freeze({
           host: call.host,
-        }));
+          runNonce: this.#plan.runNonce,
+          closingPlanDigest: this.#plan.closingPlanDigest,
+          callOrdinal: call.callOrdinal,
+          eventOrdinal: call.eventOrdinal,
+          tool: call.tool,
+          argumentsDigest: call.argumentsDigest,
+          sessionIdDigest: frame.sessionIdDigest,
+          callIdDigest: frame.callIdDigest,
+        });
+      try {
+        authorityWindow = await this.#authority.beginCollecting(beginInput);
       } catch {
         await this.#failClosedV1("authority_failed");
         throw protocolErrorV1("authority_failed");
@@ -393,6 +432,8 @@ class Step16HostCallWitnessConnectionCoreInternalV1
       this.#activeWindow = Object.freeze({
         token,
         call,
+        sessionIdDigest: beginInput.sessionIdDigest,
+        callIdDigest: beginInput.callIdDigest,
         authorityWindow,
         expectedProviderOperations: [],
       });
@@ -528,7 +569,9 @@ class Step16HostCallWitnessConnectionCoreInternalV1
           "sessionIdDigest",
           "token",
         ]) || !isDigestV1(candidate.sessionIdDigest) ||
-        !isDigestV1(candidate.callIdDigest)
+        !isDigestV1(candidate.callIdDigest) ||
+        candidate.sessionIdDigest !== window.sessionIdDigest ||
+        candidate.callIdDigest !== window.callIdDigest
       ) {
         await this.#abortWindowV1(window);
         await this.#failClosedV1("invalid_frame");
@@ -545,8 +588,8 @@ class Step16HostCallWitnessConnectionCoreInternalV1
       witness = mintWitnessV1(
         window.call,
         expectedProviderOperations,
-        candidate.sessionIdDigest,
-        candidate.callIdDigest,
+        window.sessionIdDigest,
+        window.callIdDigest,
       );
       let completion: Awaited<
         ReturnType<Step16HostCallWitnessAuthorityCallbacksInternalV1["complete"]>
@@ -669,7 +712,28 @@ class Step16HostCallWitnessConnectionCoreInternalV1
       await this.#failClosedV1("incomplete_plan");
       throw protocolErrorV1("incomplete_plan");
     }
-    this.#phase = "closed";
+    this.#inFlight = true;
+    try {
+      if (this.#authority.finalizeRun !== undefined) {
+        try {
+          await this.#authority.finalizeRun(Object.freeze({
+            runNonce: this.#plan.runNonce,
+            closingPlanDigest: this.#plan.closingPlanDigest,
+            callCount: this.#plan.calls.length,
+          }));
+        } catch {
+          await this.#failClosedV1("authority_failed");
+          throw protocolErrorV1("authority_failed");
+        }
+      }
+      if (!this.#isLiveV1() || this.#phase !== "ready") {
+        await this.#failClosedV1("connection_closed");
+        throw protocolErrorV1("connection_closed");
+      }
+      this.#phase = "closed";
+    } finally {
+      this.#inFlight = false;
+    }
   }
 
   #isLiveV1(): boolean {
@@ -743,7 +807,9 @@ class Step16HostCallWitnessServerCoreV1
       typeof options.authority?.beginCollecting !== "function" ||
       typeof options.authority?.appendExpectedOperation !== "function" ||
       typeof options.authority?.complete !== "function" ||
-      typeof options.authority?.abort !== "function"
+      typeof options.authority?.abort !== "function" ||
+      (options.authority.finalizeRun !== undefined &&
+        typeof options.authority.finalizeRun !== "function")
     ) {
       throw protocolErrorV1("invalid_closing_plan");
     }
@@ -756,6 +822,8 @@ class Step16HostCallWitnessServerCoreV1
         appendExpectedOperation: options.authority.appendExpectedOperation,
         complete: options.authority.complete,
         abort: options.authority.abort,
+        ...(options.authority.finalizeRun === undefined ? {} :
+          { finalizeRun: options.authority.finalizeRun }),
       }),
     });
   }

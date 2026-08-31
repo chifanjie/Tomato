@@ -67,13 +67,19 @@ export interface Step16ReceiptBindingJournalArmInternalV1 {
   readonly callIdentity: Step16ReceiptBindingJournalCallIdentityInternalV1;
 }
 
+export interface Step16ReceiptBindingJournalFinalizeRunInternalV1 {
+  readonly runNonce: string;
+  readonly closingPlanDigest: DigestV1;
+  readonly callCount: number;
+}
+
 export interface Step16ReceiptBindingJournalStateInternalV1 {
   readonly profile: "step16_receipt_binding_durable_journal_v1";
   readonly revision: number;
   readonly previousStateDigest: DigestV1 | "none";
-  readonly phase: "armed" | "host_completed" | "finalized" | "aborted";
+  readonly phase: "armed" | "host_completed" | "finalized" | "run_finalized" | "aborted";
   readonly host: "codex" | "claude";
-  /** Cumulative across every arm, including aborted calls; never reset. */
+  /** Cumulative within one run, including aborted calls; reset only after run_finalized. */
   readonly totalOperationCount: number;
   readonly callIdentity: Step16ReceiptBindingJournalCallIdentityInternalV1;
   readonly baseline: Step16ReceiptBindingJournalBaselineInternalV1;
@@ -406,13 +412,16 @@ function validRearmIdentityV1(
   identity: Step16ReceiptBindingJournalCallIdentityInternalV1,
   baseline: Step16ReceiptBindingJournalBaselineInternalV1,
 ): boolean {
-  return host === prior.host && identity.runNonce === prior.callIdentity.runNonce &&
+  if (baseline.intentCount < prior.baseline.intentCount) return false;
+  if (prior.phase === "run_finalized") {
+    return identity.runNonce !== prior.callIdentity.runNonce && identity.callOrdinal === 1;
+  }
+  return identity.runNonce === prior.callIdentity.runNonce &&
     identity.closingPlanDigest === prior.callIdentity.closingPlanDigest &&
-    identity.sessionIdDigest === prior.callIdentity.sessionIdDigest &&
     identity.callOrdinal === prior.callIdentity.callOrdinal + 1 &&
     identity.eventOrdinal > prior.callIdentity.eventOrdinal &&
-    identity.callIdDigest !== prior.callIdentity.callIdDigest &&
-    baseline.intentCount >= prior.baseline.intentCount;
+    (host !== prior.host || identity.sessionIdDigest !== prior.callIdentity.sessionIdDigest ||
+      identity.callIdDigest !== prior.callIdentity.callIdDigest);
 }
 
 function assertStateTransitionV1(
@@ -427,9 +436,10 @@ function assertStateTransitionV1(
   }
   if (next.revision !== prior.revision + 1 ||
     next.previousStateDigest !== prior.stateDigest) return rejectIntegrityV1();
-  if ((prior.phase === "finalized" || prior.phase === "aborted") && next.phase === "armed") {
+  if ((prior.phase === "finalized" || prior.phase === "aborted" ||
+    prior.phase === "run_finalized") && next.phase === "armed") {
     if (!validRearmIdentityV1(prior, next.host, next.callIdentity, next.baseline) ||
-      next.totalOperationCount !== prior.totalOperationCount ||
+      next.totalOperationCount !== (prior.phase === "run_finalized" ? 0 : prior.totalOperationCount) ||
       next.expectedProviderOperations.length !== 0) return rejectIntegrityV1();
     return;
   }
@@ -444,10 +454,12 @@ function assertStateTransitionV1(
     return;
   }
   if (!((prior.phase === "armed" && (next.phase === "host_completed" || next.phase === "aborted")) ||
-    (prior.phase === "host_completed" && next.phase === "finalized")) ||
+    (prior.phase === "host_completed" && next.phase === "finalized") ||
+    (prior.phase === "finalized" && next.phase === "run_finalized")) ||
     next.totalOperationCount !== prior.totalOperationCount ||
     !sameCanonicalV1(next.expectedProviderOperations, prior.expectedProviderOperations) ||
-    (next.phase === "finalized" && !sameCanonicalV1(next.completion, prior.completion))) {
+    ((next.phase === "finalized" || next.phase === "run_finalized") &&
+      !sameCanonicalV1(next.completion, prior.completion))) {
     return rejectIntegrityV1();
   }
 }
@@ -485,7 +497,8 @@ function parseStateV1(bytes: Uint8Array): Step16ReceiptBindingJournalStateIntern
     (value.previousStateDigest !== "none" &&
       !isDigestV1(value.previousStateDigest)) ||
     (value.phase !== "armed" && value.phase !== "host_completed" &&
-      value.phase !== "finalized" && value.phase !== "aborted") ||
+      value.phase !== "finalized" && value.phase !== "run_finalized" &&
+      value.phase !== "aborted") ||
     (value.host !== "codex" && value.host !== "claude") ||
     !isDigestV1(value.stateDigest)
   ) return rejectIntegrityV1();
@@ -512,7 +525,8 @@ function parseStateV1(bytes: Uint8Array): Step16ReceiptBindingJournalStateIntern
   if (
     (value.phase === "armed" && completion !== null) ||
     (value.phase === "aborted" && completion !== null) ||
-    ((value.phase === "host_completed" || value.phase === "finalized") &&
+    ((value.phase === "host_completed" || value.phase === "finalized" ||
+      value.phase === "run_finalized") &&
       (completion === null || expectedProviderOperations.length < 1)) ||
     (completion !== null && (completion.sessionIdDigest !== callIdentity.sessionIdDigest ||
       completion.callIdDigest !== callIdentity.callIdDigest))
@@ -833,19 +847,20 @@ export function armStep16ReceiptBindingDurableJournalInternalV1(
       !exactRecordKeysV1(input, ["baseline", "host", "callIdentity"]) ||
       (input.host !== "codex" && input.host !== "claude") ||
       (state.current !== undefined && state.current.phase !== "finalized" &&
-        state.current.phase !== "aborted")
+        state.current.phase !== "run_finalized" && state.current.phase !== "aborted")
     ) return rejectInvalidRequestV1();
     const baseline = parseBaselineV1(input.baseline, false);
     const callIdentity = parseCallIdentityV1(input.callIdentity, false);
     const prior = state.current;
-    // One fixed journal belongs to one run/plan/session. No public reset can
-    // turn abort/re-arm into a new operation budget or retarget a completed run.
+    // Calls may cross Host/session boundaries, but an unfinished run cannot be
+    // retargeted or receive a fresh operation budget through abort/re-arm.
     if (prior === undefined ? callIdentity.callOrdinal !== 1 :
       !validRearmIdentityV1(prior, input.host, callIdentity, baseline)) return rejectInvalidRequestV1();
     const next = materializeStateV1(nextUnsignedStateV1(state.current, {
       phase: "armed",
       host: input.host,
-      totalOperationCount: state.current?.totalOperationCount ?? 0,
+      totalOperationCount: prior?.phase === "run_finalized" ? 0 :
+        prior?.totalOperationCount ?? 0,
       callIdentity,
       baseline,
       expectedProviderOperations: Object.freeze([]),
@@ -944,6 +959,31 @@ export function finalizeStep16ReceiptBindingDurableJournalInternalV1(
   });
 }
 
+export function finalizeStep16ReceiptBindingRunDurableInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+  input: Step16ReceiptBindingJournalFinalizeRunInternalV1,
+): Promise<void> {
+  return runWithSnapshotV1(capability, input, async (state, input) => {
+    const current = state.current;
+    if (!exactRecordKeysV1(input, ["runNonce", "closingPlanDigest", "callCount"]) ||
+      current?.phase !== "finalized" || current.completion === null ||
+      input.runNonce !== current.callIdentity.runNonce ||
+      input.closingPlanDigest !== current.callIdentity.closingPlanDigest ||
+      !safeCountV1(input.callCount, 256) || input.callCount < 1 ||
+      input.callCount !== current.callIdentity.callOrdinal) return rejectInvalidRequestV1();
+    const next = materializeStateV1(nextUnsignedStateV1(current, {
+      phase: "run_finalized",
+      host: current.host,
+      totalOperationCount: current.totalOperationCount,
+      callIdentity: current.callIdentity,
+      baseline: current.baseline,
+      expectedProviderOperations: current.expectedProviderOperations,
+      completion: current.completion,
+    }));
+    await persistStateV1(state, next);
+  });
+}
+
 export function abortStep16ReceiptBindingDurableJournalInternalV1(
   capability: Step16ReceiptBindingJournalCapabilityInternalV1,
 ): Promise<void> {
@@ -1024,7 +1064,7 @@ export function verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInter
     ) return rejectIntegrityV1();
     const suffix = bundles.slice(current.baseline.intentCount);
     const exactCompletionRequired = current.phase === "host_completed" ||
-      current.phase === "finalized";
+      current.phase === "finalized" || current.phase === "run_finalized";
     if (
       suffix.length > current.expectedProviderOperations.length ||
       (exactCompletionRequired &&

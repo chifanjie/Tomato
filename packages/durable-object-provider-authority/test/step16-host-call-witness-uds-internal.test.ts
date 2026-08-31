@@ -180,6 +180,7 @@ interface TestFixture {
 
 async function fixture(input: Readonly<{
   readonly timeoutMs?: number;
+  readonly finalizeRun?: NonNullable<Step16HostCallWitnessAuthorityCallbacksInternalV1["finalizeRun"]>;
   readonly readPeerCredentials?: (
     socket: Socket,
   ) => Readonly<{ readonly uid: number; readonly gid: number; readonly pid: number }>;
@@ -196,7 +197,8 @@ async function fixture(input: Readonly<{
       socketPath,
       directSupervisorPid: SUPERVISOR_PID,
       closingPlan,
-      authority: authorityFixture.callbacks,
+      authority: { ...authorityFixture.callbacks,
+        ...(input.finalizeRun === undefined ? {} : { finalizeRun: input.finalizeRun }) },
       timeoutMs: input.timeoutMs,
     },
     {
@@ -301,7 +303,14 @@ function hello(closingPlan: Step16HostCallWitnessClosingPlanInternalV1) {
 }
 
 function arm() {
-  return { profile: PROFILE, kind: "arm", sequence: 2, callOrdinal: 1 };
+  return {
+    profile: PROFILE,
+    kind: "arm",
+    sequence: 2,
+    callOrdinal: 1,
+    sessionIdDigest: SESSION_DIGEST,
+    callIdDigest: CALL_DIGEST,
+  };
 }
 
 function observe(token: string) {
@@ -355,7 +364,8 @@ afterEach(async () => {
 
 describe("Step16 Host-call witness root UDS adapter", () => {
   it("serializes split and coalesced frames and finalizes a complete public receipt result", async () => {
-    const test = await fixture();
+    const finalizeRun = vi.fn(async () => undefined);
+    const test = await fixture({ finalizeRun });
     expect(lstatSync(test.socketPath).mode & 0o7777).toBe(0o600);
     const connected = await client(test.socketPath);
     const helloLine = `${JSON.stringify(hello(test.closingPlan))}\n`;
@@ -372,6 +382,17 @@ describe("Step16 Host-call witness root UDS adapter", () => {
       result: { status: "ready" },
     });
     const armed = await connected.nextMessage() as { readonly result: string };
+    expect(test.authority.beginCollecting).toHaveBeenCalledWith({
+      host: "codex",
+      runNonce: RUN_NONCE,
+      closingPlanDigest: test.closingPlan.closingPlanDigest,
+      callOrdinal: 1,
+      eventOrdinal: 3,
+      tool: "update_task",
+      argumentsDigest: ARGUMENTS_DIGEST,
+      sessionIdDigest: SESSION_DIGEST,
+      callIdDigest: CALL_DIGEST,
+    });
     const token = armed.result;
     await connected.sendRaw(
       `${JSON.stringify(observe(token))}\n${JSON.stringify(complete(token))}\n`,
@@ -389,6 +410,11 @@ describe("Step16 Host-call witness root UDS adapter", () => {
     });
     await connected.send(finalize());
     const finalized = await connected.nextMessage();
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith({
+      runNonce: RUN_NONCE,
+      closingPlanDigest: test.closingPlan.closingPlanDigest,
+      callCount: 1,
+    });
     expect(finalized).toMatchObject({
       profile: PROFILE,
       sequence: 5,
@@ -411,6 +437,57 @@ describe("Step16 Host-call witness root UDS adapter", () => {
     expect(() => lstatSync(test.socketPath)).toThrow(
       expect.objectContaining({ code: "ENOENT" }),
     );
+  });
+
+  it.each(["sessionIdDigest", "callIdDigest"] as const)(
+    "rejects an arm frame missing %s before opening authority",
+    async (field) => {
+      const test = await fixture();
+      const connected = await client(test.socketPath);
+      await connected.send(hello(test.closingPlan));
+      await connected.nextMessage();
+      const frame: Record<string, unknown> = arm();
+      delete frame[field];
+      await connected.send(frame);
+      await withTimeout(connected.closed);
+      expect(test.authority.beginCollecting).not.toHaveBeenCalled();
+      expect(connected.messages).toEqual([]);
+    },
+  );
+
+  it.each(["sessionIdDigest", "callIdDigest"] as const)(
+    "rejects completion replacing the armed %s with zero authority completion",
+    async (field) => {
+      const test = await fixture();
+      const connected = await client(test.socketPath);
+      const token = await beginWindow(connected, test.closingPlan);
+      await connected.send(observe(token));
+      await connected.nextMessage();
+      await connected.send({ ...complete(token), [field]: digest("a") });
+      await withTimeout(connected.closed);
+      expect(test.authority.complete).not.toHaveBeenCalled();
+      expect(test.authority.abort).toHaveBeenCalledTimes(1);
+      expect(connected.messages).toEqual([]);
+      await expect(test.server.close()).rejects.toThrow(
+        "step16 witness transport unavailable",
+      );
+    },
+  );
+
+  it("never publishes a finalized response when durable run finalization fails", async () => {
+    const finalizeRun = vi.fn(async () => { throw new Error("private durable failure"); });
+    const test = await fixture({ finalizeRun });
+    const connected = await client(test.socketPath);
+    const token = await beginWindow(connected, test.closingPlan);
+    await connected.send(observe(token));
+    await connected.nextMessage();
+    await connected.send(complete(token));
+    await connected.nextMessage();
+    await connected.send(finalize());
+    await withTimeout(connected.closed);
+    expect(finalizeRun).toHaveBeenCalledTimes(1);
+    expect(connected.messages).toEqual([]);
+    await expect(test.server.close()).rejects.toThrow("step16 witness transport unavailable");
   });
 
   it("rejects finalize at a strict plan prefix and still cleans up", async () => {
@@ -701,12 +778,78 @@ describe("Step16 Host-call witness root UDS adapter", () => {
     expect(test.authority.complete).not.toHaveBeenCalled();
   });
 
-  it("aborts an armed authority window on idle timeout", async () => {
+  it.each(["ready", "armed"] as const)("allows authenticated %s waiting beyond the RPC deadline", async (phase) => {
     const test = await fixture({ timeoutMs: 30 });
     const connected = await client(test.socketPath);
-    await beginWindow(connected, test.closingPlan);
+    let token = "";
+    if (phase === "armed") token = await beginWindow(connected, test.closingPlan);
+    else {
+      await connected.send(hello(test.closingPlan));
+      await connected.nextMessage();
+    }
+    let closed = false;
+    void connected.closed.then(() => { closed = true; });
+    await new Promise<void>((resolve) => setTimeout(resolve, 90));
+    expect(closed).toBe(false);
+    expect(test.authority.abort).not.toHaveBeenCalled();
+    if (phase === "ready") {
+      await connected.send(arm());
+      token = (await connected.nextMessage() as { result: string }).result;
+    }
+    await connected.send(observe(token));
+    await connected.nextMessage();
+    await connected.send(complete(token));
+    await connected.nextMessage();
+    await connected.send(finalize());
+    expect(await connected.nextMessage()).toMatchObject({ status: "finalized" });
+    await withTimeout(connected.closed);
+  });
+
+  it.each(["quiet", "slow_drip"] as const)("bounds unauthenticated hello (%s)", async (mode) => {
+    const test = await fixture({ timeoutMs: 30 });
+    const connected = await client(test.socketPath);
+    const drip = mode === "slow_drip"
+      ? setInterval(() => connected.socket.write(" "), 5)
+      : undefined;
+    try {
+      await withTimeout(connected.closed, 500);
+      expect(connected.messages).toEqual([]);
+      expect(test.authority.beginCollecting).not.toHaveBeenCalled();
+    } finally {
+      clearInterval(drip);
+    }
+  });
+
+  it("bounds an authenticated partial frame even when bytes keep arriving", async () => {
+    const test = await fixture({ timeoutMs: 30 });
+    const connected = await client(test.socketPath);
+    await connected.send(hello(test.closingPlan));
+    await connected.nextMessage();
+    await connected.sendRaw("{");
+    const drip = setInterval(() => connected.socket.write(" "), 5);
+    try {
+      await withTimeout(connected.closed, 500);
+      expect(connected.messages).toEqual([]);
+      expect(test.authority.beginCollecting).not.toHaveBeenCalled();
+    } finally {
+      clearInterval(drip);
+    }
+  });
+
+  it("times out a pending authority RPC without allowing a late ACK", async () => {
+    const test = await fixture({ timeoutMs: 30 });
+    let releaseAppend!: () => void;
+    test.authority.appendExpectedOperation.mockImplementation(async () =>
+      new Promise<void>((resolve) => { releaseAppend = resolve; }));
+    const connected = await client(test.socketPath);
+    const token = await beginWindow(connected, test.closingPlan);
+    await connected.send(observe(token));
+    await vi.waitFor(() => expect(test.authority.appendExpectedOperation).toHaveBeenCalledTimes(1));
     await withTimeout(connected.closed);
     await vi.waitFor(() => expect(test.authority.abort).toHaveBeenCalledTimes(1));
+    releaseAppend();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(connected.messages).toEqual([]);
   });
 
   it("rejects an insecure UDS parent before creating a socket", async () => {

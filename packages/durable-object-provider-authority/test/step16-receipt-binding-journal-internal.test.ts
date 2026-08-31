@@ -23,6 +23,8 @@ import {
   STEP16_RECEIPT_BINDING_JOURNAL_LOGICAL_LOCATOR_INTERNAL_V1,
   STEP16_RECEIPT_BINDING_JOURNAL_STAGE_LOGICAL_LOCATOR_INTERNAL_V1,
   STEP16_RECEIPT_BINDING_MAX_OPERATIONS_INTERNAL_V1,
+  finalizeStep16ReceiptBindingRunDurableInternalV1,
+  type Step16ReceiptBindingJournalCallIdentityInternalV1,
 } from "../src/step16-receipt-binding-journal-internal.js";
 import {
   appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1,
@@ -202,6 +204,30 @@ async function expectAuthorityCodeV1(
     expect(error).toBeInstanceOf(ProviderAcceptanceAuthorityErrorV1);
     expect((error as ProviderAcceptanceAuthorityErrorV1).code).toBe(code);
   }
+}
+
+async function finishCallV1(
+  journal: Step16ReceiptBindingJournalCapabilityInternalV1,
+  identity: Step16ReceiptBindingJournalCallIdentityInternalV1 = CALL_IDENTITY_V1,
+  host: "codex" | "claude" = "codex",
+  operation: Step16ReceiptBindingJournalExpectedOperationInternalV1 = OPERATIONS_V1[0]!,
+): Promise<void> {
+  await appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1(journal, operation);
+  await completeStep16ReceiptBindingDurableJournalForTestInternalV1(journal, {
+    sessionIdDigest: identity.sessionIdDigest,
+    callIdDigest: identity.callIdDigest,
+    publicBindings: [{ ...bindingV1(operation), host,
+      sessionIdDigest: identity.sessionIdDigest, callIdDigest: identity.callIdDigest }],
+  });
+  await finalizeStep16ReceiptBindingDurableJournalForTestInternalV1(journal);
+}
+
+function runIdentityV1(callCount = 1) {
+  return {
+    runNonce: CALL_IDENTITY_V1.runNonce,
+    closingPlanDigest: CALL_IDENTITY_V1.closingPlanDigest,
+    callCount,
+  };
 }
 
 describe("Step16 receipt-binding durable journal (internal)", () => {
@@ -517,7 +543,7 @@ describe("Step16 receipt-binding durable journal (internal)", () => {
       ?.callIdentity.callOrdinal).toBe(1);
   });
 
-  it("does not reset the global 4096 budget after abort/re-arm or reopen", async () => {
+  it("does not reset the same-run 4096 budget after abort/re-arm or reopen", async () => {
     const fixture = await fixtureV1();
     await openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability);
     const unsigned = {
@@ -544,7 +570,6 @@ describe("Step16 receipt-binding durable journal (internal)", () => {
     for (const altered of [
       { runNonce: "f".repeat(64) },
       { closingPlanDigest: `sha256:${"e".repeat(64)}` as const },
-      { sessionIdDigest: `sha256:${"e".repeat(64)}` as const },
       { callOrdinal: 1 }, { eventOrdinal: 1 }, { callIdDigest: CALL_DIGEST_V1 },
     ]) {
       await expectAuthorityCodeV1(armStep16ReceiptBindingDurableJournalForTestInternalV1(
@@ -566,6 +591,163 @@ describe("Step16 receipt-binding durable journal (internal)", () => {
       ), "capacity_exhausted",
     );
   });
+
+  it("finalizes a run across Host/session boundaries and verifies its exact final ledger suffix", async () => {
+    const fixture = await fixtureV1();
+    const journal = await armV1(fixture);
+    await finishCallV1(journal);
+    const secondIdentity = { ...CALL_IDENTITY_V1, callOrdinal: 2, eventOrdinal: 3,
+      sessionIdDigest: `sha256:${"9".repeat(64)}` as const };
+    const prefix = [BASELINE_ENTRY_V1, ledgerEntryV1(OPERATIONS_V1[0]!, "c")];
+    await armStep16ReceiptBindingDurableJournalForTestInternalV1(journal, {
+      host: "claude", callIdentity: secondIdentity,
+      baseline: { intentCount: prefix.length,
+        orderedPrefixDigest: deriveStep16ReceiptBindingOrderedPrefixDigestForTestInternalV1(prefix) as `sha256:${string}` },
+    });
+    await finishCallV1(journal, secondIdentity, "claude", OPERATIONS_V1[1]!);
+    const previous = (await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))!;
+    await finalizeStep16ReceiptBindingRunDurableInternalV1(journal, runIdentityV1(2));
+    const finalized = (await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))!;
+    expect(finalized).toMatchObject({ phase: "run_finalized", host: "claude",
+      totalOperationCount: 2, revision: previous.revision + 1,
+      previousStateDigest: previous.stateDigest, callIdentity: secondIdentity });
+    const bundles = [...prefix, ledgerEntryV1(OPERATIONS_V1[1]!, "d")];
+    await verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerForTestInternalV1(journal,
+      { pendingCount: 0, intentCount: bundles.length, bundles });
+    await expectAuthorityCodeV1(
+      verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerForTestInternalV1(journal,
+        { pendingCount: 0, intentCount: prefix.length, bundles: prefix }),
+      "namespace_integrity_failed",
+    );
+    const reopened = await openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability);
+    expect(await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(reopened)).toEqual(finalized);
+  });
+
+  it("resets an exhausted per-run budget only after durable run finalization", async () => {
+    const fixture = await fixtureV1();
+    await openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability);
+    const unsigned = {
+      profile: "step16_receipt_binding_durable_journal_v1",
+      revision: 4_100, previousStateDigest: `sha256:${"9".repeat(64)}`,
+      phase: "finalized", host: "codex", totalOperationCount: 4_096,
+      callIdentity: CALL_IDENTITY_V1, baseline: baselineV1(),
+      expectedProviderOperations: [OPERATIONS_V1[0]!],
+      completion: { sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1,
+        publicBindings: [bindingV1(OPERATIONS_V1[0]!)] },
+    };
+    await writeFile(fixture.canonicalPath, canonicalAuthorityBytesInternalV1({
+      ...unsigned, stateDigest: digestDomainInternalV1(
+        "provider-step16-receipt-binding-durable-journal-state-v1", unsigned),
+    }), { mode: 0o600 });
+    const journal = await openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability);
+    await finalizeStep16ReceiptBindingRunDurableInternalV1(journal, runIdentityV1());
+    const previous = (await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))!;
+    const nextIdentity = { ...CALL_IDENTITY_V1, runNonce: "a".repeat(64),
+      closingPlanDigest: `sha256:${"b".repeat(64)}` as const };
+    await armStep16ReceiptBindingDurableJournalForTestInternalV1(journal,
+      { host: "claude", baseline: baselineV1(), callIdentity: nextIdentity });
+    expect(await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))
+      .toMatchObject({ phase: "armed", totalOperationCount: 0,
+        revision: previous.revision + 1, previousStateDigest: previous.stateDigest });
+    await appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1(journal, OPERATIONS_V1[1]!);
+    expect((await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))?.totalOperationCount)
+      .toBe(1);
+  });
+
+  it.each(["armed", "host_completed", "finalized", "aborted"] as const)(
+    "does not let a new run hide an unfinished %s run",
+    async (phase) => {
+      const fixture = await fixtureV1();
+      const journal = await armV1(fixture);
+      if (phase === "host_completed" || phase === "finalized") {
+        await appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1(journal, OPERATIONS_V1[0]!);
+        await completeStep16ReceiptBindingDurableJournalForTestInternalV1(journal, {
+          sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1,
+          publicBindings: [bindingV1(OPERATIONS_V1[0]!)],
+        });
+        if (phase === "finalized") await finalizeStep16ReceiptBindingDurableJournalForTestInternalV1(journal);
+      } else if (phase === "aborted") await abortStep16ReceiptBindingDurableJournalForTestInternalV1(journal);
+      await expectAuthorityCodeV1(armStep16ReceiptBindingDurableJournalForTestInternalV1(journal,
+        { host: "claude", baseline: baselineV1(),
+          callIdentity: { ...CALL_IDENTITY_V1, runNonce: "a".repeat(64) } }), "invalid_request");
+      if (phase !== "finalized") await expectAuthorityCodeV1(
+        finalizeStep16ReceiptBindingRunDurableInternalV1(journal, runIdentityV1()), "invalid_request");
+      expect((await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))?.phase).toBe(phase);
+    },
+  );
+
+  it("rejects mismatched or replayed run finalization and continuation of a finalized run", async () => {
+    const fixture = await fixtureV1();
+    const journal = await armV1(fixture);
+    await finishCallV1(journal);
+    for (const changed of [
+      { runNonce: "a".repeat(64) },
+      { closingPlanDigest: `sha256:${"a".repeat(64)}` as const },
+      { callCount: 0 }, { callCount: 2 },
+    ]) await expectAuthorityCodeV1(finalizeStep16ReceiptBindingRunDurableInternalV1(journal,
+      { ...runIdentityV1(), ...changed }), "invalid_request");
+    await finalizeStep16ReceiptBindingRunDurableInternalV1(journal, runIdentityV1());
+    const finalized = await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal);
+    await expectAuthorityCodeV1(finalizeStep16ReceiptBindingRunDurableInternalV1(journal, runIdentityV1()),
+      "invalid_request");
+    await expectAuthorityCodeV1(armStep16ReceiptBindingDurableJournalForTestInternalV1(journal,
+      { host: "codex", baseline: baselineV1(), callIdentity: { ...CALL_IDENTITY_V1,
+        callOrdinal: 2, eventOrdinal: 2, callIdDigest: `sha256:${"9".repeat(64)}` as const } }),
+      "invalid_request");
+    expect(await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal)).toEqual(finalized);
+  });
+
+  it("recovers staged run_finalized and new-run budget reset without resetting the hash chain", async () => {
+    const fixture = await fixtureV1();
+    let journal = await armV1(fixture);
+    await finishCallV1(journal);
+    for (const nextPhase of ["run_finalized", "armed"] as const) {
+      const previous = (await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))!;
+      const { stateDigest, ...fields } = previous;
+      const unsigned = { ...fields, phase: nextPhase, revision: previous.revision + 1,
+        previousStateDigest: stateDigest,
+        ...(nextPhase === "armed" ? { totalOperationCount: 0,
+          callIdentity: { ...CALL_IDENTITY_V1, runNonce: "a".repeat(64) },
+          expectedProviderOperations: [], completion: null } : {}),
+      };
+      await writeFile(fixture.stagePath, canonicalAuthorityBytesInternalV1({
+        ...unsigned, stateDigest: digestDomainInternalV1(
+          "provider-step16-receipt-binding-durable-journal-state-v1", unsigned),
+      }), { mode: 0o600 });
+      journal = await openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability);
+      expect(await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))
+        .toMatchObject({ phase: nextPhase, revision: previous.revision + 1,
+          previousStateDigest: stateDigest });
+    }
+  });
+
+  it.each(["call_finalization", "run_finalization"] as const)(
+    "rejects a staged transition skipping %s",
+    async (skipped) => {
+      const fixture = await fixtureV1();
+      const journal = await armV1(fixture);
+      await appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1(journal, OPERATIONS_V1[0]!);
+      await completeStep16ReceiptBindingDurableJournalForTestInternalV1(journal, {
+        sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1,
+        publicBindings: [bindingV1(OPERATIONS_V1[0]!)],
+      });
+      if (skipped === "run_finalization") await finalizeStep16ReceiptBindingDurableJournalForTestInternalV1(journal);
+      const previous = (await inspectStep16ReceiptBindingDurableJournalForTestInternalV1(journal))!;
+      const { stateDigest, ...fields } = previous;
+      const unsigned = { ...fields, revision: previous.revision + 1, previousStateDigest: stateDigest,
+        ...(skipped === "call_finalization" ? { phase: "run_finalized" } : {
+          phase: "armed", totalOperationCount: 0, expectedProviderOperations: [], completion: null,
+          callIdentity: { ...CALL_IDENTITY_V1, runNonce: "a".repeat(64) },
+        }),
+      };
+      await writeFile(fixture.stagePath, canonicalAuthorityBytesInternalV1({
+        ...unsigned, stateDigest: digestDomainInternalV1(
+          "provider-step16-receipt-binding-durable-journal-state-v1", unsigned),
+      }), { mode: 0o600 });
+      await expectAuthorityCodeV1(openStep16ReceiptBindingDurableJournalForTestInternalV1(fixture.layoutCapability),
+        "namespace_integrity_failed");
+    },
+  );
 
   it("rejects loose public bindings and mismatched broker receipt bundle digests", async () => {
     const fixture = await fixtureV1();

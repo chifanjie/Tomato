@@ -153,6 +153,51 @@ function codexTranscriptV1(): string {
   ].map((event) => JSON.stringify(event)).join("\n") + "\n";
 }
 
+function codexCommandPairV1(command: string, id: string) {
+  return ["started", "completed"].map((phase) => ({
+    type: `item.${phase}`,
+    item: {
+      type: "command_execution",
+      id,
+      command,
+      status: phase === "started" ? "in_progress" : "completed",
+      exit_code: phase === "started" ? null : 0,
+      aggregated_output: "",
+    },
+  }));
+}
+
+function codexVerificationFixtureV1(commands: readonly string[]) {
+  const actions = commands.map((command, index) => ({
+    ordinal: index + 2,
+    input: { command },
+  }));
+  const events: Step16ExpectedHostEventPlanV1["events"] = [
+    ...EXPECTED_EVENT_PLAN_EVENTS_V1,
+    ...actions.map((action) => ({
+      kind: "host_action" as const,
+      ordinal: action.ordinal,
+      action: "verification" as const,
+      mechanism: "command_execution" as const,
+      inputDigest: deriveStep16RealHostActionInputDigestV1(action.input),
+    })),
+  ];
+  const plan: Step16ExpectedHostEventPlanV1 = {
+    expectedEventPlanDigest: deriveStep16ExpectedHostEventPlanDigestV1(events),
+    events,
+  };
+  const pairs = commands.flatMap((command, index) =>
+    codexCommandPairV1(command, `codex-command-${index + 1}`)
+  );
+  const transcript = (commandEvents = pairs): string =>
+    codexTranscriptV1().replace(
+      '{"type":"turn.completed"}\n',
+      `${commandEvents.map((event) => JSON.stringify(event)).join("\n")}\n` +
+        '{"type":"turn.completed"}\n',
+    );
+  return { actions, plan, pairs, transcript };
+}
+
 function claudeTranscriptV1(): string {
   return [
     { type: "system", subtype: "init", session_id: "claude-session-1" },
@@ -574,13 +619,110 @@ describe("Step16 real Host JSONL executor", () => {
     await expect(access(spawnFile)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects every mutable Codex plan before spawning", async () => {
+  it("runs ordered exact Codex verification pairs with the unchanged read-only argv", async () => {
+    const { root, executable } = await fixtureV1();
+    const fixture = codexVerificationFixtureV1([
+      "/opt/understand-code/bin/git diff --check",
+      "/opt/understand-code/bin/git status --porcelain=v1",
+    ]);
+    const result = await runStep16RealHostJsonlSessionV1(inputV1({
+      host: "codex",
+      root,
+      executable,
+      prompt: "exact-read-only-verification",
+      stdout: fixture.transcript(),
+      expectedEventPlan: fixture.plan,
+      expectedHostActionInputs: fixture.actions,
+      // The controlled child asserts byte-for-byte argv, including read-only.
+      expectedArgv: codexArgvV1(root),
+    }));
+    expect(result.receipt.events).toMatchObject([
+      { kind: "mcp_tool_call", ordinal: 1 },
+      ...fixture.actions.map(({ ordinal, input }) => ({
+        kind: "host_action",
+        ordinal,
+        action: "verification",
+        mechanism: "command_execution",
+        inputDigest: deriveStep16RealHostActionInputDigestV1(input),
+        success: true,
+      })),
+    ]);
+    expect(result.exit).toEqual({ code: 0, signal: null });
+  });
+
+  it.each([
+    "changed command",
+    "changed completion",
+    "changed pair id",
+    "nonzero command exit",
+    "missing start",
+    "missing completion",
+    "reordered commands",
+    "extra command",
+  ])("rejects Codex verification with %s", async (failure) => {
+    const { root, executable } = await fixtureV1();
+    const fixture = codexVerificationFixtureV1([
+      "/opt/understand-code/bin/git diff --check",
+      "/opt/understand-code/bin/git status --porcelain=v1",
+    ]);
+    let pairs = fixture.pairs;
+    switch (failure) {
+      case "changed command":
+        pairs[0]!.item.command = pairs[1]!.item.command = "unexpected-command";
+        break;
+      case "changed completion": pairs[1]!.item.command = "unexpected-command"; break;
+      case "changed pair id": pairs[1]!.item.id = "unpaired-command"; break;
+      case "nonzero command exit": pairs[1]!.item.exit_code = 1; break;
+      case "missing start": pairs = pairs.slice(1); break;
+      case "missing completion": pairs = [pairs[0]!, ...pairs.slice(2)]; break;
+      case "reordered commands": pairs = [...pairs.slice(2), ...pairs.slice(0, 2)]; break;
+      case "extra command": pairs.push(...codexCommandPairV1("extra-command", "extra-command-id")); break;
+    }
+    const error = await captureExecutionErrorV1(runStep16RealHostJsonlSessionV1(inputV1({
+      host: "codex", root, executable, prompt: "invalid-verification",
+      stdout: fixture.transcript(pairs),
+      expectedEventPlan: fixture.plan,
+      expectedHostActionInputs: fixture.actions,
+    })));
+    expect(error.code).toBe("transcript_rejected");
+  });
+
+  it.each(["missing input", "wrong ordinal", "wrong digest", "extra field"])(
+    "rejects Codex verification %s before spawning", async (failure) => {
+      const { root, executable } = await fixtureV1();
+      const spawnFile = join(root, "spawned-invalid-verification");
+      const fixture = codexVerificationFixtureV1(["/opt/understand-code/bin/git diff --check"]);
+      let actions: RunStep16RealHostJsonlSessionV1Input["expectedHostActionInputs"] = fixture.actions;
+      switch (failure) {
+        case "missing input": actions = []; break;
+        case "wrong ordinal": actions = [{ ...fixture.actions[0]!, ordinal: 1 }]; break;
+        case "wrong digest": actions = [{ ordinal: 2, input: { command: "different-command" } }]; break;
+        case "extra field": {
+          const input = { command: "/opt/understand-code/bin/git diff --check", extra: true };
+          const event = fixture.plan.events[1]!;
+          if (event.kind !== "host_action") throw new Error("expected verification event");
+          const events = [fixture.plan.events[0]!, { ...event, inputDigest: deriveStep16RealHostActionInputDigestV1(input) }];
+          fixture.plan = { events, expectedEventPlanDigest: deriveStep16ExpectedHostEventPlanDigestV1(events) };
+          actions = [{ ordinal: 2, input }];
+          break;
+        }
+      }
+      const error = await captureExecutionErrorV1(runStep16RealHostJsonlSessionV1(inputV1({
+        host: "codex", root, executable, prompt: "invalid-verification-plan",
+        stdout: fixture.transcript(),
+        expectedEventPlan: fixture.plan,
+        expectedHostActionInputs: actions,
+        extraEnv: { TEST_SPAWN_FILE: spawnFile },
+      })));
+      expect(error.code).toBe("invalid_input");
+      await expect(access(spawnFile)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("still rejects a native Codex source-mutation plan before spawning", async () => {
     const { root, executable } = await fixtureV1();
     const spawnFile = join(root, "spawned-mutable-codex");
-    const actionInput = {
-      file_path: join(root, "src/task.ts"),
-      content: "updated\n",
-    };
+    const actionInput = { changes: [{ kind: "update", path: join(root, "src/task.ts") }] };
     const events: Step16ExpectedHostEventPlanV1["events"] = [{
         kind: "host_action",
         ordinal: 1,

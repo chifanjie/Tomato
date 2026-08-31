@@ -33,6 +33,10 @@ export interface ProviderStrongMutationBrokerServerOptionsInternalV1 {
   readonly expectedRuntimeUid: number;
   readonly expectedRuntimeGid: number;
   readonly broker: ProviderStrongMutationBrokerStoreInternalV1;
+  /** Revoke admitted composition authority as soon as the helper is lost. */
+  readonly onLeaseLost?: () => void;
+  /** Drain composition writes while the parent's physical flock is still held. */
+  readonly beforeLeaseRelease?: () => Promise<void>;
   /** Root-owned lazy current view; never derived from the runtime request. */
   readonly readCurrentFormalAcceptance?: () =>
     | Readonly<{
@@ -107,6 +111,7 @@ async function acquireBrokerLeaseV1(
     path,
     fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | O_CLOEXEC_V1,
   );
+  let retainedByLease = false;
   try {
     const before = await handle.stat({ bigint: true });
     const projected = await lstat(path, { bigint: true });
@@ -119,7 +124,7 @@ async function acquireBrokerLeaseV1(
       "/bin/sh",
       [
         "-c",
-        "/usr/bin/flock -x -w 2 3 || exit 1; printf ready; exec /usr/bin/cat",
+        "/usr/bin/flock -x -n 3 || exit 1; printf ready; exec /bin/cat",
       ],
       { stdio: ["pipe", "pipe", "pipe", handle.fd] },
     ) as ChildProcessWithoutNullStreams;
@@ -179,19 +184,29 @@ async function acquireBrokerLeaseV1(
       await closed;
       throw new TypeError("strong mutation broker lease is unavailable");
     }
-    return Object.freeze({
+    let closePromise: Promise<void> | undefined;
+    const lease = Object.freeze({
       lost,
       held,
-      async close(): Promise<void> {
+      close(): Promise<void> {
         // The flock process may have been signalled while its command still
         // inherits stdin and the locked descriptor. Always drive EOF so that
         // child exits too; the pre-registered promise cannot miss its close.
-        endInput();
-        await closed;
+        closePromise ??= (async () => {
+          endInput();
+          await closed;
+          await handle.close();
+        })();
+        return closePromise;
       },
     });
+    // fd 3 in the helper shares this open file description. Keeping the parent
+    // descriptor alive retains flock even if the helper is killed while a
+    // journal write is still draining.
+    retainedByLease = true;
+    return lease;
   } finally {
-    await handle.close();
+    if (!retainedByLease) await handle.close();
   }
 }
 
@@ -282,12 +297,15 @@ export class ProviderStrongMutationBrokerServerInternalV1 {
   >;
   readonly #readCurrentFormalAcceptance:
     ProviderStrongMutationBrokerServerOptionsInternalV1["readCurrentFormalAcceptance"];
+  readonly #onLeaseLost: (() => void) | undefined;
+  readonly #beforeLeaseRelease: (() => Promise<void>) | undefined;
   readonly #connections = new Set<Socket>();
   readonly #active = new Set<Promise<void>>();
   #server: Server | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
   #lease: BrokerLeaseV1 | undefined;
   #closePromise: Promise<void> | undefined;
+  #leaseClosing = false;
 
   constructor(options: ProviderStrongMutationBrokerServerOptionsInternalV1) {
     const socketPath = resolve(options.socketPath);
@@ -305,6 +323,12 @@ export class ProviderStrongMutationBrokerServerInternalV1 {
     this.#expectedRuntimeUid = kernelIdV1(options.expectedRuntimeUid);
     this.#expectedRuntimeGid = kernelIdV1(options.expectedRuntimeGid);
     if (
+      (options.onLeaseLost !== undefined && typeof options.onLeaseLost !== "function") ||
+      (options.beforeLeaseRelease !== undefined && typeof options.beforeLeaseRelease !== "function")
+    ) throw new TypeError("strong mutation broker lease lifecycle is invalid");
+    this.#onLeaseLost = options.onLeaseLost;
+    this.#beforeLeaseRelease = options.beforeLeaseRelease;
+    if (
       options.readCurrentFormalAcceptance !== undefined &&
       typeof options.readCurrentFormalAcceptance !== "function"
     ) throw new TypeError("strong mutation broker Acceptance reader is invalid");
@@ -316,13 +340,19 @@ export class ProviderStrongMutationBrokerServerInternalV1 {
   }
 
   async start(): Promise<void> {
-    if (this.#server !== undefined) {
+    if (this.#server !== undefined || this.#lease !== undefined || this.#closePromise !== undefined) {
       throw new TypeError("strong mutation broker server already started");
     }
+    this.#leaseClosing = false;
     const lease = await acquireBrokerLeaseV1(this.#leasePath);
     this.#lease = lease;
     void lease.lost.then(() => {
       if (this.#lease !== lease) return;
+      try {
+        this.#onLeaseLost?.();
+      } catch {
+        // A failed notification must not bypass the physical release barrier.
+      }
       void this.close().catch(() => undefined);
     });
     try {
@@ -408,8 +438,13 @@ export class ProviderStrongMutationBrokerServerInternalV1 {
     }
   }
 
+  hasLiveLeaseInternalV1(): boolean {
+    return !this.#leaseClosing && this.#lease?.held() === true;
+  }
+
   async close(): Promise<void> {
     if (this.#closePromise !== undefined) return this.#closePromise;
+    this.#leaseClosing = true;
     const closing = this.#closeOnceV1();
     this.#closePromise = closing;
     try {
@@ -458,11 +493,16 @@ export class ProviderStrongMutationBrokerServerInternalV1 {
       }
     }
     const lease = this.#lease;
-    this.#lease = undefined;
-    try {
-      await lease?.close();
-    } catch (error) {
-      errors.push(error);
+    if (lease !== undefined) {
+      // Keep ownership and the parent descriptor on rejection. A caller may
+      // retry close after its drain has recovered; another writer cannot enter.
+      await this.#beforeLeaseRelease?.();
+      this.#lease = undefined;
+      try {
+        await lease.close();
+      } catch (error) {
+        errors.push(error);
+      }
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) {

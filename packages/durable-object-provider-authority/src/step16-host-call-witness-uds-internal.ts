@@ -98,7 +98,14 @@ const REQUEST_KEYS = Object.freeze({
     "closingPlanDigest",
     "runNonce",
   ]),
-  arm: Object.freeze(["profile", "kind", "sequence", "callOrdinal"]),
+  arm: Object.freeze([
+    "profile",
+    "kind",
+    "sequence",
+    "callOrdinal",
+    "sessionIdDigest",
+    "callIdDigest",
+  ]),
   observe_provider_operation: Object.freeze([
     "profile",
     "kind",
@@ -681,6 +688,8 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
         return projected;
       },
       abort: async (window) => options.authority.abort(window),
+      ...(options.authority.finalizeRun === undefined ? {} :
+        { finalizeRun: options.authority.finalizeRun }),
     };
     this.#core = createStep16HostCallWitnessServerCoreInternalV1({
       directSupervisorPid: options.directSupervisorPid,
@@ -805,6 +814,8 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
     let totalBytes = 0;
     let frameCount = 0;
     let timedOut = false;
+    let authenticated = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     let terminalFailure: Promise<void> | undefined;
     const failTransport = (kind: "disconnect" | "timeout"): Promise<void> => {
       if (this.#finalized || this.#connection === undefined) {
@@ -821,11 +832,21 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
     socket.once("close", () => {
       void failTransport(timedOut ? "timeout" : "disconnect");
     });
-    socket.setTimeout(this.#timeoutMs, () => {
-      timedOut = true;
-      void failTransport("timeout");
-      socket.destroy(safeFailure());
-    });
+    const clearDeadline = (): void => {
+      clearTimeout(deadline);
+      deadline = undefined;
+    };
+    const startDeadline = (): void => {
+      clearDeadline();
+      deadline = setTimeout(() => {
+        timedOut = true;
+        void failTransport("timeout");
+        socket.destroy(safeFailure());
+      }, this.#timeoutMs);
+    };
+    // Bound hello, frame assembly and each RPC, not a real Host's quiet time.
+    // These absolute deadlines cannot be extended by a peer dripping bytes.
+    startDeadline();
 
     try {
       for await (const value of socket) {
@@ -836,6 +857,9 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
           STEP16_HOST_CALL_WITNESS_UDS_LIMITS_INTERNAL_V1.maxConnectionBytes
         ) {
           throw safeFailure();
+        }
+        if (authenticated && buffered.length === 0 && chunk.length > 0) {
+          startDeadline();
         }
         buffered = Buffer.concat([buffered, chunk]);
 
@@ -869,14 +893,21 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
           // Explicitly pause kernel reads while an authority callback is awaited.
           socket.pause();
           try {
-            const shouldStop = await this.#dispatch(socket, parseWireRequest(line));
+            const request = parseWireRequest(line);
+            if (authenticated) startDeadline();
+            const shouldStop = await this.#dispatch(socket, request);
             if (shouldStop) {
               return;
             }
+            if (request.kind === "hello") authenticated = true;
           } finally {
             if (!socket.destroyed) {
               socket.resume();
             }
+          }
+          if (authenticated) {
+            if (buffered.length === 0) clearDeadline();
+            else startDeadline();
           }
         }
       }
@@ -886,7 +917,7 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
     } catch {
       socket.destroy();
     } finally {
-      socket.setTimeout(0);
+      clearDeadline();
       this.#leaseState.live = false;
       if (!this.#finalized) {
         await failTransport(timedOut ? "timeout" : "disconnect");

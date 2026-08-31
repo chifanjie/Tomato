@@ -1,4 +1,5 @@
 import { chmod, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -160,18 +161,30 @@ async function allFilesV1(root: string): Promise<readonly string[]> {
 
 async function directChildHoldingLeaseV1(path: string): Promise<number> {
   const lease = await stat(path, { bigint: true });
-  for (const entry of await readdir("/proc", { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+  const children = new Set<string>();
+  const tasksPath = `/proc/${String(process.pid)}/task`;
+  for (const task of await readdir(tasksPath)) {
+    if (!/^\d+$/u.test(task)) continue;
     try {
-      const status = await readFile(`/proc/${entry.name}/status`, "utf8");
+      const listed = await readFile(`${tasksPath}/${task}/children`, "utf8");
+      for (const child of listed.trim().split(/\s+/u)) {
+        if (/^\d+$/u.test(child)) children.add(child);
+      }
+    } catch {
+      // Only this test process's threads/children are inspected; a thread may exit.
+    }
+  }
+  for (const child of children) {
+    try {
+      const status = await readFile(`/proc/${child}/status`, "utf8");
       if (!new RegExp(`^PPid:\\s+${String(process.pid)}$`, "mu").test(status)) {
         continue;
       }
-      const descriptor = await stat(`/proc/${entry.name}/fd/3`, {
+      const descriptor = await stat(`/proc/${child}/fd/3`, {
         bigint: true,
       });
       if (descriptor.dev === lease.dev && descriptor.ino === lease.ino) {
-        return Number(entry.name);
+        return Number(child);
       }
     } catch {
       // The process may exit while /proc is inspected.
@@ -1288,7 +1301,8 @@ describe("execution-fenced production strong-mutation session", () => {
     expect(nativeRevalidationCount).toBeGreaterThan(0);
   });
 
-  linuxRootIt("fails closed and restarts when the broker lease process is killed", async () => {
+  linuxRootIt.each(["helper_killed", "explicit_close"] as const)(
+    "retains the real broker lease until composition drain succeeds (%s)", async (mode) => {
     const { root, capability, current } = await fixtureV1();
     const acceptanceIdentity = currentAcceptanceIdentityV1(current);
     const principalAttestation =
@@ -1323,14 +1337,41 @@ describe("execution-fenced production strong-mutation session", () => {
     const socketPath = join(root, "broker-lease-loss.sock");
     const leasePath = join(root, "broker-lease-loss.lock");
     expect((await stat(root)).mode & 0o777).toBe(0o700);
-    const createServerV1 = () =>
+    let releaseDrain!: () => void;
+    let signalDrainEntered!: () => void;
+    const drainEntered = new Promise<void>((resolvePromise) => {
+      signalDrainEntered = resolvePromise;
+    });
+    const drainReleased = new Promise<void>((resolvePromise) => {
+      releaseDrain = resolvePromise;
+    });
+    let rejectDrain = true;
+    let drainCalls = 0;
+    let lostNotifications = 0;
+    const createServerV1 = (withDrain = false) =>
       new ProviderStrongMutationBrokerServerInternalV1({
         socketPath,
         leasePath,
         expectedRuntimeUid: process.geteuid!(),
         expectedRuntimeGid: process.getegid!(),
         broker,
+        ...(withDrain ? {
+          onLeaseLost() { lostNotifications += 1; },
+          async beforeLeaseRelease() {
+            drainCalls += 1;
+            signalDrainEntered();
+            await drainReleased;
+            if (rejectDrain) throw new Error("journal drain failed");
+          },
+        } : {}),
       });
+    const assertPhysicalLeaseV1 = (locked: boolean): void => {
+      const contender = spawnSync("/usr/bin/flock", ["-n", leasePath, "/bin/true"], {
+        encoding: "utf8", timeout: 1_000,
+      });
+      expect(contender.error).toBeUndefined();
+      expect(contender.status).toBe(locked ? 1 : 0);
+    };
     await chmod(root, 0o755);
     const unsafeRootServer = createServerV1();
     try {
@@ -1341,22 +1382,50 @@ describe("execution-fenced production strong-mutation session", () => {
       await unsafeRootServer.close().catch(() => undefined);
       await chmod(root, 0o700);
     }
-    const server = createServerV1();
+    const server = createServerV1(true);
     let restarted: ProviderStrongMutationBrokerServerInternalV1 | undefined;
     try {
+      expect(server.hasLiveLeaseInternalV1()).toBe(false);
       await server.start();
+      expect(server.hasLiveLeaseInternalV1()).toBe(true);
       expect((await stat(socketPath)).isSocket()).toBe(true);
-      const leasePid = await directChildHoldingLeaseV1(leasePath);
-      process.kill(leasePid, "SIGKILL");
+      assertPhysicalLeaseV1(true);
+      let closing: Promise<void>;
+      if (mode === "helper_killed") {
+        const leasePid = await directChildHoldingLeaseV1(leasePath);
+        process.kill(leasePid, "SIGKILL");
+        await drainEntered;
+        expect(lostNotifications).toBe(1);
+        closing = server.close();
+      } else {
+        closing = server.close();
+        await drainEntered;
+      }
+      const closed = Promise.allSettled([closing, server.close()]);
       await waitForMissingV1(socketPath);
-      // close() joins the persistent close observation even though SIGKILL may
-      // already have populated signalCode and emitted close.
+      expect(server.hasLiveLeaseInternalV1()).toBe(false);
+      expect(drainCalls).toBe(1);
+      // SIGKILL must not release the lock: the parent still owns the exact
+      // open file description while composition journal writes are draining.
+      assertPhysicalLeaseV1(true);
+      releaseDrain();
+      expect((await closed).every((result) => result.status === "rejected")).toBe(true);
+      expect(server.hasLiveLeaseInternalV1()).toBe(false);
+      assertPhysicalLeaseV1(true);
+      await expect(server.start()).rejects.toThrow("already started");
+      rejectDrain = false;
       await server.close();
+      await server.close();
+      expect(drainCalls).toBe(2);
+      expect(lostNotifications).toBe(mode === "helper_killed" ? 1 : 0);
+      assertPhysicalLeaseV1(false);
 
       restarted = createServerV1();
       await restarted.start();
       expect((await stat(socketPath)).isSocket()).toBe(true);
     } finally {
+      rejectDrain = false;
+      releaseDrain();
       await restarted?.close().catch(() => undefined);
       await server.close().catch(() => undefined);
     }

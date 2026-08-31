@@ -62,6 +62,27 @@ import {
   resolveProviderAcceptanceAuthorityProductionLayoutInternalV1,
 } from "./platform-layout.js";
 import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
+import {
+  abortStep16ReceiptBindingDurableJournalInternalV1,
+  appendStep16ReceiptBindingExpectedOperationDurableInternalV1,
+  armStep16ReceiptBindingDurableJournalInternalV1,
+  completeStep16ReceiptBindingDurableJournalInternalV1,
+  deriveStep16ReceiptBindingOrderedPrefixDigestInternalV1,
+  finalizeStep16ReceiptBindingDurableJournalInternalV1,
+  finalizeStep16ReceiptBindingRunDurableInternalV1,
+  inspectStep16ReceiptBindingDurableJournalInternalV1,
+  openStep16ReceiptBindingDurableJournalWithLayoutCoreInternalV1,
+  verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1,
+  type Step16ReceiptBindingBrokerLedgerViewInternalV1,
+  type Step16ReceiptBindingJournalCallIdentityInternalV1,
+  type Step16ReceiptBindingJournalCapabilityInternalV1,
+} from "./step16-receipt-binding-journal-internal.js";
+import {
+  openStep16HostCallWitnessCapabilityInternalV1,
+  type Step16HostCallWitnessAuthorityCallbacksInternalV1,
+  type Step16HostCallWitnessBeginCollectingInputInternalV1,
+  type Step16HostCallWitnessFinalizeRunInputInternalV1,
+} from "./step16-host-call-witness-server-internal.js";
 
 const MAX_SERVICE_CONFIG_BYTES_V1 = 1024 * 1024;
 const O_CLOEXEC_V1 =
@@ -143,6 +164,8 @@ export interface BeginProviderProductionStrongAuthorityStep16ReceiptBindingWindo
 
 export interface BeginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1Input {
   readonly host: "codex" | "claude";
+  /** Required by the durable production composition; fixed at Host start. */
+  readonly callIdentity?: Step16ReceiptBindingJournalCallIdentityInternalV1;
 }
 
 export interface ProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1 {
@@ -211,6 +234,8 @@ export interface OpenedProviderProductionStrongAuthorityServiceInternalV1 {
   readonly service: ProviderProductionStrongAuthorityServiceV1;
   readonly receiptExportCapability:
     ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1;
+  /** Synchronously withdraw new receipt work, then drain the admitted writes. */
+  quiesceReceiptExportsInternalV1(): Promise<void>;
 }
 
 interface ProviderProductionStrongAuthorityReceiptExportStateInternalV1 {
@@ -229,6 +254,9 @@ interface ProviderProductionStrongAuthorityReceiptExportStateInternalV1 {
   ) => Promise<
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   >;
+  readonly finalizeStep16ReceiptBindingRun: (
+    input: Step16HostCallWitnessFinalizeRunInputInternalV1,
+  ) => Promise<void>;
 }
 
 const receiptExportCapabilityStatesV1 = new WeakMap<
@@ -357,6 +385,30 @@ export function abortProviderProductionStrongAuthorityStep16ReceiptBindingWindow
   }
   step16ReceiptBindingWindowStatesV1.delete(capability as object);
   return state.abort();
+}
+
+/** The root witness transport receives these callbacks, never the Host. */
+export function createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1(
+  capability: ProviderProductionStrongAuthorityReceiptExportCapabilityInternalV1,
+): Step16HostCallWitnessAuthorityCallbacksInternalV1 {
+  const state = receiptExportCapabilityStatesV1.get(capability as object);
+  if (state === undefined) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  return Object.freeze({
+    beginCollecting: ({ host, ...callIdentity }: Step16HostCallWitnessBeginCollectingInputInternalV1) =>
+      state.beginCollectingStep16ReceiptBindingWindow({
+        host,
+        // The journal validates every field before durable arm/ACK.
+        callIdentity: Object.freeze(callIdentity) as
+          Step16ReceiptBindingJournalCallIdentityInternalV1,
+      }),
+    appendExpectedOperation:
+      appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+    complete: completeProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+    abort: abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
+    finalizeRun: state.finalizeStep16ReceiptBindingRun,
+  });
 }
 
 function exactRecordKeysV1(
@@ -659,6 +711,21 @@ function exactStep16ReceiptLedgerSuffixV1(
   return Object.freeze(suffix);
 }
 
+function step16JournalLedgerV1(
+  ledger: ProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1,
+): Step16ReceiptBindingBrokerLedgerViewInternalV1 {
+  return Object.freeze({
+    pendingCount: ledger.pendingCount,
+    intentCount: ledger.intentCount,
+    bundles: Object.freeze(ledger.bundles.map((bundle) => Object.freeze({
+      bundleDigest: bundle.bundleDigest as `sha256:${string}`,
+      operation: bundle.request.operation,
+      operationNonce: bundle.request.operationNonce,
+      requestDigest: bundle.request.requestDigest as `sha256:${string}`,
+    }))),
+  });
+}
+
 /**
  * Internal construction boundary shared only with the NODE_ENV=test seam.
  * Both the broker and receipt exporter are identity capabilities; the public
@@ -672,6 +739,7 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
   closeExactObjectAuthority: () => Promise<void>,
   openTrustedHostCallWitness?:
     OpenProviderProductionStrongAuthorityTrustedHostCallWitnessInternalV1,
+  receiptBindingJournal?: Step16ReceiptBindingJournalCapabilityInternalV1,
 ): OpenedProviderProductionStrongAuthorityServiceInternalV1 {
   assertProviderStrongMutationBrokerStoreCapabilityInternalV1(broker);
   if (
@@ -733,10 +801,13 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
     initialExpectedOperations:
       readonly ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1[],
     collecting: boolean,
+    callIdentity?: Step16ReceiptBindingJournalCallIdentityInternalV1,
   ): Promise<
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   > => {
-    if (openTrustedHostCallWitness === undefined) {
+    if (openTrustedHostCallWitness === undefined ||
+      (receiptBindingJournal !== undefined &&
+        (!collecting || callIdentity === undefined))) {
       return Promise.reject(
         new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
       );
@@ -762,6 +833,33 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
             "namespace_integrity_failed",
           );
         }
+        if (receiptBindingJournal !== undefined) {
+          const ledger = step16JournalLedgerV1(baseline);
+          const prior = await inspectStep16ReceiptBindingDurableJournalInternalV1(
+            receiptBindingJournal,
+          );
+          if (prior !== undefined) {
+            await verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1(
+              receiptBindingJournal,
+              ledger,
+            );
+          }
+          await armStep16ReceiptBindingDurableJournalInternalV1(
+            receiptBindingJournal,
+            {
+              host,
+              callIdentity: callIdentity!,
+              baseline: {
+                intentCount: baseline.intentCount,
+                orderedPrefixDigest:
+                  deriveStep16ReceiptBindingOrderedPrefixDigestInternalV1(ledger.bundles),
+              },
+            },
+          );
+        }
+        if (phase !== "open") {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
         const expectedProviderOperations = [
           ...initialExpectedOperations,
         ];
@@ -771,6 +869,7 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
           ),
         );
         let windowPhase: "open" | "failed" | "settling" = "open";
+        let appendPending = false;
         const windowCapability = Object.freeze(Object.create(null)) as
           ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1;
         const state:
@@ -782,7 +881,8 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
                   operation:
                     ProviderProductionStrongAuthorityStep16ExpectedOperationInternalV1,
                 ): Promise<void> => {
-                  if (windowPhase !== "open") {
+                  if (windowPhase !== "open" || appendPending) {
+                    windowPhase = "failed";
                     throw new ProviderAcceptanceAuthorityErrorV1(
                       "invalid_request",
                     );
@@ -804,8 +904,30 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
                       "invalid_request",
                     );
                   }
-                  expectedProviderOperations.push(parsed);
-                  operationNonces.add(parsed.operationNonce);
+                  appendPending = true;
+                  try {
+                    if (receiptBindingJournal !== undefined) {
+                      await runReceiptExport(() =>
+                        appendStep16ReceiptBindingExpectedOperationDurableInternalV1(
+                          receiptBindingJournal,
+                          {
+                            ...parsed,
+                            requestDigest: parsed.requestDigest as `sha256:${string}`,
+                          },
+                        )
+                      );
+                    }
+                    if (windowPhase !== "open" || phase !== "open") {
+                      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                    }
+                    expectedProviderOperations.push(parsed);
+                    operationNonces.add(parsed.operationNonce);
+                  } catch (error) {
+                    windowPhase = "failed";
+                    throw error;
+                  } finally {
+                    appendPending = false;
+                  }
                 },
               }
               : {}),
@@ -813,7 +935,8 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
               witness:
                 ProviderProductionStrongAuthorityTrustedHostCallWitnessCapabilityInternalV1,
             ) => {
-              if (windowPhase !== "open") {
+              if (windowPhase !== "open" || appendPending) {
+                windowPhase = "failed";
                 step16ReceiptBindingWindowOpen = false;
                 throw new ProviderAcceptanceAuthorityErrorV1(
                   "invalid_request",
@@ -855,6 +978,11 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
                     "invalid_request",
                   );
                 }
+                if (callIdentity !== undefined &&
+                  (completion.sessionIdDigest !== callIdentity.sessionIdDigest ||
+                    completion.callIdDigest !== callIdentity.callIdDigest)) {
+                  throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                }
                 if (
                   !canonicalAuthorityBytesInternalV1(
                     completion.expectedProviderOperations,
@@ -878,7 +1006,7 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
                     current,
                     begin.expectedProviderOperations,
                   );
-                  return Object.freeze(
+                  const bindings = Object.freeze(
                     suffix.map((bundle) =>
                       projectStep16ProviderReceiptBindingV1(
                         bundle,
@@ -888,6 +1016,36 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
                       )
                     ),
                   );
+                  if (receiptBindingJournal !== undefined) {
+                    if (phase !== "open") {
+                      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                    }
+                    await completeStep16ReceiptBindingDurableJournalInternalV1(
+                      receiptBindingJournal,
+                      {
+                        sessionIdDigest: completion.sessionIdDigest as `sha256:${string}`,
+                        callIdDigest: completion.callIdDigest as `sha256:${string}`,
+                        publicBindings: bindings.map((binding) => ({ ...binding })),
+                      },
+                    );
+                    if (phase !== "open") {
+                      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                    }
+                    await verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1(
+                      receiptBindingJournal,
+                      step16JournalLedgerV1(current),
+                    );
+                    if (phase !== "open") {
+                      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                    }
+                    await finalizeStep16ReceiptBindingDurableJournalInternalV1(
+                      receiptBindingJournal,
+                    );
+                    if (phase !== "open") {
+                      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+                    }
+                  }
+                  return bindings;
                 });
               } finally {
                 step16ReceiptBindingWindowOpen = false;
@@ -895,7 +1053,15 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
             },
             abort: async () => {
               windowPhase = "settling";
-              step16ReceiptBindingWindowOpen = false;
+              try {
+                if (receiptBindingJournal !== undefined) {
+                  await runReceiptExport(() =>
+                    abortStep16ReceiptBindingDurableJournalInternalV1(receiptBindingJournal)
+                  );
+                }
+              } finally {
+                step16ReceiptBindingWindowOpen = false;
+              }
             },
           });
         step16ReceiptBindingWindowStatesV1.set(
@@ -935,20 +1101,67 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
     ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1
   > => {
     if (
-      !exactRecordKeysV1(input, ["host"]) ||
+      (!exactRecordKeysV1(input, ["host"]) &&
+        !exactRecordKeysV1(input, ["host", "callIdentity"])) ||
       (input.host !== "codex" && input.host !== "claude")
     ) {
       return Promise.reject(
         new ProviderAcceptanceAuthorityErrorV1("invalid_request"),
       );
     }
-    return beginStep16ReceiptBindingWindowCore(input.host, [], true);
+    const callIdentity = input.callIdentity === undefined
+      ? undefined
+      : Object.freeze({ ...input.callIdentity });
+    return beginStep16ReceiptBindingWindowCore(input.host, [], true, callIdentity);
+  };
+  const finalizeStep16ReceiptBindingRun = (
+    input: Step16HostCallWitnessFinalizeRunInputInternalV1,
+  ): Promise<void> => {
+    if (receiptBindingJournal === undefined || step16ReceiptBindingWindowOpen) {
+      return Promise.reject(new ProviderAcceptanceAuthorityErrorV1("invalid_request"));
+    }
+    const run = Object.freeze({ ...input });
+    step16ReceiptBindingWindowOpen = true;
+    return runReceiptExport(async () => {
+      try {
+        const ledger = await exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(broker);
+        if (phase !== "open") {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
+        await verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1(
+          receiptBindingJournal,
+          step16JournalLedgerV1(ledger),
+        );
+        if (phase !== "open") {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
+        await finalizeStep16ReceiptBindingRunDurableInternalV1(receiptBindingJournal, {
+          ...run,
+          closingPlanDigest: run.closingPlanDigest as `sha256:${string}`,
+        });
+        if (phase !== "open") {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
+      } finally {
+        step16ReceiptBindingWindowOpen = false;
+      }
+    });
+  };
+  const quiesceReceiptExportsInternalV1 = (): Promise<void> => {
+    if (phase === "open") phase = "closing";
+    return Promise.allSettled([...activeExports]).then(() => undefined);
   };
   const close = (): Promise<void> => {
     if (closePromise !== undefined) return closePromise;
     phase = "closing";
     const closing = Promise.resolve().then(async () => {
       const errors: unknown[] = [];
+      // The broker owns the cross-process lease for this same fixed journal.
+      // Keep it held until every admitted durable write has stopped; releasing
+      // it first would let a replacement authority recover a live stage file.
+      if (receiptBindingJournal !== undefined) {
+        await quiesceReceiptExportsInternalV1();
+      }
       try {
         await closeServer();
       } catch (error) {
@@ -989,9 +1202,10 @@ export function createProviderProductionStrongAuthorityServiceCoreInternalV1(
       exportBundles,
       beginStep16ReceiptBindingWindow,
       beginCollectingStep16ReceiptBindingWindow,
+      finalizeStep16ReceiptBindingRun,
     }),
   );
-  return Object.freeze({ service, receiptExportCapability });
+  return Object.freeze({ service, receiptExportCapability, quiesceReceiptExportsInternalV1 });
 }
 
 function exactEffectiveAuthorityPrincipalV1(): Readonly<{
@@ -1146,8 +1360,9 @@ async function readCurrentWriterV1(
  * runtime readiness, current Acceptance, strict Registry evidence, and the
  * native exact-object authority have joined to one Linux/ext4 writer.
  */
-export async function openProviderProductionStrongAuthorityServiceWithReceiptExportInternalV1(
+async function openProviderProductionStrongAuthorityServiceCoreV1(
   input: OpenProviderProductionStrongAuthorityServiceV1Input,
+  enableStep16ReceiptBinding: boolean,
 ): Promise<OpenedProviderProductionStrongAuthorityServiceInternalV1> {
   if (typeof input.readTrustEvidence !== "function") {
     throw new TypeError("provider strong authority evidence reader is invalid");
@@ -1193,6 +1408,11 @@ export async function openProviderProductionStrongAuthorityServiceWithReceiptExp
       providerDirectoryPath: providerObjectsPath,
     });
   let server: ProviderStrongMutationBrokerServerInternalV1 | undefined;
+  let openedReceiptAuthority: OpenedProviderProductionStrongAuthorityServiceInternalV1 | undefined;
+  let receiptInitialization: Promise<OpenedProviderProductionStrongAuthorityServiceInternalV1> | undefined;
+  let receiptLeaseLost = false;
+  const quiesceReceiptAuthority = (): Promise<void> =>
+    openedReceiptAuthority?.quiesceReceiptExportsInternalV1() ?? Promise.resolve();
   try {
     const executionFence =
       registerProviderStrongMutationLinuxExt4ExecutionFenceInternalV1(
@@ -1218,6 +1438,20 @@ export async function openProviderProductionStrongAuthorityServiceWithReceiptExp
       expectedRuntimeUid: config.payload.principal.uid,
       expectedRuntimeGid: config.payload.principal.gid,
       broker,
+      ...(enableStep16ReceiptBinding ? {
+        onLeaseLost: () => {
+          receiptLeaseLost = true;
+          // Withdrawal happens synchronously inside quiesce; the release hook
+          // below owns awaiting this work before the physical lock is closed.
+          void quiesceReceiptAuthority().catch(() => undefined);
+        },
+        beforeLeaseRelease: async () => {
+          // Loss can happen while the initial journal recovery is still in
+          // flight, before a service capability exists to revoke.
+          await receiptInitialization?.catch(() => undefined);
+          await quiesceReceiptAuthority();
+        },
+      } : {}),
       readCurrentFormalAcceptance: async () => {
         const fresh = await readCurrentWriterV1(
           config,
@@ -1230,20 +1464,47 @@ export async function openProviderProductionStrongAuthorityServiceWithReceiptExp
       },
     });
     await server.start();
-    return createProviderProductionStrongAuthorityServiceCoreInternalV1(
-      broker,
-      Object.freeze({
-        providerId: config.payload.providerId,
-        installationIdentityDigest:
-          config.payload.installationIdentityDigest,
-      }),
-      () => server!.close(),
-      () =>
-        closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
-          exactObjectAuthority,
-        ),
-      undefined,
-    );
+    if (enableStep16ReceiptBinding && !server.hasLiveLeaseInternalV1()) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+    }
+    receiptInitialization = (async () => {
+      // server.start owns the cross-process broker lease before opening the
+      // fixed private journal; no second authority can reset/re-arm this run.
+      const journal = enableStep16ReceiptBinding
+        ? await openStep16ReceiptBindingDurableJournalWithLayoutCoreInternalV1(layout)
+        : undefined;
+      if (journal !== undefined &&
+        await inspectStep16ReceiptBindingDurableJournalInternalV1(journal) !== undefined) {
+        await verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1(
+          journal,
+          step16JournalLedgerV1(
+            await exportProviderStrongMutationBrokerResolvedReceiptLedgerViewInternalV1(broker),
+          ),
+        );
+      }
+      if (enableStep16ReceiptBinding &&
+        (receiptLeaseLost || !server!.hasLiveLeaseInternalV1())) {
+        throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+      }
+      const opened = createProviderProductionStrongAuthorityServiceCoreInternalV1(
+        broker,
+        Object.freeze({
+          providerId: config.payload.providerId,
+          installationIdentityDigest:
+            config.payload.installationIdentityDigest,
+        }),
+        () => server!.close(),
+        () =>
+          closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
+            exactObjectAuthority,
+          ),
+        enableStep16ReceiptBinding ? openStep16HostCallWitnessCapabilityInternalV1 : undefined,
+        journal,
+      );
+      openedReceiptAuthority = opened;
+      return opened;
+    })();
+    return await receiptInitialization;
   } catch (error) {
     await server?.close().catch(() => undefined);
     await closeProviderStrongMutationLinuxExt4ExactObjectAuthorityInternalV1(
@@ -1251,6 +1512,19 @@ export async function openProviderProductionStrongAuthorityServiceWithReceiptExp
     );
     throw error;
   }
+}
+
+export function openProviderProductionStrongAuthorityServiceWithReceiptExportInternalV1(
+  input: OpenProviderProductionStrongAuthorityServiceV1Input,
+): Promise<OpenedProviderProductionStrongAuthorityServiceInternalV1> {
+  return openProviderProductionStrongAuthorityServiceCoreV1(input, false);
+}
+
+/** Private root composition. The public service still cannot mint Host evidence. */
+export function openProviderProductionStrongAuthorityServiceWithStep16ReceiptBindingInternalV1(
+  input: OpenProviderProductionStrongAuthorityServiceV1Input,
+): Promise<OpenedProviderProductionStrongAuthorityServiceInternalV1> {
+  return openProviderProductionStrongAuthorityServiceCoreV1(input, true);
 }
 
 export async function openProviderProductionStrongAuthorityServiceV1(

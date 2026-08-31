@@ -9,6 +9,21 @@
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
 
+## 原生插件生命周期已实际通过（a8d6905 构建）
+
+- 2026-08-31 恢复后，主线与远端代码均为 `a8d69054e3eaaa947bc75fde3918f767943b6700`。VM 构建输入及本项测试已核对；仅将仍为上一版的 `packages/dashboard/src/App.tsx` 同步到当前提交，正常 `pnpm --filter @understand-code/preview build` exit 0。未重跑已通过的包全量测试、冷安装测试或 root 双插件预检。
+- 在既有 Alpine VM、普通 uid601 和全新 `/var/tmp/uc-plugin-lifecycle.AuBoQT` HOME/TMPDIR 下，用固定官方 Codex 0.151.0、Claude 2.1.202 执行原始单项：`UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS=1 RUN_STEP16_DUAL_HOST_E2E=0 node --test --test-name-pattern="^real Codex and Claude plugin lifecycles preserve the public strong-writer lock$" test/plugin-clean-install.test.mjs`。结果 **1 passed / 0 failed / 0 skipped，14.33秒，exit 0**；补的是此前缺 native CLI 而跳过的实际生命周期验证，不是重复旧绿。
+- 两 Host 都实际安装 `0.1.0-preview.1`、升级 `0.1.0-preview.2+codex.lifecycle-v2`、卸载后固定恢复 v1、最终卸载。六次已安装 Doctor 均 `healthy / alpha / releaseReady=false / strongWrites=locked`，最终两端 `not_registered`；实际 MCP 写入锁、中文/空格 detached linked worktree 绑定、Git 环境污染隔离和源码/index 字节保持断言均通过。v2 是生命周期测试产物，不是正式签名发行；本项没有模型调用，不计 Provider/业务 E2E 或 Gold，也不关闭第16步。
+- 本次实际 tarball SHA256 `0144c11a56c9ee9e0a30fb6ca418dda1b982d3ba6e4f370127a52d67d4ff89d4`，3,305,593 bytes；由同次 fresh HOME 中精确关联原 pack 路径的 pacote 缓存取得并校验 SHA512，没有重新 pack 冒充原产物。CLI SHA256 `fa2adb3426e2d501241657f5e98ab09db89e40a3476b5d3100ad5689cc038d8e`。主线已读取原始构建/单项输出与实际命令记录，保留于 `/tmp/understand-code-plugin-lifecycle-evidence.kYToxP/`；Node 24 默认 spec reporter，未转换为 TAP。
+- 没有使用 mount namespace、修改固定 Git 或访问等待登录的 `step16-hosts-ljFNHp`。测试自行清理其新建的临时仓库、安装和注册；用户仓库、认证配置及受保护内容未动。本项执行进程均已结束，VM 保持运行。没有新失败或输入变化时，不重跑此门。
+
+## 已确认的下一产品断点（仍属原目标）
+
+- 原目标明确要求未验证 Task 先产生待审知识增量、Verified Task 后晋级 Graph/Wiki，并保留来源；当前 `refresh_index full` 仍直接发布，不含 Task 来源或 pending/promotion。此能力尚未实现，不能因 Wiki 恢复或生命周期通过而勾成完成。
+- 已查清旧知识的读取耦合：`provider-production-strong-object-client.ts` 的 `createProductionStrongDurableBusinessArtifactsV1` 用 `replacementAuthority ?? currentAuthority`，所以 incremental **保留**旧 index authority；`tools.ts` 的 `openStrongBoundActiveIndexV1` 另要求 index 与最新 Pulse 同 Snapshot，因而旧 Wiki 被 current 入口拒读。下一实现可保留 current 安全检查，增加明确标记历史/已发布版本的只读入口，继续核对原 Provider 的完整 generation/digest/Snapshot/revision 绑定；无需为此新建 Provider 合同或重审第15步。
+- 待审增量不能先 finalize full 再仅跳过 active manifest，也不能用会被 finally/GC 清理的 staging 冒充持久候选。后续复用现有 index generation、Task verified 转换门禁与 full 原子发布链；初次非 Task 扫描仍合法。仅 `record_verification` 成功不等于 Task 已 verified；来源必须进入 generation 摘要覆盖范围。以上是已定位实现边界，不是新增需求或已完成声明。
+- 真实模型任务仍待隔离 Codex/Claude 登录；本轮实际状态为 Codex `Not logged in`、Claude `loggedIn:false`，Codex 授权进程仍等待。当前代码 `a8d6905` 的 Actions run `33405441604` 同样因账户付款/spending limit 未启动 jobs，不是 CI green；没有重跑或改变计费。登录、知识增量闭环与原第16～17步剩余发行门继续保留。
+
 ## Wiki 恢复切片（以 bf50a79 为基线）
 
 - 按原目标要求使用 Product Design，对现有Task/Graph/Wiki做截图和源码盘点；没有新建展示页、增加步骤或替换原Overview/自由探索。更新后的skill缓存实际为Product Design 0.1.53，旧0.1.52路径已移除；恢复时使用实际路径，不重复失败读取、不修改受保护`.learnings/`。

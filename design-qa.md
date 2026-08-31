@@ -1,4 +1,37 @@
-# Wiki 索引恢复：限定范围的 Design QA
+# 已发布知识版本浏览：限定范围的 Design QA
+
+日期：2026-09-01。代码基线：`c38ee27`。范围仅为显式已发布版本浏览及其 Task/Graph/Wiki 交互，不代表第16步、Provider/原生模型 E2E、Gold、Task 知识晋级或完整无障碍验收通过。
+
+## 本轮视觉比较
+
+证据目录：`/tmp/uc-published-knowledge-NNsX57/`。当前轮先截图既有产品，再使用生产 WorkbenchRuntime 与最终正常打包的 React UI；数据来自明确标记的隔离 UI fixture，不冒充真实 Provider 发布记录。
+
+| 视口 / 原图像素 | Source visual truth | 最终实现截图 |
+| --- | --- | --- |
+| 1280×720 | `01-wiki-before.png` | `05-published-desktop.png` |
+| 768×1024 | `02-wiki-before-tablet.png` | `06-published-tablet.png` |
+| 390×844 | `03-wiki-before-mobile.png` | `07-published-mobile.png` |
+
+每对原图与实现图已放在同一比较输入中实际查看；均为技术文档2.0主题、相同 Wiki 首页与 Task 上下文、相同底层示例内容，1:1像素，没有裁剪或拼造。新增历史版本提示及其占用的高度是本切片的预期差异；原字体、颜色 token、导航、正文层级和阅读路线保持。
+
+- 首次手机实测发现版本说明被按钮挤到76px宽、提示条217px高；改成手机上下排列后，说明宽358px、提示条145px，桌面/平板保持横排。修复后重新正常构建并截图。
+- 三屏 document scrollWidth 分别等于1280、768、390；两个版本按钮实测152×44px、110×44px，没有横向溢出或相互遮挡。手机失败提示也能完整换行。
+- 没有新增图片、字体、图标、产品页面、依赖或部署。最终 Dashboard inventory：`sha256:ab6a7e0dee304af35e9d110854248c48c57f33c4257efa78f1b37f265eb1cc4e`，15文件；已重启自有 fixture 会话，实际查看的是最终内存 bundle。
+
+## 本轮实际交互与回归
+
+- 当前知识不可用→显式查看已发布版本→历史 Wiki 首页/正文；切换前后完整 Task URL 相同。历史提示明确来源 Snapshot、只读、不能作为当前任务证据。
+- 首次历史 Wiki 正文→图谱，准确进入知识层并选中 `module:knowledge`，详情的“阅读正文”返回 `page:overview`；`08-published-graph-node.png`记录最终节点与详情。主动 Wiki 焦点不再被 Task 同步清空；当前 Task 自动证据聚焦在历史模式仍禁用。
+- 手机搜索“项目”命中同版项目总览，见`09-published-search-mobile.png`；手机 Graph 保留全局概览、路径对象和交互图谱入口，见`14-published-graph-mobile.png`。
+- fixture 仅对版本元信息模拟1秒延迟，实际出现 disabled“正在读取版本”，见`10-published-loading-mobile.png`。模拟503后保留明确历史标签及可重试错误，见`11-published-retry-failure-mobile.png`；服务恢复后原按钮恢复成功，完整 URL 不变。
+- 返回当前版本会清掉历史 Graph/Wiki 和标签，见`12-return-current-mobile.png`；Graph/Wiki都失败时不再错误宣称图谱可用。返回 Task 后显示原任务的进行中/未发布 Change Check，见`13-return-task-mobile.png`，没有虚构检查或验证通过。该fixture未绑定真实 finding，Task导航按既有规则进入 planned_changes。
+- 浏览器检查期间 error 级日志为空；视口覆盖已恢复默认。沿用上轮边界：完整键盘/无障碍验收尚未确认，本轮不重复工具未触发默认动作的尝试，不伪造键盘通过。
+- 新增回归先红后绿，覆盖401/403、503/非法元信息、双击去重、取消后的迟到元信息、挂起当前 Wiki 时搜索不得命中历史目录、显式 Wiki→Graph 焦点。独立复核发现的缓存隔离、barrel 内部导出与焦点问题均已定点关闭。
+- 最终功能回归：Dashboard 55文件/606 passed；CLI 22文件/191 passed；WorkbenchRuntime 1文件/12 passed，合计809 passed。三个受影响包类型检查通过；最后纯响应式 class 修正后正常 Preview build 与上述三屏比较通过，没有重跑未改变的 Provider/原生插件生命周期门。
+
+final result: passed（仅本切片的视觉、鼠标交互与列明回归）
+
+# 历史记录：Wiki 索引恢复
 
 日期：2026-08-31。代码基线：`bf50a79`。仅评估此次 Wiki 索引重试修复，不代表第16步、原生 Host、Provider、Gold 或完整无障碍验收通过。
 

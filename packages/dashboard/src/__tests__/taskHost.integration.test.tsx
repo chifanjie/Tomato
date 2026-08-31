@@ -73,6 +73,161 @@ afterEach(() => {
 });
 
 describe("Task-first Preview host bridge", () => {
+  it("opens one pinned published knowledge version without changing the Task route", async () => {
+    const deepLink = `/workbench?view=tasks&taskId=${taskId}&section=summary&surface=wiki&focus=page%3Arun`;
+    window.history.replaceState(null, "", deepLink);
+    const generationId = `generation-${"a".repeat(64)}`;
+    let heldMeta = false;
+    let holdCurrentWiki = false;
+    let resolveMeta!: (value: Response) => void;
+    const publishedMeta = { knowledgeVersion: {
+      status: "historical", generationId, sourceSnapshotId: "snapshot:published",
+      currentSnapshotId: "snapshot:actual", finalizedProviderRevision: 2,
+    } };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith("/brief.json")) return response(200, projection);
+      if (url.pathname === "/meta.json" && url.searchParams.get("indexVersion") === "published") {
+        if (heldMeta) return new Promise<Response>((resolve) => { resolveMeta = resolve; });
+        return response(200, publishedMeta);
+      }
+      if (holdCurrentWiki && url.pathname.endsWith("/wiki-index.json") && !url.searchParams.has("indexVersion")) return new Promise<Response>(() => {});
+      if (url.searchParams.get("indexGenerationId") !== generationId) return response(503, {});
+      expect(url.searchParams.get("indexVersion")).toBe("published");
+      if (url.pathname.endsWith("/wiki-index.json")) return response(200, wikiV2Fixture());
+      if (url.pathname.endsWith(".md")) return response(200, "# 运行流程\n\n来自已发布版本的正文。");
+      if (url.pathname === "/knowledge-graph.json") return response(200, {
+        version: "1.0.0", project: { name: "Published knowledge", languages: ["typescript"], frameworks: [], description: "", analyzedAt: "2026-07-28T08:00:00Z", gitCommitHash: "local" },
+        nodes: [{ id: "function:src/a.ts:run", type: "function", name: "run", filePath: "src/a.ts", summary: "Run", tags: [], complexity: "simple" }],
+        edges: [], layers: [], tour: [],
+      });
+      return response(404, {});
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(App)));
+      const openPublished = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "查看已发布版本");
+      expect(openPublished).toBeDefined();
+      await act(async () => openPublished!.click());
+      expect(container.textContent).toContain("历史知识 · 只读");
+      expect(container.textContent).toContain("来自已发布版本的正文");
+      expect(container.textContent).toContain("不能作为当前任务证据");
+      expect(window.location.pathname + window.location.search).toBe(deepLink);
+      expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/brief.json"))).toHaveLength(1);
+      const search = container.querySelector<HTMLButtonElement>('button[aria-label="搜索知识库"]');
+      await act(async () => search!.click());
+      expect(fetcher.mock.calls.some(([input]) => String(input) === `/knowledge-base/search-index.json?indexVersion=published&indexGenerationId=${generationId}`)).toBe(true);
+      await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭搜索"]')!.click());
+      heldMeta = true;
+      const refresh = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "重新读取已发布版本");
+      await act(async () => { refresh!.click(); refresh!.click(); });
+      expect(container.textContent).toContain("正在读取版本");
+      expect(fetcher.mock.calls.filter(([input]) => String(input) === "/meta.json?indexVersion=published")).toHaveLength(2);
+      const current = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "返回当前版本");
+      expect(current).toBeDefined();
+      holdCurrentWiki = true;
+      await act(async () => current!.click());
+      expect(useDashboardStore.getState().wikiIndex.pagesById.size).toBe(0);
+      expect(useDashboardStore.getState().graph).toBeNull();
+      await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="搜索知识库"]')!.click());
+      const query = container.querySelector<HTMLInputElement>("#global-wiki-search-input")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(query, "运行流程");
+        query.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(container.querySelector('[role="dialog"]')?.textContent).toContain("没有找到匹配内容");
+      expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain("运行流程");
+      await act(async () => resolveMeta(response(200, publishedMeta)));
+      expect(container.textContent).not.toContain("历史知识 · 只读");
+      expect(container.textContent).not.toContain("来自已发布版本的正文");
+      expect(window.location.pathname + window.location.search).toBe(deepLink);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it.each([
+    { status: 503, body: {}, expired: false },
+    { status: 200, body: { knowledgeVersion: { status: "historical" } }, expired: false },
+    { status: 401, body: {}, expired: true },
+    { status: 403, body: {}, expired: true },
+  ])("keeps failed published reads explicit ($status, expired: $expired)", async ({ status, body, expired }) => {
+    const deepLink = `/workbench?view=tasks&taskId=${taskId}&section=summary&surface=wiki`;
+    window.history.replaceState(null, "", deepLink);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith("/brief.json")) return response(200, projection);
+      if (url.pathname === "/meta.json" && url.searchParams.get("indexVersion") === "published") return response(status, body);
+      return response(503, {});
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(App)));
+      const openPublished = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "查看已发布版本");
+      await act(async () => openPublished!.click());
+      expect(container.textContent).not.toContain("历史知识 · 只读");
+      expect(container.textContent).not.toContain("关系图谱仍可使用");
+      expect(container.textContent).toContain(expired ? "工作台会话已过期" : "已发布版本暂不可用，请重试。当前任务未改变。");
+      expect(window.location.pathname + window.location.search).toBe(deepLink);
+      expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/brief.json"))).toHaveLength(1);
+      if (!expired) {
+        expect(openPublished!.disabled).toBe(false);
+        await act(async () => openPublished!.click());
+        expect(fetcher.mock.calls.filter(([input]) => String(input) === "/meta.json?indexVersion=published")).toHaveLength(2);
+      }
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("keeps an explicit historical Wiki node jump when the Task surface synchronizes", async () => {
+    window.history.replaceState(null, "", `/workbench?view=tasks&taskId=${taskId}&section=summary&surface=wiki&focus=page%3Arun`);
+    const generationId = `generation-${"b".repeat(64)}`;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith("/brief.json")) return response(200, projection);
+      if (url.searchParams.get("indexVersion") !== "published") return response(503, {});
+      if (url.pathname === "/meta.json") return response(200, { knowledgeVersion: {
+        status: "historical", generationId, sourceSnapshotId: "snapshot:published",
+        currentSnapshotId: "snapshot:actual", finalizedProviderRevision: 2,
+      } });
+      if (url.pathname.endsWith("/wiki-index.json")) return response(200, wikiV2Fixture());
+      if (url.pathname.endsWith(".md")) return response(200, "# 运行流程\n\n历史节点跳转测试。");
+      if (url.pathname === "/knowledge-graph.json") return response(200, {
+        version: "1.0.0", project: { name: "Published knowledge", languages: ["typescript"], frameworks: [], description: "", analyzedAt: "2026-07-28T08:00:00Z", gitCommitHash: "local" },
+        nodes: [{ id: "function:src/a.ts:run", type: "function", name: "run", filePath: "src/a.ts", summary: "Run", tags: [], complexity: "simple" }],
+        edges: [], layers: [], tour: [],
+      });
+      return response(404, {});
+    }));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(App)));
+      await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "查看已发布版本")!.click());
+      await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "在图谱中查看本文节点")!.click());
+      expect(useDashboardStore.getState().graphFocusPageId).toBe("page:run");
+      expect(useDashboardStore.getState().graphFocusNodeIds).toEqual(["function:src/a.ts:run"]);
+      expect(new URLSearchParams(window.location.search).get("focus")).toBe("function:src/a.ts:run");
+      expect(container.textContent).toContain("历史知识 · 只读");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("opens the unified shell on Tasks by default", async () => {
     window.history.replaceState(null, "", "/?token=preview-token");
     const container = document.createElement("div");

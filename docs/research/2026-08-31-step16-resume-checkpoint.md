@@ -5,9 +5,21 @@
 ## 当前游标
 
 - 第15步已完成；第16步进行中；第17步未完成。不要从旧 goal 元数据中的 Preview/第15步游标重新开始。
+- 2026-09-01：基于已推送的 `c38ee27` 完成显式已发布知识版本浏览切片，见下一节。下一产品断点是待审 Task 知识增量及 Verified 后晋级，不再重做历史读取入口或已通过的插件生命周期。
 - 双插件切片的 21 个文件已精确提交并正常 push 为 `bf50a798055f3f2d5fe288a1f452f1381864ad28`，远端分支 SHA 已逐项核对相同。以下实现与无模型 E2E 证据均保留，不重新打开已关闭的包测试或插件预检。
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
+
+## 已发布知识版本浏览已实现（c38ee27 基线）
+
+- 五类知识 GET 新增显式 `indexVersion=published`；除 meta 首次发现外，必须携带精确 `indexGenerationId`。重复/非法选择器、Task/config越界请求均拒绝。默认 current/MCP/Task/Evidence 的最新 Pulse 与现有会话/Root/Snapshot 绑定未放宽；过期 Workbench 会话仍需重新打开，不能用历史读取绕过。
+- 历史只读仍要求当前 Provider 精确 pin 的 active generation：Snapshot、finalized revision、generation ID、manifest digest、inventory digest 五项一致，并在读取后再次复核 Provider 与会话。Graph/meta/Wiki 从同一摘要绑定 generation 互校 commit，不把本地旧 Snapshot 当权威。这里只读上一次有效发布，不是任意历史版本列表；未修改 Provider 合同或默认 strong-writer 锁。
+- 沿用现有 Task/Graph/Wiki 页面，显示来源 Snapshot 及“历史知识·只读/不能作为当前任务证据”。Graph、Wiki、搜索、Markdown 共用 generation 固定读取；版本切换同步清缓存并用 epoch 拒绝旧请求回写，取消迟到元信息不重新安装旧版本。Task链接不因版本切换或重试改变。
+- 一次独立收口复核及同 finding 定点核对已关闭：旧 Wiki fallback 搜索缓存串代、内部 reader factory 被 barrel 星号导出、Task surface 同步清掉用户主动 Wiki 焦点。另纠正 Graph/Wiki 同时失败时的误导文案，以及手机版本条挤窄；历史模式仍不自动应用当前 Task 证据焦点，保留 Overview/自由探索和主动双向跳转。
+- 新回归先红后绿。受影响完整包门禁为 WorkbenchRuntime 12 passed、CLI 191 passed、Dashboard 606 passed，共809；三个包源代码/测试类型检查通过。最后纯响应式 class 修正后正常 Preview build 成功。没有重跑未变化的 Provider/Authority/Host 包或原生插件生命周期，也不把这些结果写为 Step16 Gold。
+- Product Design 按既有界面做当前轮 source capture 和1280×720、768×1024、390×844成对比较；最终鼠标切换、搜索、loading、503恢复、Wiki→节点→正文、返回current/Task通过。截图在`/tmp/uc-published-knowledge-NNsX57/`，详细界限见根目录`design-qa.md`。这是生产 HTTP/UI 加隔离数据 fixture，不接 Provider、不调用模型；完整键盘/a11y尚未确认。
+- 最终 Dashboard inventory 为 `sha256:ab6a7e0dee304af35e9d110854248c48c57f33c4257efa78f1b37f265eb1cc4e`。自有UI fixture仍在`/private/tmp/understand-code-ui-fixture.RjlV3LyC`；当前launcher `http://127.0.0.1:62549/`，PID26156（session30298），状态文件已恢复historical。仅重启了已核对argv的旧自有UI进程，没有改生产token TTL或凭证；未替换VM等待登录的原生插件包。
+- 本轮末只轮询一次既有 Codex 登录 session16592：仍运行、无新输出，未收到成功；未重启登录或读取凭证，Claude未新启动授权。真实模型 workflow、待审知识增量/晋级、原发行门仍未完成；本切片不声明CI green，也未重试此前账单阻塞的同一run。
 
 ## 原生插件生命周期已实际通过（a8d6905 构建）
 
@@ -69,6 +81,8 @@
 - 一轮分工独立复审及同一 lease finding 定向复核已收口；无新失败证据时，不重复全面审计或未变化的长测试。
 
 ## 从这里继续
+
+- 最新切片已补齐显式历史知识读取，下一步复用现有 generation/Task verified/full 原子发布链实现持久待审增量与晋级；不要回到“旧Wiki为何读不到”的重复排查。未 verified 的 Task 不得提前 finalize full 或发布 Graph/Wiki；record_verification 成功仍不等于 Task 已 verified。以下原生登录与发行阻点继续保留。
 
 - 下一实际断点是隔离环境的原生登录，以及登录后的完整真实任务；Linux root 双插件 preflight 已实际通过，不重开此门，不回落手工 MCP 冒充 Host。
 - 动态 snapshot/context/finding 参数和 Codex 精确源码修改已实现并有上述专项验证；继续真实闭环时使用这些能力，不重复从旧实现缺口重新设计，也不得以笼统 workspace-write 代替。

@@ -379,13 +379,19 @@ export interface WorkbenchDashboardRequestBindingV1 {
   readonly route: WorkbenchRouteV1;
 }
 
+/** Selects the last Provider-bound knowledge cut, never an arbitrary history path. */
+interface WorkbenchDashboardIndexSelectionV1 {
+  readonly indexVersion?: "published";
+  readonly indexGenerationId?: string;
+}
+
 export type WorkbenchDashboardReadRequestV1 = WorkbenchDashboardRequestBindingV1 & (
-  | { readonly kind: "graph" }
-  | { readonly kind: "meta" }
+  | ({ readonly kind: "graph" } & WorkbenchDashboardIndexSelectionV1)
+  | ({ readonly kind: "meta" } & WorkbenchDashboardIndexSelectionV1)
   | { readonly kind: "config" }
-  | { readonly kind: "wiki_index" }
-  | { readonly kind: "wiki_search" }
-  | { readonly kind: "wiki_page"; readonly relativePath: string }
+  | ({ readonly kind: "wiki_index" } & WorkbenchDashboardIndexSelectionV1)
+  | ({ readonly kind: "wiki_search" } & WorkbenchDashboardIndexSelectionV1)
+  | ({ readonly kind: "wiki_page"; readonly relativePath: string } & WorkbenchDashboardIndexSelectionV1)
   | { readonly kind: "task_brief"; readonly taskId: string; readonly section: TaskBriefSectionV1 }
   | { readonly kind: "task_change_check"; readonly taskId: string }
   | { readonly kind: "task_verification"; readonly taskId: string }
@@ -1976,6 +1982,22 @@ function hasOnlySingleQueryValues(url: URL, allowed: ReadonlySet<string>): boole
   return true;
 }
 
+function dashboardIndexSelectionFromUrl(
+  url: URL,
+  kind: "graph" | "meta" | "wiki_index" | "wiki_search" | "wiki_page",
+): WorkbenchDashboardIndexSelectionV1 | undefined {
+  if (!hasOnlySingleQueryValues(url, new Set(["indexVersion", "indexGenerationId"]))) return undefined;
+  const indexVersion = url.searchParams.get("indexVersion");
+  const indexGenerationId = url.searchParams.get("indexGenerationId");
+  if (indexVersion === null && indexGenerationId === null) return {};
+  if (indexVersion !== "published") return undefined;
+  if (indexGenerationId === null) {
+    return kind === "meta" ? { indexVersion } : undefined;
+  }
+  if (!/^generation-[0-9a-f]{64}$/u.test(indexGenerationId)) return undefined;
+  return { indexVersion, indexGenerationId };
+}
+
 function dashboardRequestBinding(browser: BrowserSessionV1): WorkbenchDashboardRequestBindingV1 {
   return Object.freeze({
     productVersion: browser.binding.productVersion,
@@ -1990,7 +2012,7 @@ function dashboardRequestBinding(browser: BrowserSessionV1): WorkbenchDashboardR
 
 function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): DashboardRequestMappingV1 {
   const binding = dashboardRequestBinding(browser);
-  const fixedJsonKinds = new Map<string, WorkbenchDashboardReadRequestV1["kind"]>([
+  const fixedJsonKinds = new Map<string, "graph" | "meta" | "config" | "wiki_index" | "wiki_search">([
     ["/knowledge-graph.json", "graph"],
     ["/meta.json", "meta"],
     ["/config.json", "config"],
@@ -1999,15 +2021,19 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
   ]);
   const fixedKind = fixedJsonKinds.get(url.pathname);
   if (fixedKind !== undefined) {
-    if (!hasOnlySingleQueryValues(url, new Set())) return { status: "invalid" };
+    const selection = fixedKind === "config"
+      ? hasOnlySingleQueryValues(url, new Set()) ? {} : undefined
+      : dashboardIndexSelectionFromUrl(url, fixedKind);
+    if (selection === undefined) return { status: "invalid" };
     return {
       status: "matched",
-      request: { ...binding, kind: fixedKind } as WorkbenchDashboardReadRequestV1,
+      request: { ...binding, ...selection, kind: fixedKind } as WorkbenchDashboardReadRequestV1,
     };
   }
 
   if (url.pathname.startsWith("/knowledge-base/")) {
-    if (!hasOnlySingleQueryValues(url, new Set())) return { status: "invalid" };
+    const selection = dashboardIndexSelectionFromUrl(url, "wiki_page");
+    if (selection === undefined) return { status: "invalid" };
     let relativePath: string;
     try {
       relativePath = decodeURIComponent(url.pathname.slice(1));
@@ -2018,7 +2044,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
       !relativePath.endsWith(".md") || relativePath.includes("\\") ||
       !RepositoryRelativePathSchema.safeParse(relativePath).success
     ) return { status: "invalid" };
-    return { status: "matched", request: { ...binding, kind: "wiki_page", relativePath } };
+    return { status: "matched", request: { ...binding, ...selection, kind: "wiki_page", relativePath } };
   }
 
   const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification)\.json$/u.exec(url.pathname);
@@ -2274,6 +2300,16 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
     const sessionToken = readCookie(request, "workbench_session");
     if (sessionToken === undefined) {
       unauthorized(response);
+      return;
+    }
+
+    if (
+      (parsedUrl.searchParams.has("indexVersion") || parsedUrl.searchParams.has("indexGenerationId")) &&
+      (parsedUrl.pathname === "/workbench" || parsedUrl.pathname.startsWith("/tasks/") ||
+        parsedUrl.pathname.startsWith("/__workbench/"))
+    ) {
+      try { getBrowserSession(stored.session, sessionToken, stored.now); } catch { unauthorized(response); return; }
+      writeDashboardJson(response, 409, { error: "dashboard_route_invalid" });
       return;
     }
 

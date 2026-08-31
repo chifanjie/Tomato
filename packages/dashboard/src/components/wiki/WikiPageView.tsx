@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { KnowledgeFetchContext } from "../../workbench/publishedKnowledge";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { WikiDocumentCategory, WikiPageV2 } from "@understand-code/core/knowledge-base";
@@ -254,6 +255,7 @@ function LoadedWikiPageView({
   onHeadingsChange: (headings: WikiOutlineHeading[]) => void;
   navigationRevision: number;
 }) {
+  const fetcher = useContext(KnowledgeFetchContext) ?? fetch;
   const scrollContainerRef = useRef<HTMLElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const pendingWikiAnchor = useDashboardStore((store) => store.pendingWikiAnchor);
@@ -277,7 +279,7 @@ function LoadedWikiPageView({
     const controller = new AbortController();
     setState({ pageId: page.id, status: "loading", markdown: "", error: null });
     onHeadingsChange([]);
-    loadWikiMarkdown(page.markdownPath, { signal: controller.signal })
+    loadWikiMarkdown(page.markdownPath, { signal: controller.signal, fetcher })
       .then((markdown) => {
         const content = markdownWithoutDuplicateTitle(markdown, page.title);
         const headings = extractWikiOutline(content);
@@ -301,7 +303,7 @@ function LoadedWikiPageView({
       });
 
     return () => controller.abort();
-  }, [onHeadingsChange, page, retryKey]);
+  }, [fetcher, onHeadingsChange, page, retryKey]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;

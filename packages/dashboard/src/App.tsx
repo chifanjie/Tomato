@@ -3,6 +3,7 @@ import {
   Suspense,
   lazy,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -49,6 +50,12 @@ import {
   type WikiTarget,
 } from "./wiki/wikiContent";
 import { loadTaskWorkbench, type TaskWorkbenchLoadResult } from "./workbench/taskContextLoader";
+import {
+  KnowledgeFetchContext,
+  createPublishedKnowledgeFetcher,
+  parsePublishedKnowledgeVersion,
+  type PublishedKnowledgeVersion,
+} from "./workbench/publishedKnowledge";
 import {
   COOKIE_WORKBENCH_ACCESS,
   dashboardFetchInit,
@@ -104,18 +111,20 @@ export function resolveWikiAvailability(
   return status;
 }
 
-export function WikiAvailabilityView({ status, onRetry }: {
+export function WikiAvailabilityView({ status, onRetry, graphAvailable = true }: {
   status: WikiFailureStatus;
   onRetry?: () => void;
+  graphAvailable?: boolean;
 }) {
   const copy = WIKI_AVAILABILITY_COPY[status];
+  const description = graphAvailable ? copy.description : copy.description.replace("；关系图谱仍可使用", "");
   return (
     <main className="flex min-h-0 flex-1 items-center justify-center bg-root px-5 py-10">
       <section aria-labelledby="wiki-availability-title" className="uc-panel max-w-xl p-6 text-center">
         <h2 id="wiki-availability-title" className="text-xl font-semibold text-text-primary">
           {copy.title}
         </h2>
-        <p className="mt-3 text-sm leading-7 text-text-secondary">{copy.description}</p>
+        <p className="mt-3 text-sm leading-7 text-text-secondary">{description}</p>
         {onRetry && (
           <button
             type="button"
@@ -801,19 +810,69 @@ function Dashboard({
   const retryWikiRef = useRef<(() => void) | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [publishedVersion, setPublishedVersion] = useState<PublishedKnowledgeVersion | null>(null);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const versionRequestRef = useRef<AbortController | null>(null);
+  const knowledgeEpochRef = useRef(0);
+  const knowledgeFetcher = useMemo(() => publishedVersion
+    ? createPublishedKnowledgeFetcher(publishedVersion.generationId)
+    : fetch, [publishedVersion]);
+
+  useEffect(() => () => versionRequestRef.current?.abort(), []);
+  const resetKnowledge = useCallback(() => {
+    knowledgeEpochRef.current += 1;
+    setGraphLoading(true);
+    setWikiAvailability("loading");
+    setLoadError(null);
+    setGraphIssues([]);
+    useDashboardStore.setState({ graph: null, selectedNodeId: null });
+    setWikiIndex(useDashboardStore.getInitialState().wikiIndex);
+  }, [setWikiIndex]);
+  const openPublishedVersion = useCallback(async () => {
+    if (versionRequestRef.current) return;
+    const request = new AbortController();
+    versionRequestRef.current = request;
+    setVersionLoading(true);
+    setVersionError(null);
+    try {
+      const response = await fetch("/meta.json?indexVersion=published", {
+        ...dashboardFetchInit(accessToken), signal: request.signal,
+      });
+      if (request.signal.aborted) return;
+      if (response.status === 401 || response.status === 403) {
+        onTokenInvalid();
+        return;
+      }
+      if (!response.ok) throw new Error("published version unavailable");
+      const meta = await response.json() as { knowledgeVersion?: unknown };
+      if (!request.signal.aborted) {
+        const version = parsePublishedKnowledgeVersion(meta.knowledgeVersion);
+        resetKnowledge();
+        setPublishedVersion(version);
+      }
+    } catch {
+      if (!request.signal.aborted) setVersionError("已发布版本暂不可用，请重试。当前任务未改变。");
+    } finally {
+      if (!request.signal.aborted) setVersionLoading(false);
+      if (versionRequestRef.current === request) versionRequestRef.current = null;
+    }
+  }, [accessToken, onTokenInvalid, resetKnowledge]);
 
   useEffect(() => {
     let cancelled = false;
+    const epoch = knowledgeEpochRef.current;
     let attempts = 0;
     let retryTimer: number | undefined;
     let inFlight = false;
 
     async function loadWiki(): Promise<void> {
-      if (cancelled || inFlight) return;
+      if (cancelled || epoch !== knowledgeEpochRef.current || inFlight) return;
       inFlight = true;
-      const result = await loadDashboardKnowledge(accessToken);
+      const result = await loadDashboardKnowledge(accessToken, knowledgeFetcher);
       inFlight = false;
-      if (cancelled) return;
+      if (cancelled || epoch !== knowledgeEpochRef.current) return;
       const availability = applyDashboardKnowledgeResult(result, {
         setWikiIndex,
         setWikiAvailability,
@@ -836,17 +895,22 @@ function Dashboard({
       setWikiAvailability("loading");
       void loadWiki();
     };
+    setWikiAvailability("loading");
     void loadWiki();
     return () => {
       cancelled = true;
       retryWikiRef.current = null;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [accessToken, onTokenInvalid, setWikiIndex]);
+  }, [accessToken, knowledgeFetcher, onTokenInvalid, setWikiIndex]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(dataUrl("knowledge-graph.json", accessToken), dashboardFetchInit(accessToken))
+    const epoch = knowledgeEpochRef.current;
+    setGraphLoading(true);
+    setLoadError(null);
+    setGraphIssues([]);
+    void knowledgeFetcher(dataUrl("knowledge-graph.json", accessToken), dashboardFetchInit(accessToken))
       .then((response) => {
         if (response.status === 401 || response.status === 403) {
           onTokenInvalid();
@@ -856,7 +920,7 @@ function Dashboard({
         return response.json() as Promise<unknown>;
       })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || epoch !== knowledgeEpochRef.current) return;
         const result = validateGraph(data);
         if (result.success && result.data) {
           setConsoleGraph(normalizeLegacyGraphBranding(result.data));
@@ -867,24 +931,39 @@ function Dashboard({
         setLoadError(GRAPH_LOAD_ERROR_COPY.invalid);
       })
       .catch((error: unknown) => {
-        if (cancelled || (error instanceof Error && error.message === "TOKEN_INVALID")) return;
+        if (cancelled || epoch !== knowledgeEpochRef.current || (error instanceof Error && error.message === "TOKEN_INVALID")) return;
         console.warn("关系图谱读取失败", error);
         setLoadError(GRAPH_LOAD_ERROR_COPY.read);
-      });
+      }).finally(() => { if (!cancelled && epoch === knowledgeEpochRef.current) setGraphLoading(false); });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, onTokenInvalid, setConsoleGraph]);
+  }, [accessToken, knowledgeFetcher, onTokenInvalid, setConsoleGraph]);
 
   return (
+    <KnowledgeFetchContext.Provider value={knowledgeFetcher}>
     <InitialThemeGate metaUrl={dataUrl("meta.json", accessToken)}>
       {(initialTheme) => (
         <ThemeProvider initialConfig={initialTheme}>
           <DashboardContent
+            key={publishedVersion?.generationId ?? "current"}
             accessToken={accessToken}
             onTokenInvalid={onTokenInvalid}
             loadError={loadError}
             graphIssues={graphIssues}
+            graphLoading={graphLoading}
+            publishedVersion={publishedVersion}
+            versionLoading={versionLoading}
+            versionError={versionError}
+            onOpenPublishedVersion={() => void openPublishedVersion()}
+            onCurrentVersion={() => {
+              versionRequestRef.current?.abort();
+              versionRequestRef.current = null;
+              setVersionLoading(false);
+              resetKnowledge();
+              setPublishedVersion(null);
+              setVersionError(null);
+            }}
             wikiAvailability={wikiAvailability}
             onRetryWiki={() => retryWikiRef.current?.()}
             taskContext={taskContext}
@@ -892,6 +971,7 @@ function Dashboard({
         </ThemeProvider>
       )}
     </InitialThemeGate>
+    </KnowledgeFetchContext.Provider>
   );
 }
 
@@ -900,6 +980,12 @@ function DashboardContent({
   onTokenInvalid,
   loadError,
   graphIssues,
+  graphLoading,
+  publishedVersion,
+  versionLoading,
+  versionError,
+  onOpenPublishedVersion,
+  onCurrentVersion,
   wikiAvailability,
   onRetryWiki,
   taskContext,
@@ -908,10 +994,17 @@ function DashboardContent({
   onTokenInvalid: () => void;
   loadError: string | null;
   graphIssues: GraphIssue[];
+  graphLoading: boolean;
+  publishedVersion: PublishedKnowledgeVersion | null;
+  versionLoading: boolean;
+  versionError: string | null;
+  onOpenPublishedVersion: () => void;
+  onCurrentVersion: () => void;
   wikiAvailability: WikiAvailabilityStatus;
   onRetryWiki: () => void;
   taskContext?: TaskDashboardContext;
 }) {
+  const knowledgeFetcher = useContext(KnowledgeFetchContext) ?? fetch;
   const graph = useDashboardStore((state) => state.graph);
   const dashboardSurface = useDashboardStore((state) => state.dashboardSurface);
   const setDashboardSurface = useDashboardStore((state) => state.setDashboardSurface);
@@ -926,7 +1019,7 @@ function DashboardContent({
   const [searchRuntime, setSearchRuntime] = useState<WikiSearchRuntime>(() =>
     buildWikiSearchRuntime([], wikiIndex, "fallback"));
   const searchButtonRef = useRef<HTMLButtonElement>(null);
-  const searchControllerRef = useRef(createSearchArtifactRequestController());
+  const searchControllerRef = useRef(createSearchArtifactRequestController(knowledgeFetcher));
   const fullSearchRecordsRef = useRef<Parameters<typeof buildWikiSearchRuntime>[0]>([]);
   const recentWikiTargetRef = useRef<WikiTarget | null>(null);
   const noteWikiLocationApplied = useCallback(() => {
@@ -961,7 +1054,11 @@ function DashboardContent({
 
   useEffect(() => {
     if (!taskContext) return;
-    setDashboardSurface(taskContext.surface);
+    // A Wiki action already switched the surface and installed its own focus.
+    // Mirroring the same Task surface must not clear that navigation intent.
+    if (useDashboardStore.getState().dashboardSurface !== taskContext.surface) {
+      setDashboardSurface(taskContext.surface);
+    }
     if (taskContext.surface !== "wiki" || taskContext.stale || !taskContext.route.focus) return;
     if (wikiIndex.pagesById.has(taskContext.route.focus)) {
       openWikiTarget({ pageId: taskContext.route.focus });
@@ -1106,6 +1203,26 @@ function DashboardContent({
       />
 
       {taskContext && !taskContext.stale && <TaskContextBanner context={taskContext} />}
+      {isCookieWorkbenchAccess(accessToken) && (publishedVersion || loadError || ["error", "invalid", "missing"].includes(wikiAvailability)) && (
+        <section className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface px-4 py-3 sm:px-6" aria-label="知识版本" role="status">
+          <div className="min-w-0 w-full text-sm text-text-secondary sm:w-auto sm:flex-1">
+            <p className="font-semibold text-warning">{publishedVersion
+              ? publishedVersion.status === "historical" ? "历史知识 · 只读" : "已发布知识 · 只读"
+              : "当前知识快照不可用"}</p>
+            <p className="mt-1 text-xs leading-5">{publishedVersion
+              ? publishedVersion.status === "historical" ? "与当前源码快照不同，不能作为当前任务证据。" : "此版本与当前源码快照一致。"
+              : "可以查看上一次发布的知识，当前任务与证据不会改变。"}</p>
+            {publishedVersion && <p className="mt-1 break-all font-mono text-xs" title={publishedVersion.sourceSnapshotId}>来源快照：{publishedVersion.sourceSnapshotId}</p>}
+            {versionError && <p className="mt-1 text-xs text-danger" role="alert">{versionError}</p>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={versionLoading} onClick={onOpenPublishedVersion} className="min-h-11 rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent disabled:opacity-50">
+              {versionLoading ? "正在读取版本" : publishedVersion ? "重新读取已发布版本" : "查看已发布版本"}
+            </button>
+            {publishedVersion && <button type="button" onClick={onCurrentVersion} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary">返回当前版本</button>}
+          </div>
+        </section>
+      )}
       {taskWikiTargetUnavailable && (
         <div className="uc-status-banner" data-severity="warning" role="status">
           当前快照中不存在任务关联的 Wiki 页面。
@@ -1142,8 +1259,10 @@ function DashboardContent({
               wikiNavigationRevision={wikiNavigationRevision}
             />
           ) : (
-            <WikiAvailabilityView status={wikiAvailability} onRetry={onRetryWiki} />
+            <WikiAvailabilityView status={wikiAvailability} onRetry={onRetryWiki} graphAvailable={!graphLoading && !loadError && graph !== null} />
           )
+        ) : graphLoading || loadError ? (
+          <main className="flex min-h-0 flex-1 items-center justify-center px-5 py-10 text-sm text-text-muted" role="status">{graphLoading ? "正在加载关系图谱" : "关系图谱暂不可用"}</main>
         ) : (
           <GraphChunkErrorBoundary onBackToWiki={() => selectSurface("wiki")}>
             <Suspense
@@ -1159,7 +1278,7 @@ function DashboardContent({
               <GraphExplorer
                 onSelectWikiTarget={(target) => selectWikiTarget(target)}
                 onRequestGlobalSearch={requestGlobalSearch}
-                focusNodeId={taskContext?.stale ? null : taskContext?.focusNodeId}
+                focusNodeId={taskContext?.stale || publishedVersion?.status === "historical" ? null : taskContext?.focusNodeId}
                 onSelectedNodeChange={taskContext?.onSelectedGraphNode}
               />
             </Suspense>

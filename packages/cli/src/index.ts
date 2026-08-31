@@ -1,7 +1,12 @@
 export * from "./argv.js";
 export * from "./binding/root-binding.js";
 export * from "./constants.js";
-export * from "./handlers/tools.js";
+export {
+  IMPLEMENTED_TOOL_NAMES,
+  callImplementedTool,
+  type ImplementedToolName,
+  type ToolRuntimeSelectionV1,
+} from "./handlers/tools.js";
 export * from "./host-registration-doctor.js";
 export * from "./mcp/server.js";
 export * from "./mcp/tool-registry.js";

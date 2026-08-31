@@ -207,22 +207,33 @@ async function assertStrongPublishedCutV1(
 
 async function openStrongBoundActiveIndexV1(
   runtime: ProductionRuntimeV1,
+  published?: Readonly<{ generationId?: string }>,
 ): Promise<ActiveRepositoryIndexReaderV1> {
   const [index, pulse] = await Promise.all([
     openActiveRepositoryIndexV1(runtime.store.layout.worktreeRoot),
     readStrongPublishedPulseV1(runtime),
   ]);
+  await assertStrongIndexAuthorityV1(runtime, index);
+  if ((published === undefined && index.authority.sourceSnapshotId !== pulse.evaluatedSnapshotId) ||
+    (published?.generationId !== undefined && published.generationId !== index.generation.generationId)) {
+    throw new Error("active repository index is not bound to the requested cut");
+  }
+  return index;
+}
+
+async function assertStrongIndexAuthorityV1(
+  runtime: ProductionRuntimeV1,
+  index: ActiveRepositoryIndexReaderV1,
+): Promise<void> {
   const providerAuthority = await runtime.providerClient?.inspectIndexPublicationAuthority();
   if (providerAuthority === undefined ||
-    index.authority.sourceSnapshotId !== pulse.evaluatedSnapshotId ||
     index.authority.sourceSnapshotId !== providerAuthority.sourceSnapshotId ||
     index.authority.finalizedProviderRevision !== providerAuthority.finalizedProviderRevision ||
     index.generation.generationId !== providerAuthority.generationId ||
     index.generation.generationManifestDigest !== providerAuthority.generationManifestDigest ||
     index.generation.sourceInventoryDigest !== providerAuthority.sourceInventoryDigest) {
-    throw new Error("active repository index is not bound to the strong Pulse");
+    throw new Error("active repository index is not bound to the Provider authority");
   }
-  return index;
 }
 
 export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
@@ -1394,7 +1405,8 @@ async function taskDashboardProjection(
   return { status: "ready", json: { task: bundle.manifest, artifact, freshness } };
 }
 
-const dashboardReader = (
+/** Internal reader factory; not a public MCP or package-barrel entry point. */
+export const createWorkbenchDashboardReaderInternalV1 = (
   runtime: Awaited<ReturnType<typeof openRuntime>>,
 ): WorkbenchDashboardReaderV1 => async (input) => {
   const binding = await dashboardBindingStatus(runtime, input);
@@ -1405,13 +1417,45 @@ const dashboardReader = (
     input.kind === "task_verification"
   ) return taskDashboardProjection(runtime, input);
 
+  const published = "indexVersion" in input && input.indexVersion === "published";
+  const requestedGenerationId = "indexGenerationId" in input ? input.indexGenerationId : undefined;
+  if (published && (
+    (input.kind !== "meta" && requestedGenerationId === undefined) ||
+    (requestedGenerationId !== undefined && !/^generation-[0-9a-f]{64}$/u.test(requestedGenerationId))
+  )) return dashboardReadFailure("invalid");
+
   let activeIndex: ActiveRepositoryIndexReaderV1;
   try {
-    activeIndex = await openStrongBoundActiveIndexV1(runtime as ProductionRuntimeV1);
+    activeIndex = await openStrongBoundActiveIndexV1(
+      runtime as ProductionRuntimeV1,
+      published ? {
+        ...(requestedGenerationId === undefined ? {} : { generationId: requestedGenerationId }),
+      } : undefined,
+    );
   } catch {
     return dashboardReadFailure("unavailable");
   }
 
+  const result = await readDashboardIndexV1(activeIndex, input, published);
+  if (published && result.status === "ready") {
+    // Do not acknowledge a generation that ceased to be the Provider's pin
+    // while its independently digest-checked files were being read.
+    try {
+      await assertStrongIndexAuthorityV1(runtime as ProductionRuntimeV1, activeIndex);
+      const currentBinding = await dashboardBindingStatus(runtime, input);
+      if (currentBinding !== "ready") return dashboardReadFailure(currentBinding);
+    } catch {
+      return dashboardReadFailure("unavailable");
+    }
+  }
+  return result;
+};
+
+async function readDashboardIndexV1(
+  activeIndex: ActiveRepositoryIndexReaderV1,
+  input: Exclude<WorkbenchDashboardReadRequestV1, { kind: "task_brief" | "task_change_check" | "task_verification" }>,
+  published: boolean,
+): Promise<WorkbenchDashboardReadResultV1> {
   const graphRead = await readActiveIndexJsonFile(
     activeIndex,
     "knowledge-graph.json",
@@ -1422,23 +1466,34 @@ const dashboardReader = (
     return dashboardReadFailure("invalid");
   }
   const graph = graphResult.data;
-  if (input.headCommit !== null && graph.project.gitCommitHash !== input.headCommit) {
+  if (!published && input.headCommit !== null && graph.project.gitCommitHash !== input.headCommit) {
     return dashboardReadFailure("stale");
   }
-  if (input.kind === "graph") return { status: "ready", json: graph };
-  if (input.kind === "meta") {
+  // Published content is authenticated by the Provider-pinned generation
+  // manifest, not an unauthenticated local historical Snapshot or current HEAD.
+  const contentHead = published ? graph.project.gitCommitHash : input.headCommit;
+  if (published || input.kind === "meta") {
     const meta = await readActiveIndexJsonFile(
       activeIndex,
       "meta.json",
     );
     if (meta.status !== "ready") return dashboardReadFailure(meta.status);
     if (
-      input.headCommit !== null &&
-      recordValue(meta.value) &&
-      meta.value.gitCommitHash !== input.headCommit
+      (published && !recordValue(meta.value)) ||
+      (contentHead !== null && recordValue(meta.value) && meta.value.gitCommitHash !== contentHead)
     ) return dashboardReadFailure("stale");
-    return { status: "ready", json: publicDashboardMeta(meta.value, graph.nodes.length) };
+    if (input.kind === "meta") return { status: "ready", json: {
+      ...publicDashboardMeta(meta.value, graph.nodes.length),
+      ...(published ? { knowledgeVersion: {
+        status: activeIndex.authority.sourceSnapshotId === input.sourceSnapshotId ? "current" : "historical",
+        generationId: activeIndex.generation.generationId,
+        sourceSnapshotId: activeIndex.authority.sourceSnapshotId,
+        currentSnapshotId: input.sourceSnapshotId,
+        finalizedProviderRevision: activeIndex.authority.finalizedProviderRevision,
+      } } : {}),
+    } };
   }
+  if (input.kind === "graph") return { status: "ready", json: graph };
   if (input.kind === "config") {
     return { status: "ready", json: { autoUpdate: false, outputLanguage: "zh" } };
   }
@@ -1451,7 +1506,7 @@ const dashboardReader = (
   const wikiResult = parseWikiIndexV2(wikiRead.value);
   if (!wikiResult.ok) return dashboardReadFailure("invalid");
   const wiki = wikiResult.value;
-  if (input.headCommit !== null && wiki.source.gitCommitHash !== input.headCommit) {
+  if (contentHead !== null && wiki.source.gitCommitHash !== contentHead) {
     return dashboardReadFailure("stale");
   }
   if (input.kind === "wiki_index") return { status: "ready", json: wiki };
@@ -1492,7 +1547,7 @@ const dashboardReader = (
     text: pageBytes.toString("utf8"),
     contentType: "text/markdown; charset=utf-8",
   };
-};
+}
 
 type WorkbenchTraceRequestLike = {
   readonly surface: "trace";
@@ -2159,7 +2214,7 @@ async function openWorkbench(
   const workbenchUiOptions = "dashboardBundle" in workbenchUi
     ? {
         dashboardBundle: workbenchUi.dashboardBundle,
-        dashboardReader: dashboardReader(runtime),
+        dashboardReader: createWorkbenchDashboardReaderInternalV1(runtime),
       }
     : workbenchUi;
   const session = await openWorkbenchSessionV1(parsed.data, {

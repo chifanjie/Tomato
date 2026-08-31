@@ -66,6 +66,36 @@ async function initialize(
 }
 
 describe("MCP lifecycle and real handlers", () => {
+  for (const client of ["codex", "claude-code"]) {
+    it(`gives ${client} the gated Task knowledge workflow without reading repository state`, async () => {
+      const root = await createGitRepository({ seedArtifacts: false });
+      const before = await snapshotRepositoryFiles(root);
+      const harness = testServer(await resolveInitialBinding([root]));
+      await harness.server.handleValue({
+        jsonrpc: "2.0", id: 1, method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25", capabilities: {},
+          clientInfo: { name: client, version: "1.0.0" },
+        },
+      });
+      const result = harness.response(1).result;
+      expect(result.capabilities).toEqual({ tools: { listChanged: false } });
+      expect(result.instructions).toEqual(expect.any(String));
+      const instructions: string = result.instructions;
+      for (const phrase of ["provider_unavailable", "get_repo_pulse", "build_task_brief",
+        "check_change", "knowledge.action=stage", "candidateGenerationId",
+        "read-only", "not current Task evidence", "record_verification",
+        "update_task", "verified", "knowledge.action=publish", "expectedTaskRevision",
+        "expectedSourceSnapshotId", "open_workbench", "not yet available"]) {
+        expect(instructions).toContain(phrase);
+      }
+      expect(instructions.indexOf("knowledge.action=stage")).toBeLessThan(instructions.indexOf("knowledge.action=publish"));
+      expect(instructions).not.toContain(root);
+      expect(await snapshotRepositoryFiles(root)).toEqual(before);
+      await expect(stat(path.join(root, ".understand-code"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  }
+
   it("initializes, lists the implemented tools, and runs the Pulse/Brief vertical slice", async () => {
     const root = await createGitRepository();
     const sourceBefore = await readSourceFixture(root);

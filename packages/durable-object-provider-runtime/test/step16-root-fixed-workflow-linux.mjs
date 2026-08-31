@@ -208,6 +208,8 @@ export function step16FixedWorkflowStagesV1() {
     mcp("verification_required", "claude", "update_task"),
     { id: "verification", host: "claude", kind: "host_action", action: "verification", mechanism: "command_execution" },
     mcp("record", "claude", "record_verification", { strong: true }),
+    // Pending writes only caller-owned candidate bytes, not a Provider cut.
+    mcp("knowledge_stage", "claude", "refresh_index"),
     mcp("verified", "claude", "update_task", { strong: true }),
     mcp("codex_final", "codex", "get_task_brief"),
     mcp("claude_final", "claude", "get_task_brief"),
@@ -215,6 +217,7 @@ export function step16FixedWorkflowStagesV1() {
     mcp("claude_evidence", "claude", "get_evidence"),
     mcp("codex_pulse", "codex", "get_repo_pulse"),
     mcp("claude_pulse", "claude", "get_repo_pulse"),
+    mcp("knowledge_publish", "claude", "refresh_index", { strong: true }),
   ].map((stage, index) => Object.freeze({ ...stage, eventOrdinal: index + 1 })));
 }
 
@@ -248,6 +251,107 @@ async function storeState(repositoryRoot, requireTask = true) {
   return { store, manifest, bundle: task.bundle };
 }
 
+/** Test-runner-only read process: use the original indexer, under the actual
+ * candidate owner. No public CLI export, copied parser, or privileged read. */
+export async function readStep16KnowledgeIndexAsCallerV1(repositoryRoot, childIdentity, request, signal) {
+  absolute(repositoryRoot);
+  assert(childIdentity !== undefined && Number.isSafeInteger(childIdentity.uid) && childIdentity.uid > 0 &&
+    Number.isSafeInteger(childIdentity.gid) && childIdentity.gid > 0, "knowledge reader requires an explicit non-root caller");
+  assert(process.allowedNodeEnvironmentFlags.has("--experimental-strip-types"), "fixed knowledge reader requires native TypeScript stripping");
+  assert(request?.kind === "pending" || request?.kind === "published", "unsupported fixed knowledge read");
+  const source = `
+const [moduleUrl, root, identityJson, requestJson] = process.argv.slice(1);
+const identity = JSON.parse(identityJson), request = JSON.parse(requestJson);
+if (process.getuid() === 0) {
+  process.setgroups([]);
+  process.setgid(identity.gid);
+  process.setuid(identity.uid);
+}
+if (process.getuid() !== identity.uid || process.getgid() !== identity.gid ||
+    (process.platform === "linux" && process.getgroups().some((gid) => gid !== identity.gid))) throw new Error("knowledge_reader_principal_mismatch");
+const indexer = await import(moduleUrl);
+let value;
+if (request.kind === "pending") {
+  value = await indexer.listPendingRepositoryIndexesV1({ canonicalRoot: root, taskId: request.taskId });
+} else if (request.kind === "published") {
+  const active = await indexer.openActiveRepositoryIndexV1(root);
+  const candidate = await indexer.readPendingRepositoryIndexV1({ canonicalRoot: root, generationId: request.knowledgeLineage.candidateGenerationId });
+  const promoted = indexer.withRepositoryIndexKnowledgeLineageV1({ ...candidate, knowledgeLineage: request.knowledgeLineage });
+  value = { generation: active.generation, authority: active.authority, knowledgeLineage: active.knowledgeLineage, expectedGeneration: promoted.generation };
+} else throw new Error("unsupported_fixed_knowledge_read");
+process.stdout.write(JSON.stringify(value));
+`;
+  const result = await promisify(execFile)(process.execPath, [
+    "--experimental-strip-types", "--input-type=module", "-e", source,
+    new URL("../../cli/src/runtime/repository-indexer.ts", import.meta.url).href,
+    repositoryRoot, JSON.stringify(childIdentity), JSON.stringify(request),
+  ], {
+    cwd: repositoryRoot,
+    env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, NODE_PATH: "" },
+    encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024,
+    ...(signal === undefined ? {} : { signal }),
+  });
+  assert(result.stderr === "", "fixed knowledge reader emitted stderr");
+  return JSON.parse(result.stdout);
+}
+
+export function step16FixedKnowledgeStageInputV1(taskId, sourceSnapshotId) {
+  return {
+    mode: "full", expectedSourceSnapshotId: sourceSnapshotId,
+    actor: CLAUDE_ACTOR, idempotencyKey: "step16-claude-knowledge-stage",
+    knowledge: { action: "stage", taskId, expectedTaskRevision: 10 + STEP16_EXPECTED_BLOCKING_FINDINGS_V1 },
+  };
+}
+
+export function step16FixedKnowledgeLineageV1(args, predecessorGenerationId) {
+  // These are the refresh business request/key domains, not the raw MCP
+  // argumentsDigest used by the Host witness.
+  return {
+    schemaVersion: 1, status: "pending", taskId: args.knowledge.taskId,
+    taskRevision: args.knowledge.expectedTaskRevision, sourceSnapshotId: args.expectedSourceSnapshotId,
+    requestDigest: step16ArgumentsDigestV1({ operation: "refresh_index", mode: args.mode,
+      expectedSourceSnapshotId: args.expectedSourceSnapshotId, actor: args.actor, knowledge: args.knowledge }),
+    idempotencyKeyDigest: step16ArgumentsDigestV1({ domain: "refresh-index-idempotency-key-v1", key: args.idempotencyKey }),
+    ...(predecessorGenerationId === undefined ? {} : { predecessorGenerationId }),
+  };
+}
+
+async function knowledgeBoundary(context) {
+  const { store, manifest, bundle } = await storeState(context.repositoryRoot);
+  const refresh = await context.provider.inspectStrongRefreshAuthority(manifest.repositoryId, manifest.worktreeId);
+  const indexAuthority = await context.provider.inspectIndexPublicationAuthority();
+  const snapshot = (await store.readArtifact("repository_snapshot", { snapshotId: manifest.latestSnapshotId })).artifact;
+  const pulse = (await store.readArtifact("repo_pulse")).artifact;
+  assert(refresh.authority?.snapshotId === manifest.latestSnapshotId &&
+    refresh.authority.snapshotContentDigest === snapshot.contentDigest && refresh.authority.pulseContentDigest === pulse.contentDigest &&
+    bundle.manifest.latestSnapshotId === manifest.latestSnapshotId, "knowledge source is not the current Provider-bound cut");
+  assert((await context.provider.inspectState()).revision === refresh.observedProviderRevision, "Provider moved during knowledge read");
+  return { manifest, taskRevision: bundle.manifest.revision, snapshotContentDigest: snapshot.contentDigest,
+    pulseContentDigest: pulse.contentDigest, refresh, indexAuthority: indexAuthority ?? null };
+}
+
+export async function readStep16FixedKnowledgeCandidateV1(context, boundary, taskId) {
+  const expected = step16FixedKnowledgeLineageV1(
+    step16FixedKnowledgeStageInputV1(taskId, boundary.manifest.latestSnapshotId), boundary.indexAuthority?.generationId,
+  );
+  const candidates = await readStep16KnowledgeIndexAsCallerV1(context.repositoryRoot, context.childIdentity,
+    { kind: "pending", taskId }, context.signal);
+  const matches = candidates.filter((candidate) => step16ArgumentsDigestV1(candidate.knowledgeLineage) === step16ArgumentsDigestV1(expected));
+  assert(matches.length === 1, "fixed workflow requires exactly one matching knowledge candidate");
+  return matches[0];
+}
+
+export function requireStep16PublishedKnowledgeV1(active, expected, after, args) {
+  assert(after.taskRevision === args.knowledge.expectedTaskRevision && after.manifest.latestSnapshotId === args.expectedSourceSnapshotId &&
+    after.refresh.authority.mode === "full" && after.refresh.observedProviderRevision > expected.before.refresh.observedProviderRevision &&
+    step16ArgumentsDigestV1(active.generation) === step16ArgumentsDigestV1(active.expectedGeneration) &&
+    step16ArgumentsDigestV1(active.knowledgeLineage) === step16ArgumentsDigestV1(expected.knowledgeLineage) &&
+    step16ArgumentsDigestV1({ ...active.generation, ...active.authority }) === step16ArgumentsDigestV1(after.indexAuthority) &&
+    active.authority.sourceSnapshotId === args.expectedSourceSnapshotId &&
+    active.authority.finalizedProviderRevision === after.refresh.authority.finalizedProviderRevision,
+  "published knowledge is not the exact Provider-bound promotion of the candidate");
+}
+
 function checkBusinessDigest(args) {
   return step16ArgumentsDigestV1(["operation-safe-request-v1", {
     version: "operation-safe-request-v1", operation: "check_change", actor: args.actor,
@@ -279,7 +383,8 @@ export async function readStep16FixedProjectionV1(provider, repositoryRoot, oper
   return projection;
 }
 
-export async function step16FixedStageArgumentsV1(stage, { repositoryRoot, provider }) {
+export async function step16FixedStageArgumentsV1(stage, context) {
+  const { repositoryRoot, provider } = context;
   const fixed = fixedArguments(stage.id);
   if (fixed !== undefined) return fixed;
   if (stage.id === "source") return { changes: [{ kind: "update", path: "src/task.ts" }] };
@@ -315,6 +420,27 @@ export async function step16FixedStageArgumentsV1(stage, { repositoryRoot, provi
     case "verified":
       await readStep16FixedProjectionV1(provider, repositoryRoot, "record_verification");
       return update(10 + count, { type: "transition_status", to: "verified" }, "step16-claude-verified");
+    case "knowledge_stage": {
+      await readStep16FixedProjectionV1(provider, repositoryRoot, "record_verification");
+      assert(bundle.manifest.revision === 10 + count && bundle.manifest.status !== "verified", "unexpected pre-stage Task state");
+      context.knowledgeBefore = await knowledgeBoundary(context);
+      return step16FixedKnowledgeStageInputV1(taskId, manifest.latestSnapshotId);
+    }
+    case "knowledge_publish": {
+      const projection = await readStep16FixedProjectionV1(provider, repositoryRoot, "update_task");
+      const before = await knowledgeBoundary(context);
+      const candidate = await readStep16FixedKnowledgeCandidateV1(context, before, taskId);
+      assert(context.stagedKnowledge === undefined || step16ArgumentsDigestV1(candidate) === step16ArgumentsDigestV1(context.stagedKnowledge), "staged candidate changed before publication");
+      const verified = projection.bundle;
+      const knowledgeLineage = { ...candidate.knowledgeLineage, status: "published", taskRevision: verified.manifest.revision,
+        candidateGenerationId: candidate.generation.generationId, currentCheckId: verified.manifest.currentChangeCheckId,
+        verificationIds: verified.verificationRecords.filter((record) => record.snapshotId === manifest.latestSnapshotId).map((record) => record.id).sort() };
+      assert(step16ArgumentsDigestV1(before) === step16ArgumentsDigestV1(await knowledgeBoundary(context)), "knowledge publication input moved during read");
+      context.knowledgePublication = { before, candidate, knowledgeLineage };
+      return { mode: "full", expectedSourceSnapshotId: manifest.latestSnapshotId, actor: CLAUDE_ACTOR,
+        idempotencyKey: "step16-claude-knowledge-publish", knowledge: { action: "publish", taskId,
+          expectedTaskRevision: 11 + count, candidateGenerationId: candidate.generation.generationId } };
+    }
     default:
       if (stage.findingIndex !== undefined) {
         const projection = await readStep16FixedProjectionV1(provider, repositoryRoot);
@@ -328,7 +454,26 @@ export async function step16FixedStageArgumentsV1(stage, { repositoryRoot, provi
 }
 
 export async function verifyStep16FixedStageCommitV1(stage, args, context) {
-  if (stage.id === "initial_refresh" || stage.id === "actual_refresh") {
+  if (stage.id === "knowledge_stage") {
+    assert(context.knowledgeBefore !== undefined, "knowledge stage has no root-owned pre-call observation");
+    const after = await knowledgeBoundary(context);
+    assert(step16ArgumentsDigestV1(after) === step16ArgumentsDigestV1(context.knowledgeBefore), "pending knowledge changed the current Store or Provider cut");
+    const candidate = await readStep16FixedKnowledgeCandidateV1(context, after, args.knowledge.taskId);
+    assert(step16ArgumentsDigestV1(after) === step16ArgumentsDigestV1(await knowledgeBoundary(context)), "Provider moved while reading staged knowledge");
+    context.stagedKnowledge = candidate;
+  } else if (stage.id === "knowledge_publish") {
+    const expected = context.knowledgePublication;
+    assert(expected !== undefined, "knowledge publication has no root-owned verified Task observation");
+    const after = await knowledgeBoundary(context);
+    const active = await readStep16KnowledgeIndexAsCallerV1(context.repositoryRoot, context.childIdentity,
+      { kind: "published", knowledgeLineage: expected.knowledgeLineage }, context.signal);
+    requireStep16PublishedKnowledgeV1(active, expected, after, args);
+    assert(step16ArgumentsDigestV1(after) === step16ArgumentsDigestV1(await knowledgeBoundary(context)), "Provider moved while reading published knowledge");
+    context.publishedKnowledge = { status: "published", candidateGenerationId: expected.candidate.generation.generationId,
+      generationId: active.generation.generationId, taskId: args.knowledge.taskId, stagedTaskRevision: expected.candidate.knowledgeLineage.taskRevision,
+      taskRevision: after.taskRevision, sourceSnapshotId: args.expectedSourceSnapshotId,
+      currentCheckId: expected.knowledgeLineage.currentCheckId, verificationIds: expected.knowledgeLineage.verificationIds };
+  } else if (stage.id === "initial_refresh" || stage.id === "actual_refresh") {
     const { manifest } = await storeState(context.repositoryRoot, false);
     assert(typeof manifest.latestSnapshotId === "string" && (stage.id !== "actual_refresh" || manifest.latestSnapshotId !== args.expectedSourceSnapshotId), "refresh did not publish its exact new Snapshot");
   } else if (stage.tool === "build_task_brief" || stage.tool === "update_task") {

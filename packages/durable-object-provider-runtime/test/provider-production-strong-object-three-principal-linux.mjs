@@ -1249,7 +1249,10 @@ async function authorityRole(fixturePath) {
                 try {
                   const stage = recipe.step16FixedWorkflowStagesV1().find((candidate) => candidate.eventOrdinal === call.eventOrdinal);
                   if (stage === undefined || !stage.strong || stage.host !== call.host || stage.tool !== call.tool) throw new Error("unknown root-derived fixed call");
-                  return recipe.step16ArgumentsDigestV1(await recipe.step16FixedStageArgumentsV1(stage, { repositoryRoot: fixture.step16RepositoryRoot, provider }));
+                  return recipe.step16ArgumentsDigestV1(await recipe.step16FixedStageArgumentsV1(stage, {
+                    repositoryRoot: fixture.step16RepositoryRoot, provider,
+                    childIdentity: { uid: fixture.callerUid, gid: fixture.callerGid },
+                  }));
                 } finally { provider.close(); }
               },
             });

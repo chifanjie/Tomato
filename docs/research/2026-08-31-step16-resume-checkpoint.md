@@ -5,14 +5,25 @@
 ## 当前游标
 
 - 第15步已完成；第16步进行中；第17步未完成。不要从旧 goal 元数据中的 Preview/第15步游标重新开始。
-- 当前续跑：基于 `700d204157ef56d1f47cabf2a9c89409522a714d` 完成 Task 候选发现、只读 Graph/Wiki 预览和已发布来源 HTTP 接口，见下一节；255项受影响完整测试及正常 Preview 构建通过，独立复核无剩余 finding。界面源捕获被浏览器工具拦截，按 Product Design 暂停前端修改，未以HTTP测试代替视觉验收。
+- 当前续跑：HTTP 接口已提交推送为 `6b5f12bf72b702f631b27a7399d312e48c89dd5f`，255项受影响完整测试与构建通过，不再重做。双 Host 的共享 MCP 流程指引及固定真实 Host 运行器知识发布接线已通过本轮受影响完整门禁，见下一节。界面源捕获仍被浏览器工具拦截，按 Product Design 暂停前端修改，未以HTTP测试代替视觉验收。
 - Task 待审知识/Verified 发布后端闭环已提交推送 `700d204157ef56d1f47cabf2a9c89409522a714d`，本地/远端SHA一致，基线是 `23acd18977e3675a01b1f25916127aab67b85910`。不要重做历史浏览、原生插件生命周期或第15步；未完成的界面接线、真实模型任务和发行门保留在文末。
 - 2026-09-01：基于已推送的 `c38ee27` 完成显式已发布知识版本浏览切片，提交 `23acd18`；待审 Task 知识增量及 Verified 后晋级后端已在本切片接续完成，不再重做历史读取入口或已通过的插件生命周期。
 - 双插件切片的 21 个文件已精确提交并正常 push 为 `bf50a798055f3f2d5fe288a1f452f1381864ad28`，远端分支 SHA 已逐项核对相同。以下实现与无模型 E2E 证据均保留，不重新打开已关闭的包测试或插件预检。
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
 
-## Task 候选审阅 HTTP 接口已实现（700d204 基线）
+## 双 Host 知识流程接线（6b5f12b 基线）
+
+- 完整 MCP `initialize.instructions` 现在返回两端共享的 Task→Check→待审候选→外部 Verification→Provider verified→知识发布指引；仅已有11工具的完整 profile 包含它。明确指引不授权额外调用、不解锁默认 strong writer、pending 不是当前证据、stage成功不代表已审阅、候选UI尚未接通。实际安装后从两端wrapper读到相同指引，不等同于模型已执行；没有新增Tool或改Schema。
+- 原 root-owned 固定真实 Host 运行器接入 `knowledge.stage` 和最后的 `knowledge.publish`，全部业务调用仍由实际 Host CLI 会话执行。stage不进入Provider强写计划且要求Store/Snapshot/Pulse/Provider cut前后不变；publish先读真实Provider verified投影，独立派生候选，再核完整active generation、仅来源晋级的候选字节及原Provider index/refresh绑定。仍为 `verified_not_gold`，不宣称模型流程已执行。
+- 私有运行器只读子进程复用原indexer源码和Node原生类型擦除；在读取前清除附加组并降权到实际候选属主，保留owner/no-follow/摘要校验，不增加CLI公开导出或新证明层。worker与authority均独立使用同一固定读取路径，不从Host自报结果获取发布权威。按原Node22 CI核对后改为能力检测，不提高产品Node最低版本、不修改CI；官方Node22.18临时副本已按同版SHASUMS256验证，原生读取定向实际通过且stderr为空，没有警告豁免。
+- 最终主线CLI源/测试typecheck、正常Preview build、完整CLI 241 passed/0 failed（含冷安装与双安装wrapper回归）通过；新增两项初始化测试先红后绿。单独构建原 `preview_three_tool_v1` 并实际initialize/tools-list，确认instructions省略、工具仍3项、stderr为空且exit0。主线用官方Node22.18独立运行Runtime源/测试typecheck、build及完整包：146 passed/16平台跳过，17.39秒、exit0；没有重复未改变的CLI门。
+- 新增8个owner/UID专属用例只属于原Linux/root运行面，未给普通Node22 workspace CI提权或放宽检测。作者已在原Alpine VM/Node24/root实际运行全部8项：8 passed/19未选中、16.39秒、exit0；包含完整候选/原字节晋级、篡改与symlink拒绝、刻意继承root附加组后的清组降权，以及root直读被拒绝。主线已读取原始命令/完整summary；这补足本地跳过中的8项，不将其它平台skip写成通过，更不计真实Provider/模型任务或Gold。
+- 本轮唯一post-fix独立只读复核已完成，10个暂存文件无可执行P0/P1/P2 finding；默认锁、三工具Preview兼容、原候选独立读取、Provider verified后精确晋级、7次强调用/25事件、import前清组降权及Node能力检测均已核对。未扩大审查范围或重复门禁，本切片可提交收口。
+- 本轮只检查一次原Codex登录session16592：仍运行、无成功输出；不重启登录、不读取或复制凭证、不调用模型。用户已再次收到本地页 `http://127.0.0.1:62549/` 手动访问确认请求；未恢复源捕获前不改UI。没有重跑已通过的旧双插件preflight/生命周期、Provider或ArtifactStore全包。
+- `6b5f12b` 的[Actions run33428815702](https://github.com/chifanjie/Tomato/actions/runs/33428815702)此前已核验：jobs未启动，annotation为账户付款/spending limit；不是代码失败或CI green，无外部变化不重试同一run。
+
+## Task 候选审阅 HTTP 接口已实现（700d204 基线，提交6b5f12b）
 
 - 在现有已兑换 Workbench 会话内，`GET /tasks/:taskId/knowledge-candidates.json` 返回该Task的知识候选；严格复用会话Task绑定，不接受query覆盖Task。列表上限32、逐候选验证完整文件集合与摘要、owner/mode/no-follow，缺目录返回空列表且不创建目录，不清理任何候选。
 - 沿用5个知识GET，通过 `indexVersion=pending&indexGenerationId=<候选代际ID>` 读取同一候选的Graph/meta/Wiki索引/搜索/正文；pending连meta也要求精确ID。Task仅来自会话route，跨Task、未来Task revision、不同当前Snapshot、任意页面路径、重复/额外query均拒绝。候选meta明确 `status:"pending", readOnly:true, evidenceEligible:false`，不改变Task/Evidence读取或任何Provider/Store状态。
@@ -106,7 +117,7 @@
 
 ## 从这里继续
 
-- 最新切片已在持久候选/Verified晋级之上接通真实候选发现、同代Graph/Wiki只读预览与认证发布来源HTTP读取；现有 published 只读浏览也已完成。下一产品工作是在既有 Task/Graph/Wiki 内使用这些接口接通审阅和双向来源追溯，不重写接口或重跑已通过后端门。先解决本轮浏览器源捕获拦截，再按 Product Design 采集并实施；保留 Overview/自由探索与稳定路由，不新增展示页或重做第15步。当前候选32项满额拒绝、发布后保留来源，不声称已有候选管理界面。
+- 共享MCP流程指引和原root-owned真实Host固定运行器的候选/Verified发布接线已完成并通过受影响门禁，不重新设计或重跑。HTTP层已接通真实候选发现、同代Graph/Wiki只读预览与认证发布来源，现有published只读浏览也已完成。下一产品工作是在既有Task/Graph/Wiki内使用这些接口接通审阅和双向来源追溯，不重写接口。先解决浏览器源捕获拦截，再按Product Design采集并实施；保留Overview/自由探索与稳定路由，不新增展示页或重做第15步。当前候选32项满额拒绝、发布后保留来源，不声称已有候选管理界面或已执行真实模型流程。
 - 未 verified 的 Task 不得提前 finalize full 或发布 Graph/Wiki；record_verification 成功仍不等于 Task 已 verified。以下原生登录与发行阻点继续保留；本轮受影响后端完整门禁已通过，没有新失败或输入变化不重复运行。
 
 - 下一实际断点是隔离环境的原生登录，以及登录后的完整真实任务；Linux root 双插件 preflight 已实际通过，不重开此门，不回落手工 MCP 冒充 Host。

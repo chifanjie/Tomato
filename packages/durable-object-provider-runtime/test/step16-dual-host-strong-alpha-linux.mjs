@@ -591,7 +591,7 @@ export async function runStep16RootOwnedStrongAlphaV1(input) {
       schemaVersion: 1, profile: "step16_root_supervised_fixed_workflow_v1", status: "preflight_verified",
       countsTowardG2OrG3: false, modelInvoked: false, businessToolsInvoked: false, preflights,
     };
-    const context = { repositoryRoot: input.repositoryRoot, provider };
+    const context = { repositoryRoot: input.repositoryRoot, provider, childIdentity, signal: controller.signal };
     for (const stage of step16FixedWorkflowStagesV1()) {
       const args = await step16FixedStageArgumentsV1(stage, context);
       const event = stage.kind === "mcp_tool_call"
@@ -613,11 +613,12 @@ export async function runStep16RootOwnedStrongAlphaV1(input) {
       }, { childIdentity, ...(stage.id === "source" ? { codexSourceMutation: { beforeContent: STEP16_INITIAL_SOURCE_V1, afterContent: STEP16_UPDATED_SOURCE_V1 } } : { rootMcpServer: rootMcpServers[stage.host] }) });
       const receipt = Step16RealHostTranscriptReceiptV1Schema.parse(execution.receipt);
       const observed = receipt.events[0];
-      assert(receipt.events.length === 1 && (stage.kind !== "mcp_tool_call" || observed.argumentsDigest === step16ArgumentsDigestV1(args)), "real Host executed another exact stage input");
+      assert(receipt.events.length === 1 && (stage.kind !== "mcp_tool_call" || (observed.success === true && observed.argumentsDigest === step16ArgumentsDigestV1(args))), "real Host did not successfully execute the exact stage input");
       await verifyStep16FixedStageCommitV1(stage, args, context);
       executions.push({ eventOrdinal: stage.eventOrdinal, stage: stage.id, receipt, rawTranscriptDigest: execution.rawTranscriptDigest, executableDigest: execution.executableDigest, ...(execution.sourceMutation === undefined ? {} : { sourceMutation: execution.sourceMutation }) });
     }
     const finalTask = await readStep16FixedFinalTaskV1(input.repositoryRoot);
+    assert(context.publishedKnowledge?.status === "published", "fixed workflow did not publish its verified Task knowledge");
     const completion = await supervisor.finalize();
     assert(completion !== null && typeof completion === "object" && Array.isArray(completion.strongCallProviderReceipts) && Array.isArray(completion.providerBindings), "invalid witness finalization");
     assert(completion.strongCallProviderReceipts.length === input.closingPlan.calls.length, "witness did not finalize N/N calls");
@@ -631,6 +632,7 @@ export async function runStep16RootOwnedStrongAlphaV1(input) {
     return {
       schemaVersion: 1, profile: "step16_root_supervised_fixed_workflow_v1", status: "verified_not_gold",
       countsTowardG2OrG3: false, executionSurface: "real_host_cli_jsonl", ...finalTask,
+      knowledge: context.publishedKnowledge,
       providerRevision: (await provider.inspectState()).revision,
       closingPlan: input.closingPlan, completedCalls: completion.strongCallProviderReceipts.length,
       expectedBlockingFindingCount: STEP16_EXPECTED_BLOCKING_FINDINGS_V1,

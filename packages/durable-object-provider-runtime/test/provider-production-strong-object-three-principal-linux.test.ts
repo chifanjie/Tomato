@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, chown, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -131,12 +131,13 @@ describe.skipIf(!runnable)("production strong object three-principal Linux", () 
         expect(result.dualHost.preflights.every((item: { singlePid: boolean; advertisedTools: number }) => item.singlePid && item.advertisedTools === 11)).toBe(true);
       } else if (result.dualHost.status === "verified_not_gold") {
         expect(result.dualHost).toMatchObject({
-          executionSurface: "real_host_cli_jsonl", completedCalls: 6,
+          executionSurface: "real_host_cli_jsonl", completedCalls: 7,
           expectedBlockingFindingCount: 1, taskRevision: 12,
+          knowledge: { status: "published", stagedTaskRevision: 11, taskRevision: 12 },
         });
-        expect(result.dualHost.executions).toHaveLength(23);
-        expect(result.dualHost.closingPlan.calls).toHaveLength(6);
-        expect(result.dualHost.strongCallProviderReceipts).toHaveLength(6);
+        expect(result.dualHost.executions).toHaveLength(25);
+        expect(result.dualHost.closingPlan.calls).toHaveLength(7);
+        expect(result.dualHost.strongCallProviderReceipts).toHaveLength(7);
         expect(result.dualHost.providerBindings.length).toBeGreaterThan(0);
         expect(result.durableCurrent.revision).toBe(
           result.dualHost.providerRevision,
@@ -226,16 +227,20 @@ describe("Step16 authority lifecycle", () => {
 });
 
 describe("Step16 fixed root workflow recipe", () => {
-  it("pins all six strong calls, including the Task baseline and verified transition, in global order", async () => {
+  it("pins seven strong calls and stages knowledge before verified, with publication last", async () => {
     const recipe = await fixedRecipeV1();
     const plan = recipe.createStep16FixedClosingPlanV1("a1".repeat(32));
     const calls = plan.calls as Array<{ tool: string; eventOrdinal: number; callOrdinal: number; argumentsDigest: string | null }>;
-    expect(calls.map((call) => call.tool)).toEqual(["refresh_index", "build_task_brief", "refresh_index", "check_change", "record_verification", "update_task"]);
-    expect(calls.map((call) => call.eventOrdinal)).toEqual([1, 2, 10, 12, 16, 17]);
-    expect(calls.map((call) => call.callOrdinal)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(calls.map((call) => call.argumentsDigest === null)).toEqual([false, false, true, true, true, true]);
+    expect(calls.map((call) => call.tool)).toEqual(["refresh_index", "build_task_brief", "refresh_index", "check_change", "record_verification", "update_task", "refresh_index"]);
+    expect(calls.map((call) => call.eventOrdinal)).toEqual([1, 2, 10, 12, 16, 18, 25]);
+    expect(calls.map((call) => call.callOrdinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(calls.map((call) => call.argumentsDigest === null)).toEqual([false, false, true, true, true, true, true]);
     expect(Object.isFrozen(plan) && Object.isFrozen(calls) && calls.every(Object.isFrozen)).toBe(true);
-    expect(recipe.step16FixedWorkflowStagesV1()).toHaveLength(23);
+    const stages = recipe.step16FixedWorkflowStagesV1();
+    expect(stages).toHaveLength(25);
+    expect(stages.slice(15, 18).map((stage: { id: string }) => stage.id)).toEqual(["record", "knowledge_stage", "verified"]);
+    expect(stages[16].strong).toBeUndefined();
+    expect(stages.at(-1).id).toBe("knowledge_publish");
   });
 
   it("derives the first two exact arguments without querying artifacts or a provider", async () => {
@@ -300,6 +305,173 @@ describe("Step16 fixed root workflow recipe", () => {
       await writeFile(store.layout.task(bundle.manifest.taskId).taskBrief, "{}\n");
       await expect(recipe.step16FixedStageArgumentsV1({ id: "handoff", tool: "get_task_brief" }, context)).rejects.toThrow();
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+// Real generation bytes and the original indexer, without a model or a
+// business MCP call. These fixtures are not Provider/Agent success evidence.
+async function fixedKnowledgeFixtureV1() {
+  const recipe = await fixedRecipeV1();
+  const root = await realpath(await mkdtemp(join(tmpdir(), "step16-knowledge-recipe-")));
+  const identity = { uid: process.geteuid!() === 0 ? 42003 : process.geteuid!(), gid: process.getegid!() === 0 ? 42004 : process.getegid!() };
+  if (process.geteuid!() === 0) await chown(root, identity.uid, identity.gid);
+  const snapshot = JSON.parse(await readFile(new URL("../../contracts/fixtures/v1/reference/repository-snapshot.json", import.meta.url), "utf8")).payload;
+  const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+  const args = recipe.step16FixedKnowledgeStageInputV1(taskId, snapshot.snapshotId);
+  const predecessorGenerationId = `generation-${"a".repeat(64)}`;
+  const lineage = recipe.step16FixedKnowledgeLineageV1(args, predecessorGenerationId);
+  const repositoryRoot = join(root, "repository");
+  const installationRoot = join(root, "installation");
+  const run = async (action: "stage" | "publish", selectedLineage = lineage) => {
+    const source = `
+      const input = JSON.parse(process.argv[1]);
+      if (process.getuid() === 0) { process.setgroups([]); process.setgid(input.identity.gid); process.setuid(input.identity.uid); }
+      const fs = await import("node:fs/promises");
+      const indexer = await import(input.moduleUrl);
+      await fs.mkdir(input.repositoryRoot, { mode: 0o700, recursive: true });
+      await fs.mkdir(input.installationRoot, { mode: 0o700, recursive: true });
+      await fs.writeFile(input.repositoryRoot + "/safe.ts", "export const safe = true;\\n");
+      const scope = { canonicalRoot: input.repositoryRoot, canonicalInstallationRoot: input.installationRoot, operationId: "1".repeat(32) };
+      const built = await indexer.buildRepositoryIndex({ ...scope, snapshot: input.snapshot, knowledgeLineage: input.lineage });
+      const candidate = await indexer.savePendingRepositoryIndexV1({ canonicalRoot: input.repositoryRoot, ...built });
+      let publication;
+      if (input.action === "publish") {
+        const knowledgeLineage = { ...candidate.knowledgeLineage, status: "published", taskRevision: 12,
+          candidateGenerationId: candidate.generation.generationId, currentCheckId: "check:step16-fixture", verificationIds: ["verification:step16-fixture"] };
+        publication = indexer.withRepositoryIndexKnowledgeLineageV1({ ...candidate, knowledgeLineage });
+        await indexer.publishStagedRepositoryIndex({ ...scope, ...publication,
+          authority: { sourceSnapshotId: input.snapshot.snapshotId, finalizedProviderRevision: 25 }, publishStoreCut: async () => {} });
+      }
+      await indexer.discardStagedRepositoryIndex(scope);
+      process.stdout.write(JSON.stringify({ generation: candidate.generation, knowledgeLineage: candidate.knowledgeLineage,
+        ...(publication === undefined ? {} : { publishedGeneration: publication.generation, publishedLineage: publication.knowledgeLineage }) }));
+    `;
+    const { stdout, stderr } = await execFileAsync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source,
+      JSON.stringify({ identity, moduleUrl: new URL("../../cli/src/runtime/repository-indexer.ts", import.meta.url).href,
+        repositoryRoot, installationRoot, snapshot, lineage: selectedLineage, action })], {
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", NODE_PATH: "" }, encoding: "utf8", timeout: 20_000,
+    });
+    expect(stderr).toBe("");
+    return JSON.parse(stdout);
+  };
+  try {
+    const candidate = await run("stage");
+    return { root, repositoryRoot, identity, snapshot, taskId, args, lineage, candidate, run,
+      context: { repositoryRoot, childIdentity: identity },
+      boundary: { manifest: { latestSnapshotId: snapshot.snapshotId }, indexAuthority: { generationId: predecessorGenerationId } } };
+  } catch (error) { await rm(root, { recursive: true, force: true }); throw error; }
+}
+
+describe("Step16 fixed knowledge recipe", () => {
+  it("uses the refresh business digest domains and pins the staged Task revision", async () => {
+    const recipe = await fixedRecipeV1();
+    const args = recipe.step16FixedKnowledgeStageInputV1("01ARZ3NDEKTSV4RRFFQ69G5FAV", "snapshot:fixture");
+    const lineage = recipe.step16FixedKnowledgeLineageV1(args);
+    expect(args).toMatchObject({ mode: "full", knowledge: { action: "stage", expectedTaskRevision: 11 } });
+    expect(lineage.requestDigest).toBe(recipe.step16ArgumentsDigestV1({ operation: "refresh_index", mode: "full",
+      expectedSourceSnapshotId: args.expectedSourceSnapshotId, actor: args.actor, knowledge: args.knowledge }));
+    expect(lineage.requestDigest).not.toBe(recipe.step16ArgumentsDigestV1(args));
+    expect(lineage.idempotencyKeyDigest).toBe(recipe.step16ArgumentsDigestV1({ domain: "refresh-index-idempotency-key-v1", key: args.idempotencyKey }));
+    expect(lineage).not.toHaveProperty("predecessorGenerationId");
+  });
+});
+
+// Owner/group transitions are the same Linux root target as the real runner,
+// not a request to grant ordinary Node 22 workspace CI extra privileges.
+describe.skipIf(process.platform !== "linux" || process.geteuid?.() !== 0)("Step16 fixed knowledge owner", () => {
+  it("reads a complete durable candidate under its owner without publishing or changing it", async () => {
+    const recipe = await fixedRecipeV1();
+    const fixture = await fixedKnowledgeFixtureV1();
+    try {
+      expect(await recipe.readStep16FixedKnowledgeCandidateV1(fixture.context, fixture.boundary, fixture.taskId)).toEqual(fixture.candidate);
+      expect(await fixture.run("stage")).toEqual(fixture.candidate);
+      await expect(readFile(join(fixture.repositoryRoot, ".understand-code", "index-active-v1.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(join(fixture.repositoryRoot, ".understand-code", "repo-pulse.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(recipe.readStep16FixedKnowledgeCandidateV1(fixture.context,
+        { ...fixture.boundary, manifest: { latestSnapshotId: "snapshot:other" } }, fixture.taskId)).rejects.toThrow("exactly one matching knowledge candidate");
+      await expect(recipe.readStep16FixedKnowledgeCandidateV1(fixture.context,
+        { ...fixture.boundary, indexAuthority: null }, fixture.taskId)).rejects.toThrow("exactly one matching knowledge candidate");
+      await expect(recipe.readStep16FixedKnowledgeCandidateV1(fixture.context, fixture.boundary,
+        "01ARZ3NDEKTSV4RRFFQ69G5FAW")).rejects.toThrow("exactly one matching knowledge candidate");
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
+  it.each(["requestDigest", "idempotencyKeyDigest", "taskRevision"] as const)("rejects a self-consistent candidate with another %s", async (field) => {
+    const recipe = await fixedRecipeV1();
+    const fixture = await fixedKnowledgeFixtureV1();
+    try {
+      await rm(join(fixture.repositoryRoot, ".understand-code", "index-pending-v1", fixture.candidate.generation.generationId), { recursive: true });
+      await fixture.run("stage", { ...fixture.lineage, [field]: field === "taskRevision" ? 10 : `sha256:${"e".repeat(64)}` });
+      await expect(recipe.readStep16FixedKnowledgeCandidateV1(fixture.context, fixture.boundary, fixture.taskId))
+        .rejects.toThrow("exactly one matching knowledge candidate");
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
+  it.each(["corrupt", "symlink"] as const)("rejects %s candidate bytes through the original no-follow reader", async (variant) => {
+    const recipe = await fixedRecipeV1();
+    const fixture = await fixedKnowledgeFixtureV1();
+    try {
+      const graph = join(fixture.repositoryRoot, ".understand-code", "index-pending-v1", fixture.candidate.generation.generationId, "knowledge-graph.json");
+      if (variant === "corrupt") await writeFile(graph, "corrupt");
+      else {
+        const bytes = await readFile(graph);
+        const target = join(fixture.root, "other-graph.json");
+        await writeFile(target, bytes);
+        await rm(graph);
+        await symlink(target, graph);
+      }
+      await expect(recipe.readStep16FixedKnowledgeCandidateV1(fixture.context, fixture.boundary, fixture.taskId)).rejects.toThrow();
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
+  it("checks real promoted bytes against the exact Provider index and lineage binding", async () => {
+    const recipe = await fixedRecipeV1();
+    const fixture = await fixedKnowledgeFixtureV1();
+    try {
+      const published = await fixture.run("publish");
+      const active = await recipe.readStep16KnowledgeIndexAsCallerV1(fixture.repositoryRoot, fixture.identity,
+        { kind: "published", knowledgeLineage: published.publishedLineage });
+      expect(active.generation).toEqual(published.publishedGeneration);
+      expect(active.generation).toEqual(active.expectedGeneration);
+      expect(active.knowledgeLineage).toMatchObject({ ...fixture.lineage, status: "published", taskRevision: 12,
+        candidateGenerationId: fixture.candidate.generation.generationId });
+      const expected = { before: { refresh: { observedProviderRevision: 23 } }, knowledgeLineage: published.publishedLineage };
+      const after = { taskRevision: 12, manifest: { latestSnapshotId: fixture.snapshot.snapshotId },
+        refresh: { authority: { mode: "full", finalizedProviderRevision: 25 }, observedProviderRevision: 25 },
+        indexAuthority: { ...active.generation, ...active.authority } };
+      const args = { expectedSourceSnapshotId: fixture.snapshot.snapshotId, knowledge: { expectedTaskRevision: 12 } };
+      expect(() => recipe.requireStep16PublishedKnowledgeV1(active, expected, after, args)).not.toThrow();
+      for (const indexAuthority of [null, { ...after.indexAuthority, generationManifestDigest: `sha256:${"f".repeat(64)}` },
+        { ...after.indexAuthority, sourceSnapshotId: "snapshot:other" }, { ...after.indexAuthority, finalizedProviderRevision: 24 }]) {
+        expect(() => recipe.requireStep16PublishedKnowledgeV1(active, expected, { ...after, indexAuthority }, args)).toThrow();
+      }
+      expect(() => recipe.requireStep16PublishedKnowledgeV1({ ...active, expectedGeneration: fixture.candidate.generation }, expected, after, args)).toThrow();
+      expect(() => recipe.requireStep16PublishedKnowledgeV1(active, { ...expected, knowledgeLineage: fixture.lineage }, after, args)).toThrow();
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
+  it("clears inherited root groups before the actual caller-owned indexer read", async () => {
+    const fixture = await fixedKnowledgeFixtureV1();
+    try {
+      const { stdout, stderr } = await execFileAsync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+        process.setgroups([0]);
+        const fixture = JSON.parse(process.argv[1]);
+        const recipe = await import(fixture.recipeUrl);
+        const candidate = await recipe.readStep16FixedKnowledgeCandidateV1(fixture.context, fixture.boundary, fixture.taskId);
+        const indexer = await import(fixture.indexerUrl);
+        let rootRejected = false;
+        try { await indexer.listPendingRepositoryIndexesV1({ canonicalRoot: fixture.repositoryRoot, taskId: fixture.taskId }); }
+        catch { rootRejected = true; }
+        if (!rootRejected) throw new Error("root incorrectly read caller-owned candidate");
+        process.stdout.write(JSON.stringify({ candidate, rootRejected }));
+      `, JSON.stringify({ ...fixture, run: undefined,
+        recipeUrl: new URL("./step16-root-fixed-workflow-linux.mjs", import.meta.url).href,
+        indexerUrl: new URL("../../cli/src/runtime/repository-indexer.ts", import.meta.url).href })], {
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", NODE_PATH: "" }, encoding: "utf8", timeout: 20_000,
+      });
+      expect(stderr).toBe("");
+      expect(JSON.parse(stdout)).toEqual({ candidate: fixture.candidate, rootRejected: true });
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
   });
 });
 

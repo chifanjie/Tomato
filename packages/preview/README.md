@@ -250,6 +250,16 @@ Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
 
+Both installed Host wrappers expose the same Task workflow guidance through MCP
+`initialize.instructions`. For a Provider-authorized Task, checked knowledge is
+first saved with `refresh_index` / `knowledge.action=stage`; the returned
+candidate remains read-only and is not current Task evidence. Only after the
+actual verification and the Provider-backed Task transition to `verified` may
+`knowledge.action=publish` use that candidate ID, its source Snapshot and the
+current Task revision. These instructions do not unlock the Alpha or authorize
+extra tool calls. Candidate discovery/preview HTTP is implemented, but its UI
+review controls are not yet connected; stage success is not a completed review.
+
 `open_workbench` is present in the public contract but remains Provider-gated in
 this Alpha. Without an accepted strong Store it returns `provider_unavailable`,
 and the Preview Task endpoints return the same redacted 503 before reading any

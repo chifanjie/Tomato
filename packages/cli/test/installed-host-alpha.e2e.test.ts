@@ -425,7 +425,9 @@ describe("installed dual-host alpha", () => {
 
       await expectLegacyStoreAbsent(repositoryRoot);
       const codex = startInstalledHost(codexRoot, repositoryRoot);
-      await codex.output.waitFor((message) => message.id === 1);
+      const codexInitialization = await codex.output.waitFor((message) => message.id === 1);
+      expect(codexInitialization.result.instructions).toContain("knowledge.action=stage");
+      expect(codexInitialization.result.instructions).toContain("provider_unavailable");
       await exerciseInstalledMutationLock(
         codex,
         repositoryRoot,
@@ -436,7 +438,8 @@ describe("installed dual-host alpha", () => {
       await expectLegacyStoreAbsent(repositoryRoot);
 
       const claude = startInstalledHost(claudeRoot, repositoryRoot);
-      await claude.output.waitFor((message) => message.id === 1);
+      const claudeInitialization = await claude.output.waitFor((message) => message.id === 1);
+      expect(claudeInitialization.result.instructions).toBe(codexInitialization.result.instructions);
       await exerciseInstalledMutationLock(
         claude,
         repositoryRoot,

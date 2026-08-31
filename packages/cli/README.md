@@ -44,6 +44,34 @@ untrusted state returns a stable fail-closed error; a missing or invalid
 Provider selector never falls back to a legacy writer. Large results use
 bounded pages, cursors, and explicit truncation metadata.
 
+The full server also returns shared Task workflow `instructions` in MCP
+`initialize`, so Codex and Claude receive the same revision, verification and
+knowledge-publication guidance. This is guidance, not a capability grant; the
+default public strong-writer lock is unchanged. The original three-tool Preview
+does not receive these full-profile instructions.
+
+## Task knowledge lifecycle
+
+After the actual Snapshot has been checked for a Task, `refresh_index` with
+`mode: "full"`, its exact `expectedSourceSnapshotId`, and
+`knowledge: { action: "stage", taskId, expectedTaskRevision }` saves a persistent
+candidate without publishing it or changing the Task. Retain the returned
+`candidateGenerationId`. Pending Graph/Wiki is read-only, not current Task
+evidence; stage success is not proof of review.
+
+Run the required verification in the Host, record the real result, and complete
+the Provider-backed `update_task` transition to `verified`. Then use the same
+Snapshot and candidate ID with
+`knowledge: { action: "publish", taskId, expectedTaskRevision, candidateGenerationId }`
+and `mode: "full"`. Use the current Task revision, not the staging revision.
+Changed source requires a new Check and candidate; never use an ordinary full
+refresh to overwrite Task-published knowledge.
+
+`open_workbench` opens the bound Task and existing knowledge views. Candidate
+discovery and read-only preview HTTP interfaces are implemented, but their
+review controls are not yet connected in the UI. Do not claim UI review or a
+complete real-Host task from these interfaces alone.
+
 ## Authority and write boundary
 
 - `--root` is required exactly once. Relative paths, subdirectories that would

@@ -27,6 +27,26 @@ import {
   type ProviderAcceptanceAuthorityLayoutInternalV1,
 } from "./platform-layout.js";
 import {
+  abortStep16ReceiptBindingDurableJournalInternalV1,
+  appendStep16ReceiptBindingExpectedOperationDurableInternalV1,
+  armStep16ReceiptBindingDurableJournalInternalV1,
+  completeStep16ReceiptBindingDurableJournalInternalV1,
+  deriveStep16ReceiptBindingOrderedPrefixDigestInternalV1,
+  finalizeStep16ReceiptBindingDurableJournalInternalV1,
+  inspectStep16ReceiptBindingDurableJournalInternalV1,
+  openStep16ReceiptBindingDurableJournalWithLayoutCoreInternalV1,
+  verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1,
+  type Step16ReceiptBindingBrokerLedgerEntryInternalV1,
+  type Step16ReceiptBindingBrokerLedgerViewInternalV1,
+  type Step16ReceiptBindingJournalArmInternalV1,
+  type Step16ReceiptBindingJournalBaselineInternalV1,
+  type Step16ReceiptBindingJournalCapabilityInternalV1,
+  type Step16ReceiptBindingJournalCompletionInternalV1,
+  type Step16ReceiptBindingJournalDurabilityHooksInternalV1,
+  type Step16ReceiptBindingJournalExpectedOperationInternalV1,
+  type Step16ReceiptBindingJournalStateInternalV1,
+} from "./step16-receipt-binding-journal-internal.js";
+import {
   abortProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   appendExpectedOperationProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
   beginCollectingProviderProductionStrongAuthorityStep16ReceiptBindingWindowInternalV1,
@@ -485,6 +505,86 @@ export function exportProviderStrongMutationBrokerResolvedReceiptBundlesForTestI
   );
 }
 
+export function openStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  hooks: Step16ReceiptBindingJournalDurabilityHooksInternalV1 = {},
+): Promise<Step16ReceiptBindingJournalCapabilityInternalV1> {
+  requireTestProcessV1();
+  return openStep16ReceiptBindingDurableJournalWithLayoutCoreInternalV1(
+    requireCapabilityV1(capability),
+    hooks,
+  );
+}
+
+export function inspectStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+): Promise<Step16ReceiptBindingJournalStateInternalV1 | undefined> {
+  requireTestProcessV1();
+  return inspectStep16ReceiptBindingDurableJournalInternalV1(capability);
+}
+
+export function armStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+  input: Step16ReceiptBindingJournalArmInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return armStep16ReceiptBindingDurableJournalInternalV1(capability, input);
+}
+
+export function appendStep16ReceiptBindingExpectedOperationDurableForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+  input: Step16ReceiptBindingJournalExpectedOperationInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return appendStep16ReceiptBindingExpectedOperationDurableInternalV1(
+    capability,
+    input,
+  );
+}
+
+export function completeStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+  input: Step16ReceiptBindingJournalCompletionInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return completeStep16ReceiptBindingDurableJournalInternalV1(
+    capability,
+    input,
+  );
+}
+
+export function finalizeStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return finalizeStep16ReceiptBindingDurableJournalInternalV1(capability);
+}
+
+export function abortStep16ReceiptBindingDurableJournalForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return abortStep16ReceiptBindingDurableJournalInternalV1(capability);
+}
+
+export function verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerForTestInternalV1(
+  capability: Step16ReceiptBindingJournalCapabilityInternalV1,
+  input: Step16ReceiptBindingBrokerLedgerViewInternalV1,
+): Promise<void> {
+  requireTestProcessV1();
+  return verifyStep16ReceiptBindingDurableJournalAgainstBrokerLedgerInternalV1(
+    capability,
+    input,
+  );
+}
+
+export function deriveStep16ReceiptBindingOrderedPrefixDigestForTestInternalV1(
+  entries: readonly Step16ReceiptBindingBrokerLedgerEntryInternalV1[],
+): string {
+  requireTestProcessV1();
+  return deriveStep16ReceiptBindingOrderedPrefixDigestInternalV1(entries);
+}
+
 export function createProviderProductionStrongAuthorityServiceForTestInternalV1(
   broker: ProviderStrongMutationBrokerStoreInternalV1,
   trustedProviderIdentity:
@@ -639,4 +739,13 @@ export type {
   ProviderStrongMutationExecutionFenceCapabilityInternalV1,
   RegisterProviderStrongMutationLinuxExt4ExecutionFenceInputInternalV1,
   ProviderStrongMutationProductionSessionCallbacksInternalV1,
+  Step16ReceiptBindingBrokerLedgerEntryInternalV1,
+  Step16ReceiptBindingBrokerLedgerViewInternalV1,
+  Step16ReceiptBindingJournalArmInternalV1,
+  Step16ReceiptBindingJournalBaselineInternalV1,
+  Step16ReceiptBindingJournalCapabilityInternalV1,
+  Step16ReceiptBindingJournalCompletionInternalV1,
+  Step16ReceiptBindingJournalDurabilityHooksInternalV1,
+  Step16ReceiptBindingJournalExpectedOperationInternalV1,
+  Step16ReceiptBindingJournalStateInternalV1,
 };

@@ -125,6 +125,7 @@ export interface RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options {
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
+    signal: AbortSignal,
   ) => void | Promise<void>;
 }
 
@@ -137,6 +138,7 @@ interface CompiledSupervisorInternalV1 {
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
+    signal: AbortSignal,
   ) => void | Promise<void>;
 }
 
@@ -236,7 +238,7 @@ function compileSupervisorInternalV1(
         finish: () => finish(),
       });
     const compiledCallback: CompiledSupervisorInternalV1["onObservedCall"] =
-      (event) => onObservedCall(event);
+      (event, signal) => onObservedCall(event, signal);
     return Object.freeze({
       streamObserver: compiledObserver,
       onObservedCall: compiledCallback,
@@ -617,6 +619,9 @@ async function runStep16RealHostJsonlSessionCoreV1(
     | "transcript_rejected"
     | undefined;
   let termination: Promise<void> | undefined;
+  const supervisorAbortController = supervisor === undefined
+    ? undefined
+    : new AbortController();
   let resolveFailureObserved: (() => void) | undefined;
   const failureObserved = new Promise<void>((resolve) => {
     resolveFailureObserved = resolve;
@@ -632,17 +637,43 @@ async function runStep16RealHostJsonlSessionCoreV1(
   let stdoutEofObserved = false;
   let stdoutWork = Promise.resolve();
 
+  const supervisorWorkAbortedV1 = (): boolean =>
+    supervisorAbortController?.signal.aborted ?? false;
+
+  const abortSupervisorWorkV1 = (
+    code: Step16RealHostExecutionErrorCodeV1,
+  ): void => {
+    supervisorAbortController?.abort(
+      new Step16RealHostExecutionErrorV1(code),
+    );
+    resolveFailureObserved?.();
+    // A paused stdout can retain unread bytes after the Host exits and prevent
+    // ChildProcess.close forever. Failed supervised runs need no more output;
+    // release that pipe without feeding or resuming any queued observations.
+    if (supervisorAbortController !== undefined) child.stdout.destroy();
+  };
+
   const beginTermination = (
     code: NonNullable<typeof failureCode>,
   ): void => {
     if (failureCode !== undefined) return;
     failureCode = code;
-    resolveFailureObserved?.();
+    abortSupervisorWorkV1(code);
     termination = terminateProcessTreeV1(child);
   };
 
+  const failAfterSpawnV1 = (
+    code: Step16RealHostExecutionErrorCodeV1,
+  ): never => {
+    abortSupervisorWorkV1(code);
+    return failV1(code);
+  };
+
   const processObservedText = async (text: string, atEof: boolean): Promise<void> => {
-    if (failureCode !== undefined || supervisor === undefined) return;
+    if (
+      failureCode !== undefined || supervisor === undefined ||
+      supervisorWorkAbortedV1()
+    ) return;
     stdoutLineBuffer += text;
     const lines = stdoutLineBuffer.split("\n");
     stdoutLineBuffer = lines.pop() ?? "";
@@ -651,7 +682,10 @@ async function runStep16RealHostJsonlSessionCoreV1(
       stdoutLineBuffer = "";
     }
     for (const line of lines) {
-      if (failureCode !== undefined) return;
+      if (
+        failureCode !== undefined ||
+        supervisorWorkAbortedV1()
+      ) return;
       let observed: Step16RealHostObservedCallInternalV1 | undefined;
       try {
         observed = supervisor.streamObserver.feed(line);
@@ -660,12 +694,35 @@ async function runStep16RealHostJsonlSessionCoreV1(
         return;
       }
       if (observed !== undefined) {
+        const signal = supervisorAbortController?.signal;
+        if (
+          signal === undefined ||
+          signal.aborted ||
+          failureCode !== undefined
+        ) return;
+        let callbackResult: void | Promise<void>;
         try {
-          await supervisor.onObservedCall(observed);
+          callbackResult = supervisor.onObservedCall(observed, signal);
         } catch {
           beginTermination("io_failed");
           return;
         }
+        const callbackOutcome = await Promise.race([
+          Promise.resolve(callbackResult).then(
+            () => "completed" as const,
+            () => "rejected" as const,
+          ),
+          failureObserved.then(() => "aborted" as const),
+        ]);
+        if (callbackOutcome === "rejected") {
+          if (failureCode === undefined) beginTermination("io_failed");
+          return;
+        }
+        if (
+          callbackOutcome === "aborted" ||
+          signal.aborted ||
+          failureCode !== undefined
+        ) return;
       }
     }
   };
@@ -676,7 +733,10 @@ async function runStep16RealHostJsonlSessionCoreV1(
       .then(work)
       .catch(() => beginTermination("io_failed"))
       .then(() => {
-        if (failureCode === undefined) child.stdout.resume();
+        if (
+          failureCode === undefined &&
+          !supervisorWorkAbortedV1()
+        ) child.stdout.resume();
       });
   };
 
@@ -691,6 +751,10 @@ async function runStep16RealHostJsonlSessionCoreV1(
     stdoutChunks.push(chunk);
     if (supervisor !== undefined && stdoutDecoder !== undefined) {
       enqueueStdoutWork(async () => {
+        if (
+          failureCode !== undefined ||
+          supervisorWorkAbortedV1()
+        ) return;
         let text: string;
         try {
           text = stdoutDecoder.decode(chunk, { stream: true });
@@ -717,6 +781,10 @@ async function runStep16RealHostJsonlSessionCoreV1(
     stdoutEofObserved = true;
     if (supervisor !== undefined && stdoutDecoder !== undefined) {
       enqueueStdoutWork(async () => {
+        if (
+          failureCode !== undefined ||
+          supervisorWorkAbortedV1()
+        ) return;
         let text: string;
         try {
           text = stdoutDecoder.decode();
@@ -731,6 +799,7 @@ async function runStep16RealHostJsonlSessionCoreV1(
   child.stderr.once("error", () => beginTermination("io_failed"));
   child.stdin.once("error", () => {
     stdinWriteFailed = true;
+    if (supervisor !== undefined) beginTermination("io_failed");
   });
 
   const completion = new Promise<ChildOutcomeV1>((resolveCompletion) => {
@@ -746,25 +815,43 @@ async function runStep16RealHostJsonlSessionCoreV1(
     child.stdin.end(input.prompt, "utf8");
   } catch {
     stdinWriteFailed = true;
+    if (supervisor !== undefined) beginTermination("io_failed");
   }
 
   const outcome = await completion;
   if (supervisor !== undefined) {
+    if (spawnFailed) {
+      abortSupervisorWorkV1("spawn_failed");
+    } else if (outcome.signal !== null) {
+      abortSupervisorWorkV1("signaled");
+    } else if (outcome.code !== 0) {
+      abortSupervisorWorkV1("nonzero_exit");
+    } else if (stdinWriteFailed) {
+      abortSupervisorWorkV1("stdin_write_failed");
+    }
     await Promise.race([stdoutWork, failureObserved]);
   }
   clearTimeout(timer);
   await termination;
   if (failureCode !== undefined) return failV1(failureCode);
-  if (spawnFailed) return failV1("spawn_failed");
-  if (outcome.signal !== null) return failV1("signaled");
-  if (outcome.code !== 0) return failV1("nonzero_exit");
-  if (stdinWriteFailed) return failV1("stdin_write_failed");
-  if (supervisor !== undefined && !stdoutEofObserved) return failV1("io_failed");
+  if (spawnFailed) return failAfterSpawnV1("spawn_failed");
+  if (outcome.signal !== null) return failAfterSpawnV1("signaled");
+  if (outcome.code !== 0) return failAfterSpawnV1("nonzero_exit");
+  if (stdinWriteFailed) return failAfterSpawnV1("stdin_write_failed");
+  if (supervisor !== undefined && !stdoutEofObserved) {
+    return failAfterSpawnV1("io_failed");
+  }
 
   const stdout = Buffer.concat(stdoutChunks, stdoutBytes);
   const stderr = Buffer.concat(stderrChunks, stderrBytes);
-  const transcript = decodeUtf8V1(stdout);
-  decodeUtf8V1(stderr);
+  let transcript: string;
+  try {
+    transcript = decodeUtf8V1(stdout);
+    decodeUtf8V1(stderr);
+  } catch (error) {
+    supervisorAbortController?.abort(error);
+    throw error;
+  }
   let receipt: RealHostTranscriptReceiptV1;
   try {
     receipt = normalizeStep16RealHostJsonlTranscriptV1(
@@ -773,17 +860,23 @@ async function runStep16RealHostJsonlSessionCoreV1(
       expectedEventPlan,
     );
   } catch {
-    return failV1("transcript_rejected");
+    return failAfterSpawnV1("transcript_rejected");
   }
   if (supervisor !== undefined) {
     let observedReceipt: RealHostTranscriptReceiptV1;
     try {
       observedReceipt = supervisor.streamObserver.finish();
     } catch {
-      return failV1("transcript_rejected");
+      return failAfterSpawnV1("transcript_rejected");
     }
-    if (JSON.stringify(observedReceipt) !== JSON.stringify(receipt)) {
-      return failV1("transcript_rejected");
+    let receiptsMatch = false;
+    try {
+      receiptsMatch = JSON.stringify(observedReceipt) === JSON.stringify(receipt);
+    } catch {
+      return failAfterSpawnV1("transcript_rejected");
+    }
+    if (!receiptsMatch) {
+      return failAfterSpawnV1("transcript_rejected");
     }
   }
 

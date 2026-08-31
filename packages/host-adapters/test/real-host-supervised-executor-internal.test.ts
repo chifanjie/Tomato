@@ -56,6 +56,7 @@ const HOST_SHIM_SOURCE_V1 = [
   'const { readFileSync, writeFileSync } = require("node:fs");',
   'readFileSync(0);',
   'if (process.env.TEST_SPAWN_FILE) writeFileSync(process.env.TEST_SPAWN_FILE, "spawned", { mode: 0o600 });',
+  'if (process.env.TEST_EXIT_FILE) process.on("exit", code => writeFileSync(process.env.TEST_EXIT_FILE, String(code), { mode: 0o600 }));',
   'const chunks = JSON.parse(process.env.TEST_CHUNKS_BASE64 || "[]");',
   'let index = 0;',
   'const writeNext = () => {',
@@ -63,7 +64,8 @@ const HOST_SHIM_SOURCE_V1 = [
   '    if (process.env.TEST_HOLD_OPEN === "true") setInterval(() => undefined, 1000);',
   '    return;',
   '  }',
-  '  const chunk = Buffer.from(chunks[index++], "base64");',
+  '  let chunk = Buffer.from(chunks[index++], "base64");',
+  '  if (index === chunks.length && process.env.TEST_STDOUT_PAD_BYTES) chunk = Buffer.concat([chunk, Buffer.alloc(Number(process.env.TEST_STDOUT_PAD_BYTES), 0x20)]);',
   '  process.stdout.write(chunk, () => setImmediate(writeNext));',
   '};',
   'writeNext();',
@@ -163,6 +165,8 @@ function inputV1(
     chunks?: readonly string[];
     holdOpen?: boolean;
     spawnFile?: string;
+    exitFile?: string;
+    stdoutPaddingBytes?: number;
   }> = {},
 ): RunStep16RealHostJsonlSessionV1Input {
   return {
@@ -180,6 +184,10 @@ function inputV1(
       ...(options.spawnFile === undefined
         ? {}
         : { TEST_SPAWN_FILE: options.spawnFile }),
+      ...(options.exitFile === undefined ? {} : { TEST_EXIT_FILE: options.exitFile }),
+      ...(options.stdoutPaddingBytes === undefined
+        ? {}
+        : { TEST_STDOUT_PAD_BYTES: String(options.stdoutPaddingBytes) }),
     },
     expectedEventPlan: EXPECTED_PLAN_V1,
     expectedHostActionInputs: [],
@@ -270,14 +278,21 @@ describe("Step16 supervised real Host executor (internal)", () => {
     const fixture = await fixtureV1();
     const finishCounter = { value: 0 };
     const timeline: string[] = [];
+    let observedSignal: AbortSignal | undefined;
 
     await expectExecutionCodeV1(
       runStep16RealHostJsonlSessionWithSupervisorInternalV1(
         inputV1(fixture, { holdOpen: true }),
         {
           streamObserver: recordingObserverV1(timeline, finishCounter),
-          onObservedCall(event) {
+          onObservedCall(event, signal) {
             if (!Object.hasOwn(event, "success")) {
+              observedSignal = signal;
+              signal.addEventListener(
+                "abort",
+                () => timeline.push("callback:abort"),
+                { once: true },
+              );
               throw new Error("controlled callback rejection");
             }
           },
@@ -287,6 +302,99 @@ describe("Step16 supervised real Host executor (internal)", () => {
     );
 
     expect(timeline).toContain("feed:start");
+    expect(timeline).toContain("callback:abort");
+    expect(timeline).not.toContain("feed:complete");
+    expect(finishCounter.value).toBe(0);
+    expect(observedSignal?.aborted).toBe(true);
+    expect(observedSignal?.reason).toMatchObject({ code: "io_failed" });
+  });
+
+  it("times out even when an exited Host leaves paused unread stdout", async () => {
+    const fixture = await fixtureV1();
+    const finishCounter = { value: 0 };
+    const timeline: string[] = [];
+    const exitFile = join(fixture.root, "host-exit-code");
+    let observedSignal: AbortSignal | undefined;
+    const started = Date.now();
+
+    await expectExecutionCodeV1(
+      runStep16RealHostJsonlSessionWithSupervisorInternalV1(
+        {
+          ...inputV1(fixture, { exitFile, stdoutPaddingBytes: 180_000 }),
+          timeoutMs: 1_000,
+        },
+        {
+          streamObserver: recordingObserverV1(timeline, finishCounter),
+          onObservedCall(_event, signal) {
+            observedSignal = signal;
+            return new Promise<void>(() => undefined);
+          },
+        },
+      ),
+      "timeout",
+    );
+
+    expect(Date.now() - started).toBeLessThan(2_500);
+    // A zero exit marker proves this was not just a live Host killed by timeout.
+    expect(await readFile(exitFile, "utf8")).toBe("0");
+    expect(observedSignal?.aborted).toBe(true);
+    expect(timeline).toContain("feed:start");
+    expect(timeline).not.toContain("feed:complete");
+    expect(finishCounter.value).toBe(0);
+  }, 4_000);
+
+  it("aborts a timed-out pending callback and invalidates its late completion", async () => {
+    const fixture = await fixtureV1();
+    const finishCounter = { value: 0 };
+    const timeline: string[] = [];
+    let callbackCount = 0;
+    let observedSignal: AbortSignal | undefined;
+    let resolvePending: (() => void) | undefined;
+
+    await expectExecutionCodeV1(
+      runStep16RealHostJsonlSessionWithSupervisorInternalV1(
+        {
+          ...inputV1(fixture, { holdOpen: true }),
+          timeoutMs: 1_000,
+        },
+        {
+          streamObserver: recordingObserverV1(timeline, finishCounter),
+          onObservedCall(_event, signal) {
+            callbackCount += 1;
+            observedSignal = signal;
+            timeline.push("callback:started");
+            signal.addEventListener(
+              "abort",
+              () => timeline.push("callback:abort"),
+              { once: true },
+            );
+            return new Promise<void>((resolvePendingCallback) => {
+              resolvePending = () => {
+                timeline.push(`callback:late:${signal.aborted}`);
+                resolvePendingCallback();
+              };
+            });
+          },
+        },
+      ),
+      "timeout",
+    );
+    timeline.push("executor:returned");
+
+    expect(callbackCount).toBe(1);
+    expect(observedSignal?.aborted).toBe(true);
+    expect(observedSignal?.reason).toMatchObject({ code: "timeout" });
+    expect(timeline.indexOf("callback:abort")).toBeLessThan(
+      timeline.indexOf("executor:returned"),
+    );
+    expect(timeline).not.toContain("feed:complete");
+    expect(finishCounter.value).toBe(0);
+
+    expect(resolvePending).toBeTypeOf("function");
+    resolvePending?.();
+    await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
+    expect(timeline).toContain("callback:late:true");
+    expect(callbackCount).toBe(1);
     expect(timeline).not.toContain("feed:complete");
     expect(finishCounter.value).toBe(0);
   });

@@ -379,9 +379,9 @@ export interface WorkbenchDashboardRequestBindingV1 {
   readonly route: WorkbenchRouteV1;
 }
 
-/** Selects the last Provider-bound knowledge cut, never an arbitrary history path. */
+/** Selects a Provider-bound cut or an exact Task-bound pending candidate. */
 interface WorkbenchDashboardIndexSelectionV1 {
-  readonly indexVersion?: "published";
+  readonly indexVersion?: "published" | "pending";
   readonly indexGenerationId?: string;
 }
 
@@ -395,6 +395,7 @@ export type WorkbenchDashboardReadRequestV1 = WorkbenchDashboardRequestBindingV1
   | { readonly kind: "task_brief"; readonly taskId: string; readonly section: TaskBriefSectionV1 }
   | { readonly kind: "task_change_check"; readonly taskId: string }
   | { readonly kind: "task_verification"; readonly taskId: string }
+  | { readonly kind: "task_knowledge_candidates"; readonly taskId: string }
 );
 
 export type WorkbenchDashboardReadResultV1 =
@@ -1985,14 +1986,16 @@ function hasOnlySingleQueryValues(url: URL, allowed: ReadonlySet<string>): boole
 function dashboardIndexSelectionFromUrl(
   url: URL,
   kind: "graph" | "meta" | "wiki_index" | "wiki_search" | "wiki_page",
+  taskId: string | undefined,
 ): WorkbenchDashboardIndexSelectionV1 | undefined {
   if (!hasOnlySingleQueryValues(url, new Set(["indexVersion", "indexGenerationId"]))) return undefined;
   const indexVersion = url.searchParams.get("indexVersion");
   const indexGenerationId = url.searchParams.get("indexGenerationId");
   if (indexVersion === null && indexGenerationId === null) return {};
-  if (indexVersion !== "published") return undefined;
+  if (indexVersion !== "published" && indexVersion !== "pending") return undefined;
+  if (indexVersion === "pending" && taskId === undefined) return undefined;
   if (indexGenerationId === null) {
-    return kind === "meta" ? { indexVersion } : undefined;
+    return indexVersion === "published" && kind === "meta" ? { indexVersion } : undefined;
   }
   if (!/^generation-[0-9a-f]{64}$/u.test(indexGenerationId)) return undefined;
   return { indexVersion, indexGenerationId };
@@ -2023,7 +2026,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
   if (fixedKind !== undefined) {
     const selection = fixedKind === "config"
       ? hasOnlySingleQueryValues(url, new Set()) ? {} : undefined
-      : dashboardIndexSelectionFromUrl(url, fixedKind);
+      : dashboardIndexSelectionFromUrl(url, fixedKind, browser.route.taskId);
     if (selection === undefined) return { status: "invalid" };
     return {
       status: "matched",
@@ -2032,7 +2035,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
   }
 
   if (url.pathname.startsWith("/knowledge-base/")) {
-    const selection = dashboardIndexSelectionFromUrl(url, "wiki_page");
+    const selection = dashboardIndexSelectionFromUrl(url, "wiki_page", browser.route.taskId);
     if (selection === undefined) return { status: "invalid" };
     let relativePath: string;
     try {
@@ -2047,7 +2050,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
     return { status: "matched", request: { ...binding, ...selection, kind: "wiki_page", relativePath } };
   }
 
-  const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification)\.json$/u.exec(url.pathname);
+  const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification|knowledge-candidates)\.json$/u.exec(url.pathname);
   if (taskArtifact === null) return { status: "not_matched" };
   let taskId: string;
   try {
@@ -2077,7 +2080,8 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
     status: "matched",
     request: {
       ...binding,
-      kind: artifactKind === "change-check" ? "task_change_check" : "task_verification",
+      kind: artifactKind === "change-check" ? "task_change_check"
+        : artifactKind === "knowledge-candidates" ? "task_knowledge_candidates" : "task_verification",
       taskId,
     },
   };

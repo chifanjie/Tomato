@@ -1937,6 +1937,49 @@ export async function readPendingRepositoryIndexV1(input: Readonly<{
   return { ...verified, knowledgeLineage: metadata.knowledgeLineage };
 }
 
+/** Lists bounded, fully checked local candidates; this does not attest their source or publish them. */
+export async function listPendingRepositoryIndexesV1(input: Readonly<{
+  canonicalRoot: string;
+  taskId: string;
+}>): Promise<readonly Pick<PendingRepositoryIndexV1, "generation" | "knowledgeLineage">[]> {
+  const { canonicalRoot } = input;
+  const taskId = TaskIdSchema.parse(input.taskId);
+  const repository = await fs.lstat(canonicalRoot);
+  if (!path.isAbsolute(canonicalRoot) || path.resolve(canonicalRoot) !== canonicalRoot ||
+    !repository.isDirectory() || repository.isSymbolicLink() || await fs.realpath(canonicalRoot) !== canonicalRoot) {
+    throw new RepositoryIndexError("pending repository index root is not canonical");
+  }
+  let root: string;
+  try { root = await pendingRootV1(canonicalRoot, false); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return Object.freeze([]);
+    throw error;
+  }
+  const before = await pendingDirectoryV1(root);
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  if (entries.length > MAX_PENDING_GENERATIONS) throw new RepositoryIndexError("pending repository index capacity exceeded");
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  const candidates: Pick<PendingRepositoryIndexV1, "generation" | "knowledgeLineage">[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() ||
+      (!INDEX_GENERATION_ID.test(entry.name) && !/^\.tmp-generation-[0-9a-f]{64}-[0-9a-f]{32}$/u.test(entry.name))) {
+      throw new RepositoryIndexError("pending repository index entry is invalid");
+    }
+    await pendingDirectoryV1(path.join(root, entry.name));
+    if (entry.name.startsWith(".tmp-")) continue;
+    const candidate = await readPendingRepositoryIndexV1({ canonicalRoot, generationId: entry.name });
+    if (candidate.knowledgeLineage.taskId === taskId) {
+      candidates.push(Object.freeze({ generation: candidate.generation, knowledgeLineage: candidate.knowledgeLineage }));
+    }
+  }
+  const after = await pendingDirectoryV1(await pendingRootV1(canonicalRoot, false));
+  const namesAfter = (await fs.readdir(root)).sort((left, right) => left.localeCompare(right));
+  if (before.dev !== after.dev || before.ino !== after.ino ||
+    JSON.stringify(entries.map((entry) => entry.name)) !== JSON.stringify(namesAfter)) {
+    throw new RepositoryIndexError("pending repository index changed during listing");
+  }
+  return Object.freeze(candidates);
+}
+
 async function acquirePendingLockV1(lockPath: string): Promise<fs.FileHandle> {
   const create = () => fs.open(lockPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW, 0o600);
   try {

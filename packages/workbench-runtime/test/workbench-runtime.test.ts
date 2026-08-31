@@ -523,6 +523,206 @@ describe("workbench runtime session", () => {
     }
   });
 
+  it("maps exact pending knowledge selectors using only the session Task binding", async () => {
+    const root = await runtimeRoot("workbench-runtime-pending-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const generationId = `generation-${"c".repeat(64)}`;
+    const calls: WorkbenchDashboardReadRequestV1[] = [];
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId, section: "summary" } },
+      {
+        ...binding(root),
+        dashboardReader: async (input) => {
+          calls.push(input);
+          return input.kind === "wiki_page"
+            ? { status: "ready", text: "# Pending\n", contentType: "text/markdown; charset=utf-8" }
+            : { status: "ready", json: { kind: input.kind } };
+        },
+      },
+    );
+    try {
+      const base = `http://127.0.0.1:${session.port}`;
+      const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+      const launch = await fetch(`${base}/__workbench/launch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      const routes = [
+        ["/knowledge-graph.json", "graph"],
+        ["/meta.json", "meta"],
+        ["/knowledge-base/wiki-index.json", "wiki_index"],
+        ["/knowledge-base/search-index.json", "wiki_search"],
+        ["/knowledge-base/Overview.md", "wiki_page"],
+      ] as const;
+      for (const [route, kind] of routes) {
+        const response = await fetch(`${base}${route}?indexVersion=pending&indexGenerationId=${generationId}`, { headers });
+        expect(response.status, route).toBe(200);
+        expect(calls.at(-1)).toEqual({
+          productVersion: "0.1.0",
+          repositoryId: "repo:test",
+          worktreeId: "worktree:test",
+          sourceSnapshotId: "snapshot:test",
+          headCommit: null,
+          freshness: "fresh",
+          route: { view: "tasks", taskId, section: "summary" },
+          kind,
+          indexVersion: "pending",
+          indexGenerationId: generationId,
+          ...(kind === "wiki_page" ? { relativePath: "knowledge-base/Overview.md" } : {}),
+        });
+      }
+      const selector = `indexVersion=pending&indexGenerationId=${generationId}`;
+      expect((await fetch(`${base}/meta.json?${selector}`)).status).toBe(401);
+      expect((await fetch(`${base}/meta.json?${selector}`, {
+        headers: { cookie: "workbench_session=invalid" },
+      })).status).toBe(401);
+      expect(calls).toHaveLength(routes.length);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("rejects malformed, unpinned, and out-of-scope pending selectors before reading", async () => {
+    const root = await runtimeRoot("workbench-runtime-pending-invalid-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const generationId = `generation-${"c".repeat(64)}`;
+    const calls: WorkbenchDashboardReadRequestV1[] = [];
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      { ...binding(root), dashboardReader: async (input) => {
+        calls.push(input);
+        return { status: "ready", json: {} };
+      } },
+    );
+    try {
+      const base = `http://127.0.0.1:${session.port}`;
+      const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+      const launch = await fetch(`${base}/__workbench/launch`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      const selector = `indexVersion=pending&indexGenerationId=${generationId}`;
+      const invalidQueries = [
+        "indexVersion=Pending",
+        "indexVersion=pending&indexGenerationId=",
+        `indexVersion=pending&indexGenerationId=generation-${"C".repeat(64)}`,
+        `indexVersion=pending&indexGenerationId=generation-${"c".repeat(63)}`,
+        `indexVersion=pending&indexGenerationId=generation-${"c".repeat(65)}`,
+        "indexVersion=pending&indexGenerationId=..%2Fsecret",
+        `${selector}&indexVersion=pending`,
+        `${selector}&indexVersion=published`,
+        `${selector}&indexGenerationId=${generationId}`,
+        ...["taskId", "root", "canonicalRoot", "repositoryId", "worktreeId", "sourceSnapshotId", "session", "token", "extra"]
+          .map((name) => `${selector}&${name}=${name === "taskId" ? taskId : "override"}`),
+      ];
+      const invalidRoutes = [
+        ...invalidQueries.map((query) => `/meta.json?${query}`),
+        ...["/meta.json", "/knowledge-graph.json", "/knowledge-base/wiki-index.json", "/knowledge-base/search-index.json", "/knowledge-base/Overview.md"]
+          .map((route) => `${route}?indexVersion=pending`),
+        ...["/config.json", `/tasks/${taskId}/brief.json`, `/tasks/${taskId}/change-check.json`, `/tasks/${taskId}/verification.json`,
+          `/tasks/${taskId}/knowledge-candidates.json`, "/__workbench/task-brief", "/__workbench/context?surface=graph",
+          "/__workbench/trace", "/__workbench/evidence", `/tasks/${taskId}`, `/workbench?view=tasks&taskId=${taskId}`]
+          .map((route) => `${route}${route.includes("?") ? "&" : "?"}${selector}`),
+      ];
+      for (const route of invalidRoutes) {
+        const response = await fetch(`${base}${route}`, { headers });
+        expect(response.status, route).toBe(409);
+        await expect(response.json(), route).resolves.toEqual({ error: "dashboard_route_invalid" });
+      }
+      expect(calls).toEqual([]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("rejects pending reads without a session Task while preserving default and published reads", async () => {
+    const root = await runtimeRoot("workbench-runtime-pending-no-task-");
+    const generationId = `generation-${"c".repeat(64)}`;
+    const calls: WorkbenchDashboardReadRequestV1[] = [];
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks" } },
+      { ...binding(root), dashboardReader: async (input) => {
+        calls.push(input);
+        return { status: "ready", json: {} };
+      } },
+    );
+    try {
+      const base = `http://127.0.0.1:${session.port}`;
+      const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+      const launch = await fetch(`${base}/__workbench/launch`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      for (const route of ["/meta.json", "/knowledge-graph.json", "/knowledge-base/wiki-index.json", "/knowledge-base/search-index.json", "/knowledge-base/Overview.md"]) {
+        const response = await fetch(`${base}${route}?indexVersion=pending&indexGenerationId=${generationId}`, { headers });
+        expect(response.status, route).toBe(409);
+        await expect(response.json(), route).resolves.toEqual({ error: "dashboard_route_invalid" });
+      }
+      const candidates = await fetch(`${base}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/knowledge-candidates.json`, { headers });
+      expect(candidates.status).toBe(409);
+      expect(calls).toEqual([]);
+      expect((await fetch(`${base}/meta.json`, { headers })).status).toBe(200);
+      expect(calls.at(-1)).not.toHaveProperty("indexVersion");
+      expect((await fetch(`${base}/meta.json?indexVersion=published`, { headers })).status).toBe(200);
+      expect(calls.at(-1)).toMatchObject({ kind: "meta", indexVersion: "published" });
+      expect(calls.at(-1)).not.toHaveProperty("indexGenerationId");
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("maps Task knowledge candidates only for the session Task with no query overrides", async () => {
+    const root = await runtimeRoot("workbench-runtime-pending-candidates-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const calls: WorkbenchDashboardReadRequestV1[] = [];
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId, section: "summary" } },
+      { ...binding(root), dashboardReader: async (input) => {
+        calls.push(input);
+        return { status: "ready", json: { kind: input.kind } };
+      } },
+    );
+    try {
+      const base = `http://127.0.0.1:${session.port}`;
+      const route = `/tasks/${taskId}/knowledge-candidates.json`;
+      expect((await fetch(`${base}${route}`)).status).toBe(401);
+      const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+      const launch = await fetch(`${base}/__workbench/launch`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      const response = await fetch(`${base}${route}`, { headers });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ kind: "task_knowledge_candidates" });
+      expect(calls).toEqual([{
+        productVersion: "0.1.0", repositoryId: "repo:test", worktreeId: "worktree:test",
+        sourceSnapshotId: "snapshot:test", headCommit: null, freshness: "fresh",
+        route: { view: "tasks", taskId, section: "summary" }, kind: "task_knowledge_candidates", taskId,
+      }]);
+      const invalidRoutes = [
+        "/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/knowledge-candidates.json",
+        "/tasks/invalid/knowledge-candidates.json",
+        "/tasks/%E0%A4%A/knowledge-candidates.json",
+        ...["taskId", "section", "sourceSnapshotId", "root", "extra"].map((name) => `${route}?${name}=${taskId}`),
+        `${route}?indexVersion=published`,
+        `${route}?indexGenerationId=generation-${"c".repeat(64)}`,
+      ];
+      for (const invalidRoute of invalidRoutes) {
+        const invalid = await fetch(`${base}${invalidRoute}`, { headers });
+        expect(invalid.status, invalidRoute).toBe(409);
+        await expect(invalid.json(), invalidRoute).resolves.toEqual({ error: "dashboard_route_invalid" });
+      }
+      expect((await fetch(`${base}${route}`, {
+        headers: { cookie: "workbench_session=invalid" },
+      })).status).toBe(401);
+      expect(calls).toHaveLength(1);
+    } finally {
+      await session.close();
+    }
+  });
+
   it("reloads same-Task Finding and Evidence URLs without widening the launch capability", async () => {
     const root = await runtimeRoot("workbench-runtime-task-route-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";

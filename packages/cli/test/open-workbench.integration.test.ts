@@ -77,6 +77,22 @@ const PROVIDER_UNAVAILABLE = Object.freeze({
 });
 
 describe("open_workbench MCP capability lock", () => {
+  it("does not turn pending HTTP selectors into an open_workbench capability", async () => {
+    const root = await createGitRepository({ seedArtifacts: false });
+    const harness = testServer(await resolveInitialBinding([root]));
+    await initialize(harness.server);
+    await harness.server.handleValue({
+      jsonrpc: "2.0", id: 4, method: "tools/call",
+      params: { name: "open_workbench", arguments: {
+        route: { view: "tasks", taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV" },
+        indexVersion: "pending", indexGenerationId: `generation-${"a".repeat(64)}`,
+      } },
+    });
+    const failure = McpToolErrorResultV1Schema.parse(harness.response(4).result);
+    expect(failure.structuredContent.error.code).toBe("invalid_arguments");
+    await expect(access(path.join(root, ".understand-code"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("fails before opening legacy Task state or starting a loopback session", async () => {
     const root = await createGitRepository({ seedArtifacts: false });
     const sourceBefore = await snapshotRepositoryFiles(root);

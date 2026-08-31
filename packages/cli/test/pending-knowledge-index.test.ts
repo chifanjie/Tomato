@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRepositoryIndex,
   discardStagedRepositoryIndex,
+  listPendingRepositoryIndexesV1,
   openActiveRepositoryIndexV1,
   publishStagedRepositoryIndex,
   readPendingRepositoryIndexV1,
@@ -85,6 +86,48 @@ afterEach(async () => {
 });
 
 describe("durable pending knowledge index", () => {
+  it("lists only the requested Task after complete candidate validation without writing", async () => {
+    const scope = await fixture();
+    const input = { canonicalRoot: scope.canonicalRoot, taskId };
+    await expect(listPendingRepositoryIndexesV1(input)).resolves.toEqual([]);
+    await expect(readdir(path.join(scope.canonicalRoot, ".understand-code"))).rejects.toMatchObject({ code: "ENOENT" });
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    const other = withRepositoryIndexKnowledgeLineageV1({ ...scope.built, knowledgeLineage: {
+      ...pendingLineage, taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
+      requestDigest: `sha256:${"1".repeat(64)}`, idempotencyKeyDigest: `sha256:${"2".repeat(64)}`,
+    } });
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...other });
+    const pendingRoot = path.join(scope.canonicalRoot, ".understand-code/index-pending-v1");
+    const interrupted = `.tmp-${scope.built.generation.generationId}-${"f".repeat(32)}`;
+    await mkdir(path.join(pendingRoot, interrupted), { mode: 0o700 });
+    const before = (await readdir(pendingRoot)).sort();
+    expect(await listPendingRepositoryIndexesV1(input)).toEqual([
+      { generation: scope.built.generation, knowledgeLineage: pendingLineage },
+    ]);
+    expect((await readdir(pendingRoot)).sort()).toEqual(before);
+  });
+
+  it("refuses listing when any candidate payload is corrupt, including another Task's candidate", async () => {
+    const scope = await fixture();
+    const saved = await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    const graphPath = path.join(scope.canonicalRoot, ".understand-code/index-pending-v1", saved.generation.generationId, "knowledge-graph.json");
+    await writeFile(graphPath, "corrupt");
+    await expect(listPendingRepositoryIndexesV1({ canonicalRoot: scope.canonicalRoot, taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAW" }))
+      .rejects.toThrow(RepositoryIndexError);
+  });
+
+  it("bounds listing including interrupted drafts without cleaning any entry", async () => {
+    const scope = await fixture();
+    const pendingRoot = path.join(scope.canonicalRoot, ".understand-code/index-pending-v1");
+    await mkdir(pendingRoot, { recursive: true, mode: 0o700 });
+    for (let index = 0; index < 33; index += 1) {
+      await mkdir(path.join(pendingRoot, `.tmp-${scope.built.generation.generationId}-${index.toString(16).padStart(32, "0")}`), { mode: 0o700 });
+    }
+    const before = (await readdir(pendingRoot)).sort();
+    await expect(listPendingRepositoryIndexesV1({ canonicalRoot: scope.canonicalRoot, taskId })).rejects.toThrow(/capacity/u);
+    expect((await readdir(pendingRoot)).sort()).toEqual(before);
+  });
+
   it.each(["exit", "SIGKILL"] as const)("recovers a pending lock only after its real holder %s", async (termination) => {
     const scope = await fixture();
     const managedRoot = path.join(scope.canonicalRoot, ".understand-code");
@@ -255,6 +298,8 @@ describe("durable pending knowledge index", () => {
     await expect(readPendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot,
       generationId: saved.generation.generationId })).rejects.toThrow(RepositoryIndexError);
     await expect(savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built }))
+      .rejects.toThrow(RepositoryIndexError);
+    await expect(listPendingRepositoryIndexesV1({ canonicalRoot: scope.canonicalRoot, taskId }))
       .rejects.toThrow(RepositoryIndexError);
     expect(await readdir(moved)).toEqual(["index-pending-v1"]);
     expect(await readdir(path.join(moved, "index-pending-v1"))).toEqual([saved.generation.generationId]);

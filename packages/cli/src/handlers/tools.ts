@@ -101,8 +101,12 @@ import {
   readPublishedPulse,
 } from "../runtime/context.js";
 import {
+  listPendingRepositoryIndexesV1,
   openActiveRepositoryIndexV1,
+  readPendingRepositoryIndexV1,
+  RepositoryIndexError,
   type ActiveRepositoryIndexReaderV1,
+  type RepositoryIndexKnowledgeLineageV1,
 } from "../runtime/repository-indexer.js";
 
 export interface ToolRuntimeSelectionV1 {
@@ -1318,7 +1322,7 @@ async function dashboardBindingStatus(
 }
 
 async function readActiveIndexJsonFile(
-  index: ActiveRepositoryIndexReaderV1,
+  index: Pick<ActiveRepositoryIndexReaderV1, "read">,
   relativePath: string,
 ): Promise<{ readonly status: "ready"; readonly value: unknown } | { readonly status: "invalid" | "unavailable" }> {
   try {
@@ -1405,17 +1409,163 @@ async function taskDashboardProjection(
   return { status: "ready", json: { task: bundle.manifest, artifact, freshness } };
 }
 
+type DashboardKnowledgeIndexRequestV1 = Extract<WorkbenchDashboardReadRequestV1,
+  { kind: "graph" | "meta" | "wiki_index" | "wiki_search" | "wiki_page" }>;
+type DashboardKnowledgeTaskV1 = Awaited<ReturnType<typeof readTaskScopedContext>>["read"]["bundle"]["manifest"];
+
+async function knowledgeTaskForDashboardV1(
+  runtime: ProductionRuntimeV1,
+  input: WorkbenchDashboardReadRequestV1,
+): Promise<{ status: "ready"; task: DashboardKnowledgeTaskV1 } | { status: "missing" | "stale" | "invalid" }> {
+  const taskId = input.route.taskId;
+  if (taskId === undefined || (input.kind === "task_knowledge_candidates" && input.taskId !== taskId)) return { status: "invalid" };
+  let context: Awaited<ReturnType<typeof readTaskScopedContext>>;
+  try { context = await readTaskScopedContext(runtime, taskId); } catch { return { status: "missing" }; }
+  const task = context.read.bundle.manifest;
+  if (task.taskId !== taskId || task.taskProfile !== "agent_task_v1" || task.repositoryId !== input.repositoryId ||
+    task.worktreeId !== input.worktreeId || task.latestSnapshotId !== input.sourceSnapshotId) return { status: "stale" };
+  return { status: "ready", task: { ...task } };
+}
+
+/** A local draft never substitutes for the Provider-bound current Snapshot/Pulse. */
+async function pendingKnowledgeBindingStatusV1(
+  runtime: ProductionRuntimeV1,
+  input: WorkbenchDashboardReadRequestV1,
+): Promise<"ready" | "stale" | "invalid" | "unavailable"> {
+  try {
+    const provider = runtime.providerClient;
+    if (provider === undefined) return "unavailable";
+    const { authority } = await provider.inspectStrongRefreshAuthority(input.repositoryId, input.worktreeId);
+    if (authority === undefined) return "unavailable";
+    if (authority.repositoryId !== input.repositoryId || authority.worktreeId !== input.worktreeId) return "invalid";
+    if (authority.snapshotId !== input.sourceSnapshotId) return "stale";
+    const [snapshotRead, pulseRead] = await Promise.all([
+      runtime.store.readArtifact("repository_snapshot", { snapshotId: input.sourceSnapshotId }),
+      runtime.store.readArtifact("repo_pulse"),
+    ]);
+    if (snapshotRead.artifact.artifactType !== "repository_snapshot" || pulseRead.artifact.artifactType !== "repo_pulse" ||
+      snapshotRead.artifact.contentDigest !== authority.snapshotContentDigest ||
+      pulseRead.artifact.contentDigest !== authority.pulseContentDigest) return "unavailable";
+    const snapshot = StrongRepositorySnapshotV1Schema.parse(snapshotRead.artifact.payload);
+    const pulse = StrongRepoPulseV1Schema.parse(pulseRead.artifact.payload);
+    if (snapshot.repositoryId !== input.repositoryId || snapshot.worktreeId !== input.worktreeId ||
+      snapshot.snapshotId !== input.sourceSnapshotId ||
+      (snapshot.headState.kind === "commit" ? snapshot.headState.commit : null) !== input.headCommit) return "invalid";
+    return pulse.evaluatedSnapshotId === input.sourceSnapshotId ? "ready" : "stale";
+  } catch { return "unavailable"; }
+}
+
+function publicKnowledgeLineageV1(lineage: Extract<RepositoryIndexKnowledgeLineageV1, { status: "published" }>) {
+  return {
+    schemaVersion: 1, status: "published", taskId: lineage.taskId, taskRevision: lineage.taskRevision,
+    sourceSnapshotId: lineage.sourceSnapshotId,
+    ...(lineage.predecessorGenerationId === undefined ? {} : { predecessorGenerationId: lineage.predecessorGenerationId }),
+    candidateGenerationId: lineage.candidateGenerationId, currentCheckId: lineage.currentCheckId,
+    verificationIds: [...lineage.verificationIds],
+  };
+}
+
+async function knowledgeCandidatesForDashboardV1(
+  runtime: ProductionRuntimeV1,
+  input: Extract<WorkbenchDashboardReadRequestV1, { kind: "task_knowledge_candidates" }>,
+): Promise<WorkbenchDashboardReadResultV1> {
+  const context = await knowledgeTaskForDashboardV1(runtime, input);
+  if (context.status !== "ready") return context;
+  const binding = await pendingKnowledgeBindingStatusV1(runtime, input);
+  if (binding !== "ready") return dashboardReadFailure(binding);
+  try {
+    const provider = runtime.providerClient!;
+    const pin = await provider.inspectIndexPublicationAuthority();
+    const published = pin === undefined ? undefined
+      : await openStrongBoundActiveIndexV1(runtime, { generationId: pin.generationId });
+    if (published?.knowledgeLineage?.status === "pending") return dashboardReadFailure("invalid");
+    const lineage = published?.knowledgeLineage;
+    const candidates = await listPendingRepositoryIndexesV1({
+      canonicalRoot: runtime.store.layout.worktreeRoot, taskId: context.task.taskId,
+    });
+    if (candidates.some((candidate) => candidate.knowledgeLineage.taskRevision > context.task.revision)) return dashboardReadFailure("invalid");
+    const result = {
+      schemaVersion: 1, taskId: context.task.taskId, currentTaskRevision: context.task.revision,
+      currentSnapshotId: input.sourceSnapshotId,
+      candidates: candidates.map((candidate) => ({
+        candidateGenerationId: candidate.generation.generationId,
+        taskRevision: candidate.knowledgeLineage.taskRevision,
+        sourceSnapshotId: candidate.knowledgeLineage.sourceSnapshotId,
+        ...(candidate.knowledgeLineage.predecessorGenerationId === undefined ? {} : {
+          predecessorGenerationId: candidate.knowledgeLineage.predecessorGenerationId,
+        }),
+        sourceSnapshotMatchesCurrent: candidate.knowledgeLineage.sourceSnapshotId === input.sourceSnapshotId,
+        ...(published !== undefined && lineage?.status === "published" && lineage.taskId === context.task.taskId &&
+          lineage.candidateGenerationId === candidate.generation.generationId ? { publishedGenerationId: published.generation.generationId } : {}),
+      })),
+    };
+    if (published !== undefined) await assertStrongIndexAuthorityV1(runtime, published);
+    else if (await provider.inspectIndexPublicationAuthority() !== undefined) return dashboardReadFailure("unavailable");
+    const currentBinding = await pendingKnowledgeBindingStatusV1(runtime, input);
+    if (currentBinding !== "ready") return dashboardReadFailure(currentBinding);
+    const current = await knowledgeTaskForDashboardV1(runtime, input);
+    if (current.status !== "ready") return current;
+    if (current.task.revision !== context.task.revision) return dashboardReadFailure("stale");
+    return { status: "ready", json: result };
+  } catch (error) {
+    return dashboardReadFailure(error instanceof RepositoryIndexError ? "invalid" : "unavailable");
+  }
+}
+
+async function pendingKnowledgeForDashboardV1(
+  runtime: ProductionRuntimeV1,
+  input: DashboardKnowledgeIndexRequestV1,
+): Promise<WorkbenchDashboardReadResultV1> {
+  if (input.indexGenerationId === undefined || !/^generation-[0-9a-f]{64}$/u.test(input.indexGenerationId)) return dashboardReadFailure("invalid");
+  const context = await knowledgeTaskForDashboardV1(runtime, input);
+  if (context.status !== "ready") return context;
+  const binding = await pendingKnowledgeBindingStatusV1(runtime, input);
+  if (binding !== "ready") return dashboardReadFailure(binding);
+  try {
+    const candidate = await readPendingRepositoryIndexV1({
+      canonicalRoot: runtime.store.layout.worktreeRoot, generationId: input.indexGenerationId,
+    });
+    const lineage = candidate.knowledgeLineage;
+    if (lineage.taskId !== context.task.taskId) return dashboardReadFailure("invalid");
+    if (lineage.taskRevision > context.task.revision || lineage.sourceSnapshotId !== input.sourceSnapshotId) return dashboardReadFailure("stale");
+    const files = new Map(candidate.publication.files.map((file) => [file.relativePath, file.bytes]));
+    const result = await readDashboardIndexV1({ async read(relativePath) {
+      const bytes = files.get(relativePath);
+      if (bytes === undefined) throw new RepositoryIndexError("candidate index artifact is unavailable");
+      return Buffer.from(bytes);
+    } }, input, false, {
+      status: "pending", readOnly: true, evidenceEligible: false, taskId: lineage.taskId,
+      taskRevision: lineage.taskRevision, sourceSnapshotId: lineage.sourceSnapshotId,
+      currentSnapshotId: input.sourceSnapshotId, generationId: candidate.generation.generationId,
+    });
+    if (result.status !== "ready") return result;
+    const currentBinding = await pendingKnowledgeBindingStatusV1(runtime, input);
+    if (currentBinding !== "ready") return dashboardReadFailure(currentBinding);
+    const current = await knowledgeTaskForDashboardV1(runtime, input);
+    if (current.status !== "ready") return current;
+    if (current.task.revision !== context.task.revision) return dashboardReadFailure("stale");
+    return result;
+  } catch (error) {
+    return dashboardReadFailure(error instanceof RepositoryIndexError ? "invalid" : "unavailable");
+  }
+}
+
 /** Internal reader factory; not a public MCP or package-barrel entry point. */
 export const createWorkbenchDashboardReaderInternalV1 = (
   runtime: Awaited<ReturnType<typeof openRuntime>>,
 ): WorkbenchDashboardReaderV1 => async (input) => {
   const binding = await dashboardBindingStatus(runtime, input);
   if (binding !== "ready") return dashboardReadFailure(binding);
+  if (input.kind === "task_knowledge_candidates") return knowledgeCandidatesForDashboardV1(runtime, input);
   if (
     input.kind === "task_brief" ||
     input.kind === "task_change_check" ||
     input.kind === "task_verification"
   ) return taskDashboardProjection(runtime, input);
+
+  if ("indexVersion" in input && input.indexVersion === "pending") {
+    return pendingKnowledgeForDashboardV1(runtime, input);
+  }
 
   const published = "indexVersion" in input && input.indexVersion === "published";
   const requestedGenerationId = "indexGenerationId" in input ? input.indexGenerationId : undefined;
@@ -1436,7 +1586,15 @@ export const createWorkbenchDashboardReaderInternalV1 = (
     return dashboardReadFailure("unavailable");
   }
 
-  const result = await readDashboardIndexV1(activeIndex, input, published);
+  if (published && activeIndex.knowledgeLineage?.status === "pending") return dashboardReadFailure("invalid");
+  const result = await readDashboardIndexV1(activeIndex, input, published, published ? {
+    status: activeIndex.authority.sourceSnapshotId === input.sourceSnapshotId ? "current" : "historical",
+    generationId: activeIndex.generation.generationId,
+    sourceSnapshotId: activeIndex.authority.sourceSnapshotId,
+    currentSnapshotId: input.sourceSnapshotId,
+    finalizedProviderRevision: activeIndex.authority.finalizedProviderRevision,
+    ...(activeIndex.knowledgeLineage?.status === "published" ? { lineage: publicKnowledgeLineageV1(activeIndex.knowledgeLineage) } : {}),
+  } : undefined);
   if (published && result.status === "ready") {
     // Do not acknowledge a generation that ceased to be the Provider's pin
     // while its independently digest-checked files were being read.
@@ -1452,9 +1610,10 @@ export const createWorkbenchDashboardReaderInternalV1 = (
 };
 
 async function readDashboardIndexV1(
-  activeIndex: ActiveRepositoryIndexReaderV1,
-  input: Exclude<WorkbenchDashboardReadRequestV1, { kind: "task_brief" | "task_change_check" | "task_verification" }>,
+  activeIndex: Pick<ActiveRepositoryIndexReaderV1, "read">,
+  input: DashboardKnowledgeIndexRequestV1 | Extract<WorkbenchDashboardReadRequestV1, { kind: "config" }>,
   published: boolean,
+  knowledgeVersion?: Readonly<Record<string, unknown>>,
 ): Promise<WorkbenchDashboardReadResultV1> {
   const graphRead = await readActiveIndexJsonFile(
     activeIndex,
@@ -1484,13 +1643,7 @@ async function readDashboardIndexV1(
     ) return dashboardReadFailure("stale");
     if (input.kind === "meta") return { status: "ready", json: {
       ...publicDashboardMeta(meta.value, graph.nodes.length),
-      ...(published ? { knowledgeVersion: {
-        status: activeIndex.authority.sourceSnapshotId === input.sourceSnapshotId ? "current" : "historical",
-        generationId: activeIndex.generation.generationId,
-        sourceSnapshotId: activeIndex.authority.sourceSnapshotId,
-        currentSnapshotId: input.sourceSnapshotId,
-        finalizedProviderRevision: activeIndex.authority.finalizedProviderRevision,
-      } } : {}),
+      ...(knowledgeVersion === undefined ? {} : { knowledgeVersion }),
     } };
   }
   if (input.kind === "graph") return { status: "ready", json: graph };

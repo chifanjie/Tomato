@@ -1,4 +1,15 @@
-# 已发布知识版本浏览：限定范围的 Design QA
+# Task 知识审阅接线：源捕获受阻，尚未实施前端
+
+日期：2026-09-01。代码基线：`700d204`。目标仍是既有 Task/Graph/Wiki 的候选审阅和双向来源追溯，不新增页面、不删除 Overview/自由探索或稳定链接。
+
+- 已盘点 App、TaskFirstWorkbench、知识版本读取与现有 Task 路由；原 UI fixture 进程 PID26156 的完整 argv 已核对，仍为本任务的 `/private/tmp/understand-code-ui-fixture.RjlV3LyC/start.mjs`。
+- 当前 source visual truth 目标为原 launcher `http://127.0.0.1:62549/`。内置浏览器及按流程选择的 Chrome 均在导航时返回 `net::ERR_BLOCKED_BY_CLIENT`，没有可比较的新截图；已读取浏览器故障指引，没有更改权限、关闭防护、替换自动化机制或伪造浏览器结果。
+- 已请用户手动确认该本地页能否显示。此次未修改前端，未生成视觉方案，也未用旧截图或 HTTP 单测冒充当前源捕获。desktop/tablet/mobile、密度对齐、交互和可访问性比较均未开始；implementation screenshot 与 paired comparison 暂缺。
+- 后端候选发现/只读内容/Provider来源读取可独立继续，相关真实持久化及 HTTP 测试仅证明数据链，不证明视觉或原生模型验收。浏览器恢复后须先捕获现有界面，再实施并按同视口比较。
+
+final result: blocked
+
+# 历史：已发布知识版本浏览的限定范围 Design QA
 
 日期：2026-09-01。代码基线：`c38ee27`。范围仅为显式已发布版本浏览及其 Task/Graph/Wiki 交互，不代表第16步、Provider/原生模型 E2E、Gold、Task 知识晋级或完整无障碍验收通过。
 

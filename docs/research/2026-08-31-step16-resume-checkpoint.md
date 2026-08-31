@@ -5,13 +5,25 @@
 ## 当前游标
 
 - 第15步已完成；第16步进行中；第17步未完成。不要从旧 goal 元数据中的 Preview/第15步游标重新开始。
-- 当前续跑：基于 `23acd18977e3675a01b1f25916127aab67b85910` 完成 Task 待审知识/Verified 发布后端闭环，本切片以本提交记录为准；完整受影响包测试及正常 Preview 构建通过，独立复核无剩余 finding。不要重做历史浏览、原生插件生命周期或第15步；未完成的界面接线、真实模型任务和发行门保留在文末。
+- 当前续跑：基于 `700d204157ef56d1f47cabf2a9c89409522a714d` 完成 Task 候选发现、只读 Graph/Wiki 预览和已发布来源 HTTP 接口，见下一节；255项受影响完整测试及正常 Preview 构建通过，独立复核无剩余 finding。界面源捕获被浏览器工具拦截，按 Product Design 暂停前端修改，未以HTTP测试代替视觉验收。
+- Task 待审知识/Verified 发布后端闭环已提交推送 `700d204157ef56d1f47cabf2a9c89409522a714d`，本地/远端SHA一致，基线是 `23acd18977e3675a01b1f25916127aab67b85910`。不要重做历史浏览、原生插件生命周期或第15步；未完成的界面接线、真实模型任务和发行门保留在文末。
 - 2026-09-01：基于已推送的 `c38ee27` 完成显式已发布知识版本浏览切片，提交 `23acd18`；待审 Task 知识增量及 Verified 后晋级后端已在本切片接续完成，不再重做历史读取入口或已通过的插件生命周期。
 - 双插件切片的 21 个文件已精确提交并正常 push 为 `bf50a798055f3f2d5fe288a1f452f1381864ad28`，远端分支 SHA 已逐项核对相同。以下实现与无模型 E2E 证据均保留，不重新打开已关闭的包测试或插件预检。
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
 
-## Task 待审知识与 Verified 发布后端已实现（23acd18 基线）
+## Task 候选审阅 HTTP 接口已实现（700d204 基线）
+
+- 在现有已兑换 Workbench 会话内，`GET /tasks/:taskId/knowledge-candidates.json` 返回该Task的知识候选；严格复用会话Task绑定，不接受query覆盖Task。列表上限32、逐候选验证完整文件集合与摘要、owner/mode/no-follow，缺目录返回空列表且不创建目录，不清理任何候选。
+- 沿用5个知识GET，通过 `indexVersion=pending&indexGenerationId=<候选代际ID>` 读取同一候选的Graph/meta/Wiki索引/搜索/正文；pending连meta也要求精确ID。Task仅来自会话route，跨Task、未来Task revision、不同当前Snapshot、任意页面路径、重复/额外query均拒绝。候选meta明确 `status:"pending", readOnly:true, evidenceEligible:false`，不改变Task/Evidence读取或任何Provider/Store状态。
+- pending/list在读取前后复用现有 `inspectStrongRefreshAuthority`，与ArtifactStore已验证Snapshot/Pulse envelope的contentDigest精确匹配，并复核Task revision；无active知识的首次候选可读，但缺Provider refresh绑定不可退回本地。候选自摘要不是来源权威，发布仍必须走 `700d204` 的verified+确定性重建门。
+- 已发布meta新增可选来源lineage：Task ID/revision、Snapshot、前驱/候选代际、Check及Verification IDs；只在原Provider五字段pin前后核验后给出，不暴露request/key digest。列表仅凭此认证lineage标记 `publishedGenerationId`：发布后的原候选仍保留，不能把所有候选都称为“未发布”。初次非Task发布保持无lineage兼容。
+- 主线真实index build/save/publish文件及真实loopback会话/HTTP集成9项先红后绿；Task、Snapshot/Pulse和Provider权威读端口使用明确fixture，不冒充真实ProviderStore、原生模型或Gold。最终完整门禁：Workbench Runtime 16 passed、CLI 239 passed，共255、零失败；Runtime/CLI类型检查、正常Preview build及精确11个Tool清单通过。没有修改前端或重跑未变化的Provider/TaskEngine/ArtifactStore全包与原生插件预检。
+- 一轮独立只读复核完成，无可执行P0/P1/P2。源码与测试已冻结；当前HTTP能力具备精确提交条件，不据此关闭第16步。
+- Product Design已盘点App/TaskFirstWorkbench/知识版本与路由，但内置浏览器和Chrome均无法导航原 `http://127.0.0.1:62549/`，报 `net::ERR_BLOCKED_BY_CLIENT`；原自有UI进程PID26156仍在，未重启或改安全配置。已请用户手动确认页面能否打开。当前 `design-qa.md` 明确 `final result: blocked`，三屏/交互/a11y及UI接线均未完成，没有复用旧图冒充当前源捕获。
+- 本轮原Codex登录session16592经一次handle轮询确认仍运行、无新输出；没有重启登录、读取/复制凭证或调用模型。基线700d204的[Actions run33424808594](https://github.com/chifanjie/Tomato/actions/runs/33424808594)已核验：steps为空，annotation为账户付款/spending limit，非CI green；没有重试或修改计费。新提交须核验自己的SHA/run。
+
+## Task 待审知识与 Verified 发布后端已实现（23acd18 基线，提交700d204）
 
 - 不新增 Tool：`refresh_index` 的可选 `knowledge.action=stage|publish` 要求 full 模式、明确 Snapshot 和 Task revision；仅读取 Task，不借刷新改变 Task 状态。未验证候选独立存于 `.understand-code/index-pending-v1`，不写 Provider business cut、Snapshot、Pulse 或 active index。默认公开 strong writer 继续锁定。
 - 候选记录 Task/Snapshot/前驱知识版本及请求摘要，来源文件进入 generation 摘要。保存/读取校验完整文件集合和摘要、canonical/no-follow/owner/权限；32项满额拒绝、不驱逐待审数据。同key异请求返回既有 `idempotency_conflict`；真实进程退出或SIGKILL后的完整锁仅在PID明确不存在时精确恢复，活进程/残缺锁保持失败关闭。
@@ -94,7 +106,7 @@
 
 ## 从这里继续
 
-- 最新切片已补齐持久待审知识、真实 Provider-committed Task verified 权威及原候选 Graph/Wiki 字节的原子晋级；现有 published 只读浏览也已完成。下一产品工作是在既有 Task/Graph/Wiki 内接通待审发现/审阅和双向来源追溯，按原目标补完整真实任务与发行门。动前端前使用 Product Design，保留 Overview/自由探索与稳定路由，不新增展示页或重做第15步。当前候选32项满额拒绝、发布后保留来源，不声称已具备候选管理界面。
+- 最新切片已在持久候选/Verified晋级之上接通真实候选发现、同代Graph/Wiki只读预览与认证发布来源HTTP读取；现有 published 只读浏览也已完成。下一产品工作是在既有 Task/Graph/Wiki 内使用这些接口接通审阅和双向来源追溯，不重写接口或重跑已通过后端门。先解决本轮浏览器源捕获拦截，再按 Product Design 采集并实施；保留 Overview/自由探索与稳定路由，不新增展示页或重做第15步。当前候选32项满额拒绝、发布后保留来源，不声称已有候选管理界面。
 - 未 verified 的 Task 不得提前 finalize full 或发布 Graph/Wiki；record_verification 成功仍不等于 Task 已 verified。以下原生登录与发行阻点继续保留；本轮受影响后端完整门禁已通过，没有新失败或输入变化不重复运行。
 
 - 下一实际断点是隔离环境的原生登录，以及登录后的完整真实任务；Linux root 双插件 preflight 已实际通过，不重开此门，不回落手工 MCP 冒充 Host。

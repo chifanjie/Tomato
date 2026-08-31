@@ -104,7 +104,10 @@ export function resolveWikiAvailability(
   return status;
 }
 
-export function WikiAvailabilityView({ status }: { status: WikiFailureStatus }) {
+export function WikiAvailabilityView({ status, onRetry }: {
+  status: WikiFailureStatus;
+  onRetry?: () => void;
+}) {
   const copy = WIKI_AVAILABILITY_COPY[status];
   return (
     <main className="flex min-h-0 flex-1 items-center justify-center bg-root px-5 py-10">
@@ -113,6 +116,15 @@ export function WikiAvailabilityView({ status }: { status: WikiFailureStatus }) 
           {copy.title}
         </h2>
         <p className="mt-3 text-sm leading-7 text-text-secondary">{copy.description}</p>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-5 min-h-11 rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent"
+          >
+            重新读取知识库
+          </button>
+        )}
       </section>
     </main>
   );
@@ -786,6 +798,7 @@ function Dashboard({
   const setConsoleGraph = useDashboardStore((state) => state.setConsoleGraph);
   const setWikiIndex = useDashboardStore((state) => state.setWikiIndex);
   const [wikiAvailability, setWikiAvailability] = useState<WikiAvailabilityStatus>("loading");
+  const retryWikiRef = useRef<(() => void) | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
 
@@ -793,9 +806,13 @@ function Dashboard({
     let cancelled = false;
     let attempts = 0;
     let retryTimer: number | undefined;
+    let inFlight = false;
 
     async function loadWiki(): Promise<void> {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       const result = await loadDashboardKnowledge(accessToken);
+      inFlight = false;
       if (cancelled) return;
       const availability = applyDashboardKnowledgeResult(result, {
         setWikiIndex,
@@ -811,9 +828,18 @@ function Dashboard({
       }, WIKI_RELOAD_INTERVAL_MS);
     }
 
+    retryWikiRef.current = () => {
+      if (cancelled || inFlight) return;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      retryTimer = undefined;
+      attempts = 0;
+      setWikiAvailability("loading");
+      void loadWiki();
+    };
     void loadWiki();
     return () => {
       cancelled = true;
+      retryWikiRef.current = null;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [accessToken, onTokenInvalid, setWikiIndex]);
@@ -860,6 +886,7 @@ function Dashboard({
             loadError={loadError}
             graphIssues={graphIssues}
             wikiAvailability={wikiAvailability}
+            onRetryWiki={() => retryWikiRef.current?.()}
             taskContext={taskContext}
           />
         </ThemeProvider>
@@ -874,6 +901,7 @@ function DashboardContent({
   loadError,
   graphIssues,
   wikiAvailability,
+  onRetryWiki,
   taskContext,
 }: {
   accessToken: string;
@@ -881,6 +909,7 @@ function DashboardContent({
   loadError: string | null;
   graphIssues: GraphIssue[];
   wikiAvailability: WikiAvailabilityStatus;
+  onRetryWiki: () => void;
   taskContext?: TaskDashboardContext;
 }) {
   const graph = useDashboardStore((state) => state.graph);
@@ -1113,7 +1142,7 @@ function DashboardContent({
               wikiNavigationRevision={wikiNavigationRevision}
             />
           ) : (
-            <WikiAvailabilityView status={wikiAvailability} />
+            <WikiAvailabilityView status={wikiAvailability} onRetry={onRetryWiki} />
           )
         ) : (
           <GraphChunkErrorBoundary onBackToWiki={() => selectSurface("wiki")}>

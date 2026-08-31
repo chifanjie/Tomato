@@ -5,10 +5,20 @@
 ## 当前游标
 
 - 第15步已完成；第16步进行中；第17步未完成。不要从旧 goal 元数据中的 Preview/第15步游标重新开始。
+- 双插件切片的 21 个文件已精确提交并正常 push 为 `bf50a798055f3f2d5fe288a1f452f1381864ad28`，远端分支 SHA 已逐项核对相同。以下实现与无模型 E2E 证据均保留，不重新打开已关闭的包测试或插件预检。
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
 
-## 本轮实现与核验（以 ecc9d3b 为基线）
+## Wiki 恢复切片（以 bf50a79 为基线）
+
+- 按原目标要求使用 Product Design，对现有Task/Graph/Wiki做截图和源码盘点；没有新建展示页、增加步骤或替换原Overview/自由探索。更新后的skill缓存实际为Product Design 0.1.53，旧0.1.52路径已移除；恢复时使用实际路径，不重复失败读取、不修改受保护`.learnings/`。
+- 修复Wiki索引失败后无页内恢复入口：沿用现有样式，自动/手动重试共用单请求闸门；手动重试取消旧timer、重置既有有限次数、不刷新整页、不重拉Task或Graph、不改变路由。既有卸载取消与401/403失效逻辑不变。
+- 新回归先在缺少按钮处失败；修复后53项定向测试通过，随后仅一次Dashboard完整回归54文件/585 passed（6.05秒）；正常Preview build与一次独立代码审查通过。没有重跑未改变的Authority/Artifact/Host全门禁或双插件预检。
+- 实际production WorkbenchRuntime + 新打包React UI，在1280×720、768×1024、390×844三屏对照截图；页内点击恢复、Wiki正文→Graph→Wiki→Task正常，恢复前后URL相同。仅隔离UI fixture，不接Provider、不调用模型、不计Gold。键盘工具未触发默认动作，完整键盘/a11y仍未确认，未伪造通过。详见根目录`design-qa.md`，不得把其中限定范围的passed提升为第16步通过。
+- UI fixture保留在`/private/tmp/understand-code-ui-fixture.RjlV3LyC`，当前launcher `http://127.0.0.1:65438/`，自有PID41422；GET时才签发原60秒token，没有延长生产TTL或绕过cookie校验。新Dashboard inventory `sha256:725acfa47d2f69111fb97ce5dd0e2d3d8e17f303786b46a91f1ea98fbeed4bae`。此Mac UI构建尚未替换VM已安装的双插件包。
+- 原生Codex登录进程仍在等待用户完成浏览器授权，未收到登录成功；Claude沿用下方用户终端脚本。没有读取/复制凭证，也没有开始真实模型任务。后续先接续这两个登录和原目标，不重开第15步。
+
+## 双插件实现与核验（以 ecc9d3b 为基线）
 
 - 已补 Codex 0.151.0 的内部受限源码修改：默认只读不变；仅一个既有文件 update，最小 flat leaf 目录可写、现有邻接文件只读，root 检查完整文件集合、inode/类型/模式/属主及精确 before/after 内容。不是内核单文件许可。实际 native sandbox + 官方 apply_patch 在 VM 正向通过，受影响 Linux/root executor 专项 18/18 通过；fixture `/var/tmp/step16-codex-native-patch-cBppBe` 保留。`Supervisor.run` 已透传此显式策略。
 - 固定 whole-run 计划新增显式 `argumentsDigest: null` 延迟槽。仅 root composition 安装的 resolver 可在 arm 前从 Provider 产物派生精确参数摘要；实际 observer 的摘要通过 `arm_derived` 传入，独立比对后才开 Provider 窗口。固定槽仍拒绝此帧；不更换 runNonce、不按调用重置 4096 预算、不提前 finalize。实际 UDS client/server 正反往返、身份 await 前快照、lease loss、N/N 用例通过。
@@ -52,5 +62,7 @@
 - 两套真实 CLI 还需配置、登录和完整会话；不复制 Mac 凭证、不以 root 身份运行模型。用户已收到浏览器授权协作询问，尚无登录或模型调用。Codex 支持 `login --device-auth`；Claude `auth login` 支持订阅默认/`--claudeai`、`--console`、`--email`、`--sso`，帮助未承诺无浏览器或非交互模式。准备环境不等于真实 session 通过。
 - Linux 工作区 `/var/tmp/understand-code-step16.OlMGFa` 已同步 `ecc9d3b` 归档和本轮功能源码/测试并重新 build；后续产品修复须同步后验证。VM 保持运行，不重复创建。Mac CLI 和用户配置未改，只有上述本任务 Lima 内存配置调整。
 - 新 SHA `ecc9d3b` 的 [Actions run 33373972282](https://github.com/chifanjie/Tomato/actions/runs/33373972282) 已单独核验：jobs 未启动，annotation 明确为账户付款失败或 spending limit。与基线 38a70ae/run33355268029 相同外部阻碍；不是代码测试失败，也不是通过，不自行更改计费、无状态变化不重试同一 run。
+- 本轮新 SHA `bf50a798055f3f2d5fe288a1f452f1381864ad28` 的 [Actions run 33398668214](https://github.com/chifanjie/Tomato/actions/runs/33398668214) 同 SHA 核验完成：失败 jobs 的 steps 为空，C09 aggregate 与 Workspace quality 两项 annotation 均明确为账户付款失败或 spending limit，未开始代码测试；不是本地通过的替代，也不能写成 CI green。不自行改计费，不重跑未变化的同一 run。
+- 原生登录续接：当前隔离 Codex 的 `login --device-auth` 返回 HTTP403，未据此推断具体账户原因；已按官方方式启动普通浏览器登录，VM localhost:1455 经 Lima 转发到 Mac，本机探测已收到该服务 HTTP404。成功登录仍待确认，不记录或复制 auth/token 文件。Claude `auth login` 实际采用浏览器授权后回终端粘贴一次性 code 的方式；为避免聊天传递 code，未完成的代理持有会话已取消，用户可在自己的终端执行 `bash /tmp/step16-plugin-prep.6WCyZO/login-claude.sh`，该脚本仅从当前 root profile 加载隔离 env、清空附加组、降权到42003:42004并运行官方 CLI。两者均未调用模型；登录未完成不计真实任务通过。
 - 双 Agent 冷安装/升级、真实任务与恢复、Workbench/Graph/Wiki 的 Product Design 和多屏交互验收、双人 Product/QA、ALPHA-B/owner、发行门仍按原冻结范围推进；没有增加新的步骤或验收项。
 - 原有三份脏文档、`site/`、`.learnings/`、`.pnpm-store/`、topology-proof 和用户未跟踪源码/测试继续保持不动。

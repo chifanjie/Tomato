@@ -1191,7 +1191,7 @@ async function authorityRole(fixturePath) {
     throw new Error("production Acceptance authority Doctor is not ready");
   }
   const strict = await strictCryptoCapability();
-  const service = await openProviderProductionStrongAuthorityServiceV1({
+  const serviceInput = {
     serviceConfigPath: fixture.configPath,
     targetProfileId: fixture.targetProfileId,
     strictCryptoCapability: strict,
@@ -1200,7 +1200,16 @@ async function authorityRole(fixturePath) {
       rootMetadataHistory: fixture.registryHistory.rootMetadataHistory,
       registryManifestHistory: fixture.registryHistory.registryManifestHistory,
     }),
-  });
+  };
+  const step16Enabled = process.env.RUN_STEP16_DUAL_HOST_E2E === "1";
+  const preflightOnly = step16Enabled && process.env.UNDERSTAND_CODE_STEP16_PREFLIGHT_ONLY === "1";
+  const receiptAuthority = step16Enabled && !preflightOnly
+    ? await (await import("../../durable-object-provider-authority/dist/provider-production-strong-authority-service.js"))
+      .openProviderProductionStrongAuthorityServiceWithStep16ReceiptBindingInternalV1(serviceInput)
+    : undefined;
+  const service = receiptAuthority?.service ?? await openProviderProductionStrongAuthorityServiceV1(serviceInput);
+  let witnessServer;
+  let step16Ready = false;
   await writeFile(join(dirname(fixturePath), "authority.ready"), "ready\n", { mode: 0o644 });
   const stopPath = join(dirname(fixturePath), "authority.stop");
   const rotatePath = join(dirname(fixturePath), "authority.rotate-b");
@@ -1213,6 +1222,43 @@ async function authorityRole(fixturePath) {
         break;
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
+      }
+      if (step16Enabled && !step16Ready) {
+        const compositionPath = join(dirname(fixturePath), "step16-composition.json");
+        try {
+          await access(compositionPath);
+          const recipe = await import("./step16-root-fixed-workflow-linux.mjs");
+          const composition = await recipe.readStep16RootControlJsonV1(compositionPath);
+          if (composition.profile !== "step16_root_composition_v1" || composition.authorityPid !== process.pid ||
+            composition.mode !== (preflightOnly ? "preflight_only" : "witness") || !Number.isSafeInteger(composition.supervisorPid) || composition.supervisorPid <= 1 ||
+            digestValue(composition.closingPlan) !== digestValue(recipe.createStep16FixedClosingPlanV1(composition.closingPlan.runNonce))) {
+            throw new Error("Step16 root composition does not match the direct supervisor");
+          }
+          if (!preflightOnly) {
+            const { createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1 } = await import("../../durable-object-provider-authority/dist/provider-production-strong-authority-service.js");
+            const { startStep16HostCallWitnessUdsServerInternalV1 } = await import("../../durable-object-provider-authority/dist/step16-host-call-witness-uds-internal.js");
+            witnessServer = await startStep16HostCallWitnessUdsServerInternalV1({
+              socketPath: composition.witnessSocketPath,
+              directSupervisorPid: composition.supervisorPid,
+              closingPlan: composition.closingPlan,
+              authority: createProviderProductionStrongAuthorityStep16WitnessCallbacksInternalV1(receiptAuthority.receiptExportCapability),
+              timeoutMs: 60_000,
+              resolveArgumentsDigest: async (call) => {
+                const { openProviderProductionStrongObjectHostInternalV1 } = await import("../../durable-object-provider-client/dist/provider-production-strong-object-client.js");
+                const provider = await openProviderProductionStrongObjectHostInternalV1({ canonicalInstallationRoot: fixture.installRoot });
+                try {
+                  const stage = recipe.step16FixedWorkflowStagesV1().find((candidate) => candidate.eventOrdinal === call.eventOrdinal);
+                  if (stage === undefined || !stage.strong || stage.host !== call.host || stage.tool !== call.tool) throw new Error("unknown root-derived fixed call");
+                  return recipe.step16ArgumentsDigestV1(await recipe.step16FixedStageArgumentsV1(stage, { repositoryRoot: fixture.step16RepositoryRoot, provider }));
+                } finally { provider.close(); }
+              },
+            });
+          }
+          const ready = { authorityPid: process.pid, mode: composition.mode, witness: preflightOnly ? "not_started" : "listening" };
+          recipe.requireStep16AuthorityReadyV1(ready, composition.authorityPid, preflightOnly);
+          await writeFile(join(dirname(fixturePath), "step16-authority.ready"), `${JSON.stringify(ready)}\n`, { flag: "wx", mode: 0o600 });
+          step16Ready = true;
+        } catch (error) { if (error?.code !== "ENOENT") throw error; }
       }
       if (!rotated) {
         try {
@@ -1248,7 +1294,8 @@ async function authorityRole(fixturePath) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
     }
   } finally {
-    await service.close();
+    const { closeStep16AuthorityServicesV1 } = await import("./step16-root-fixed-workflow-linux.mjs");
+    await closeStep16AuthorityServicesV1(witnessServer, service);
   }
 }
 
@@ -1340,9 +1387,27 @@ async function runtimeRole(fixturePath) {
 
 async function gatewayRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
-  const service = await startProviderProductionStrongObjectGatewayServiceV1({
-    canonicalInstallationRoot: fixture.installRoot,
-  });
+  let composition;
+  const compositionPath = join(dirname(fixturePath), "step16-composition.json");
+  if (process.env.RUN_STEP16_DUAL_HOST_E2E === "1") {
+    try {
+      await access(compositionPath);
+      composition = await (await import("./step16-root-fixed-workflow-linux.mjs")).readStep16RootControlJsonV1(compositionPath);
+    } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  }
+  let service;
+  if (composition === undefined) service = await startProviderProductionStrongObjectGatewayServiceV1({ canonicalInstallationRoot: fixture.installRoot });
+  else {
+    const { startProviderProductionStrongObjectGatewayServiceCoreInternalV1 } = await import("../../durable-object-provider-client/dist/provider-production-strong-object-gateway.js");
+    const { createProviderOperationPlanSupervisorObserverInternalV1 } = await import("../../durable-object-provider-client/dist/provider-operation-plan-supervisor-transport-internal.js");
+    service = await startProviderProductionStrongObjectGatewayServiceCoreInternalV1({
+      publicInput: { canonicalInstallationRoot: fixture.installRoot },
+      observeProviderOperationPlan: createProviderOperationPlanSupervisorObserverInternalV1({
+        socketPath: composition.relaySocketPath, expectedSupervisorPid: composition.supervisorPid,
+        runNonce: composition.closingPlan.runNonce, closingPlanDigest: composition.closingPlan.closingPlanDigest, timeoutMs: 60_000,
+      }),
+    });
+  }
   const readyPath = join(dirname(fixture.gatewaySocketPath), ".gateway.ready");
   await writeFile(readyPath, "ready\n", { mode: 0o600 });
   const stopPath = join(dirname(fixture.gatewaySocketPath), ".gateway.stop");
@@ -1353,20 +1418,47 @@ async function gatewayRole(fixturePath) {
   }
 }
 
-async function renameExchangeV1(left, right) {
-  await execFileAsync("/usr/bin/python3", [
-    "-c",
-    [
-      "import ctypes, os, sys",
-      "libc=ctypes.CDLL(None, use_errno=True)",
-      "fn=libc.renameat2",
-      "fn.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]",
-      "result=fn(-100,os.fsencode(sys.argv[1]),-100,os.fsencode(sys.argv[2]),2)",
-      "result == 0 or (_ for _ in ()).throw(OSError(ctypes.get_errno(),os.strerror(ctypes.get_errno())))",
-    ].join(";"),
-    left,
-    right,
-  ]);
+async function createRenameExchangeV1(probeRoot) {
+  // Use the target kernel headers, not a libc renameat2 symbol or guessed
+  // architecture syscall numbers. Create before capturing publisher chains;
+  // remove only after they close, so helper writes cannot fake an ABA change.
+  const directory = await mkdtemp(join(probeRoot, ".rename-exchange-"));
+  const source = join(directory, "exchange.c");
+  const executable = join(directory, "exchange");
+  const env = { PATH: "/usr/bin:/bin", LC_ALL: "C", TMPDIR: directory };
+  try {
+    await writeFile(source, `#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#if !defined(__linux__) || !defined(SYS_renameat2) || !defined(RENAME_EXCHANGE)
+#error Linux renameat2 RENAME_EXCHANGE headers are required
+#endif
+int main(int argc, char **argv) {
+  if (argc != 3) return 64;
+  long result;
+  do { result = syscall(SYS_renameat2, AT_FDCWD, argv[1], AT_FDCWD, argv[2], RENAME_EXCHANGE); }
+  while (result != 0 && errno == EINTR);
+  if (result == 0) return 0;
+  const int error = errno;
+  fprintf(stderr, "renameat2(RENAME_EXCHANGE): errno=%d (%s)\\n", error, strerror(error));
+  return 1;
+}
+`, { flag: "wx", mode: 0o600 });
+    await execFileAsync("/usr/bin/cc", ["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2", source, "-o", executable], { env, timeout: 20_000, maxBuffer: 1024 * 1024 });
+    await chmod(executable, 0o700);
+    return {
+      exchange: (left, right) => execFileAsync(executable, [left, right], { env, encoding: "utf8", timeout: 10_000, maxBuffer: 64 * 1024 }),
+      close: () => rm(directory, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 function exactOutcomeV1(actual, status, reason) {
@@ -1378,6 +1470,7 @@ async function nativeExactObjectRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
   dropTo(fixture.serviceUid, fixture.serviceGid);
   const root = fixture.nativeProbeRoot;
+  const renameExchange = await createRenameExchangeV1(root);
   const finalName = `${"f".repeat(64)}.blob`;
   const publishers = [];
   const sources = [];
@@ -1449,8 +1542,8 @@ async function nativeExactObjectRole(fixturePath) {
     await mkdir(right, { mode: 0o700 });
     const abaPublisher = openPublisher(left);
     const abaSource = stage(abaPublisher, Buffer.from("aba-race", "utf8"));
-    await renameExchangeV1(left, right);
-    await renameExchangeV1(left, right);
+    await renameExchange.exchange(left, right);
+    await renameExchange.exchange(left, right);
     if (!exactOutcomeV1(
       commitProviderRuntimeNativeExactObjectV1(
         abaPublisher,
@@ -1515,7 +1608,11 @@ async function nativeExactObjectRole(fixturePath) {
         // Continue closing every retained exact authority.
       }
     }
-    await rm(root, { recursive: true, force: true });
+    await renameExchange.close().catch(() => undefined);
+    // The root orchestrator created this top-level directory under the
+    // root-owned 0755 ext4 mount and removes it in its own finally block.
+    // This downgraded principal owns only the probe contents; attempting to
+    // unlink the top-level directory would fail and mask the probe's error.
   }
 }
 
@@ -1768,46 +1865,50 @@ async function callerRole(fixturePath, mode = "primary") {
   }
 }
 
-async function step16DualHostRole(fixturePath) {
+async function step16RootPreflightV1(fixture) {
+  return (await import("./step16-root-fixed-workflow-linux.mjs")).step16RootPreflightV1(fixture);
+}
+
+async function step16DualHostRole(fixturePath, composition) {
   const fixture = await readFixture(fixturePath);
-  dropTo(fixture.callerUid, fixture.callerGid);
-  await rm(fixture.step16EvidencePath, { force: true });
-  await execFileAsync(
-    process.execPath,
-    ["--test", fixture.previewPluginE2ePath],
-    {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        RUN_STEP16_DUAL_HOST_E2E: "1",
-        TMPDIR: fixture.step16HostsRoot,
-        UNDERSTAND_CODE_STEP16_PROVIDER_INSTALLATION_ROOT:
-          fixture.installRoot,
-        UNDERSTAND_CODE_STEP16_REPOSITORY_ROOT:
-          fixture.step16RepositoryRoot,
-        UNDERSTAND_CODE_STEP16_INVALID_ROOT: fixture.step16InvalidRoot,
-        UNDERSTAND_CODE_STEP16_HOSTS_ROOT: fixture.step16HostsRoot,
-        UNDERSTAND_CODE_STEP16_CORPUS_PATH: fixture.alphaGoldCorpusPath,
-        UNDERSTAND_CODE_STEP16_EVIDENCE_PATH: fixture.step16EvidencePath,
-      },
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 25 * 60 * 1000,
-    },
-  );
-  let result;
-  try {
-    result = JSON.parse(await readFile(fixture.step16EvidencePath, "utf8"));
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    const { createStep16DualHostBlockedEvidenceV1 } = await import(
-      "./step16-dual-host-strong-alpha-linux.mjs"
-    );
-    result = await createStep16DualHostBlockedEvidenceV1({
-      corpusPath: fixture.alphaGoldCorpusPath,
-      blocker: "real_host_clis_unavailable",
-    });
-  }
+  if (process.geteuid?.() !== 0 || process.getegid?.() !== 0) throw new Error("Step16 supervisor must retain root");
+  const preflight = await step16RootPreflightV1(fixture);
+  if (preflight.evidence !== undefined) return preflight.evidence;
+  if (composition === undefined) throw new Error("Step16 requires the orchestrator's live authority/gateway composition");
+  const { runStep16RootOwnedStrongAlphaV1 } = await import("./step16-dual-host-strong-alpha-linux.mjs");
+  return runStep16RootOwnedStrongAlphaV1({
+    callerUid: fixture.callerUid, callerGid: fixture.callerGid,
+    repositoryRoot: fixture.step16RepositoryRoot, providerInstallationRoot: fixture.installRoot,
+    preflightOnly: process.env.UNDERSTAND_CODE_STEP16_PREFLIGHT_ONLY === "1",
+    ...preflight.profile, ...composition,
+  });
+}
+
+async function step16RootSupervisorRoleV1(fixturePath) {
+  if (process.geteuid?.() !== 0 || process.getegid?.() !== 0) throw new Error("Step16 worker must retain root");
+  const work = dirname(fixturePath);
+  const recipe = await import("./step16-root-fixed-workflow-linux.mjs");
+  const compositionPath = join(work, "step16-composition.json");
+  const readyPath = join(work, "step16-run.ready");
+  await waitForPath(compositionPath);
+  await waitForPath(readyPath);
+  const composition = await recipe.readStep16RootControlJsonV1(compositionPath);
+  const ready = await recipe.readStep16RootControlJsonV1(readyPath);
+  if (composition.supervisorPid !== process.pid) throw new Error("root worker PID is not the pinned witness principal");
+  const preflightOnly = process.env.UNDERSTAND_CODE_STEP16_PREFLIGHT_ONLY === "1";
+  if (composition.mode !== (preflightOnly ? "preflight_only" : "witness")) throw new Error("root worker mode differs from its composition");
+  recipe.requireStep16AuthorityReadyV1(ready.authority, composition.authorityPid, preflightOnly);
+  // Only this newly created task-owned root PID enters the private caller
+  // domain. Authority/runtime/gateway and the invoking shell stay outside.
+  // Caller control can cause denial of service, never mint root credentials.
+  const hostLanding = "/sys/fs/cgroup/understand-code-step16-caller-v1/host";
+  const landingMetadata = await lstat(hostLanding);
+  if (!landingMetadata.isDirectory() || landingMetadata.isSymbolicLink() || landingMetadata.uid !== CALLER_UID || landingMetadata.gid !== CALLER_GID || (landingMetadata.mode & 0o7777) !== 0o700 || await realpath(hostLanding) !== hostLanding || (await statfs(hostLanding, { bigint: true })).type !== 0x63677270n) throw new Error("private Host landing is not the exact caller cgroup2 directory");
+  const procs = join(hostLanding, "cgroup.procs");
+  if ((await readFile(procs, "utf8")).trim() !== "") throw new Error("private Host landing is not empty");
+  await writeFile(procs, String(process.pid));
+  if ((await readFile(procs, "utf8")).trim() !== String(process.pid)) throw new Error("root worker did not enter its exact private landing");
+  const result = await step16DualHostRole(fixturePath, { ...composition, ...ready, authorityPid: ready.authority.authorityPid });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
@@ -2013,6 +2114,8 @@ async function orchestrate() {
   let authority;
   let runtime;
   let gateway;
+  let step16Worker;
+  let step16ControlRoot;
   const childEnvironment = { ...process.env };
   delete childEnvironment.UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH;
   const start = (role, env = {}) => spawn(process.execPath, [SCRIPT_PATH, "--role", role, "--fixture", paths.fixturePath], {
@@ -2255,30 +2358,83 @@ async function orchestrate() {
             )));
       },
     );
-    const dualHost = process.env.RUN_STEP16_DUAL_HOST_E2E === "1"
-      ? await new Promise((resolvePromise, rejectPromise) => {
-          const child = collect(start("step16-dual-host"));
-          let out = "";
-          child.child.stdout?.setEncoding("utf8");
-          child.child.stdout?.on("data", (chunk) => { out += chunk; });
-          child.child.once("exit", (code) => code === 0
-            ? resolvePromise(JSON.parse(out.trim()))
-            : rejectPromise(new Error(
-                `Step16 dual-Host Alpha failed: ${code} ${child.stderr}`,
-              )));
-        })
-      : undefined;
+    let dualHost;
+    if (process.env.RUN_STEP16_DUAL_HOST_E2E === "1") {
+      const fixture = await readFixture(paths.fixturePath);
+      const preflight = await step16RootPreflightV1(fixture);
+      if (preflight.evidence !== undefined) dualHost = preflight.evidence;
+      else {
+        // Only now enable the operation relay. Earlier Step15 writes have no
+        // Host witness window and must continue through the original gateway.
+        const previousGatewayExited = new Promise((resolvePromise) => gateway.child.once("exit", resolvePromise));
+        await writeFile(gatewayStopPath, "stop\n");
+        await previousGatewayExited;
+        await Promise.all([rm(gatewayReadyPath, { force: true }), rm(gatewayStopPath, { force: true })]);
+        const { createStep16FixedClosingPlanV1, readStep16RootControlJsonV1, requireStep16AuthorityReadyV1 } = await import("./step16-root-fixed-workflow-linux.mjs");
+        const preflightOnly = process.env.UNDERSTAND_CODE_STEP16_PREFLIGHT_ONLY === "1";
+        // The relay requires every ancestor to be root-owned and non-writable
+        // by other principals, so its socket cannot live below /var/tmp.
+        step16ControlRoot = await mkdtemp(join(ext4Mount, "step16-control-"));
+        await chown(step16ControlRoot, 0, 0);
+        await chmod(step16ControlRoot, 0o755);
+        const witnessParent = join(step16ControlRoot, "witness");
+        const relayParent = join(step16ControlRoot, "relay");
+        for (const [parent, gid, mode] of [
+          [witnessParent, 0, 0o700],
+          [relayParent, SERVICE_GID, 0o710],
+        ]) {
+          await mkdir(parent, { mode });
+          await chown(parent, 0, gid);
+          await chmod(parent, mode);
+          const metadata = await lstat(parent);
+          if (!metadata.isDirectory() || metadata.isSymbolicLink() || metadata.uid !== 0 || metadata.gid !== gid || (metadata.mode & 0o7777) !== mode) {
+            throw new Error("Step16 socket parent does not match its server contract");
+          }
+        }
+        const witnessSocketPath = join(witnessParent, "witness.sock");
+        const relaySocketPath = join(relayParent, "operations.sock");
+        if ([witnessSocketPath, relaySocketPath].some((path) => Buffer.byteLength(path) >= 108)) {
+          throw new Error("Step16 socket path exceeds the Linux AF_UNIX limit");
+        }
+        step16Worker = collect(start("step16-root-supervisor"));
+        let workerOutput = "";
+        step16Worker.child.stdout.setEncoding("utf8");
+        step16Worker.child.stdout.on("data", (chunk) => { workerOutput += chunk; });
+        const workerCompletion = new Promise((resolvePromise, rejectPromise) => {
+          step16Worker.child.once("error", rejectPromise);
+          step16Worker.child.once("exit", (code) => {
+            try {
+              if (code !== 0) throw new Error(`Step16 root worker failed: ${code} ${step16Worker.stderr}`);
+              resolvePromise(JSON.parse(workerOutput.trim()));
+            } catch (error) { rejectPromise(error); }
+          });
+        });
+        // Keep a rejection handler while the parent finishes authority startup.
+        workerCompletion.catch(() => undefined);
+        const composition = {
+          profile: "step16_root_composition_v1", supervisorPid: step16Worker.child.pid,
+          // unshare runs without --fork, then execs this exact authority PID.
+          authorityPid: authority.child.pid, mode: preflightOnly ? "preflight_only" : "witness",
+          closingPlan: createStep16FixedClosingPlanV1(randomBytes(32).toString("hex")),
+          witnessSocketPath,
+          relaySocketPath,
+        };
+        await writeFile(join(work, "step16-composition.json"), `${JSON.stringify(composition)}\n`, { flag: "wx", mode: 0o600 });
+        const step16AuthorityReadyPath = join(work, "step16-authority.ready");
+        await waitForPath(step16AuthorityReadyPath);
+        const authorityReady = requireStep16AuthorityReadyV1(await readStep16RootControlJsonV1(step16AuthorityReadyPath), authority.child.pid, preflightOnly);
+        gateway = collect(start("gateway"));
+        await waitForPath(gatewayReadyPath);
+        await writeFile(join(work, "step16-run.ready"), `${JSON.stringify({
+          authority: authorityReady,
+          gatewayPeer: { uid: SERVICE_UID, gid: SERVICE_GID, pid: gateway.child.pid },
+        })}\n`, { flag: "wx", mode: 0o600 });
+        dualHost = await workerCompletion;
+      }
+    }
     const closingEvidencePath =
       process.env.UNDERSTAND_CODE_STEP16_CLOSING_EVIDENCE_PATH;
     let closingEvidenceSafety;
-    if (dualHost !== undefined) {
-      if (closingEvidencePath === undefined) {
-        throw new Error("Step16 closing evidence path is required");
-      }
-      closingEvidenceSafety =
-        await exerciseStep16ClosingEvidenceRejectionsV1(closingEvidencePath);
-      await writeStep16ClosingEvidenceV1(closingEvidencePath, dualHost);
-    }
     const rotatedGatewayExited = new Promise((resolvePromise) =>
       gateway.child.once("exit", resolvePromise)
     );
@@ -2308,16 +2464,22 @@ async function orchestrate() {
     ) {
       throw new Error("runtime durable-current did not preserve the exact lifecycle basis");
     }
-    const authorityExited = new Promise((resolvePromise) =>
-      authority.child.once("exit", resolvePromise)
-    );
+    const { waitForSuccessfulAuthorityExitV1 } = await import("./step16-root-fixed-workflow-linux.mjs");
+    const authorityExited = waitForSuccessfulAuthorityExitV1(authority.child);
+    authorityExited.catch(() => undefined);
     await writeFile(authorityStopPath, "stop\n");
     await authorityExited;
+    if (dualHost !== undefined) {
+      if (closingEvidencePath === undefined) throw new Error("Step16 closing evidence path is required");
+      closingEvidenceSafety = await exerciseStep16ClosingEvidenceRejectionsV1(closingEvidencePath);
+      await writeStep16ClosingEvidenceV1(closingEvidencePath, dualHost);
+    }
     process.stdout.write(`${JSON.stringify({ profile: "provider_production_strong_object_three_principal_linux_v1", status: "verified", ext4: true, nativeExactObject: JSON.parse(nativeExactObject), caller: JSON.parse(caller), foreignCallerRejected: denied, restartReplay: JSON.parse(replay), restartSockets: { retainedAfterSigkill: "verified", broker: "reclaimed", runtime: "reclaimed", gateway: "reclaimed", startOrder: "authority_runtime_gateway" }, lifecycleLease: { liveUninstall: "refused_zero_write", doubleStart: "rejected" }, casNonce: JSON.parse(cas), trustRotationReplay: JSON.parse(trustRotationReplay), ...(dualHost === undefined ? {} : { dualHost, closingEvidenceSafety }), durableCurrent, lifecycle, authorityUid: 0, runtimeUid: SERVICE_UID, callerUid: CALLER_UID })}\n`);
   } finally {
-    for (const child of [gateway?.child, runtime?.child, authority?.child]) {
+    for (const child of [step16Worker?.child, gateway?.child, runtime?.child, authority?.child]) {
       if (child && child.exitCode === null) child.kill("SIGTERM");
     }
+    if (step16ControlRoot !== undefined) await rm(step16ControlRoot, { recursive: true, force: true }).catch(() => undefined);
     await rm(work, { recursive: true, force: true }).catch(() => undefined);
     await rm(runtimeRoot, { recursive: true, force: true }).catch(() => undefined);
     await rm(paths.authorityHome, { recursive: true, force: true }).catch(() => undefined);
@@ -2344,7 +2506,8 @@ if (role === "--role") {
   else if (selected === "trust-rotation-replay") {
     await callerRole(fixturePath, "trust-rotation-replay");
   }
-  else if (selected === "step16-dual-host") await step16DualHostRole(fixturePath);
+  else if (selected === "step16-dual-host") process.stdout.write(`${JSON.stringify(await step16DualHostRole(fixturePath))}\n`);
+  else if (selected === "step16-root-supervisor") await step16RootSupervisorRoleV1(fixturePath);
   else if (selected === "native-exact-object") await nativeExactObjectRole(fixturePath);
   else throw new Error(`unknown role ${selected}`);
 } else {

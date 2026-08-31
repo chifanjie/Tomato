@@ -49,8 +49,14 @@ export interface Step16HostCallWitnessClosingPlanCallInternalV1 {
   readonly eventOrdinal: number;
   readonly host: "codex" | "claude";
   readonly tool: string;
-  readonly argumentsDigest: string;
+  /** null is an explicit root-derived slot, never an unchecked argument. */
+  readonly argumentsDigest: string | null;
 }
+
+/** Installed only by the root authority composition, never by the wire peer. */
+export type Step16HostCallWitnessResolveArgumentsInternalV1 = (
+  call: Step16HostCallWitnessClosingPlanCallInternalV1,
+) => Promise<string>;
 
 export interface Step16HostCallWitnessClosingPlanInternalV1 {
   readonly closingPlanDigest: string;
@@ -119,6 +125,7 @@ export interface Step16HostCallWitnessServerCoreOptionsInternalV1 {
   readonly supervisorLease: Step16HostCallWitnessSupervisorLeaseInternalV1;
   readonly closingPlan: Step16HostCallWitnessClosingPlanInternalV1;
   readonly authority: Step16HostCallWitnessAuthorityCallbacksInternalV1;
+  readonly resolveArgumentsDigest?: Step16HostCallWitnessResolveArgumentsInternalV1;
 }
 
 export interface Step16HostCallWitnessConnectionInternalV1 {
@@ -244,7 +251,7 @@ function parseClosingPlanV1(
       (call.host !== "codex" && call.host !== "claude") ||
       typeof call.tool !== "string" || call.tool.length < 1 ||
       call.tool.length > 128 || call.tool.includes("\0") ||
-      !isDigestV1(call.argumentsDigest)
+      (call.argumentsDigest !== null && !isDigestV1(call.argumentsDigest))
     ) {
       throw new Step16HostCallWitnessProtocolErrorInternalV1(
         "invalid_closing_plan",
@@ -326,6 +333,7 @@ class Step16HostCallWitnessConnectionCoreInternalV1
   readonly #directSupervisorPid: number;
   readonly #lease: Step16HostCallWitnessSupervisorLeaseInternalV1;
   readonly #authority: Step16HostCallWitnessAuthorityCallbacksInternalV1;
+  readonly #resolveArgumentsDigest: Step16HostCallWitnessResolveArgumentsInternalV1 | undefined;
 
   #phase: "awaiting_hello" | "ready" | "failed" | "closed" =
     "awaiting_hello";
@@ -344,12 +352,14 @@ class Step16HostCallWitnessConnectionCoreInternalV1
     directSupervisorPid: number,
     lease: Step16HostCallWitnessSupervisorLeaseInternalV1,
     authority: Step16HostCallWitnessAuthorityCallbacksInternalV1,
+    resolveArgumentsDigest: Step16HostCallWitnessResolveArgumentsInternalV1 | undefined,
   ) {
     this.#plan = plan;
     this.#peer = peer;
     this.#directSupervisorPid = directSupervisorPid;
     this.#lease = lease;
     this.#authority = authority;
+    this.#resolveArgumentsDigest = resolveArgumentsDigest;
   }
 
   async hello(frame: unknown): Promise<Readonly<{ readonly status: "ready" }>> {
@@ -381,6 +391,8 @@ class Step16HostCallWitnessConnectionCoreInternalV1
     this.#enterOperationV1();
     this.#arming = true;
     try {
+      const plannedCall = this.#plan.calls[this.#nextCallIndex];
+      const derived = plannedCall?.argumentsDigest === null;
       if (
         this.#phase !== "ready" || this.#activeWindow !== undefined ||
         !exactRecordKeysV1(frame, [
@@ -389,18 +401,42 @@ class Step16HostCallWitnessConnectionCoreInternalV1
           "sequence",
           "sessionIdDigest",
           "callIdDigest",
-        ]) || frame.kind !== "arm" ||
-        !isDigestV1(frame.sessionIdDigest) || !isDigestV1(frame.callIdDigest)
+          ...(derived ? ["argumentsDigest"] : []),
+        ]) || frame.kind !== (derived ? "arm_derived" : "arm") ||
+        !isDigestV1(frame.sessionIdDigest) || !isDigestV1(frame.callIdDigest) ||
+        (derived && !isDigestV1(frame.argumentsDigest))
       ) {
         await this.#failClosedV1("invalid_frame");
         throw protocolErrorV1("invalid_frame");
       }
       this.#consumeSequenceV1(frame.sequence);
-      const call = this.#plan.calls[this.#nextCallIndex];
-      if (call === undefined || frame.callOrdinal !== call.callOrdinal) {
+      if (plannedCall === undefined || frame.callOrdinal !== plannedCall.callOrdinal) {
         await this.#failClosedV1("unexpected_call");
         throw protocolErrorV1("unexpected_call");
       }
+      const sessionIdDigest = frame.sessionIdDigest;
+      const callIdDigest = frame.callIdDigest;
+      const observedArgumentsDigest = frame.argumentsDigest;
+      let argumentsDigest = plannedCall.argumentsDigest;
+      if (argumentsDigest === null) {
+        try {
+          // The resolver receives only the immutable planned slot. In
+          // particular it cannot echo the Host's proposed arguments digest.
+          argumentsDigest = await this.#resolveArgumentsDigest!(plannedCall);
+        } catch {
+          await this.#failClosedV1("authority_failed");
+          throw protocolErrorV1("authority_failed");
+        }
+        if (!this.#isLiveV1() || this.#phase !== "ready") {
+          await this.#failClosedV1("lease_lost");
+          throw protocolErrorV1("lease_lost");
+        }
+        if (!isDigestV1(argumentsDigest) || argumentsDigest !== observedArgumentsDigest) {
+          await this.#failClosedV1("unexpected_call");
+          throw protocolErrorV1("unexpected_call");
+        }
+      }
+      const call = Object.freeze({ ...plannedCall, argumentsDigest });
       let authorityWindow:
         ProviderProductionStrongAuthorityStep16ReceiptBindingWindowCapabilityInternalV1;
       const beginInput: Step16HostCallWitnessBeginCollectingInputInternalV1 =
@@ -412,8 +448,8 @@ class Step16HostCallWitnessConnectionCoreInternalV1
           eventOrdinal: call.eventOrdinal,
           tool: call.tool,
           argumentsDigest: call.argumentsDigest,
-          sessionIdDigest: frame.sessionIdDigest,
-          callIdDigest: frame.callIdDigest,
+          sessionIdDigest,
+          callIdDigest,
         });
       try {
         authorityWindow = await this.#authority.beginCollecting(beginInput);
@@ -793,6 +829,7 @@ class Step16HostCallWitnessServerCoreV1
     readonly supervisorLease: Step16HostCallWitnessSupervisorLeaseInternalV1;
     readonly closingPlan: Step16HostCallWitnessClosingPlanInternalV1;
     readonly authority: Step16HostCallWitnessAuthorityCallbacksInternalV1;
+    readonly resolveArgumentsDigest?: Step16HostCallWitnessResolveArgumentsInternalV1;
   }>;
   #closed = false;
   #accepted = false;
@@ -809,14 +846,23 @@ class Step16HostCallWitnessServerCoreV1
       typeof options.authority?.complete !== "function" ||
       typeof options.authority?.abort !== "function" ||
       (options.authority.finalizeRun !== undefined &&
-        typeof options.authority.finalizeRun !== "function")
+        typeof options.authority.finalizeRun !== "function") ||
+      (options.resolveArgumentsDigest !== undefined &&
+        typeof options.resolveArgumentsDigest !== "function")
     ) {
+      throw protocolErrorV1("invalid_closing_plan");
+    }
+    const closingPlan = parseClosingPlanV1(options.closingPlan);
+    if (closingPlan.calls.some((call) => call.argumentsDigest === null) &&
+      options.resolveArgumentsDigest === undefined) {
       throw protocolErrorV1("invalid_closing_plan");
     }
     this.#options = Object.freeze({
       directSupervisorPid: options.directSupervisorPid,
       supervisorLease: options.supervisorLease,
-      closingPlan: parseClosingPlanV1(options.closingPlan),
+      closingPlan,
+      ...(options.resolveArgumentsDigest === undefined ? {} :
+        { resolveArgumentsDigest: options.resolveArgumentsDigest }),
       authority: Object.freeze({
         beginCollecting: options.authority.beginCollecting,
         appendExpectedOperation: options.authority.appendExpectedOperation,
@@ -851,6 +897,7 @@ class Step16HostCallWitnessServerCoreV1
       this.#options.directSupervisorPid,
       this.#options.supervisorLease,
       this.#options.authority,
+      this.#options.resolveArgumentsDigest,
     );
     this.#accepted = true;
     this.#connection = connection;

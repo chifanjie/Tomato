@@ -31,7 +31,6 @@ import {
   type ContentDigest,
   type InternalTaskBaselineV1,
   type PersistedArtifactV1,
-  type TaskArtifactBundleV1,
   type TaskEventV1,
   type TaskManifestV1,
   type TaskOperationReceiptV1,
@@ -57,6 +56,10 @@ import {
   type StrongOperationProviderObjectBindingV1,
 } from "./store.js";
 import { digestCanonicalJson } from "./digest.js";
+import {
+  parseStrongCanonicalTaskProjectionInternalV1,
+  type StrongCanonicalTaskProjectionV1,
+} from "./strong-canonical-task-projection-internal.js";
 
 function digest(value: unknown): ContentDigest {
   return `sha256:${createHash("sha256")
@@ -200,18 +203,6 @@ function envelope(input: Readonly<{
     contentDigest: digest(input.payload),
     payload: input.payload,
   });
-}
-
-interface StrongCanonicalTaskProjectionV1 {
-  readonly profile: "strong_canonical_task_projection_v1";
-  readonly operation: "check_change" | "record_verification";
-  readonly requestDigest: ContentDigest;
-  readonly bundle: TaskArtifactBundleV1;
-  readonly artifacts: readonly PersistedArtifactV1[];
-  readonly receipts: readonly TaskOperationReceiptV1[];
-  readonly outcome:
-    | StrongChangeCheckMutationOutcomeV1
-    | StrongVerificationMutationOutcomeV1;
 }
 
 export type StrongChangeAuthorityErrorCodeV1 =
@@ -921,52 +912,11 @@ export class ArtifactStoreStrongChangeAuthorityV1
     operation: "check_change" | "record_verification",
     requestDigest: ContentDigest,
   ): StrongCanonicalTaskProjectionV1 {
-    if (typeof value !== "object" || value === null) {
-      throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
-    }
-    const candidate = value as Record<string, unknown>;
-    if (
-      candidate.profile !== "strong_canonical_task_projection_v1" ||
-      candidate.operation !== operation ||
-      candidate.requestDigest !== requestDigest ||
-      !Array.isArray(candidate.artifacts) ||
-      !Array.isArray(candidate.receipts)
-    ) {
-      throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
-    }
     try {
-      const bundle = validateTaskArtifactBundleV1(candidate.bundle);
-      const artifacts = candidate.artifacts.map((artifact) =>
-        parsePersistedArtifactV1(artifact)
+      return parseStrongCanonicalTaskProjectionInternalV1(
+        value, operation, requestDigest,
       );
-      const receipts = candidate.receipts.map((receipt) =>
-        TaskOperationReceiptV1Schema.parse(receipt)
-      );
-      const outcome = operation === "check_change"
-        ? StrongChangeCheckMutationOutcomeV1Schema.parse(candidate.outcome)
-        : StrongVerificationMutationOutcomeV1Schema.parse(candidate.outcome);
-      if (
-        outcome.idempotentReplay ||
-        outcome.committedRevision !== bundle.manifest.revision ||
-        artifacts.some(
-          (artifact) =>
-            artifact.taskId !== bundle.manifest.taskId ||
-            artifact.revision !== bundle.manifest.revision,
-        )
-      ) {
-        throw new Error("canonical projection identity mismatch");
-      }
-      return {
-        profile: "strong_canonical_task_projection_v1",
-        operation,
-        requestDigest,
-        bundle,
-        artifacts,
-        receipts,
-        outcome,
-      };
-    } catch (error) {
-      if (error instanceof StrongChangeAuthorityErrorV1) throw error;
+    } catch {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
   }

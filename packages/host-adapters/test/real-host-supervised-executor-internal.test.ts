@@ -38,6 +38,7 @@ import {
 } from "../src/step16-real-host-stream-observer-internal.js";
 import {
   deriveStep16ExpectedHostEventPlanDigestV1,
+  deriveStep16RealHostActionInputDigestV1,
   type Step16ExpectedHostEventPlanV1,
 } from "../src/real-host-receipts.js";
 
@@ -64,6 +65,7 @@ const HOST_SHIM_SOURCE_V1 = [
   `#!${process.execPath}`,
   'const { readFileSync, writeFileSync } = require("node:fs");',
   'readFileSync(0);',
+  'if (process.env.TEST_ARGV_FILE) writeFileSync(process.env.TEST_ARGV_FILE, JSON.stringify(process.argv.slice(2)), { mode: 0o600 });',
   'if (process.env.TEST_IDENTITY_FILE) writeFileSync(process.env.TEST_IDENTITY_FILE, JSON.stringify({ pid: process.pid, uid: process.getuid(), euid: process.geteuid(), gid: process.getgid(), egid: process.getegid(), groups: process.getgroups() }), { mode: 0o600 });',
   'if (process.env.TEST_SPAWN_FILE) writeFileSync(process.env.TEST_SPAWN_FILE, "spawned", { mode: 0o600 });',
   'if (process.env.TEST_EXIT_FILE) process.on("exit", code => writeFileSync(process.env.TEST_EXIT_FILE, String(code), { mode: 0o600 }));',
@@ -254,6 +256,16 @@ async function expectExecutionCodeV1(
 // These are ordinary-principal behavior tests. Root runs use the separate real
 // Linux launch cases below instead of silently starting an un-dropped Host.
 describe.skipIf(IS_EFFECTIVE_ROOT_V1)("Step16 supervised real Host executor (internal)", () => {
+  it("does not let ordinary callers select a root MCP transport", async () => {
+    const fixture = await fixtureV1();
+    const spawnFile = join(fixture.root, "spawned");
+    await expectExecutionCodeV1(runStep16RealHostJsonlSessionWithSupervisorInternalV1(inputV1(fixture, { spawnFile }), {
+      rootMcpServer: { command: "/usr/bin/node", args: [], env: {} },
+      streamObserver: recordingObserverV1([]), onObservedCall() {},
+    }), "invalid_input");
+    await expect(access(spawnFile)).rejects.toThrow();
+  });
+
   it("serializes observed callbacks before later lines across split UTF-8 chunks", async () => {
     const fixture = await fixtureV1();
     const timeline: string[] = [];
@@ -689,6 +701,79 @@ describe.skipIf(!IS_LINUX_ROOT_V1)("Step16 supervised Linux root launch (interna
     return { ...fixture, callerRoot };
   }
 
+  for (const host of ["codex", "claude"] as const) {
+    it(`pins the actual ${host} MCP transport before async launch`, async () => {
+      const fixture = await rootFixtureV1();
+      const argvFile = join(fixture.callerRoot, "argv.json");
+      const claudeTranscript = [
+        { type: "system", subtype: "init", session_id: "private-supervised-session" },
+        { type: "assistant", session_id: "private-supervised-session", parent_tool_use_id: null, message: { role: "assistant", content: [{ type: "tool_use", id: "private-supervised-call", name: "mcp__understand-code__get_repo_pulse", input: { root: "/private/root" } }] } },
+        { type: "user", session_id: "private-supervised-session", parent_tool_use_id: null, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "private-supervised-call", content: "private result" }] }, tool_use_result: { ok: true } },
+        { type: "result", subtype: "success", session_id: "private-supervised-session", is_error: false, permission_denials: [] },
+      ].map((event) => JSON.stringify(event)).join("\n") + "\n";
+      const base = inputV1(fixture, { chunks: chunksV1(host === "codex" ? transcriptV1() : claudeTranscript, false) });
+      const observer = createStep16RealHostStreamObserverInternalV1(host, EXPECTED_PLAN_V1);
+      const server = { command: "/usr/bin/node", args: ["/opt/root-launcher.mjs", "quoted \" argument"], env: { PATH: "/usr/bin:/bin", FIXED_VALUE: "original" } };
+      const execution = runStep16RealHostJsonlSessionWithSupervisorInternalV1({ ...base, host, cwd: fixture.callerRoot, env: { ...base.env, TEST_ARGV_FILE: argvFile } }, {
+        childIdentity: CHILD_IDENTITY_V1, rootMcpServer: server,
+        streamObserver: { feed: (line) => observer.feed(line), finish: () => observer.finish() }, onObservedCall() {},
+      });
+      server.command = "/missing/redirected";
+      server.args[0] = "/missing/redirected";
+      server.env.FIXED_VALUE = "redirected";
+      const result = await execution;
+      expect(result.receipt.events).toHaveLength(1);
+      const argv = JSON.parse(await readFile(argvFile, "utf8")) as string[];
+      if (host === "codex") {
+        expect(argv).toContain("--ignore-user-config");
+        expect(argv.slice(argv.indexOf("--sandbox"), argv.indexOf("--sandbox") + 2)).toEqual(["--sandbox", "read-only"]);
+        const config = argv.find((arg) => arg.startsWith("mcp_servers={"));
+        expect(config).toContain('command="/usr/bin/node"');
+        expect(config).toContain('/opt/root-launcher.mjs');
+        expect(config).toContain('enabled_tools=["get_repo_pulse"]');
+        expect(config).not.toContain("redirected");
+      } else {
+        expect(argv).toContain("--strict-mcp-config");
+        const config = JSON.parse(argv[argv.indexOf("--mcp-config") + 1]!);
+        expect(config).toEqual({ mcpServers: { "understand-code": { command: "/usr/bin/node", args: ["/opt/root-launcher.mjs", "quoted \" argument"], env: { PATH: "/usr/bin:/bin", FIXED_VALUE: "original", GIT_OPTIONAL_LOCKS: "0" } } } });
+        expect(argv).toContain("mcp__understand-code__get_repo_pulse");
+      }
+    });
+  }
+
+  it("rejects invalid, injected, oversized, or ambiguous root MCP selections before spawn", async () => {
+    const fixture = await rootFixtureV1();
+    const spawnFile = join(fixture.callerRoot, "spawned");
+    let getterCalls = 0;
+    const getterArgs = ["valid"];
+    Object.defineProperty(getterArgs, "0", { get() { getterCalls += 1; return "unsafe"; } });
+    const getterEnv = Object.defineProperty({}, "PATH", { enumerable: true, get() { getterCalls += 1; return "/usr/bin"; } });
+    const invalid: unknown[] = [
+      undefined, null, { command: "node", args: [], env: {} },
+      { command: "/usr/bin/node", args: ["nul\0arg"], env: {} },
+      { command: "/usr/bin/node", args: new Array(1), env: {} },
+      { command: "/usr/bin/node", args: getterArgs, env: {} },
+      { command: "/usr/bin/node", args: [], env: getterEnv },
+      { command: "/usr/bin/node", args: [], env: { NODE_OPTIONS: "--import=evil" } },
+      { command: "/usr/bin/node", args: ["x".repeat(65_536)], env: {} },
+      { command: "/usr/bin/node", args: [], env: {}, extra: true },
+    ];
+    for (const rootMcpServer of invalid) {
+      await expectExecutionCodeV1(runStep16RealHostJsonlSessionWithSupervisorInternalV1({ ...inputV1(fixture, { spawnFile }), cwd: fixture.callerRoot }, {
+        childIdentity: CHILD_IDENTITY_V1, rootMcpServer,
+        streamObserver: recordingObserverV1([]), onObservedCall() {},
+      } as unknown as RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options), "invalid_input");
+    }
+    await expectExecutionCodeV1(runStep16RealHostJsonlSessionWithSupervisorInternalV1({ ...inputV1(fixture, { spawnFile }), cwd: fixture.callerRoot }, {
+      childIdentity: CHILD_IDENTITY_V1,
+      rootMcpServer: { command: "/usr/bin/node", args: [], env: {} },
+      codexSourceMutation: { beforeContent: "before", afterContent: "after" },
+      streamObserver: recordingObserverV1([]), onObservedCall() {},
+    }), "invalid_input");
+    expect(getterCalls).toBe(0);
+    await expect(access(spawnFile)).rejects.toThrow();
+  });
+
   it("drops uid/gid and supplementary root groups while root retains the raw stream", async () => {
     const fixture = await rootFixtureV1();
     const identityFile = join(fixture.callerRoot, "identity.json");
@@ -772,4 +857,149 @@ describe.skipIf(!IS_LINUX_ROOT_V1)("Step16 supervised Linux root launch (interna
       await expect(access(spawnFile)).rejects.toThrow();
     });
   }
+});
+
+describe.skipIf(!IS_LINUX_ROOT_V1)("Step16 supervised Codex source leaf (internal)", () => {
+  const beforeContent = "export const value = 1;\n";
+  const afterContent = "export const value = 2;\n";
+  const actionInput = { changes: [{ kind: "update", path: "src/task.ts" }] };
+  const events: Step16ExpectedHostEventPlanV1["events"] = [{
+    kind: "host_action", ordinal: 1, action: "source_mutation", mechanism: "file_change",
+    inputDigest: deriveStep16RealHostActionInputDigestV1(actionInput),
+  }];
+  const plan: Step16ExpectedHostEventPlanV1 = {
+    events, expectedEventPlanDigest: deriveStep16ExpectedHostEventPlanDigestV1(events),
+  };
+  // This controlled process tests the root verifier, not native Codex/model evidence.
+  // The fixed native sandbox/apply-patch path is exercised separately in Linux proof.
+  const sourceShim = [
+    `#!${process.execPath}`,
+    'const fs = require("node:fs");',
+    'fs.readFileSync(0);',
+    'const args = process.argv.slice(2);',
+    'const leaf = process.cwd() + "/src";',
+    'const profile = args.find(arg => arg.startsWith("permissions="));',
+    'if (args.includes("--sandbox") || !args.includes("--ignore-user-config") || !args.includes(\'default_permissions="step16-source-leaf-v1"\') || !args.includes(\'approval_policy="never"\') || !args.includes("mcp_servers={}")) process.exit(40);',
+    'if (!profile || !profile.includes(JSON.stringify(leaf) + \'="write"\') || !profile.includes(JSON.stringify(leaf + "/sibling.ts") + \'="read"\') || profile.includes(JSON.stringify(process.cwd()) + \'="write"\') || !profile.includes("network={enabled=false}")) process.exit(41);',
+    'const target = "src/task.ts";',
+    'const mode = process.env.TEST_SOURCE_CASE;',
+    'if (mode !== "no_edit") fs.writeFileSync(target, process.env.TEST_SOURCE_AFTER);',
+    'if (mode === "wrong_content") fs.writeFileSync(target, "wrong\\n");',
+    'if (mode === "sibling") fs.writeFileSync("src/sibling.ts", "wrong\\n");',
+    'if (mode === "new_entry") fs.writeFileSync("src/new.ts", "new\\n");',
+    'if (mode === "mode") fs.chmodSync(target, 0o600);',
+    'if (mode === "replace_inode") { fs.writeFileSync("src/replacement", process.env.TEST_SOURCE_AFTER); fs.renameSync("src/replacement", target); }',
+    'if (mode === "symlink") { fs.unlinkSync(target); fs.symlinkSync("sibling.ts", target); }',
+    'if (mode === "directory") { fs.unlinkSync(target); fs.mkdirSync(target); }',
+    'if (mode === "hardlink") fs.linkSync(target, "src/link.ts");',
+    'if (mode === "hold_open") { setInterval(() => undefined, 1000); } else {',
+    '  for (const event of [{ type:"thread.started", thread_id:"source-leaf-session" }, { type:"turn.started" }, { type:"item.completed", item:{ id:"source-update", type:"file_change", changes:[{kind:"update",path:target}], status:"completed" } }, {type:"turn.completed"}]) process.stdout.write(JSON.stringify(event) + "\\n");',
+    '}',
+    "",
+  ].join("\n");
+
+  async function sourceFixtureV1(mode = "exact") {
+    const fixture = await fixtureV1(true);
+    await writeFile(fixture.executable, sourceShim);
+    const workspace = join(fixture.root, "workspace");
+    const leaf = join(workspace, "src");
+    await mkdir(workspace, { mode: 0o755 });
+    await mkdir(leaf, { mode: 0o755 });
+    await chown(leaf, CHILD_IDENTITY_V1.uid, CHILD_IDENTITY_V1.gid);
+    for (const name of ["task.ts", "sibling.ts"]) {
+      await writeFile(join(leaf, name), beforeContent, { mode: 0o644 });
+      await chown(join(leaf, name), CHILD_IDENTITY_V1.uid, CHILD_IDENTITY_V1.gid);
+    }
+    await writeFile(join(workspace, "neighbor.ts"), beforeContent);
+    const input: RunStep16RealHostJsonlSessionV1Input = {
+      ...inputV1(fixture),
+      cwd: workspace,
+      expectedExecutableDigest: sha256V1(await readFile(fixture.executable)),
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", TEST_SOURCE_CASE: mode, TEST_SOURCE_AFTER: afterContent },
+      expectedEventPlan: plan,
+      expectedHostActionInputs: [{ ordinal: 1, input: actionInput }],
+    };
+    const observer = createStep16RealHostStreamObserverInternalV1("codex", plan);
+    const options: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options = {
+      childIdentity: CHILD_IDENTITY_V1,
+      codexSourceMutation: { beforeContent, afterContent },
+      streamObserver: { feed: (line) => observer.feed(line), finish: () => observer.finish() },
+      onObservedCall() { throw new Error("source-only plan has no MCP callback"); },
+    };
+    return { fixture, workspace, leaf, input, options };
+  }
+
+  it("accepts only the exact frozen content delta and constructs a leaf-only isolated profile", async () => {
+    const { input, options, leaf, workspace } = await sourceFixtureV1();
+    const execution = runStep16RealHostJsonlSessionWithSupervisorInternalV1(input, options);
+    // The asynchronous root snapshot must not reopen the mutable launch inputs.
+    (input.env as Record<string, string>).TEST_SOURCE_AFTER = "redirected after first await";
+    (options.codexSourceMutation as { afterContent: string }).afterContent = "redirected after first await";
+    const result = await execution;
+    expect(result.receipt.events).toHaveLength(1);
+    expect(result.sourceMutation).toEqual({
+      inputDigest: events[0]!.kind === "host_action" ? events[0]!.inputDigest : "unreachable",
+      beforeContentDigest: sha256V1(Buffer.from(beforeContent)),
+      afterContentDigest: sha256V1(Buffer.from(afterContent)),
+      beforeLeafDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      afterLeafDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+    });
+    expect(result.sourceMutation!.beforeLeafDigest).not.toBe(result.sourceMutation!.afterLeafDigest);
+    expect(await readFile(join(leaf, "task.ts"), "utf8")).toBe(afterContent);
+    expect(await readFile(join(leaf, "sibling.ts"), "utf8")).toBe(beforeContent);
+    expect(await readFile(join(workspace, "neighbor.ts"), "utf8")).toBe(beforeContent);
+  });
+
+  for (const mutation of ["no_edit", "wrong_content", "sibling", "new_entry", "mode", "replace_inode", "symlink", "directory", "hardlink"]) {
+    it(`rejects final ${mutation} even when the controlled stream claims success`, async () => {
+      const { input, options } = await sourceFixtureV1(mutation);
+      await expectExecutionCodeV1(
+        runStep16RealHostJsonlSessionWithSupervisorInternalV1(input, options), "transcript_rejected",
+      );
+    });
+  }
+
+  for (const mutation of ["wrong_before", "symlink", "hardlink", "nested_directory"] as const) {
+    it(`rejects initial ${mutation} before editing any source`, async () => {
+      const { input, options, leaf } = await sourceFixtureV1();
+      if (mutation === "wrong_before") await writeFile(join(leaf, "task.ts"), "unexpected\n");
+      if (mutation === "symlink") {
+        await rm(join(leaf, "sibling.ts"));
+        await symlink("task.ts", join(leaf, "sibling.ts"));
+      }
+      if (mutation === "hardlink") await link(join(leaf, "task.ts"), join(leaf, "linked.ts"));
+      if (mutation === "nested_directory") await mkdir(join(leaf, "nested"));
+      await expectExecutionCodeV1(
+        runStep16RealHostJsonlSessionWithSupervisorInternalV1(input, options), "invalid_input",
+      );
+      expect(await readFile(join(leaf, "task.ts"), "utf8")).toBe(mutation === "wrong_before" ? "unexpected\n" : beforeContent);
+    });
+  }
+
+  for (const change of [{ kind: "add", path: "src/task.ts" }, { kind: "delete", path: "src/task.ts" }, { kind: "update", path: "task.ts" }]) {
+    it(`rejects the broader ${change.kind}:${change.path} grant before spawn`, async () => {
+      const { input, options, leaf } = await sourceFixtureV1();
+      const changedInput = { changes: [change] };
+      const changedEvents: Step16ExpectedHostEventPlanV1["events"] = [{
+        kind: "host_action", ordinal: 1, action: "source_mutation", mechanism: "file_change",
+        inputDigest: deriveStep16RealHostActionInputDigestV1(changedInput),
+      }];
+      await expectExecutionCodeV1(runStep16RealHostJsonlSessionWithSupervisorInternalV1({
+        ...input,
+        expectedEventPlan: { events: changedEvents, expectedEventPlanDigest: deriveStep16ExpectedHostEventPlanDigestV1(changedEvents) },
+        expectedHostActionInputs: [{ ordinal: 1, input: changedInput }],
+      }, options), "invalid_input");
+      expect(await readFile(join(leaf, "task.ts"), "utf8")).toBe(beforeContent);
+    });
+  }
+
+  it("retains cancellation after allowing a source update without publishing success", async () => {
+    const { input, options, leaf } = await sourceFixtureV1("hold_open");
+    const controller = new AbortController();
+    const execution = runStep16RealHostJsonlSessionWithSupervisorInternalV1(input, { ...options, signal: controller.signal });
+    await expect.poll(async () => readFile(join(leaf, "task.ts"), "utf8"), { timeout: 2_000 }).toBe(afterContent);
+    controller.abort();
+    await expectExecutionCodeV1(execution, "io_failed");
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
 });

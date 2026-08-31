@@ -28,6 +28,7 @@ export interface ConnectStep16HostCallWitnessClientInternalV1Options {
 
 export interface Step16HostCallWitnessClientInternalV1 {
   arm(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, signal?: AbortSignal): Promise<string>;
+  armDerived(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, argumentsDigest: string, signal?: AbortSignal): Promise<string>;
   observe(token: string, operation: ObservedOperation, signal?: AbortSignal): Promise<void>;
   complete(token: string, sessionIdDigest: string, callIdDigest: string, signal?: AbortSignal): Promise<CompletedCall>;
   abort(token: string, signal?: AbortSignal): Promise<void>;
@@ -299,11 +300,20 @@ class WitnessClient implements Step16HostCallWitnessClientInternalV1 {
   }
 
   async arm(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, signal?: AbortSignal): Promise<string> {
+    return this.#arm(callOrdinal, sessionIdDigest, callIdDigest, undefined, signal);
+  }
+
+  async armDerived(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, argumentsDigest: string, signal?: AbortSignal): Promise<string> {
+    return this.#arm(callOrdinal, sessionIdDigest, callIdDigest, argumentsDigest, signal);
+  }
+
+  async #arm(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, argumentsDigest: string | undefined, signal?: AbortSignal): Promise<string> {
     try {
       if (this.#window !== undefined || callOrdinal !== this.#nextCallOrdinal) throw failure();
       const session = digest(sessionIdDigest);
       const call = digest(callIdDigest);
-      const token = await this.#request("arm", { callOrdinal, sessionIdDigest: session, callIdDigest: call }, (value) => {
+      const derived = argumentsDigest === undefined ? {} : { argumentsDigest: digest(argumentsDigest) };
+      const token = await this.#request(argumentsDigest === undefined ? "arm" : "arm_derived", { callOrdinal, sessionIdDigest: session, callIdDigest: call, ...derived }, (value) => {
         if (typeof value !== "string" || !TOKEN.test(value) || this.#seenTokens.has(value)) throw failure();
         return value;
       }, signal);

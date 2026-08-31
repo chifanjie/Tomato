@@ -61,6 +61,7 @@ export interface StartStep16HostCallWitnessUdsServerInternalV1Options {
   readonly directSupervisorPid: number;
   readonly closingPlan: Step16HostCallWitnessClosingPlanInternalV1;
   readonly authority: Step16HostCallWitnessAuthorityCallbacksInternalV1;
+  readonly resolveArgumentsDigest?: import("./step16-host-call-witness-server-internal.js").Step16HostCallWitnessResolveArgumentsInternalV1;
   readonly timeoutMs?: number;
 }
 
@@ -105,6 +106,10 @@ const REQUEST_KEYS = Object.freeze({
     "callOrdinal",
     "sessionIdDigest",
     "callIdDigest",
+  ]),
+  arm_derived: Object.freeze([
+    "profile", "kind", "sequence", "callOrdinal",
+    "sessionIdDigest", "callIdDigest", "argumentsDigest",
   ]),
   observe_provider_operation: Object.freeze([
     "profile",
@@ -695,6 +700,8 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
       directSupervisorPid: options.directSupervisorPid,
       closingPlan: options.closingPlan,
       authority,
+      ...(options.resolveArgumentsDigest === undefined ? {} :
+        { resolveArgumentsDigest: options.resolveArgumentsDigest }),
       supervisorLease: {
         held: () =>
           this.#leaseState.live &&
@@ -968,6 +975,7 @@ class Step16HostCallWitnessUdsServerImplementationInternalV1
         result = await this.#connection.hello(frame as never);
         break;
       case "arm":
+      case "arm_derived":
         result = await this.#connection.arm(frame as never);
         this.#activeHost = this.#plannedHostByCallOrdinal.get(
           requireSafePositiveInteger(request.callOrdinal),

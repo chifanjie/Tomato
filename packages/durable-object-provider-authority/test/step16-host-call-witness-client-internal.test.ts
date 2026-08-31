@@ -57,7 +57,7 @@ async function server(respond: Respond = (_socket, _request, normal) => normal()
         respond(socket, request, () => {
           let result: unknown;
           if (request.kind === "hello") result = { status: "ready" };
-          else if (request.kind === "arm") { ordinal = 0; result = TOKEN; }
+          else if (request.kind === "arm" || request.kind === "arm_derived") { ordinal = 0; result = TOKEN; }
           else if (request.kind === "observe_provider_operation") result = { status: "observed", operationOrdinal: ++ordinal };
           else if (request.kind === "complete") result = { status: "completed", receiptBundleDigests: Array.from({ length: ordinal }, (_entry, index) => digest(String(index + 1))) };
           else if (request.kind === "abort") result = { status: "aborted" };
@@ -102,6 +102,26 @@ function bounded<T>(work: Promise<T>, timeoutMs = 750): Promise<T> {
 }
 
 describe("private root supervisor witness UDS client", () => {
+  it("sends a distinct, exact derived-argument arm frame on the existing sequenced connection", async () => {
+    const test = await server();
+    const client = await test.connect();
+    const argumentsDigest = digest("a");
+    const token = await client.armDerived(1, SESSION_DIGEST, CALL_DIGEST, argumentsDigest);
+    expect(test.requests[1]).toEqual({ profile: PROFILE, kind: "arm_derived", sequence: 2, callOrdinal: 1, sessionIdDigest: SESSION_DIGEST, callIdDigest: CALL_DIGEST, argumentsDigest });
+    await client.observe(token, operation());
+    await client.complete(token, SESSION_DIGEST, CALL_DIGEST);
+    await client.finalize();
+    expect(test.requests.map((request) => request.sequence)).toEqual([1, 2, 3, 4, 5]);
+    expect(test.connections()).toBe(1);
+  });
+
+  it("rejects invalid derived arguments before sending an arm", async () => {
+    const test = await server();
+    const client = await test.connect();
+    await expectRejected(client.armDerived(1, SESSION_DIGEST, CALL_DIGEST, "untrusted"));
+    expect(test.requests.map((request) => request.kind)).toEqual(["hello"]);
+  });
+
   it("binds hello and arm identity, uses one sequenced connection, and leaves finalize result unknown", async () => {
     const test = await server();
     const client = await test.connect();

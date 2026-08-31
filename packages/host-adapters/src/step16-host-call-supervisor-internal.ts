@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   runStep16RealHostJsonlSessionWithSupervisorInternalV1,
   type RunStep16RealHostJsonlSessionV1Input,
+  type RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options,
   type Step16RealHostJsonlSessionResultV1,
 } from "./real-host-executor.js";
 import { canonicalRealHostJsonInternalV1 } from "./real-host-receipt-primitives-internal.js";
@@ -25,7 +26,7 @@ export interface Step16HostCallSupervisorPlanInternalV1 {
     readonly eventOrdinal: number;
     readonly host: RealHostReceiptHostV1;
     readonly tool: string;
-    readonly argumentsDigest: string;
+    readonly argumentsDigest: string | null;
   }>[];
 }
 
@@ -38,6 +39,7 @@ export interface Step16HostCallSupervisorOperationInternalV1 {
 /** Structural private interface: no dependency on the authority package API. */
 export interface Step16HostCallSupervisorWitnessClientInternalV1 {
   arm(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, signal?: AbortSignal): Promise<string>;
+  armDerived?(callOrdinal: number, sessionIdDigest: string, callIdDigest: string, argumentsDigest: string, signal?: AbortSignal): Promise<string>;
   observe(token: string, operation: Step16HostCallSupervisorOperationInternalV1, signal?: AbortSignal): Promise<void>;
   complete(token: string, sessionIdDigest: string, callIdDigest: string, signal?: AbortSignal): Promise<Readonly<{ status: "completed"; receiptBundleDigests: readonly string[] }>>;
   finalize(signal?: AbortSignal): Promise<unknown>;
@@ -59,10 +61,16 @@ export interface Step16HostCallSupervisorInternalV1 {
     operation: Step16HostCallSupervisorOperationInternalV1,
     context: Readonly<{ readonly operationSequence: number; readonly signal: AbortSignal }>,
   ) => Promise<void>;
-  run(input: RunStep16RealHostJsonlSessionV1Input, options: Readonly<{ readonly childIdentity: Readonly<{ readonly uid: number; readonly gid: number }> }>): Promise<Step16RealHostJsonlSessionResultV1>;
+  run(input: RunStep16RealHostJsonlSessionV1Input, options: Step16HostCallSupervisorRunOptionsInternalV1): Promise<Step16RealHostJsonlSessionResultV1>;
   /** Only internally awaited successful executor runs can authorize finalization. */
   finalize(): Promise<unknown>;
   close(): Promise<void>;
+}
+
+export interface Step16HostCallSupervisorRunOptionsInternalV1 {
+  readonly childIdentity: Readonly<{ readonly uid: number; readonly gid: number }>;
+  readonly rootMcpServer?: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["rootMcpServer"];
+  readonly codexSourceMutation?: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["codexSourceMutation"];
 }
 
 export class Step16HostCallSupervisionErrorInternalV1 extends Error {
@@ -126,7 +134,7 @@ function parsePlan(value: Step16HostCallSupervisorPlanInternalV1): Step16HostCal
     const call = record(value, ["callOrdinal", "eventOrdinal", "host", "tool", "argumentsDigest"]);
     if (call.callOrdinal !== index + 1 || !positiveInteger(call.eventOrdinal, Number.MAX_SAFE_INTEGER) || call.eventOrdinal <= previousOrdinal || (call.host !== "codex" && call.host !== "claude") || typeof call.tool !== "string" || !/^[a-z][a-z0-9_]{0,127}$/u.test(call.tool)) throw failure();
     previousOrdinal = call.eventOrdinal;
-    return Object.freeze({ callOrdinal: index + 1, eventOrdinal: call.eventOrdinal, host: call.host, tool: call.tool, argumentsDigest: digest(call.argumentsDigest) });
+    return Object.freeze({ callOrdinal: index + 1, eventOrdinal: call.eventOrdinal, host: call.host, tool: call.tool, argumentsDigest: call.argumentsDigest === null ? null : digest(call.argumentsDigest) });
   });
   const closingPlanDigest = digest(input.closingPlanDigest);
   const canonical = canonicalRealHostJsonInternalV1([PLAN_DOMAIN, { runNonce: input.runNonce, calls }]);
@@ -134,10 +142,10 @@ function parsePlan(value: Step16HostCallSupervisorPlanInternalV1): Step16HostCal
   return Object.freeze({ runNonce: input.runNonce, closingPlanDigest, calls: Object.freeze(calls) });
 }
 
-function snapshotClient(value: Step16HostCallSupervisorWitnessClientInternalV1): Step16HostCallSupervisorWitnessClientInternalV1 {
+function snapshotClient(value: Step16HostCallSupervisorWitnessClientInternalV1, requiresDerived: boolean): Step16HostCallSupervisorWitnessClientInternalV1 {
   if (value === null || typeof value !== "object") throw failure();
   const methods: Record<string, unknown> = Object.create(null);
-  for (const name of ["arm", "observe", "complete", "finalize", "close"] as const) {
+  for (const name of ["arm", "observe", "complete", "finalize", "close", ...(requiresDerived ? ["armDerived"] : [])]) {
     let current: object | null = value;
     let descriptor: PropertyDescriptor | undefined;
     while (current !== null && current !== Object.prototype) {
@@ -244,14 +252,16 @@ class Supervisor implements Step16HostCallSupervisorInternalV1 {
         if (this.#window !== undefined) throw failure();
         return;
       }
-      if (event.tool !== planned.tool || event.argumentsDigest !== planned.argumentsDigest || planned.callOrdinal !== this.#cursor + 1) throw failure();
+      if (event.tool !== planned.tool || (planned.argumentsDigest !== null && event.argumentsDigest !== planned.argumentsDigest) || planned.callOrdinal !== this.#cursor + 1) throw failure();
       if (!Object.hasOwn(event, "success")) {
         const callKey = `${event.host}:${event.sessionIdDigest}:${event.callIdDigest}`;
         if (this.#window !== undefined || this.#seenCalls.has(callKey)) throw failure();
         this.#seenCalls.add(callKey);
         const armed = Promise.resolve().then(() => {
           this.#live();
-          return this.#client.arm(planned.callOrdinal, event.sessionIdDigest, event.callIdDigest, this.signal);
+          return planned.argumentsDigest === null
+            ? this.#client.armDerived!(planned.callOrdinal, event.sessionIdDigest, event.callIdDigest, event.argumentsDigest, this.signal)
+            : this.#client.arm(planned.callOrdinal, event.sessionIdDigest, event.callIdDigest, this.signal);
         });
         const window: Window = { plan: planned, start: event, armed, operations: 0, closing: false };
         this.#window = window;
@@ -262,7 +272,7 @@ class Supervisor implements Step16HostCallSupervisorInternalV1 {
       } else {
         const complete = event as Step16RealHostCallCompleteInternalV1;
         const window = this.#window;
-        if (window === undefined || window.token === undefined || window.closing || this.#operationBusy || window.operations < 1 || complete.callIdDigest !== window.start.callIdDigest || complete.sessionIdDigest !== window.start.sessionIdDigest) throw failure();
+        if (window === undefined || window.token === undefined || window.closing || this.#operationBusy || window.operations < 1 || complete.callIdDigest !== window.start.callIdDigest || complete.sessionIdDigest !== window.start.sessionIdDigest || complete.argumentsDigest !== window.start.argumentsDigest) throw failure();
         window.closing = true;
         const result = await this.#wait(this.#client.complete(window.token, complete.sessionIdDigest, complete.callIdDigest, this.signal));
         if (result.status !== "completed" || result.receiptBundleDigests.length !== window.operations || result.receiptBundleDigests.some((value) => !DIGEST.test(value)) || this.#window !== window) throw failure();
@@ -307,11 +317,11 @@ class Supervisor implements Step16HostCallSupervisorInternalV1 {
     finally { this.#operationBusy = false; }
   };
 
-  async run(input: RunStep16RealHostJsonlSessionV1Input, options: Readonly<{ readonly childIdentity: Readonly<{ readonly uid: number; readonly gid: number }> }>): Promise<Step16RealHostJsonlSessionResultV1> {
+  async run(input: RunStep16RealHostJsonlSessionV1Input, options: Step16HostCallSupervisorRunOptionsInternalV1): Promise<Step16RealHostJsonlSessionResultV1> {
     try {
       this.#live();
       if (this.#context !== undefined || this.#window !== undefined || this.#operationBusy || this.#finalizing) throw failure();
-      const runOptions = record(options, ["childIdentity"]);
+      const runOptions = record(options, ["childIdentity", ...(Object.hasOwn(options, "codexSourceMutation") ? ["codexSourceMutation"] : []), ...(Object.hasOwn(options, "rootMcpServer") ? ["rootMcpServer"] : [])]);
       const childIdentity = record(runOptions.childIdentity, ["uid", "gid"]);
       if (!positiveInteger(childIdentity.uid, 0x7fff_ffff) || !positiveInteger(childIdentity.gid, 0x7fff_ffff)) throw failure();
       const eventCount = input.expectedEventPlan.events.length;
@@ -331,6 +341,12 @@ class Supervisor implements Step16HostCallSupervisorInternalV1 {
         signal: this.signal,
         streamObserver: createStep16RealHostStreamObserverInternalV1(input.host, input.expectedEventPlan),
         onObservedCall: this.onObservedCall,
+        ...(runOptions.rootMcpServer === undefined ? {} : {
+          rootMcpServer: runOptions.rootMcpServer as NonNullable<RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["rootMcpServer"]>,
+        }),
+        ...(runOptions.codexSourceMutation === undefined ? {} : {
+          codexSourceMutation: runOptions.codexSourceMutation as NonNullable<RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["codexSourceMutation"]>,
+        }),
       };
       const execution = runStep16RealHostJsonlSessionWithSupervisorInternalV1(input, executionOptions);
       this.#execution = execution;
@@ -390,6 +406,7 @@ export function createStep16HostCallSupervisorInternalV1(options: CreateStep16Ho
     const input = record(options, ["closingPlan", "witnessClient", "signal", ...(Object.hasOwn(options, "operationWaitMs") ? ["operationWaitMs"] : [])]);
     const waitMs = input.operationWaitMs ?? 5000;
     if (!positiveInteger(waitMs, 60_000) || !(input.signal instanceof AbortSignal) || input.signal.aborted) throw failure();
-    return new Supervisor(parsePlan(input.closingPlan as Step16HostCallSupervisorPlanInternalV1), snapshotClient(input.witnessClient as Step16HostCallSupervisorWitnessClientInternalV1), input.signal, waitMs);
+    const plan = parsePlan(input.closingPlan as Step16HostCallSupervisorPlanInternalV1);
+    return new Supervisor(plan, snapshotClient(input.witnessClient as Step16HostCallSupervisorWitnessClientInternalV1, plan.calls.some((call) => call.argumentsDigest === null)), input.signal, waitMs);
   } catch { throw failure(); }
 }

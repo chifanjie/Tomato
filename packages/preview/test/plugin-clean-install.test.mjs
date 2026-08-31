@@ -1278,6 +1278,139 @@ async function installPluginHostActivation({
   return activationRoot;
 }
 
+async function runSourceWrapperFixture({
+  host = "codex",
+  preload,
+  activation = true,
+} = {}) {
+  const sandbox = await realpath(
+    await mkdtemp(path.join(tmpdir(), "understand-code-wrapper-process-")),
+  );
+  let child;
+  try {
+    const installedRoot = path.join(sandbox, "installed plugin");
+    const bin = path.join(installedRoot, "bin");
+    const repositoryRoot = path.join(sandbox, "work tree");
+    const activationRoot = path.join(installedRoot, ".understand-code-host");
+    await Promise.all([mkdir(bin, { recursive: true }), mkdir(repositoryRoot)]);
+    if (activation) await mkdir(activationRoot);
+    const wrapperPath = path.join(bin, "codex-plugin-bin.mjs");
+    const cliPath = path.join(bin, "understand-code.mjs");
+    await cp(path.join(packageRoot, "src/codex-plugin-bin.mjs"), wrapperPath);
+    await writeFile(cliPath, `
+      import { readFileSync } from "node:fs";
+      process.stdout.write(JSON.stringify({
+        pid: process.pid, ppid: process.ppid, argv: process.argv,
+        cwd: process.cwd(), env: process.env,
+        input: readFileSync(0, "utf8"),
+      }) + "\\n");
+      process.stderr.write("fixture stderr\\n");
+      process.exitCode = 17;
+    `);
+    const preloads = preload === undefined ? [] : [
+      "--import", `data:text/javascript,${encodeURIComponent(preload)}`,
+    ];
+    child = spawn(process.execPath, [...preloads, wrapperPath, "--host", host], {
+      cwd: repositoryRoot,
+      env: cleanHostEnvironment(path.join(sandbox, "home"), {
+        CLAUDE_PROJECT_DIR: repositoryRoot,
+        NODE_OPTIONS: "--no-warnings",
+        NODE_PATH: "/ambient/node-path",
+        GIT_CONFIG_GLOBAL: "/ambient/gitconfig",
+        UNDERSTAND_CODE_HOST_INSTALLATION_ROOT: "/ambient/activation",
+      }),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on("data", (chunk) => stdout.push(chunk));
+    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    const closed = new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code, signal) => resolve([code, signal]));
+    });
+    child.stdin.end("fixture stdin\n");
+    const outcome = await withTimeout(closed, "source marketplace wrapper");
+    return {
+      pid: child.pid, outcome, cliPath, repositoryRoot, activationRoot,
+      stdout: Buffer.concat(stdout).toString("utf8"),
+      stderr: Buffer.concat(stderr).toString("utf8"),
+    };
+  } finally {
+    await stopChild(child);
+    await rm(sandbox, { recursive: true, force: true });
+  }
+}
+
+for (const host of ["codex", "claude"]) {
+  test(`marketplace wrapper preserves ${host} CLI argv, environment and stdio`, async () => {
+    const result = await runSourceWrapperFixture({ host });
+    assert.deepEqual(result.outcome, [17, null]);
+    assert.equal(result.stderr, "fixture stderr\n");
+    const output = JSON.parse(result.stdout);
+    assert.deepEqual(output.argv, [
+      process.execPath, result.cliPath, "mcp", "--stdio",
+      "--root", result.repositoryRoot, "--installation-root", result.activationRoot,
+    ]);
+    assert.equal(output.cwd, result.repositoryRoot);
+    assert.equal(output.input, "fixture stdin\n");
+    assert.equal(output.env.CLAUDE_PROJECT_DIR, result.repositoryRoot);
+    for (const name of [
+      "NODE_OPTIONS", "NODE_PATH", "GIT_CONFIG_GLOBAL",
+      "UNDERSTAND_CODE_HOST_INSTALLATION_ROOT",
+    ]) assert.equal(Object.hasOwn(output.env, name), false);
+    assert.equal(output.env.GIT_OPTIONAL_LOCKS, "0");
+    assert.equal(output.env.GIT_TERMINAL_PROMPT, "0");
+    assert.equal(output.env.LC_ALL, "C");
+  });
+}
+
+test("marketplace wrapper Linux execve leaves no wrapper PID", {
+  skip: process.platform !== "linux" || typeof process.execve !== "function",
+}, async () => {
+  const result = await runSourceWrapperFixture();
+  assert.deepEqual(result.outcome, [17, null]);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.pid, result.pid);
+  assert.equal(output.ppid, process.pid);
+});
+
+test("marketplace wrapper retains spawn when execve is unavailable", async () => {
+  const result = await runSourceWrapperFixture({ preload: "process.execve = undefined;" });
+  assert.deepEqual(result.outcome, [17, null]);
+  const output = JSON.parse(result.stdout);
+  assert.notEqual(output.pid, result.pid);
+  assert.equal(output.ppid, result.pid);
+});
+
+test("marketplace wrapper never uses execve outside Linux", {
+  skip: process.platform === "linux",
+}, async () => {
+  const result = await runSourceWrapperFixture({
+    preload: "process.execve = () => { throw new Error('must not execute'); };",
+  });
+  assert.deepEqual(result.outcome, [17, null]);
+  assert.notEqual(JSON.parse(result.stdout).pid, result.pid);
+});
+
+test("marketplace wrapper rejects execve errors without spawning a fallback", {
+  skip: process.platform !== "linux",
+}, async () => {
+  const result = await runSourceWrapperFixture({
+    preload: "process.execve = () => { throw new Error('private execution failure'); };",
+  });
+  assert.deepEqual(result.outcome, [1, null]);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "host_adapter_unavailable\n");
+});
+
+test("marketplace wrapper checks fixed activation before handing off the CLI", async () => {
+  const result = await runSourceWrapperFixture({ activation: false });
+  assert.deepEqual(result.outcome, [1, null]);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "provider_installation_root_unavailable\n");
+});
+
 test(
   "marketplace wrapper binds Provider only through its fixed owned activation",
   async () => {

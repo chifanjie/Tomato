@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import {
@@ -24,6 +24,10 @@ const DEFAULT_TIMEOUT_MS_V1 = 30 * 60 * 1_000;
 const MAX_TIMEOUT_MS_V1 = 2_147_483_647;
 const TERMINATION_GRACE_MS_V1 = 250;
 const MAX_PATH_BYTES_V1 = 4_096;
+const MAX_SOURCE_FILE_BYTES_V1 = 8 * 1024 * 1024;
+const MAX_SOURCE_LEAF_BYTES_V1 = 32 * 1024 * 1024;
+const MAX_SOURCE_LEAF_FILES_V1 = 256;
+const CODEX_SOURCE_PROFILE_V1 = "step16-source-leaf-v1";
 const ABORT_SIGNAL_ABORTED_GETTER_V1 =
   Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")!.get!;
 const ADD_ABORT_LISTENER_V1 = EventTarget.prototype.addEventListener;
@@ -118,6 +122,14 @@ export interface Step16RealHostJsonlSessionResultV1 {
     readonly code: 0;
     readonly signal: null;
   }>;
+  /** Root filesystem evidence, not synthesized Codex JSONL or a kernel single-file grant. */
+  readonly sourceMutation?: Readonly<{
+    readonly inputDigest: Sha256DigestV1;
+    readonly beforeContentDigest: Sha256DigestV1;
+    readonly afterContentDigest: Sha256DigestV1;
+    readonly beforeLeafDigest: Sha256DigestV1;
+    readonly afterLeafDigest: Sha256DigestV1;
+  }>;
 }
 
 export interface Step16ExpectedHostActionInputV1 {
@@ -129,6 +141,23 @@ export interface RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options {
   /** Internal Linux root supervisor only; never inherited by the public entry. */
   readonly childIdentity?: Readonly<{ readonly uid: number; readonly gid: number }>;
   readonly signal?: AbortSignal;
+  /** Root-selected transport to the actual installed plugin; never a public override. */
+  readonly rootMcpServer?: Readonly<{
+    readonly command: string;
+    readonly args: readonly string[];
+    readonly env: Readonly<Record<string, string>>;
+  }>;
+  /** Linux/root only: one existing regular-file update in a flat non-workspace leaf. */
+  readonly codexSourceMutation?: Readonly<{
+    readonly beforeContent: string;
+    readonly afterContent: string;
+    /** Rebuilt in isolated CLI config; user config is ignored but auth is not copied. */
+    readonly mcpServer?: Readonly<{
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly env: Readonly<Record<string, string>>;
+    }>;
+  }>;
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
@@ -144,6 +173,8 @@ interface ChildOutcomeV1 {
 interface CompiledSupervisorInternalV1 {
   readonly childIdentity: Readonly<{ readonly uid: number; readonly gid: number }> | undefined;
   readonly signal: AbortSignal | undefined;
+  readonly rootMcpServer: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["rootMcpServer"];
+  readonly codexSourceMutation: RunStep16RealHostJsonlSessionWithSupervisorInternalV1Options["codexSourceMutation"];
   readonly streamObserver: Step16RealHostStreamObserverInternalV1;
   readonly onObservedCall: (
     event: Step16RealHostObservedCallInternalV1,
@@ -253,6 +284,65 @@ function compileAbortSignalV1(options: Record<string, unknown>): AbortSignal | u
   return descriptor.value as AbortSignal;
 }
 
+function ownRecordV1(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (!isRecordV1(value) || Reflect.ownKeys(value).length !== keys.length) return failV1("invalid_input");
+  const result: Record<string, unknown> = Object.create(null);
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) return failV1("invalid_input");
+    result[key] = descriptor.value;
+  }
+  return result;
+}
+
+function compileCodexSourceMutationV1(
+  options: Record<string, unknown>,
+  childIdentity: CompiledSupervisorInternalV1["childIdentity"],
+): CompiledSupervisorInternalV1["codexSourceMutation"] {
+  const descriptor = Object.getOwnPropertyDescriptor(options, "codexSourceMutation");
+  if (descriptor === undefined) return undefined;
+  if (!("value" in descriptor) || !descriptor.enumerable || childIdentity === undefined) return failV1("invalid_input");
+  assertSupervisorIdentityContextV1(childIdentity);
+  const value = descriptor.value;
+  const input = ownRecordV1(value, ["beforeContent", "afterContent", ...(isRecordV1(value) && Object.hasOwn(value, "mcpServer") ? ["mcpServer"] : [])]);
+  for (const content of [input.beforeContent, input.afterContent]) {
+    if (typeof content !== "string" || !isUnicodeScalarStringV1(content) || Buffer.byteLength(content) > MAX_SOURCE_FILE_BYTES_V1) return failV1("invalid_input");
+  }
+  if (input.beforeContent === input.afterContent) return failV1("invalid_input");
+  let mcpServer: NonNullable<CompiledSupervisorInternalV1["codexSourceMutation"]>["mcpServer"];
+  if (Object.hasOwn(input, "mcpServer")) {
+    const server = ownRecordV1(input.mcpServer, ["command", "args", "env"]);
+    if (!canonicalAbsolutePathV1(server.command) || !Array.isArray(server.args) || server.args.length > 256 || server.args.some((arg) => typeof arg !== "string" || arg.includes("\0") || !isUnicodeScalarStringV1(arg))) return failV1("invalid_input");
+    mcpServer = Object.freeze({ command: server.command, args: Object.freeze([...server.args] as string[]), env: childEnvironmentV1(server.env, "codex") as Readonly<Record<string, string>> });
+  }
+  return Object.freeze({ beforeContent: input.beforeContent as string, afterContent: input.afterContent as string, ...(mcpServer === undefined ? {} : { mcpServer }) });
+}
+
+function compileRootMcpServerV1(
+  options: Record<string, unknown>,
+  childIdentity: CompiledSupervisorInternalV1["childIdentity"],
+): CompiledSupervisorInternalV1["rootMcpServer"] {
+  const descriptor = Object.getOwnPropertyDescriptor(options, "rootMcpServer");
+  if (descriptor === undefined) return undefined;
+  if (!("value" in descriptor) || !descriptor.enumerable || childIdentity === undefined) return failV1("invalid_input");
+  assertSupervisorIdentityContextV1(childIdentity);
+  const server = ownRecordV1(descriptor.value, ["command", "args", "env"]);
+  if (!canonicalAbsolutePathV1(server.command) || !Array.isArray(server.args) || server.args.length > 256) return failV1("invalid_input");
+  const args: string[] = [];
+  for (let index = 0; index < server.args.length; index += 1) {
+    const argument = Object.getOwnPropertyDescriptor(server.args, String(index));
+    if (argument === undefined || !("value" in argument) || typeof argument.value !== "string" || argument.value.includes("\0") || !isUnicodeScalarStringV1(argument.value)) return failV1("invalid_input");
+    args.push(argument.value);
+  }
+  if (!isRecordV1(server.env)) return failV1("invalid_input");
+  const keys = Reflect.ownKeys(server.env);
+  if (keys.some((key) => typeof key !== "string")) return failV1("invalid_input");
+  const env = childEnvironmentV1(ownRecordV1(server.env, keys as string[]), "codex") as Readonly<Record<string, string>>;
+  const result = Object.freeze({ command: server.command, args: Object.freeze(args), env });
+  if (Buffer.byteLength(JSON.stringify(result)) > 64 * 1024) return failV1("invalid_input");
+  return result;
+}
+
 function compileSupervisorInternalV1(
   value: unknown,
 ): CompiledSupervisorInternalV1 {
@@ -264,7 +354,7 @@ function compileSupervisorInternalV1(
     if (
       Reflect.ownKeys(value).some((key) =>
         key !== "streamObserver" &&
-        key !== "onObservedCall" && key !== "childIdentity" && key !== "signal"
+        key !== "onObservedCall" && key !== "childIdentity" && key !== "signal" && key !== "codexSourceMutation" && key !== "rootMcpServer"
       ) ||
       streamObserverDescriptor === undefined ||
       !("value" in streamObserverDescriptor) ||
@@ -274,6 +364,9 @@ function compileSupervisorInternalV1(
     ) return failV1("invalid_input");
     const childIdentity = compileChildIdentityV1(value);
     const signal = compileAbortSignalV1(value);
+    const codexSourceMutation = compileCodexSourceMutationV1(value, childIdentity);
+    const rootMcpServer = compileRootMcpServerV1(value, childIdentity);
+    if (rootMcpServer !== undefined && codexSourceMutation !== undefined) return failV1("invalid_input");
     const streamObserverValue = streamObserverDescriptor.value;
     if (!isRecordV1(streamObserverValue)) return failV1("invalid_input");
     const observerDescriptors = Object.getOwnPropertyDescriptors(streamObserverValue);
@@ -303,6 +396,8 @@ function compileSupervisorInternalV1(
     return Object.freeze({
       childIdentity,
       signal,
+      codexSourceMutation,
+      rootMcpServer,
       streamObserver: compiledObserver,
       onObservedCall: compiledCallback,
     });
@@ -374,8 +469,10 @@ function timeoutV1(value: unknown): number {
 
 interface CompiledHostActionAuthorizationV1 {
   readonly ordinal: number;
-  readonly tool: "Edit" | "Write" | "Bash";
+  readonly tool: "Edit" | "Write" | "Bash" | "CodexUpdate";
   readonly permissionRule: string;
+  readonly sourcePath?: string;
+  readonly inputDigest?: Sha256DigestV1;
 }
 
 function compileHostActionAuthorizationsV1(
@@ -383,6 +480,7 @@ function compileHostActionAuthorizationsV1(
   cwd: string,
   plan: Step16ExpectedHostEventPlanV1,
   value: unknown,
+  sourceMutation: CompiledSupervisorInternalV1["codexSourceMutation"],
 ): readonly CompiledHostActionAuthorizationV1[] {
   if (!Array.isArray(value)) return failV1("invalid_input");
   const expectedActions = plan.events.filter((event) =>
@@ -407,9 +505,14 @@ function compileHostActionAuthorizationsV1(
     if (inputDigest !== expected.inputDigest) return failV1("invalid_input");
 
     if (expected.action === "source_mutation") {
-      // Codex file_change JSONL binds only path/kind, not patch bytes, and may
-      // arrive only after the edit. Do not grant workspace-wide writes for it.
-      if (host === "codex") return failV1("invalid_input");
+      if (host === "codex") {
+        if (sourceMutation === undefined || !hasExactKeysV1(entry.input, ["changes"]) || !Array.isArray(entry.input.changes) || entry.input.changes.length !== 1) return failV1("invalid_input");
+        const change = ownRecordV1(entry.input.changes[0], ["kind", "path"]);
+        if (change.kind !== "update" || typeof change.path !== "string" || !safePermissionValueV1(change.path)) return failV1("invalid_input");
+        const sourcePath = resolve(cwd, change.path);
+        if (!safePermissionValueV1(sourcePath) || !pathInsideWorkspaceV1(cwd, sourcePath) || dirname(sourcePath) === cwd || (isAbsolute(change.path) ? sourcePath !== change.path : relative(cwd, sourcePath) !== change.path)) return failV1("invalid_input");
+        return Object.freeze({ ordinal: expected.ordinal, tool: "CodexUpdate" as const, permissionRule: "", sourcePath, inputDigest });
+      }
       const filePath = entry.input.file_path;
       if (
         !canonicalAbsolutePathV1(filePath) ||
@@ -455,7 +558,104 @@ function compileHostActionAuthorizationsV1(
       permissionRule: `Bash(${entry.input.command})`,
     });
   });
+  const codexUpdates = compiled.filter((action) => action.tool === "CodexUpdate");
+  if (sourceMutation !== undefined && (host !== "codex" || codexUpdates.length !== 1)) return failV1("invalid_input");
   return Object.freeze(compiled);
+}
+
+interface SourceFileSnapshotV1 {
+  readonly name: string;
+  readonly dev: number;
+  readonly ino: number;
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly digest: Sha256DigestV1;
+}
+
+interface SourceLeafSnapshotV1 {
+  readonly path: string;
+  readonly dev: number;
+  readonly ino: number;
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly files: readonly SourceFileSnapshotV1[];
+}
+
+function sameFileIdentityV1(left: SourceFileSnapshotV1, right: SourceFileSnapshotV1): boolean {
+  return left.name === right.name && left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.uid === right.uid && left.gid === right.gid;
+}
+
+async function snapshotSourceLeafV1(path: string): Promise<SourceLeafSnapshotV1> {
+  const directory = await lstat(path);
+  if (!directory.isDirectory() || directory.isSymbolicLink() || await realpath(path) !== path) return failV1("invalid_input");
+  const names = (await readdir(path)).sort();
+  if (names.length === 0 || names.length > MAX_SOURCE_LEAF_FILES_V1) return failV1("invalid_input");
+  let totalBytes = 0;
+  const files: SourceFileSnapshotV1[] = [];
+  for (const name of names) {
+    const file = resolve(path, name);
+    const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const before = await handle.stat();
+      if (!before.isFile() || before.nlink !== 1 || before.size > MAX_SOURCE_FILE_BYTES_V1 || (totalBytes += before.size) > MAX_SOURCE_LEAF_BYTES_V1) return failV1("invalid_input");
+      // A file growing concurrently must not turn root verification into an
+      // unbounded read. One extra byte detects growth beyond the pinned size.
+      const bytes = Buffer.alloc(before.size + 1);
+      let bytesRead = 0;
+      while (bytesRead < bytes.byteLength) {
+        const part = await handle.read(bytes, bytesRead, bytes.byteLength - bytesRead, bytesRead);
+        if (part.bytesRead === 0) break;
+        bytesRead += part.bytesRead;
+      }
+      const after = await handle.stat();
+      const entry = await lstat(file);
+      if (bytesRead !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs || after.mode !== before.mode || after.uid !== before.uid || after.gid !== before.gid || after.nlink !== 1 || entry.dev !== before.dev || entry.ino !== before.ino || !entry.isFile() || entry.isSymbolicLink()) return failV1("invalid_input");
+      files.push(Object.freeze({ name, dev: before.dev, ino: before.ino, mode: before.mode, uid: before.uid, gid: before.gid, digest: sha256DigestV1(bytes.subarray(0, bytesRead)) }));
+    } finally { await handle.close(); }
+  }
+  const after = await lstat(path);
+  if (after.dev !== directory.dev || after.ino !== directory.ino || after.mode !== directory.mode || after.uid !== directory.uid || after.gid !== directory.gid || JSON.stringify((await readdir(path)).sort()) !== JSON.stringify(names)) return failV1("invalid_input");
+  return Object.freeze({ path, dev: directory.dev, ino: directory.ino, mode: directory.mode, uid: directory.uid, gid: directory.gid, files: Object.freeze(files) });
+}
+
+function sourceLeafDigestV1(snapshot: SourceLeafSnapshotV1): Sha256DigestV1 {
+  return sha256DigestV1(Buffer.from(JSON.stringify(snapshot), "utf8"));
+}
+
+function tomlStringMapV1(value: Readonly<Record<string, string>>): string {
+  return `{${Object.entries(value).map(([key, entry]) => `${JSON.stringify(key)}=${JSON.stringify(entry)}`).join(",")}}`;
+}
+
+function codexSourceArgvV1(
+  cwd: string,
+  mcpTools: readonly string[],
+  source: NonNullable<CompiledSupervisorInternalV1["codexSourceMutation"]>,
+  target: string,
+  snapshot: SourceLeafSnapshotV1,
+): readonly string[] {
+  if (mcpTools.length > 0 && source.mcpServer === undefined) return failV1("invalid_input");
+  const filesystem: Record<string, string> = { ":root": "read", [snapshot.path]: "write" };
+  for (const file of snapshot.files) {
+    const path = resolve(snapshot.path, file.name);
+    if (!safePermissionValueV1(path)) return failV1("invalid_input");
+    if (path !== target) filesystem[path] = "read";
+  }
+  const permissions = `permissions={${JSON.stringify(CODEX_SOURCE_PROFILE_V1)}={filesystem=${tomlStringMapV1(filesystem)},network={enabled=false}}}`;
+  if (Buffer.byteLength(permissions) > 64 * 1024) return failV1("invalid_input");
+  const server = source.mcpServer;
+  const mcp = server === undefined ? "mcp_servers={}" : `mcp_servers={\"understand-code\"={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args)},env=${tomlStringMapV1(server.env)},enabled_tools=${JSON.stringify(mcpTools)}}}`;
+  return Object.freeze([
+    ...CODEX_ARGV_PREFIX_V1.slice(0, -2),
+    "--ignore-user-config",
+    "-c", `default_permissions=${JSON.stringify(CODEX_SOURCE_PROFILE_V1)}`,
+    "-c", permissions,
+    "-c", 'approval_policy="never"',
+    "-c", `projects.${JSON.stringify(cwd)}.trust_level="untrusted"`,
+    "-c", mcp,
+    "-C", cwd, "-",
+  ]);
 }
 
 function uniqueV1<T>(values: readonly T[]): readonly T[] {
@@ -467,6 +667,7 @@ function argvV1(
   cwd: string,
   plan: Step16ExpectedHostEventPlanV1,
   actions: readonly CompiledHostActionAuthorizationV1[],
+  rootMcpServer: CompiledSupervisorInternalV1["rootMcpServer"],
 ): readonly string[] {
   const mcpTools = uniqueV1(
     plan.events.flatMap((event) =>
@@ -480,6 +681,11 @@ function argvV1(
     // Claude permission rules below are never used as Codex write authority.
     return Object.freeze([
       ...CODEX_ARGV_PREFIX_V1,
+      ...(rootMcpServer === undefined ? [] : [
+        "--ignore-user-config",
+        "-c", `projects.${JSON.stringify(cwd)}.trust_level="untrusted"`,
+        "-c", `mcp_servers={"understand-code"={command=${JSON.stringify(rootMcpServer.command)},args=${JSON.stringify(rootMcpServer.args)},env=${tomlStringMapV1(rootMcpServer.env)},enabled_tools=${JSON.stringify(mcpTools)}}}`,
+      ]),
       "-c",
       `mcp_servers.understand-code.enabled_tools=${JSON.stringify(mcpTools)}`,
       "-C",
@@ -495,6 +701,10 @@ function argvV1(
     ]);
     return Object.freeze([
       ...CLAUDE_ARGV_PREFIX_V1,
+      ...(rootMcpServer === undefined ? [] : [
+        "--strict-mcp-config", "--mcp-config",
+        JSON.stringify({ mcpServers: { "understand-code": rootMcpServer } }),
+      ]),
       "--tools",
       builtins.join(","),
       "--allowedTools",
@@ -700,16 +910,31 @@ async function runStep16RealHostJsonlSessionCoreV1(
     cwd,
     expectedEventPlan,
     input.expectedHostActionInputs,
-  );
-  const args = argvV1(
-    host,
-    cwd,
-    expectedEventPlan,
-    actionAuthorizations,
+    supervisor?.codexSourceMutation,
   );
   const environment = childEnvironmentV1(input.env, host);
   const timeoutMs = timeoutV1(input.timeoutMs);
   const childIdentity = supervisor?.childIdentity;
+  const sourceMutation = supervisor?.codexSourceMutation;
+  const sourceAction = actionAuthorizations.find((action) => action.tool === "CodexUpdate");
+  let sourceBefore: SourceLeafSnapshotV1 | undefined;
+  if (sourceMutation !== undefined && sourceAction?.sourcePath !== undefined) {
+    try {
+      if (await realpath(cwd) !== cwd) return failV1("invalid_input");
+      sourceBefore = await snapshotSourceLeafV1(dirname(sourceAction.sourcePath));
+      const target = sourceBefore.files.find((file) => resolve(sourceBefore!.path, file.name) === sourceAction.sourcePath);
+      if (target?.digest !== sha256DigestV1(Buffer.from(sourceMutation.beforeContent, "utf8"))) return failV1("invalid_input");
+    } catch { return failV1("invalid_input"); }
+  }
+  const args = sourceMutation !== undefined && sourceBefore !== undefined && sourceAction?.sourcePath !== undefined
+    ? codexSourceArgvV1(cwd, uniqueV1(expectedEventPlan.events.flatMap((event) => event.kind === "mcp_tool_call" ? [event.tool] : [])), sourceMutation, sourceAction.sourcePath, sourceBefore)
+    : argvV1(
+    host,
+    cwd,
+    expectedEventPlan,
+    actionAuthorizations,
+    supervisor?.rootMcpServer,
+  );
   const protectedPath = childIdentity === undefined
     ? undefined : await rootProtectedExecutablePathV1(executable);
   const executableDigest = await attestExecutableV1(
@@ -978,7 +1203,7 @@ async function runStep16RealHostJsonlSessionCoreV1(
       }
       await Promise.race([stdoutWork, failureObserved]);
     }
-    clearTimeout(timer);
+    if (sourceMutation === undefined) clearTimeout(timer);
     await termination;
     if (failureCode !== undefined) return failV1(failureCode);
     if (spawnFailed) return failAfterSpawnV1("spawn_failed");
@@ -1020,6 +1245,22 @@ async function runStep16RealHostJsonlSessionCoreV1(
       }
       if (!receiptsMatch) return failAfterSpawnV1("transcript_rejected");
     }
+    let sourceEvidence: Step16RealHostJsonlSessionResultV1["sourceMutation"];
+    if (sourceMutation !== undefined && sourceBefore !== undefined && sourceAction?.sourcePath !== undefined && sourceAction.inputDigest !== undefined) {
+      try {
+        assertSupervisorIdentityContextV1(childIdentity);
+        const after = await snapshotSourceLeafV1(sourceBefore.path);
+        if (after.dev !== sourceBefore.dev || after.ino !== sourceBefore.ino || after.mode !== sourceBefore.mode || after.uid !== sourceBefore.uid || after.gid !== sourceBefore.gid || after.files.length !== sourceBefore.files.length) return failAfterSpawnV1("transcript_rejected");
+        const expectedAfter = sha256DigestV1(Buffer.from(sourceMutation.afterContent, "utf8"));
+        for (let index = 0; index < after.files.length; index += 1) {
+          const beforeFile = sourceBefore.files[index]!;
+          const afterFile = after.files[index]!;
+          const expectedDigest = resolve(after.path, afterFile.name) === sourceAction.sourcePath ? expectedAfter : beforeFile.digest;
+          if (!sameFileIdentityV1(beforeFile, afterFile) || afterFile.digest !== expectedDigest) return failAfterSpawnV1("transcript_rejected");
+        }
+        sourceEvidence = Object.freeze({ inputDigest: sourceAction.inputDigest, beforeContentDigest: sha256DigestV1(Buffer.from(sourceMutation.beforeContent, "utf8")), afterContentDigest: expectedAfter, beforeLeafDigest: sourceLeafDigestV1(sourceBefore), afterLeafDigest: sourceLeafDigestV1(after) });
+      } catch { return failAfterSpawnV1("transcript_rejected"); }
+    }
     if (failureCode !== undefined) {
       await termination;
       return failV1(failureCode);
@@ -1030,6 +1271,7 @@ async function runStep16RealHostJsonlSessionCoreV1(
       stderrDigest: sha256DigestV1(stderr),
       executableDigest,
       exit: Object.freeze({ code: 0 as const, signal: null }),
+      ...(sourceEvidence === undefined ? {} : { sourceMutation: sourceEvidence }),
     });
   } finally {
     clearTimeout(timer);

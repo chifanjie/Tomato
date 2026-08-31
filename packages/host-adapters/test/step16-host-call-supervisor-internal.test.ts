@@ -39,6 +39,7 @@ function fixture(closingPlan = plan(), operationWaitMs = 100) {
   let operationCount = 0;
   const client = {
     arm: vi.fn<Step16HostCallSupervisorWitnessClientInternalV1["arm"]>(async (ordinal) => { operationCount = 0; return `step16-window-v1:${String(ordinal).repeat(64)}`; }),
+    armDerived: vi.fn<NonNullable<Step16HostCallSupervisorWitnessClientInternalV1["armDerived"]>>(async (ordinal) => { operationCount = 0; return `step16-window-v1:${String(ordinal).repeat(64)}`; }),
     observe: vi.fn<Step16HostCallSupervisorWitnessClientInternalV1["observe"]>(async () => { operationCount += 1; }),
     complete: vi.fn<Step16HostCallSupervisorWitnessClientInternalV1["complete"]>(async () => ({ status: "completed", receiptBundleDigests: Array.from({ length: operationCount }, (_value, index) => sha(String(index + 1))) })),
     finalize: vi.fn<Step16HostCallSupervisorWitnessClientInternalV1["finalize"]>(async () => ({ opaqueFinalResult: true })),
@@ -111,6 +112,49 @@ afterEach(async () => {
 });
 
 describe("root-owned Host call supervision", () => {
+  it("passes the explicit root MCP selection only to the owned executor", async () => {
+    const test = fixture();
+    const rootMcpServer = { command: "/usr/bin/node", args: ["/opt/root-launcher.mjs"], env: { PATH: "/usr/bin:/bin" } };
+    execution.run.mockImplementation((value, options) => drive(value, options, { operation: test.observe }));
+    await test.supervisor.run(input(), { ...CHILD, rootMcpServer });
+    expect(execution.run.mock.calls[0]?.[1].rootMcpServer).toEqual(rootMcpServer);
+    await test.supervisor.finalize();
+  });
+
+  it("passes the explicit root source policy only to the owned executor", async () => {
+    const test = fixture();
+    const codexSourceMutation = { beforeContent: "before\n", afterContent: "after\n" };
+    execution.run.mockImplementation((value, options) => drive(value, options, { operation: test.observe }));
+    await test.supervisor.run(input(), { ...CHILD, codexSourceMutation });
+    expect(execution.run.mock.calls[0]?.[1].codexSourceMutation).toEqual(codexSourceMutation);
+    await test.supervisor.finalize();
+  });
+
+  it("passes observed arguments to authority derivation without replacing the immutable whole-run plan", async () => {
+    const calls = plan(["codex"], 2).calls;
+    const closingPlan = withDigest([calls[0]!, { ...calls[1]!, argumentsDigest: null }]);
+    const test = fixture(closingPlan);
+    execution.run.mockImplementation((value, options) => drive(value, options, { operation: test.observe }));
+    await test.supervisor.run(input("codex", 2), CHILD);
+    expect(test.client.arm).toHaveBeenCalledOnce();
+    expect(test.client.armDerived).toHaveBeenCalledOnce();
+    expect(test.client.armDerived.mock.calls[0]?.[0]).toBe(2);
+    expect(test.client.armDerived.mock.calls[0]?.[3]).toBe(digestRealHostJsonInternalV1({ step: 2 }));
+    expect(closingPlan.calls[1]?.argumentsDigest).toBeNull();
+    expect(test.client.finalize).not.toHaveBeenCalled();
+    await test.supervisor.finalize();
+    expect(test.client.finalize).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed on a rejected dynamic argument without Provider operation or finalization", async () => {
+    const test = fixture(withDigest([{ ...plan().calls[0]!, argumentsDigest: null }]));
+    test.client.armDerived.mockRejectedValueOnce(new Error("authority rejected current artifact"));
+    execution.run.mockImplementation((value, options) => drive(value, options, { operation: test.observe }));
+    await rejected(test.supervisor.run(input(), CHILD));
+    expect(test.client.observe).not.toHaveBeenCalled();
+    expect(test.client.finalize).not.toHaveBeenCalled();
+  });
+
   it("runs the owned executor, arms actual stream starts, and finalizes only after its successful return", async () => {
     const test = fixture();
     execution.run.mockImplementation((value, options) => drive(value, options, { operation: test.observe }));

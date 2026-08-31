@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
   access,
+  chown,
   mkdir,
   readFile,
   rm,
@@ -137,6 +138,7 @@ async function runRealHostSession(
 async function runCli(cliPath, args, options = {}) {
   const result = await execFileAsync(process.execPath, [cliPath, ...args], {
     cwd: options.cwd,
+    ...(options.childIdentity ?? {}),
     encoding: "utf8",
     env: {
       PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
@@ -155,6 +157,7 @@ async function installHost(
   host,
   providerInstallationRoot,
   actualPlugin,
+  childIdentity,
 ) {
   const result = await runCli(cliPath, [
     "install",
@@ -164,7 +167,7 @@ async function installHost(
     host,
     "--provider-installation-root",
     providerInstallationRoot,
-  ], { cwd: dirname(root) });
+  ], { cwd: dirname(root), childIdentity });
   assert(result.ok === true && result.status === "installed", `${host} Host install failed`);
   const manifest = JSON.parse(
     await readFile(join(root, "installation-manifest.json"), "utf8"),
@@ -180,16 +183,19 @@ async function installHost(
     wrapper: join(root, "bin", "understand-code"),
     cli: join(root, "lib", "understand-code.mjs"),
     actualPlugin,
+    childIdentity,
   };
 }
 
 async function removeHost(host) {
   const doctor = await runCli(host.cli, ["doctor", "--root", host.root], {
     cwd: dirname(host.root),
+    childIdentity: host.childIdentity,
   });
   assert(doctor.ok === true && doctor.status === "healthy", `${host.host} Doctor failed`);
   const removed = await runCli(host.cli, ["uninstall", "--root", host.root], {
     cwd: dirname(host.root),
+    childIdentity: host.childIdentity,
   });
   assert(removed.ok === true && removed.status === "removed", `${host.host} uninstall failed`);
   for (const ownedPath of [
@@ -218,6 +224,7 @@ function startMcpHost(host, repositoryRoot) {
   const child = spawn(actualPlugin.executable, actualPlugin.args, {
     cwd: host.host === "codex" ? repositoryRoot : actualPlugin.cwd,
     env,
+    ...(host.childIdentity ?? {}),
     stdio: ["pipe", "pipe", "pipe"],
   });
   const pending = new Map();
@@ -322,7 +329,7 @@ async function callTool(session, name, argumentsValue) {
   return result;
 }
 
-async function initializeRepository(repositoryRoot) {
+async function initializeRepository(repositoryRoot, childIdentity) {
   await mkdir(repositoryRoot, { recursive: true, mode: 0o700 });
   await mkdir(join(repositoryRoot, "src"), { mode: 0o700 });
   await writeFile(
@@ -330,8 +337,11 @@ async function initializeRepository(repositoryRoot) {
     INITIAL_SOURCE,
     { mode: 0o600 },
   );
-  await execFileAsync("/opt/understand-code/bin/git", ["init", "--quiet", repositoryRoot]);
-  await execFileAsync("/opt/understand-code/bin/git", ["-C", repositoryRoot, "add", "--", "src/task.ts"]);
+  if (childIdentity !== undefined) {
+    for (const path of [repositoryRoot, join(repositoryRoot, "src"), join(repositoryRoot, "src", "task.ts")]) await chown(path, childIdentity.uid, childIdentity.gid);
+  }
+  await execFileAsync("/opt/understand-code/bin/git", ["init", "--quiet", repositoryRoot], childIdentity);
+  await execFileAsync("/opt/understand-code/bin/git", ["-C", repositoryRoot, "add", "--", "src/task.ts"], childIdentity);
   await execFileAsync("/opt/understand-code/bin/git", [
     "-C",
     repositoryRoot,
@@ -343,7 +353,7 @@ async function initializeRepository(repositoryRoot) {
     "--quiet",
     "-m",
     "step16 alpha fixture",
-  ]);
+  ], childIdentity);
 }
 
 async function verifyRootFailure(host, invalidRoot) {
@@ -513,6 +523,128 @@ export async function createStep16DualHostBlockedEvidenceV1(input) {
     lifecycle: "not_run",
     goldGate: blockedGoldGateEvidence(corpus, digest, "failed"),
   });
+}
+
+/** Root-owned execution path. Every task action is a real Host CLI session;
+ * no callTool driver or Host-authored result/plan crosses this boundary. */
+export async function runStep16RootOwnedStrongAlphaV1(input) {
+  assert(process.platform === "linux" && process.geteuid?.() === 0 && process.getegid?.() === 0, "Step16 root supervisor is required");
+  const {
+    step16FixedWorkflowStagesV1, step16FixedStageArgumentsV1,
+    step16ArgumentsDigestV1, verifyStep16FixedStageCommitV1,
+    readStep16FixedFinalTaskV1, STEP16_INITIAL_SOURCE_V1,
+    STEP16_UPDATED_SOURCE_V1, STEP16_EXPECTED_BLOCKING_FINDINGS_V1,
+    createStep16RootMcpLaunchersV1,
+  } = await import("./step16-root-fixed-workflow-linux.mjs");
+  const { createStep16HostCallSupervisorInternalV1 } = await import("../../host-adapters/dist/step16-host-call-supervisor-internal.js");
+  const { connectStep16HostCallWitnessClientInternalV1 } = await import("../../durable-object-provider-authority/dist/step16-host-call-witness-client-internal.js");
+  const { startStep16ProviderOperationPlanRelayInternalV1 } = await import("../../durable-object-provider-authority/dist/step16-provider-operation-plan-relay-internal.js");
+  const { openProviderProductionStrongObjectHostInternalV1 } = await import("../../durable-object-provider-client/dist/provider-production-strong-object-client.js");
+  const { Step16ProviderReceiptBindingV1Schema } = await import("../../contracts/dist/step16-host-receipts.js");
+  const childIdentity = Object.freeze({ uid: input.callerUid, gid: input.callerGid });
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 60 * 60 * 1000);
+  deadline.unref();
+  const provider = await openProviderProductionStrongObjectHostInternalV1({ canonicalInstallationRoot: input.providerInstallationRoot });
+  let connecting;
+  const connect = () => connecting ??= connectStep16HostCallWitnessClientInternalV1({
+    socketPath: input.witnessSocketPath, expectedAuthorityPid: input.authorityPid,
+    runNonce: input.closingPlan.runNonce, closingPlanDigest: input.closingPlan.closingPlanDigest,
+    signal: controller.signal, timeoutMs: 60_000,
+  });
+  const witnessClient = Object.fromEntries(["arm", "armDerived", "observe", "complete", "finalize"].map((name) => [name, async (...args) => (await connect())[name](...args)]));
+  witnessClient.close = async () => { if (connecting !== undefined) await (await connecting).close(); };
+  const supervisor = createStep16HostCallSupervisorInternalV1({ closingPlan: input.closingPlan, witnessClient, signal: controller.signal, operationWaitMs: 60_000 });
+  const installed = [];
+  const executions = [];
+  const preflights = [];
+  let relay;
+  try {
+    relay = await startStep16ProviderOperationPlanRelayInternalV1({
+      socketPath: input.relaySocketPath, expectedGatewayPeer: input.gatewayPeer,
+      runNonce: input.closingPlan.runNonce, closingPlanDigest: input.closingPlan.closingPlanDigest,
+      observeProviderOperation: supervisor.observeProviderOperation, timeoutMs: 60_000,
+    });
+    await initializeRepository(input.repositoryRoot, childIdentity);
+    const rootMcpServers = await createStep16RootMcpLaunchersV1(join(dirname(dirname(input.relaySocketPath)), "step16-mcp-launchers"), input.actualHostPlugins, input.repositoryRoot, childIdentity);
+    for (const host of ["codex", "claude"]) {
+      const plugin = input.actualHostPlugins[host];
+      const installation = await installHost(plugin.cliPath, join(plugin.installedRoot, HOST_ACTIVATION_DIRECTORY), host, input.providerInstallationRoot, plugin, childIdentity);
+      installed.push(installation);
+      // This is only an installed-wrapper protocol preflight. It performs no
+      // repository tool call and contributes no Agent/Task evidence.
+      const server = rootMcpServers[host];
+      const probe = startMcpHost({ ...installation, actualPlugin: { ...plugin, executable: server.command, args: server.args, env: server.env } }, input.repositoryRoot);
+      try {
+        await initializeHost(probe);
+        await listTools(probe);
+        const leafProcs = "/sys/fs/cgroup/understand-code-step16-caller-v1/safe-git/understand-code-safe-git-supervisor-v1/cgroup.procs";
+        assert((await readFile(leafProcs, "utf8")).trim() === String(probe.child.pid), "installed MCP CLI is not the sole SafeGit leaf process");
+        const argv = (await readFile(`/proc/${probe.child.pid}/cmdline`, "utf8")).split("\0").filter((value) => value !== "");
+        exactJson(argv.slice(1), [plugin.cliPath, "mcp", "--stdio", "--root", input.repositoryRoot, "--installation-root", installation.root], "MCP launcher did not exec the actual installed CLI");
+        assert((await readFile(leafProcs, "utf8")).trim() === String(probe.child.pid), "SafeGit leaf membership changed during inspection");
+        preflights.push({ host, actualCliPath: plugin.cliPath, singlePid: true, protocol: "initialize_and_tools_list_only", advertisedTools: EXPECTED_TOOLS.length });
+      }
+      finally { await stopMcpHost(probe); }
+    }
+    if (input.preflightOnly === true) return {
+      schemaVersion: 1, profile: "step16_root_supervised_fixed_workflow_v1", status: "preflight_verified",
+      countsTowardG2OrG3: false, modelInvoked: false, businessToolsInvoked: false, preflights,
+    };
+    const context = { repositoryRoot: input.repositoryRoot, provider };
+    for (const stage of step16FixedWorkflowStagesV1()) {
+      const args = await step16FixedStageArgumentsV1(stage, context);
+      const event = stage.kind === "mcp_tool_call"
+        ? { kind: "mcp_tool_call", server: "understand-code", tool: stage.tool }
+        : { kind: "host_action", action: stage.action, mechanism: stage.mechanism, inputDigest: deriveStep16RealHostActionInputDigestV1(args) };
+      const executor = input.actualHostExecutors[stage.host];
+      const instruction = stage.kind === "mcp_tool_call"
+        ? `Call the understand-code MCP tool ${stage.tool} exactly once with this exact JSON input: ${JSON.stringify(args)}.`
+        : stage.id === "source"
+        ? `Use the native apply_patch tool exactly once to update src/task.ts from ${JSON.stringify(STEP16_INITIAL_SOURCE_V1)} to ${JSON.stringify(STEP16_UPDATED_SOURCE_V1)}. Use the relative patch path src/task.ts, with no other file changes.`
+        : `Call Bash exactly once with this exact JSON input: ${JSON.stringify(args)}.`;
+      const execution = await supervisor.run({
+        host: stage.host, executable: executor.executable, expectedExecutableDigest: executor.executableDigest,
+        cwd: input.repositoryRoot, env: executor.env,
+        prompt: `This is stage ${stage.eventOrdinal} of one fixed, root-supervised synthetic workflow.\n${instruction}\nDo not call any other tool. Do not inspect files with tools first. Stop after this operation succeeds.`,
+        expectedEventPlan: await expectedHostEventPlan(stage.host, [event]),
+        expectedHostActionInputs: stage.kind === "host_action" ? [{ ordinal: 1, input: args }] : [],
+        timeoutMs: 30 * 60 * 1000,
+      }, { childIdentity, ...(stage.id === "source" ? { codexSourceMutation: { beforeContent: STEP16_INITIAL_SOURCE_V1, afterContent: STEP16_UPDATED_SOURCE_V1 } } : { rootMcpServer: rootMcpServers[stage.host] }) });
+      const receipt = Step16RealHostTranscriptReceiptV1Schema.parse(execution.receipt);
+      const observed = receipt.events[0];
+      assert(receipt.events.length === 1 && (stage.kind !== "mcp_tool_call" || observed.argumentsDigest === step16ArgumentsDigestV1(args)), "real Host executed another exact stage input");
+      await verifyStep16FixedStageCommitV1(stage, args, context);
+      executions.push({ eventOrdinal: stage.eventOrdinal, stage: stage.id, receipt, rawTranscriptDigest: execution.rawTranscriptDigest, executableDigest: execution.executableDigest, ...(execution.sourceMutation === undefined ? {} : { sourceMutation: execution.sourceMutation }) });
+    }
+    const finalTask = await readStep16FixedFinalTaskV1(input.repositoryRoot);
+    const completion = await supervisor.finalize();
+    assert(completion !== null && typeof completion === "object" && Array.isArray(completion.strongCallProviderReceipts) && Array.isArray(completion.providerBindings), "invalid witness finalization");
+    assert(completion.strongCallProviderReceipts.length === input.closingPlan.calls.length, "witness did not finalize N/N calls");
+    const providerBindings = completion.providerBindings.map((binding) => Step16ProviderReceiptBindingV1Schema.parse(binding));
+    for (const [index, call] of input.closingPlan.calls.entries()) {
+      const actual = executions.find((execution) => execution.eventOrdinal === call.eventOrdinal).receipt;
+      const completed = completion.strongCallProviderReceipts[index];
+      assert(completed.callIdDigest === actual.events[0].callIdDigest, "witness finalized another observed call");
+      exactJson(providerBindings.filter((binding) => binding.callIdDigest === completed.callIdDigest).map((binding) => binding.receiptLedger.receiptBundleDigest), completed.receiptBundleDigests, "Provider bindings differ from the finalized call");
+    }
+    return {
+      schemaVersion: 1, profile: "step16_root_supervised_fixed_workflow_v1", status: "verified_not_gold",
+      countsTowardG2OrG3: false, executionSurface: "real_host_cli_jsonl", ...finalTask,
+      providerRevision: (await provider.inspectState()).revision,
+      closingPlan: input.closingPlan, completedCalls: completion.strongCallProviderReceipts.length,
+      expectedBlockingFindingCount: STEP16_EXPECTED_BLOCKING_FINDINGS_V1,
+      strongCallProviderReceipts: completion.strongCallProviderReceipts, providerBindings, executions,
+      limitation: "Fixed synthetic fixture with separate real Host sessions; not a full Gold task or a single-session claim.",
+    };
+  } finally {
+    clearTimeout(deadline);
+    controller.abort();
+    await relay?.close().catch(() => undefined);
+    await supervisor.close();
+    provider.close();
+    for (const host of installed.reverse()) await removeHost(host);
+  }
 }
 
 export async function runStep16DualHostStrongAlphaV1(input) {

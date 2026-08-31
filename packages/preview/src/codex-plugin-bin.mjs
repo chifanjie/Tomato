@@ -178,6 +178,15 @@ async function run() {
     const childArguments = [cliPath, "mcp", "--stdio"];
     if (root !== undefined) childArguments.push("--root", root);
     childArguments.push("--installation-root", hostInstallationRoot);
+    if (process.platform === "linux" && typeof process.execve === "function") {
+      // Keep the MCP CLI as the sole process in its SafeGit supervisor leaf.
+      process.execve(
+        process.execPath,
+        [process.execPath, ...childArguments],
+        childEnvironment,
+      );
+      return;
+    }
     child = spawn(
       process.execPath,
       childArguments,

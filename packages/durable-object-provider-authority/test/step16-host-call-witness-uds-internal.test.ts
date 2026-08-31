@@ -32,6 +32,7 @@ import {
   startStep16HostCallWitnessUdsServerInternalV1,
   type Step16HostCallWitnessUdsServerInternalV1,
 } from "../src/step16-host-call-witness-uds-internal.js";
+import { connectStep16HostCallWitnessClientCoreInternalV1 } from "../src/step16-host-call-witness-client-internal.js";
 
 const PROFILE = STEP16_HOST_CALL_WITNESS_UDS_PROFILE_INTERNAL_V1;
 const SUPERVISOR_PID = 777;
@@ -180,6 +181,8 @@ interface TestFixture {
 
 async function fixture(input: Readonly<{
   readonly timeoutMs?: number;
+  readonly derivedArguments?: boolean;
+  readonly resolveArgumentsDigest?: (call: Step16HostCallWitnessClosingPlanInternalV1["calls"][number]) => Promise<string>;
   readonly finalizeRun?: NonNullable<Step16HostCallWitnessAuthorityCallbacksInternalV1["finalizeRun"]>;
   readonly readPeerCredentials?: (
     socket: Socket,
@@ -190,13 +193,16 @@ async function fixture(input: Readonly<{
   chmodSync(directory, 0o700);
   const directoryStats = lstatSync(directory);
   const socketPath = join(directory, "authority.sock");
-  const closingPlan = plan();
+  const fixed = plan();
+  const calls = input.derivedArguments ? fixed.calls.map((call) => ({ ...call, argumentsDigest: null })) : fixed.calls;
+  const closingPlan = { ...fixed, calls, closingPlanDigest: deriveStep16HostCallWitnessClosingPlanDigestInternalV1({ runNonce: fixed.runNonce, calls }) };
   const authorityFixture = authority();
   const server = await startStep16HostCallWitnessUdsServerCoreInternalV1(
     {
       socketPath,
       directSupervisorPid: SUPERVISOR_PID,
       closingPlan,
+      ...(input.resolveArgumentsDigest === undefined ? {} : { resolveArgumentsDigest: input.resolveArgumentsDigest }),
       authority: { ...authorityFixture.callbacks,
         ...(input.finalizeRun === undefined ? {} : { finalizeRun: input.finalizeRun }) },
       timeoutMs: input.timeoutMs,
@@ -363,6 +369,37 @@ afterEach(async () => {
 });
 
 describe("Step16 Host-call witness root UDS adapter", () => {
+  it("round-trips a root-derived arm through the actual client and UDS server", async () => {
+    const resolveArgumentsDigest = vi.fn(async () => ARGUMENTS_DIGEST);
+    const test = await fixture({ derivedArguments: true, resolveArgumentsDigest });
+    const client = await connectStep16HostCallWitnessClientCoreInternalV1({
+      socketPath: test.socketPath, expectedAuthorityPid: 888,
+      runNonce: test.closingPlan.runNonce, closingPlanDigest: test.closingPlan.closingPlanDigest,
+    }, { readPeerCredentials: () => ({ uid: 0, gid: 0, pid: 888 }) });
+    try {
+      const token = await client.armDerived(1, SESSION_DIGEST, CALL_DIGEST, ARGUMENTS_DIGEST);
+      await client.observe(token, { operation: "write_object", operationNonce: OPERATION_NONCE, requestDigest: REQUEST_DIGEST });
+      await client.complete(token, SESSION_DIGEST, CALL_DIGEST);
+      const completed = await client.finalize();
+      expect(completed).toMatchObject({ strongCallProviderReceipts: [{ callIdDigest: CALL_DIGEST, receiptBundleDigests: [RECEIPT_DIGEST] }] });
+      expect(resolveArgumentsDigest).toHaveBeenCalledOnce();
+      expect(test.authority.beginCollecting.mock.calls[0]?.[0].argumentsDigest).toBe(ARGUMENTS_DIGEST);
+      expect(JSON.stringify(completed)).not.toContain(PRIVATE_SENTINEL);
+    } finally { await client.close(); }
+  });
+
+  it("rejects a derived argument mismatch on the real wire without opening a window", async () => {
+    const test = await fixture({ derivedArguments: true, resolveArgumentsDigest: async () => ARGUMENTS_DIGEST });
+    const client = await connectStep16HostCallWitnessClientCoreInternalV1({
+      socketPath: test.socketPath, expectedAuthorityPid: 888,
+      runNonce: test.closingPlan.runNonce, closingPlanDigest: test.closingPlan.closingPlanDigest,
+    }, { readPeerCredentials: () => ({ uid: 0, gid: 0, pid: 888 }) });
+    try {
+      await expect(client.armDerived(1, SESSION_DIGEST, CALL_DIGEST, digest("9"))).rejects.toMatchObject({ code: "witness_transport_rejected" });
+      expect(test.authority.beginCollecting).not.toHaveBeenCalled();
+    } finally { await client.close(); }
+  });
+
   it("serializes split and coalesced frames and finalizes a complete public receipt result", async () => {
     const finalizeRun = vi.fn(async () => undefined);
     const test = await fixture({ finalizeRun });

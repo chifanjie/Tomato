@@ -12,6 +12,7 @@ import {
   type Step16HostCallWitnessAuthorityCallbacksInternalV1,
   type Step16HostCallWitnessClosingPlanCallInternalV1,
   type Step16HostCallWitnessClosingPlanInternalV1,
+  type Step16HostCallWitnessResolveArgumentsInternalV1,
 } from "../src/step16-host-call-witness-server-internal.js";
 
 const digestV1 = (character: string): string =>
@@ -89,6 +90,7 @@ function fixtureV1(input: Readonly<{
     Step16HostCallWitnessAuthorityCallbacksInternalV1["appendExpectedOperation"];
   readonly complete?: Step16HostCallWitnessAuthorityCallbacksInternalV1["complete"];
   readonly finalizeRun?: NonNullable<Step16HostCallWitnessAuthorityCallbacksInternalV1["finalizeRun"]>;
+  readonly resolveArgumentsDigest?: Step16HostCallWitnessResolveArgumentsInternalV1;
 }> = {}) {
   let leaseHeld = input.leaseHeld ?? true;
   const authorityWindow = Object.freeze(Object.create(null)) as
@@ -118,6 +120,8 @@ function fixtureV1(input: Readonly<{
     directSupervisorPid: 777,
     supervisorLease: { held: () => leaseHeld },
     closingPlan: plan,
+    ...(input.resolveArgumentsDigest === undefined ? {} :
+      { resolveArgumentsDigest: input.resolveArgumentsDigest }),
     authority: {
       beginCollecting: begin,
       appendExpectedOperation,
@@ -194,6 +198,98 @@ function expectCodeV1(code: string) {
 }
 
 describe("Step16 root-only Host-call witness control core", () => {
+  it("requires an explicit root resolver for deferred arguments", () => {
+    expect(() => fixtureV1({ calls: [{ ...planCallsV1()[0]!, argumentsDigest: null }] }))
+      .toThrow(expectCodeV1("invalid_closing_plan"));
+  });
+
+  it("resolves a later call only after the preceding call completes, in the same run", async () => {
+    let committed = false;
+    const resolveArgumentsDigest = vi.fn(async (call) => {
+      expect(committed).toBe(true);
+      expect(Object.isFrozen(call)).toBe(true);
+      expect(call).toEqual({ ...planCallsV1(2)[1], argumentsDigest: null });
+      return digestV1("9");
+    });
+    const finalizeRun = vi.fn(async () => undefined);
+    const fixture = fixtureV1({
+      calls: [planCallsV1()[0]!, { ...planCallsV1(2)[1]!, argumentsDigest: null }],
+      resolveArgumentsDigest,
+      finalizeRun,
+    });
+    const { connection, token } = await armV1(fixture);
+    await observeV1(connection, token, 3);
+    await connection.complete({ kind: "complete", sequence: 4, token, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1 });
+    expect(resolveArgumentsDigest).not.toHaveBeenCalled();
+    expect(finalizeRun).not.toHaveBeenCalled();
+    committed = true;
+    const second = await connection.arm({
+      kind: "arm_derived", sequence: 5, callOrdinal: 2,
+      sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: digestV1("a"), argumentsDigest: digestV1("9"),
+    });
+    await observeV1(connection, second, 6);
+    await connection.complete({ kind: "complete", sequence: 7, token: second, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: digestV1("a") });
+    expect(resolveArgumentsDigest).toHaveBeenCalledTimes(1);
+    expect(resolveArgumentsDigest.mock.calls[0]).toHaveLength(1);
+    expect(fixture.begin.mock.calls.map(([call]) => ({ runNonce: call.runNonce, closingPlanDigest: call.closingPlanDigest, callOrdinal: call.callOrdinal, argumentsDigest: call.argumentsDigest }))).toEqual([
+      { runNonce: RUN_NONCE_V1, closingPlanDigest: fixture.plan.closingPlanDigest, callOrdinal: 1, argumentsDigest: digestV1("4") },
+      { runNonce: RUN_NONCE_V1, closingPlanDigest: fixture.plan.closingPlanDigest, callOrdinal: 2, argumentsDigest: digestV1("9") },
+    ]);
+    await fixture.server.close();
+    expect(finalizeRun).toHaveBeenCalledOnce();
+  });
+
+  it.each(["mismatch", "invalid_digest", "read_failed"])("rejects %s from root derivation before opening a Provider window", async (failure) => {
+    const fixture = fixtureV1({
+      calls: [{ ...planCallsV1()[0]!, argumentsDigest: null }],
+      resolveArgumentsDigest: async () => {
+        if (failure === "read_failed") throw new Error("private runtime failure");
+        return failure === "invalid_digest" ? "not-a-digest" : digestV1("8");
+      },
+    });
+    const connection = await helloV1(fixture);
+    await expect(connection.arm({ kind: "arm_derived", sequence: 2, callOrdinal: 1, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1, argumentsDigest: digestV1("9") })).rejects.toEqual(expectCodeV1(failure === "read_failed" ? "authority_failed" : "unexpected_call"));
+    expect(fixture.begin).not.toHaveBeenCalled();
+    await expect(connection.arm({})).rejects.toEqual(expectCodeV1("connection_closed"));
+  });
+
+  it("does not arm after a lease is lost during a root Provider read", async () => {
+    let release!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => { release = resolve; });
+    const fixture = fixtureV1({ calls: [{ ...planCallsV1()[0]!, argumentsDigest: null }], resolveArgumentsDigest: () => pending });
+    const connection = await helloV1(fixture);
+    const arming = connection.arm({ kind: "arm_derived", sequence: 2, callOrdinal: 1, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1, argumentsDigest: digestV1("9") });
+    fixture.loseLease();
+    release(digestV1("9"));
+    await expect(arming).rejects.toEqual(expectCodeV1("lease_lost"));
+    expect(fixture.begin).not.toHaveBeenCalled();
+  });
+
+  it("snapshots observed arguments and identity before awaiting root derivation", async () => {
+    let release!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => { release = resolve; });
+    const fixture = fixtureV1({ calls: [{ ...planCallsV1()[0]!, argumentsDigest: null }], resolveArgumentsDigest: () => pending });
+    const connection = await helloV1(fixture);
+    const frame = { kind: "arm_derived", sequence: 2, callOrdinal: 1, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1, argumentsDigest: digestV1("9") };
+    const arming = connection.arm(frame);
+    frame.sessionIdDigest = digestV1("e");
+    frame.callIdDigest = digestV1("f");
+    frame.argumentsDigest = digestV1("0");
+    release(digestV1("9"));
+    const token = await arming;
+    expect(fixture.begin.mock.calls[0]?.[0]).toMatchObject({ sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1, argumentsDigest: digestV1("9") });
+    await connection.abort({ kind: "abort", sequence: 3, token });
+  });
+
+  it("does not permit a derived frame to replace a fixed argument commitment", async () => {
+    const resolver = vi.fn(async () => digestV1("9"));
+    const fixture = fixtureV1({ resolveArgumentsDigest: resolver });
+    const connection = await helloV1(fixture);
+    await expect(connection.arm({ kind: "arm_derived", sequence: 2, callOrdinal: 1, sessionIdDigest: SESSION_DIGEST_V1, callIdDigest: CALL_DIGEST_V1, argumentsDigest: digestV1("9") })).rejects.toEqual(expectCodeV1("invalid_frame"));
+    expect(resolver).not.toHaveBeenCalled();
+    expect(fixture.begin).not.toHaveBeenCalled();
+  });
+
   it("binds the injected closing plan and projects only safe receipt digests", async () => {
     const privateSecret = "raw-private-provider-signature";
     let openedAgain: unknown;

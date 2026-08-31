@@ -328,6 +328,7 @@ export async function openRuntime(
     });
     if (providerClient !== undefined) {
       const provider: StrongChangeProviderAuthorityV1 = {
+        inspectBusinessHead: () => providerClient!.inspectBusinessHead(),
         inspectState: async () => {
           const result = await providerClient.inspectState();
           return { revision: result.revision };

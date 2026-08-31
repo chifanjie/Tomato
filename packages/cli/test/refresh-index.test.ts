@@ -57,6 +57,9 @@ const sideEffects = vi.hoisted(() => {
     publishStagedRepositoryIndex: vi.fn(),
     publishIncrementalStrongCutV1: vi.fn(),
     discardStagedRepositoryIndex: vi.fn(),
+    savePendingRepositoryIndexV1: vi.fn(),
+    prepareTaskKnowledgeV1: vi.fn(),
+    openActiveRepositoryIndexV1: vi.fn(),
     legacyCapture: vi.fn(),
     providerRevision: 0,
     providerIndexAuthority: undefined as any,
@@ -121,6 +124,12 @@ vi.mock("../src/runtime/repository-indexer.js", () => ({
   publishStagedRepositoryIndex: sideEffects.publishStagedRepositoryIndex,
   publishIncrementalStrongCutV1: sideEffects.publishIncrementalStrongCutV1,
   discardStagedRepositoryIndex: sideEffects.discardStagedRepositoryIndex,
+  savePendingRepositoryIndexV1: sideEffects.savePendingRepositoryIndexV1,
+  openActiveRepositoryIndexV1: sideEffects.openActiveRepositoryIndexV1,
+}));
+
+vi.mock("../src/handlers/knowledge-publication.js", () => ({
+  prepareTaskKnowledgeV1: sideEffects.prepareTaskKnowledgeV1,
 }));
 
 vi.mock("../src/runtime/context.js", () => ({
@@ -405,6 +414,17 @@ beforeEach(() => {
   sideEffects.failNextPulsePersist = false;
 
   sideEffects.openStore.mockResolvedValue(sideEffects.store);
+  sideEffects.openActiveRepositoryIndexV1.mockImplementation(async () => ({
+    generation: {
+      generationId: sideEffects.providerIndexAuthority.generationId,
+      generationManifestDigest: sideEffects.providerIndexAuthority.generationManifestDigest,
+      sourceInventoryDigest: sideEffects.providerIndexAuthority.sourceInventoryDigest,
+    },
+    authority: {
+      sourceSnapshotId: sideEffects.providerIndexAuthority.sourceSnapshotId,
+      finalizedProviderRevision: sideEffects.providerIndexAuthority.finalizedProviderRevision,
+    },
+  }));
   sideEffects.openProvider.mockResolvedValue(sideEffects.provider);
   sideEffects.bootstrapSafeGit.mockResolvedValue({
     capability: sideEffects.capability,
@@ -1650,5 +1670,115 @@ describe("refreshIndex production strong writer", () => {
     ).toHaveLength(1);
     expect(sideEffects.provider.compareCommitRefreshPublication)
       .toHaveBeenCalledTimes(2);
+  });
+
+  it("stages Task knowledge durably without any Provider or current-cut publication", async () => {
+    await refreshIndex({ mode: "incremental", idempotencyKey: "stage-baseline", actor: "codex" }, root, installationRoot);
+    const snapshot = sideEffects.savedSnapshot as any;
+    const pulse = sideEffects.savedPulse;
+    const revision = sideEffects.providerRevision;
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    sideEffects.prepareTaskKnowledgeV1.mockResolvedValue({ action: "stage", knowledgeLineage: {
+      status: "pending", taskId, taskRevision: 4, sourceSnapshotId: snapshot.sourceSnapshotId,
+    } });
+    vi.clearAllMocks();
+    const result = await refreshIndex({ mode: "full", expectedSourceSnapshotId: snapshot.sourceSnapshotId,
+      idempotencyKey: "stage-knowledge", actor: "codex",
+      knowledge: { action: "stage", taskId, expectedTaskRevision: 4 },
+    }, root, installationRoot) as any;
+    expect(result.structuredContent.result.knowledge).toMatchObject({ status: "pending", taskId, taskRevision: 4 });
+    expect(sideEffects.savePendingRepositoryIndexV1).toHaveBeenCalledOnce();
+    expect(sideEffects.publishStagedRepositoryIndex).not.toHaveBeenCalled();
+    expect(sideEffects.publishIncrementalStrongCutV1).not.toHaveBeenCalled();
+    expect(sideEffects.provider.compareCommit).not.toHaveBeenCalled();
+    expect(sideEffects.provider.writeExactObject).not.toHaveBeenCalled();
+    expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
+    expect(sideEffects.providerRevision).toBe(revision);
+    expect(sideEffects.savedSnapshot).toBe(snapshot);
+    expect(sideEffects.savedPulse).toBe(pulse);
+    expect(sideEffects.discardStagedRepositoryIndex).toHaveBeenCalledOnce();
+  });
+
+  it("publishes the authorized candidate bytes through the existing full atomic cut and replays it", async () => {
+    await refreshIndex({ mode: "incremental", idempotencyKey: "publish-baseline", actor: "codex" }, root, installationRoot);
+    const snapshot = sideEffects.savedSnapshot as any;
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const candidateGenerationId = `generation-${"4".repeat(64)}`;
+    const built = await sideEffects.buildRepositoryIndex();
+    const candidate = { ...built, generation: { ...built.generation, generationId: candidateGenerationId },
+      knowledgeLineage: { status: "pending", taskId, taskRevision: 4, sourceSnapshotId: snapshot.sourceSnapshotId },
+    };
+    sideEffects.buildRepositoryIndex.mockResolvedValue(candidate);
+    sideEffects.prepareTaskKnowledgeV1.mockResolvedValue({ action: "publish", ...built,
+      candidate,
+      knowledgeLineage: { status: "published", taskId, taskRevision: 7, sourceSnapshotId: snapshot.sourceSnapshotId },
+    });
+    vi.clearAllMocks();
+    const input = { mode: "full", expectedSourceSnapshotId: snapshot.sourceSnapshotId,
+      idempotencyKey: "publish-knowledge", actor: "codex",
+      knowledge: { action: "publish", taskId, expectedTaskRevision: 7, candidateGenerationId },
+    };
+    const result = await refreshIndex(input, root, installationRoot) as any;
+    expect(result.structuredContent.result.knowledge).toMatchObject({ status: "published", taskId, candidateGenerationId });
+    expect(sideEffects.buildRepositoryIndex).toHaveBeenCalledOnce();
+    expect(sideEffects.publishStagedRepositoryIndex).toHaveBeenCalledWith(expect.objectContaining({ publication: built.publication }));
+    const revision = sideEffects.providerRevision;
+    await expect(refreshIndex(input, root, installationRoot)).resolves.toMatchObject({ isError: false });
+    expect(sideEffects.providerRevision).toBe(revision);
+    expect(sideEffects.prepareTaskKnowledgeV1).toHaveBeenLastCalledWith(expect.objectContaining({ recoveredGenerationId: built.generation.generationId }));
+  });
+
+  it("returns the existing machine-readable idempotency conflict for a pending key reused by another request", async () => {
+    await refreshIndex({ mode: "incremental", idempotencyKey: "pending-conflict-baseline", actor: "codex" }, root, installationRoot);
+    const snapshot = sideEffects.savedSnapshot as any;
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    sideEffects.prepareTaskKnowledgeV1.mockResolvedValue({ action: "stage", knowledgeLineage: {
+      status: "pending", taskId, taskRevision: 4, sourceSnapshotId: snapshot.sourceSnapshotId,
+    } });
+    sideEffects.savePendingRepositoryIndexV1.mockRejectedValueOnce(Object.assign(
+      new sideEffects.RepositoryIndexError("pending knowledge idempotency conflict"), { existingRequestDigest: digest },
+    ));
+    vi.clearAllMocks();
+    await expect(refreshIndex({ mode: "full", expectedSourceSnapshotId: snapshot.sourceSnapshotId,
+      idempotencyKey: "pending-conflict", actor: "codex",
+      knowledge: { action: "stage", taskId, expectedTaskRevision: 4 },
+    }, root, installationRoot)).rejects.toMatchObject({ result: { structuredContent: { error: {
+      code: "idempotency_conflict", details: { idempotencyKey: "pending-conflict", existingRequestDigest: digest },
+    } } } });
+    expect(sideEffects.provider.compareCommit).not.toHaveBeenCalled();
+    expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
+  });
+
+  it("rejects a self-consistent candidate that does not reconstruct from the captured source", async () => {
+    await refreshIndex({ mode: "incremental", idempotencyKey: "forged-candidate-baseline", actor: "codex" }, root, installationRoot);
+    const snapshot = sideEffects.savedSnapshot as any;
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const built = await sideEffects.buildRepositoryIndex();
+    const candidateGenerationId = `generation-${"4".repeat(64)}`;
+    sideEffects.prepareTaskKnowledgeV1.mockResolvedValue({ action: "publish", ...built,
+      candidate: { ...built, generation: { ...built.generation, generationId: candidateGenerationId },
+        knowledgeLineage: { status: "pending", taskId, taskRevision: 4, sourceSnapshotId: snapshot.sourceSnapshotId } },
+    });
+    vi.clearAllMocks();
+    await expect(refreshIndex({ mode: "full", expectedSourceSnapshotId: snapshot.sourceSnapshotId,
+      idempotencyKey: "forged-candidate-publish", actor: "codex",
+      knowledge: { action: "publish", taskId, expectedTaskRevision: 7, candidateGenerationId },
+    }, root, installationRoot)).rejects.toThrow();
+    expect(sideEffects.provider.writeExactObject).not.toHaveBeenCalled();
+    expect(sideEffects.publishStagedRepositoryIndex).not.toHaveBeenCalled();
+    expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
+  });
+
+  it("cannot overwrite Task-published knowledge by omitting the Task publication selector", async () => {
+    await refreshIndex({ mode: "full", idempotencyKey: "protected-baseline", actor: "codex" }, root, installationRoot);
+    const original = sideEffects.openActiveRepositoryIndexV1.getMockImplementation()!;
+    sideEffects.openActiveRepositoryIndexV1.mockImplementation(async () => ({
+      ...await original(), knowledgeLineage: { status: "published" },
+    }));
+    vi.clearAllMocks();
+    await expect(refreshIndex({ mode: "full", idempotencyKey: "omit-selector", actor: "codex" }, root, installationRoot)).rejects.toThrow();
+    expect(sideEffects.buildRepositoryIndex).not.toHaveBeenCalled();
+    expect(sideEffects.provider.writeExactObject).not.toHaveBeenCalled();
+    expect(sideEffects.store.persistArtifact).not.toHaveBeenCalled();
   });
 });

@@ -46,6 +46,9 @@ import {
   ResolvedContextBuildSpecV1Schema,
   TaskManifestV1Schema,
   VerificationMethodV1Schema,
+  type MutationResultV1,
+  type TaskManifestV1,
+  type UpdateTaskInputV1,
 } from "./task.js";
 
 const nonnegativeSafeInteger = z.number().int().nonnegative().safe();
@@ -1466,12 +1469,43 @@ export type StrongVerificationSecurityProjectionV1 = Pick<
   | "detailFields"
 >;
 
+/** The shared business gate; the authority of the containing Task is separate. */
+export function taskVerificationRequirementGuardsV1(
+  plan: readonly { id: string; required?: boolean; acceptanceClaimIds: readonly string[] }[],
+  records: readonly { verificationPlanEntryId: string; snapshotId: string; attempt: number;
+    claimIds: readonly string[]; status: string; skipAcceptance?: unknown }[],
+  snapshotId: string,
+): Array<{ code: string; resourceId: string }> {
+  const guards: Array<{ code: string; resourceId: string }> = [];
+  for (const entry of plan.filter((candidate) => candidate.required !== false)) {
+    const record = records.filter((candidate) =>
+      candidate.verificationPlanEntryId === entry.id && candidate.snapshotId === snapshotId
+    ).sort((left, right) => right.attempt - left.attempt)[0];
+    const claimIds = new Set(record?.claimIds ?? []);
+    if (record === undefined || claimIds.size !== record.claimIds.length ||
+      claimIds.size !== entry.acceptanceClaimIds.length ||
+      !entry.acceptanceClaimIds.every((claimId) => claimIds.has(claimId)) ||
+      (record.status !== "passed" && !(record.status === "skipped" && record.skipAcceptance !== undefined))) {
+      guards.push({ code: record?.status === "failed" ? "verification_failed"
+        : record?.status === "blocked" ? "verification_blocked"
+        : record?.status === "flaky" ? "verification_flaky" : "verification_required",
+      resourceId: entry.id });
+    }
+  }
+  return guards;
+}
+
 export interface StrongChangeIntelligenceAuthorityV1 {
+  /** Commits only transition_status -> verified, never an arbitrary Task update. */
+  commitTaskVerified?(input: UpdateTaskInputV1, proposedAt: string): Promise<{
+    task: TaskManifestV1;
+    mutation: MutationResultV1;
+  }>;
   reserveOperationTime?(
     input: Readonly<{
       taskId: string;
       expectedRevision: number;
-      operation: "check_change" | "record_verification";
+      operation: "check_change" | "record_verification" | "update_task";
       idempotencyKey: string;
       actor: string;
       requestDigest?: z.infer<typeof ContentDigestSchema>;
@@ -1483,7 +1517,7 @@ export interface StrongChangeIntelligenceAuthorityV1 {
   abortReservedOperation?(input: Readonly<{
     taskId: string;
     expectedRevision: number;
-    operation: "check_change" | "record_verification";
+    operation: "check_change" | "record_verification" | "update_task";
     idempotencyKey: string;
     actor: string;
     requestDigest: z.infer<typeof ContentDigestSchema>;

@@ -26,6 +26,11 @@
       "types": "./dist/evidence-adapter.d.ts",
       "import": "./dist/evidence-adapter.js",
       "default": "./dist/evidence-adapter.js"
+    },
+    "./committed-strong-task-projection-reader-internal": {
+      "types": "./dist/committed-strong-task-projection-reader-internal.d.ts",
+      "import": "./dist/committed-strong-task-projection-reader-internal.js",
+      "default": "./dist/committed-strong-task-projection-reader-internal.js"
     }
   },
   "files": [

@@ -73,6 +73,7 @@ import {
 } from "./ids.js";
 import {
   applyTaskUpdate,
+  validateTaskVerifiedTransitionInternalV1,
   rebuildTaskContext,
 } from "./mutation.js";
 import { renderTaskBriefMarkdown } from "./renderer.js";
@@ -1446,6 +1447,18 @@ export class TaskEngine {
           };
         },
       );
+    }
+    if (input.action.type === "transition_status" && input.action.to === "verified") {
+      const current = await this.#store.readTaskBundle(input.taskId);
+      if ("impactConclusion" in current.bundle) {
+        if (this.#strongChangeAuthority?.commitTaskVerified === undefined) {
+          throw new TaskEngineError("capability_unavailable", "strong_write_locked");
+        }
+        if (current.bundle.manifest.revision === input.expectedRevision) {
+          validateTaskVerifiedTransitionInternalV1(current);
+        }
+        return this.#strongChangeAuthority.commitTaskVerified(input, this.#clock().toISOString());
+      }
     }
     return applyTaskUpdate(this.#store, input, this.#clock);
   }

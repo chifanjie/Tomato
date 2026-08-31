@@ -1263,11 +1263,38 @@ export type RefreshIndexModeV1 = z.infer<
   typeof RefreshIndexModeV1Schema
 >;
 
+export const KnowledgeGenerationIdV1Schema = z.string().regex(/^generation-[0-9a-f]{64}$/u);
+
+/** Read pins only: refresh_index never transitions or mutates a Task. */
+export const RefreshIndexKnowledgeInputV1Schema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("stage"),
+    taskId: TaskIdSchema,
+    expectedTaskRevision: RevisionSchema,
+  }),
+  z.strictObject({
+    action: z.literal("publish"),
+    taskId: TaskIdSchema,
+    expectedTaskRevision: RevisionSchema,
+    candidateGenerationId: KnowledgeGenerationIdV1Schema,
+  }),
+]);
+
 export const RefreshIndexInputV1Schema = z.strictObject({
   mode: RefreshIndexModeV1Schema,
   expectedSourceSnapshotId: SnapshotIdSchema.optional(),
   idempotencyKey: IdempotencyKeySchema,
   actor: ActorSchema,
+  knowledge: RefreshIndexKnowledgeInputV1Schema.optional(),
+}).superRefine((input, context) => {
+  if (input.knowledge !== undefined &&
+    (input.mode !== "full" || input.expectedSourceSnapshotId === undefined)) {
+    context.addIssue({
+      code: "custom",
+      message: "Task knowledge requires full mode and an explicit Snapshot read pin",
+      path: ["knowledge"],
+    });
+  }
 });
 
 export const McpProgressRequestMetaV1Schema = z.strictObject({
@@ -1392,6 +1419,14 @@ export const RefreshIndexOutputV1Schema =
   createMcpToolSuccessResultV1Schema(
     z.strictObject({
       operation: RefreshIndexCompletedV1Schema,
+      knowledge: z.strictObject({
+        status: z.enum(["pending", "published"]),
+        candidateGenerationId: KnowledgeGenerationIdV1Schema,
+        generationId: KnowledgeGenerationIdV1Schema,
+        taskId: TaskIdSchema,
+        taskRevision: RevisionSchema,
+        sourceSnapshotId: SnapshotIdSchema,
+      }).optional(),
     }),
   ).superRefine((output, context) => {
     if (
@@ -1402,6 +1437,16 @@ export const RefreshIndexOutputV1Schema =
         code: "custom",
         message: "refresh_index final Snapshot must match MCP meta",
         path: ["structuredContent", "result", "operation", "finalSnapshotId"],
+      });
+    }
+    const knowledge = output.structuredContent.result.knowledge;
+    if (knowledge !== undefined &&
+      (knowledge.sourceSnapshotId !== output.structuredContent.meta.sourceSnapshotId ||
+        (knowledge.status === "pending" && knowledge.generationId !== knowledge.candidateGenerationId))) {
+      context.addIssue({
+        code: "custom",
+        message: "knowledge must bind the exact refresh Snapshot and candidate",
+        path: ["structuredContent", "result", "knowledge"],
       });
     }
   });

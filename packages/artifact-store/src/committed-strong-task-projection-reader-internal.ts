@@ -63,7 +63,7 @@ export async function readCommittedStrongTaskProjectionInternalV1(
     // bytes, so mutation of either aliased object cannot change this read.
     const taskId = TaskIdSchema.parse(expected.taskId);
     const operation = expected.operation;
-    if (operation !== "check_change" && operation !== "record_verification") {
+    if (operation !== "check_change" && operation !== "record_verification" && operation !== "update_task") {
       throw new TypeError("invalid projection operation");
     }
     const expectedRequestDigest = expected.requestDigest === undefined
@@ -73,7 +73,8 @@ export async function readCommittedStrongTaskProjectionInternalV1(
     const headIdentity = canonicalizeJson(await provider.inspectBusinessHead());
     const head = record(JSON.parse(headIdentity));
     const phase = operation === "check_change"
-      ? "strong_change_check_v1" : "strong_verification_v1";
+      ? "strong_change_check_v1" : operation === "record_verification"
+        ? "strong_verification_v1" : "strong_task_verified_v1";
     if (
       Object.keys(head).sort().join(",") !==
         "artifacts,mutationDigest,operationNonce,phase,profile,revision" ||
@@ -147,8 +148,8 @@ export async function readCommittedStrongTaskProjectionInternalV1(
       currentReceipts.length !== 1 || receipt === undefined ||
       receipt.operation !== operation || receipt.taskId !== taskId ||
       receipt.result.mutation.revision !== revision ||
-      !("strongOutcome" in receipt.result) ||
-      canonicalizeJson(receipt.result.strongOutcome) !== canonicalizeJson(outcome) ||
+      canonicalizeJson(receipt.operation === "update_task" ? receipt.result
+        : "strongOutcome" in receipt.result ? receipt.result.strongOutcome : null) !== canonicalizeJson(outcome) ||
       receipt.resultDigest !== sha256CanonicalJson(receipt.result) ||
       currentRecords.length !== 1 || entry === undefined ||
       entry.taskId !== taskId || entry.resultRevision !== revision ||
@@ -158,7 +159,14 @@ export async function readCommittedStrongTaskProjectionInternalV1(
       entry.resultDigest !== receipt.resultDigest ||
       receipts.some((item) => item.taskId !== taskId)
     ) throw new TypeError("committed projection identity mismatch");
-    if (outcome.profile === "strong_change_check_outcome_v1") {
+    if ("task" in outcome) {
+      if (operation !== "update_task" || receipt.operation !== "update_task" ||
+        event.action.type !== "transition_status" || event.action.to !== "verified" ||
+        event.previousStatus !== "verification_required" || event.resultingStatus !== "verified" ||
+        canonicalizeJson(outcome.task) !== canonicalizeJson(bundle.manifest)) {
+        throw new TypeError("committed verified Task identity mismatch");
+      }
+    } else if (outcome.profile === "strong_change_check_outcome_v1") {
       if (
         event.action.type !== "change_checked" ||
         event.action.changeCheckId !== outcome.changeCheck.id ||

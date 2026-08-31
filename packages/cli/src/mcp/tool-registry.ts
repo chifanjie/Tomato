@@ -155,7 +155,7 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   trace_impact:
     "Read bounded, paged impact paths from a managed Task and its pinned Graph.",
   refresh_index:
-    "Capture and publish a path-safe Repository Snapshot and Repo Pulse through the selected strong Store.",
+    "Capture a path-safe Repository Snapshot and Repo Pulse. Full Task knowledge uses knowledge.action=stage to save a pending candidate without replacing Graph/Wiki, then knowledge.action=publish after update_task transitions that same Task to verified. Both require exact Task revision and Snapshot pins; this tool never modifies Task state.",
 };
 
 const inputSchemas = {

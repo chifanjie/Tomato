@@ -208,7 +208,7 @@ export function step16FixedWorkflowStagesV1() {
     mcp("verification_required", "claude", "update_task"),
     { id: "verification", host: "claude", kind: "host_action", action: "verification", mechanism: "command_execution" },
     mcp("record", "claude", "record_verification", { strong: true }),
-    mcp("verified", "claude", "update_task"),
+    mcp("verified", "claude", "update_task", { strong: true }),
     mcp("codex_final", "codex", "get_task_brief"),
     mcp("claude_final", "claude", "get_task_brief"),
     mcp("codex_evidence", "codex", "get_evidence"),
@@ -260,19 +260,21 @@ export async function readStep16FixedProjectionV1(provider, repositoryRoot, oper
   const { readCommittedStrongTaskProjectionInternalV1 } = await import("../../artifact-store/dist/committed-strong-task-projection-reader-internal.js");
   const { manifest, bundle } = await storeState(repositoryRoot);
   const checkArgs = { taskId: bundle.manifest.taskId, actualSnapshotId: manifest.latestSnapshotId, actor: CLAUDE_ACTOR, expectedRevision: 7 };
-  const committedRevision = operation === "check_change" ? 8 : 10 + STEP16_EXPECTED_BLOCKING_FINDINGS_V1;
+  const committedRevision = operation === "check_change" ? 8 : (operation === "update_task" ? 11 : 10) + STEP16_EXPECTED_BLOCKING_FINDINGS_V1;
   const projection = await readCommittedStrongTaskProjectionInternalV1(provider, {
     taskId: bundle.manifest.taskId, operation, committedRevision,
     ...(operation === "check_change" ? { requestDigest: checkBusinessDigest(checkArgs) } : {}),
   });
   const event = projection.bundle.events.at(-1);
-  assert(event.actor === CLAUDE_ACTOR && event.idempotencyKey === (operation === "check_change" ? "step16-claude-check-change" : "step16-claude-record-verification"), "Provider projection is from another fixed request");
+  assert(event.actor === CLAUDE_ACTOR && event.idempotencyKey === (operation === "check_change" ? "step16-claude-check-change" : operation === "update_task" ? "step16-claude-verified" : "step16-claude-record-verification"), "Provider projection is from another fixed request");
   assert(projection.bundle.manifest.latestSnapshotId === manifest.latestSnapshotId, "Provider projection bound another actual Snapshot");
   if (operation === "check_change") assert(projection.outcome.changeCheck.findings.filter((finding) => finding.blocking).length === STEP16_EXPECTED_BLOCKING_FINDINGS_V1, "fixed fixture blocking Finding count differs from the closing plan");
-  else {
+  else if (operation === "record_verification") {
     const verification = projection.outcome.verification;
     const entry = projection.bundle.brief.verificationPlan[0];
     assert(verification.snapshotId === manifest.latestSnapshotId && verification.verificationPlanEntryId === entry.id && verification.method === entry.method && verification.status === "passed" && step16ArgumentsDigestV1([...verification.claimIds].sort()) === step16ArgumentsDigestV1([...entry.acceptanceClaimIds].sort()), "Provider verification differs from the root recipe");
+  } else {
+    assert(projection.bundle.manifest.status === "verified" && event.action.type === "transition_status" && event.action.to === "verified", "Provider Task transition differs from the root recipe");
   }
   return projection;
 }
@@ -339,6 +341,7 @@ export async function verifyStep16FixedStageCommitV1(stage, args, context) {
       assert(event.requestDigest === step16ArgumentsDigestV1(normalized) && step16ArgumentsDigestV1(event.action) === step16ArgumentsDigestV1(normalized.action), "Task action or request digest differs from the root recipe");
     }
     if (args.action?.type === "transition_status") assert(bundle.manifest.status === args.action.to, "Task transition was not committed");
+    if (stage.id === "verified") await readStep16FixedProjectionV1(context.provider, context.repositoryRoot, "update_task");
   } else if (stage.id === "check" || stage.id === "record") await readStep16FixedProjectionV1(context.provider, context.repositoryRoot, stage.id === "check" ? "check_change" : "record_verification");
 }
 

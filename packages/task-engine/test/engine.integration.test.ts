@@ -1459,7 +1459,7 @@ describe("TaskEngine persistent integration", () => {
       | Awaited<ReturnType<typeof executeStrongChangeCheckV1>>
       | undefined;
     const abortedOperations: Array<{
-      operation: "check_change" | "record_verification";
+      operation: "check_change" | "record_verification" | "update_task";
       idempotencyKey: string;
     }> = [];
     const authority: StrongChangeIntelligenceAuthorityV1 = {

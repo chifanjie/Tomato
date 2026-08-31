@@ -24,6 +24,63 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256
+    },
+    "knowledge": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "stage"
+            },
+            "taskId": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "expectedTaskRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "action",
+            "taskId",
+            "expectedTaskRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "publish"
+            },
+            "taskId": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "expectedTaskRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "candidateGenerationId": {
+              "type": "string",
+              "pattern": "^generation-[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "action",
+            "taskId",
+            "expectedTaskRevision",
+            "candidateGenerationId"
+          ],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "required": [

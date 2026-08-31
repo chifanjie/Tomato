@@ -1329,6 +1329,29 @@ describe("workbench route and launch contract", () => {
 });
 
 describe("refresh progress and MCP request cancellation", () => {
+  it("requires explicit full-mode Snapshot and Task read pins for knowledge publication", () => {
+    const input = {
+      mode: "full", expectedSourceSnapshotId: SNAPSHOT_ID,
+      idempotencyKey: "knowledge-stage-1", actor: "codex",
+      knowledge: { action: "stage", taskId: TASK_ID, expectedTaskRevision: 4 },
+    };
+    expect(RefreshIndexInputV1Schema.safeParse(input).success).toBe(true);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input, mode: "incremental" }).success).toBe(false);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input, expectedSourceSnapshotId: undefined }).success).toBe(false);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input,
+      knowledge: { ...input.knowledge, action: "publish" },
+    }).success).toBe(false);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input,
+      knowledge: { ...input.knowledge, action: "publish", candidateGenerationId: `generation-${"a".repeat(64)}` },
+    }).success).toBe(true);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input,
+      knowledge: { ...input.knowledge, action: "publish", candidateGenerationId: "../other" },
+    }).success).toBe(false);
+    expect(RefreshIndexInputV1Schema.safeParse({ ...input,
+      knowledge: { ...input.knowledge, status: "verified" },
+    }).success).toBe(false);
+  });
+
   it("uses the refresh tool's operation control without adding a cancel tool", () => {
     expect(
       RefreshIndexInputV1Schema.safeParse({

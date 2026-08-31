@@ -5,12 +5,24 @@
 ## 当前游标
 
 - 第15步已完成；第16步进行中；第17步未完成。不要从旧 goal 元数据中的 Preview/第15步游标重新开始。
-- 2026-09-01：基于已推送的 `c38ee27` 完成显式已发布知识版本浏览切片，见下一节。下一产品断点是待审 Task 知识增量及 Verified 后晋级，不再重做历史读取入口或已通过的插件生命周期。
+- 当前续跑：基于 `23acd18977e3675a01b1f25916127aab67b85910` 完成 Task 待审知识/Verified 发布后端闭环，本切片以本提交记录为准；完整受影响包测试及正常 Preview 构建通过，独立复核无剩余 finding。不要重做历史浏览、原生插件生命周期或第15步；未完成的界面接线、真实模型任务和发行门保留在文末。
+- 2026-09-01：基于已推送的 `c38ee27` 完成显式已发布知识版本浏览切片，提交 `23acd18`；待审 Task 知识增量及 Verified 后晋级后端已在本切片接续完成，不再重做历史读取入口或已通过的插件生命周期。
 - 双插件切片的 21 个文件已精确提交并正常 push 为 `bf50a798055f3f2d5fe288a1f452f1381864ad28`，远端分支 SHA 已逐项核对相同。以下实现与无模型 E2E 证据均保留，不重新打开已关闭的包测试或插件预检。
 - 上一代码切片已提交并正常 push 为 `ecc9d3b60252de14a665bbe24e56e601dae7b9a3`，其基线是 `38a70ae`。本轮实现与验证记录如下；不因恢复任务而重跑未改变的完整包测试。
 - 默认生产入口仍保持 `providerReceiptBinding: "not_bound"`。内部 root runner 已完成接线，实际 Linux 双插件无模型入口验证已通过；真实模型完整任务尚未执行，不得将以下测试写成 Step16 Gold。
 
-## 已发布知识版本浏览已实现（c38ee27 基线）
+## Task 待审知识与 Verified 发布后端已实现（23acd18 基线）
+
+- 不新增 Tool：`refresh_index` 的可选 `knowledge.action=stage|publish` 要求 full 模式、明确 Snapshot 和 Task revision；仅读取 Task，不借刷新改变 Task 状态。未验证候选独立存于 `.understand-code/index-pending-v1`，不写 Provider business cut、Snapshot、Pulse 或 active index。默认公开 strong writer 继续锁定。
+- 候选记录 Task/Snapshot/前驱知识版本及请求摘要，来源文件进入 generation 摘要。保存/读取校验完整文件集合和摘要、canonical/no-follow/owner/权限；32项满额拒绝、不驱逐待审数据。同key异请求返回既有 `idempotency_conflict`；真实进程退出或SIGKILL后的完整锁仅在PID明确不存在时精确恢复，活进程/残缺锁保持失败关闭。
+- 发布要求真实 Provider committed `update_task → verified` 投影，不把本地Task状态或record_verification成功当权威；再按原Snapshot和固定分析器重建候选，完整generation全等后只晋级原候选字节。复用原full prepare/finalize/本地原子发布与重放，已发布Task知识不能通过省略knowledge参数的普通full覆盖。
+- Verified 提交复用既有验证计划/claim/Check门禁，新增Provider精确对象/CAS和本地投影恢复；不新增Provider证明体系。root固定真实Host recipe已把verified计为第6个strong调用，尚未运行真实模型，不能写成Gold。legacy接受skip行为保留；strong记录本来没有可接受skip语义，不在本轮扩展。
+- 最终完整门禁：Contracts 189 passed、Artifact Store 186 passed、Task Engine 102 passed、CLI 226 passed，共703项、零失败；其中 Task Engine 包含3项真实 ProviderStore 垂直用例，CLI包含冷安装及双Host安装生命周期。Contracts源类型检查及Artifact Store/Task Engine/CLI源与测试类型检查通过，68份Schema/28个fixture及15个打包入口校验通过。正常 Preview build 成功，CLI完整测试在该构建及类型检查后运行。只有两个refresh发行JSON Schema更新。
+- 另有候选/刷新/来源认证/安全整合72项、Authority/Task定向60项通过（已被完整包测试覆盖，不重复计数）；root recipe定向5项通过、13未选中，非Linux/root或真实模型E2E。本轮不修改前端、不重复未变化的界面或原生插件预检，不将这些结果写作第16步或Gold通过。
+- 一轮独立全范围复核及唯一P2定点复核均完成，无剩余finding。真实strong Task `record passed → block_task → resume_task → verified` 已修复并由真实ProviderStore回归覆盖：仅精确重建认证来源允许的状态后缀，完整比较bundle/artifacts/receipts，拒绝本地篡改验证、证据、claim和计划。崩溃后的精确原intent/nonce重放恢复亦覆盖Provider已提交且另一业务head随后前进的情况。
+- 本轮只轮询一次原Codex登录session16592，仍无成功输出，未重启/复制凭证/调用模型；Claude沿用文末用户终端脚本。`23acd18` 的Actions run `33417528367`此前已确认因付款/spending limit未启动，不是代码失败或CI green，无变化不重试。受保护文件仍不动。
+
+## 已发布知识版本浏览已实现（c38ee27 基线，提交23acd18）
 
 - 五类知识 GET 新增显式 `indexVersion=published`；除 meta 首次发现外，必须携带精确 `indexGenerationId`。重复/非法选择器、Task/config越界请求均拒绝。默认 current/MCP/Task/Evidence 的最新 Pulse 与现有会话/Root/Snapshot 绑定未放宽；过期 Workbench 会话仍需重新打开，不能用历史读取绕过。
 - 历史只读仍要求当前 Provider 精确 pin 的 active generation：Snapshot、finalized revision、generation ID、manifest digest、inventory digest 五项一致，并在读取后再次复核 Provider 与会话。Graph/meta/Wiki 从同一摘要绑定 generation 互校 commit，不把本地旧 Snapshot 当权威。这里只读上一次有效发布，不是任意历史版本列表；未修改 Provider 合同或默认 strong-writer 锁。
@@ -29,12 +41,12 @@
 - 本次实际 tarball SHA256 `0144c11a56c9ee9e0a30fb6ca418dda1b982d3ba6e4f370127a52d67d4ff89d4`，3,305,593 bytes；由同次 fresh HOME 中精确关联原 pack 路径的 pacote 缓存取得并校验 SHA512，没有重新 pack 冒充原产物。CLI SHA256 `fa2adb3426e2d501241657f5e98ab09db89e40a3476b5d3100ad5689cc038d8e`。主线已读取原始构建/单项输出与实际命令记录，保留于 `/tmp/understand-code-plugin-lifecycle-evidence.kYToxP/`；Node 24 默认 spec reporter，未转换为 TAP。
 - 没有使用 mount namespace、修改固定 Git 或访问等待登录的 `step16-hosts-ljFNHp`。测试自行清理其新建的临时仓库、安装和注册；用户仓库、认证配置及受保护内容未动。本项执行进程均已结束，VM 保持运行。没有新失败或输入变化时，不重跑此门。
 
-## 已确认的下一产品断点（仍属原目标）
+## 前轮产品断点定位（历史；对应后端现已实现）
 
-- 原目标明确要求未验证 Task 先产生待审知识增量、Verified Task 后晋级 Graph/Wiki，并保留来源；当前 `refresh_index full` 仍直接发布，不含 Task 来源或 pending/promotion。此能力尚未实现，不能因 Wiki 恢复或生命周期通过而勾成完成。
-- 已查清旧知识的读取耦合：`provider-production-strong-object-client.ts` 的 `createProductionStrongDurableBusinessArtifactsV1` 用 `replacementAuthority ?? currentAuthority`，所以 incremental **保留**旧 index authority；`tools.ts` 的 `openStrongBoundActiveIndexV1` 另要求 index 与最新 Pulse 同 Snapshot，因而旧 Wiki 被 current 入口拒读。下一实现可保留 current 安全检查，增加明确标记历史/已发布版本的只读入口，继续核对原 Provider 的完整 generation/digest/Snapshot/revision 绑定；无需为此新建 Provider 合同或重审第15步。
-- 待审增量不能先 finalize full 再仅跳过 active manifest，也不能用会被 finally/GC 清理的 staging 冒充持久候选。后续复用现有 index generation、Task verified 转换门禁与 full 原子发布链；初次非 Task 扫描仍合法。仅 `record_verification` 成功不等于 Task 已 verified；来源必须进入 generation 摘要覆盖范围。以上是已定位实现边界，不是新增需求或已完成声明。
-- 真实模型任务仍待隔离 Codex/Claude 登录；本轮实际状态为 Codex `Not logged in`、Claude `loggedIn:false`，Codex 授权进程仍等待。当前代码 `a8d6905` 的 Actions run `33405441604` 同样因账户付款/spending limit 未启动 jobs，不是 CI green；没有重跑或改变计费。登录、知识增量闭环与原第16～17步剩余发行门继续保留。
+- 原目标明确要求未验证 Task 先产生待审知识增量、Verified Task 后晋级 Graph/Wiki，并保留来源；定位时 `refresh_index full` 直接发布、不含 Task 来源或 pending/promotion。现已完成本文件首节的后端闭环，界面接线与完整真实任务仍需继续，不因后端通过而关闭第16步。
+- 旧知识的读取耦合：`provider-production-strong-object-client.ts` 的 `createProductionStrongDurableBusinessArtifactsV1` 用 `replacementAuthority ?? currentAuthority`，所以 incremental **保留**旧 index authority；`tools.ts` 的 `openStrongBoundActiveIndexV1` 另要求 index 与最新 Pulse 同 Snapshot。`23acd18` 已保留 current 安全检查并增加明确标记历史/已发布版本的只读入口，继续核对原 Provider 的完整 generation/digest/Snapshot/revision 绑定；不新建 Provider 合同或重审第15步。
+- 已落实的边界：待审增量不提前 finalize full，不把会被 finally/GC 清理的 staging 冒充持久候选；复用现有 index generation、Task verified 转换门禁与 full 原子发布链，初次非 Task 扫描仍合法。仅 `record_verification` 成功不等于 Task 已 verified，来源进入 generation 摘要覆盖范围。
+- 历史外部状态：当时隔离 Codex 为 `Not logged in`、Claude 为 `loggedIn:false`，`a8d6905` 的 Actions run `33405441604` 因账户付款/spending limit未启动jobs。当前仍未收到登录成功或真实模型任务通过证据；不将旧run或本地测试写为新SHA的CI通过。
 
 ## Wiki 恢复切片（以 bf50a79 为基线）
 
@@ -82,7 +94,8 @@
 
 ## 从这里继续
 
-- 最新切片已补齐显式历史知识读取，下一步复用现有 generation/Task verified/full 原子发布链实现持久待审增量与晋级；不要回到“旧Wiki为何读不到”的重复排查。未 verified 的 Task 不得提前 finalize full 或发布 Graph/Wiki；record_verification 成功仍不等于 Task 已 verified。以下原生登录与发行阻点继续保留。
+- 最新切片已补齐持久待审知识、真实 Provider-committed Task verified 权威及原候选 Graph/Wiki 字节的原子晋级；现有 published 只读浏览也已完成。下一产品工作是在既有 Task/Graph/Wiki 内接通待审发现/审阅和双向来源追溯，按原目标补完整真实任务与发行门。动前端前使用 Product Design，保留 Overview/自由探索与稳定路由，不新增展示页或重做第15步。当前候选32项满额拒绝、发布后保留来源，不声称已具备候选管理界面。
+- 未 verified 的 Task 不得提前 finalize full 或发布 Graph/Wiki；record_verification 成功仍不等于 Task 已 verified。以下原生登录与发行阻点继续保留；本轮受影响后端完整门禁已通过，没有新失败或输入变化不重复运行。
 
 - 下一实际断点是隔离环境的原生登录，以及登录后的完整真实任务；Linux root 双插件 preflight 已实际通过，不重开此门，不回落手工 MCP 冒充 Host。
 - 动态 snapshot/context/finding 参数和 Codex 精确源码修改已实现并有上述专项验证；继续真实闭环时使用这些能力，不重复从旧实现缺口重新设计，也不得以笼统 workspace-write 代替。

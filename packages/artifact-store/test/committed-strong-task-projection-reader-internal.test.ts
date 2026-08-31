@@ -6,7 +6,10 @@ import {
   type TaskEventActionV1,
   type TaskEventV1,
   type TaskStatusV1,
+  UpdateTaskInputV1Schema,
 } from "@understand-code/contracts";
+import { ArtifactStoreStrongChangeAuthorityV1 } from "../src/strong-change-authority.js";
+import type { ArtifactStore } from "../src/store.js";
 import * as publicApi from "../src/index.js";
 import { sha256Bytes, sha256CanonicalJson } from "../src/digest.js";
 import {
@@ -98,9 +101,10 @@ function projectionFixture(operation: StrongCanonicalTaskProjectionV1["operation
     changeCheckArtifactId: "artifact:check", changeCheckContentDigest: sha256CanonicalJson(check),
     detail: { status: "none" }, recordedAt,
   };
-  if (operation === "record_verification") {
+  if (operation !== "check_change") {
     event({ type: "transition_status", to: "verification_required" }, "verification_required");
     event({ type: "verification_recorded", verificationRecordId: verification.id }, "verification_required");
+    if (operation === "update_task") event({ type: "transition_status", to: "verified" }, "verified");
   }
   const latest = events.at(-1)!;
   const readSet = {
@@ -138,10 +142,12 @@ function projectionFixture(operation: StrongCanonicalTaskProjectionV1["operation
     taskProfile: "agent_task_v1", taskBaselineArtifactId, contextGenerationId,
     contextBuildSpec: { version: "context-build-spec-v1", scope: [], tokenBudget: 8_000, maxCandidates: 20, maxImpactDepth: 4 },
     createdAt: recordedAt, updatedAt: recordedAt, producerVersion: "1.0.0", revision: latest.revision,
-    ...(operation === "record_verification"
+    ...(operation !== "check_change"
       ? { currentChangeCheckId: check.id, currentChangeCheckRevision: check.taskRevision }
       : {}),
   };
+  const finalOutcome = operation === "update_task" ? { task: manifest, mutation: result.mutation } : outcome;
+  const finalResult = operation === "update_task" ? finalOutcome : result;
   const projection = {
     profile: "strong_canonical_task_projection_v1", operation, requestDigest: latest.requestDigest,
     bundle: {
@@ -151,16 +157,16 @@ function projectionFixture(operation: StrongCanonicalTaskProjectionV1["operation
         assumptionClaimIds: [], riskClaimIds: [], unknownClaimIds: [],
         verificationPlan: [{ id: verificationPlanEntryId, acceptanceClaimIds: ["claim:acceptance"], method: "manual", description: "Inspect result", required: true }] },
       claims: [], evidence: [], impactPaths: [], impactConclusion, changeChecks: [check],
-      verificationRecords: operation === "record_verification" ? [verification] : [], events,
+      verificationRecords: operation !== "check_change" ? [verification] : [], events,
       idempotencyRecords: [{ schemaVersion: 1, worktreeId: identity.worktreeId, scope: { kind: "task", taskId },
         idempotencyKey: latest.idempotencyKey, actor: latest.actor, requestDigest: latest.requestDigest,
-        taskId, resultRevision: latest.revision, eventId: latest.eventId, resultDigest: sha256CanonicalJson(result), createdAt: recordedAt }],
+        taskId, resultRevision: latest.revision, eventId: latest.eventId, resultDigest: sha256CanonicalJson(finalResult), createdAt: recordedAt }],
     },
     artifacts: [{ schemaVersion: 1, ...identity, artifactType: "change_check", artifactId: "artifact:check",
       sourceSnapshotId: actualSnapshotId, revision: latest.revision, producerVersion: "1.0.0", createdAt: recordedAt,
       contentDigest: sha256CanonicalJson(check), payload: check }],
-    receipts: [{ schemaVersion: 1, operation, taskId, eventId: latest.eventId, resultDigest: sha256CanonicalJson(result), result }],
-    outcome,
+    receipts: [{ schemaVersion: 1, operation, taskId, eventId: latest.eventId, resultDigest: sha256CanonicalJson(finalResult), result: finalResult }],
+    outcome: finalOutcome,
   };
   return parseStrongCanonicalTaskProjectionInternalV1(projection, operation, latest.requestDigest);
 }
@@ -169,7 +175,7 @@ function fixture(operation: StrongCanonicalTaskProjectionV1["operation"] = "chec
   const projection = projectionFixture(operation);
   const head = {
     profile: "provider_runtime_durable_journal_state_v1", revision: 42,
-    phase: operation === "check_change" ? "strong_change_check_v1" : "strong_verification_v1",
+    phase: operation === "check_change" ? "strong_change_check_v1" : operation === "record_verification" ? "strong_verification_v1" : "strong_task_verified_v1",
     operationNonce: "1".repeat(32), mutationDigest: d("2"),
     artifacts: {
       projectionProviderId: "provider:fixture", projectionContentDigest: "", projectionLogicalBytes: 0,
@@ -189,14 +195,118 @@ function fixture(operation: StrongCanonicalTaskProjectionV1["operation"] = "chec
   function setProjection(value: unknown) { setBytes(Buffer.from(canonicalizeJson(value))); }
   setProjection(projection);
   const provider = { inspectBusinessHead: vi.fn(async () => head), readExactObject: vi.fn(async () => read) };
-  const expected = { taskId, operation, requestDigest: projection.requestDigest, committedRevision: projection.outcome.committedRevision };
+  const expected = { taskId, operation, requestDigest: projection.requestDigest, committedRevision: projection.bundle.manifest.revision };
   return { projection, head, read, provider, expected, setProjection, setBytes };
 }
 
 const rejected = { code: "strong_change_provider_invalid" };
 
+function authorityFixture(f: ReturnType<typeof fixture>, initial = f.projection) {
+  let local = { ...initial, freshness: "fresh", latestSnapshotId: actualSnapshotId };
+  let written: StrongCanonicalTaskProjectionV1 | undefined;
+  const objects = new Map([[f.read.locator.contentDigest, structuredClone(f.read)]]);
+  const store = {
+    readTaskBundle: vi.fn(async () => local),
+    reserveStrongOperationIntent: vi.fn(async (input: { proposedAt: string }) => input.proposedAt),
+    readActiveStrongOperationBindingInternalV1: vi.fn(async () => undefined),
+    resolveStrongOperationProviderRevision: vi.fn(async () => 42),
+    advanceStrongOperationProviderRevision: vi.fn(async () => 43),
+    abortReservedStrongOperationIntent: vi.fn(async () => false),
+    persistTaskBundle: vi.fn(async () => {
+      local = { ...written!, freshness: "fresh", latestSnapshotId: actualSnapshotId };
+      return { replayed: false };
+    }),
+  };
+  const provider = {
+    inspectBusinessHead: f.provider.inspectBusinessHead,
+    inspectState: vi.fn(async () => ({ revision: 42 })),
+    readExactObject: vi.fn(async ({ locator }: { locator: { contentDigest: string } }) => objects.get(locator.contentDigest)!),
+    writeExactObject: vi.fn(async (input: { locator: { providerId: string; contentDigest: string }; logicalBytes: number; bytes: string }) => {
+      written = JSON.parse(Buffer.from(input.bytes.slice(10), "base64url").toString("utf8"));
+      objects.set(input.locator.contentDigest, { operation: "read_object", ...input, verifiedContentDigest: input.locator.contentDigest });
+      return { resolution: "committed" as const, verifiedContentDigest: input.locator.contentDigest };
+    }),
+    compareCommit: vi.fn(async (input: { artifacts: Readonly<Record<string, unknown>> }) => ({
+      resolution: "committed" as "committed" | "stale", committedRevision: 43, artifacts: input.artifacts,
+    })),
+  };
+  const authority = new ArtifactStoreStrongChangeAuthorityV1(store as unknown as ArtifactStore, { provider, providerId: "provider:fixture" });
+  const input = UpdateTaskInputV1Schema.parse({ taskId, expectedRevision: initial.bundle.manifest.revision,
+    actor: "codex", idempotencyKey: "verified-now", action: { type: "transition_status", to: "verified" } });
+  return { authority, provider, store, input };
+}
+
+function noRequiredPredecessor(f: ReturnType<typeof fixture>): StrongCanonicalTaskProjectionV1 {
+  const prior = f.projection.bundle;
+  if (!("brief" in prior)) throw new Error("fixture requires full Task");
+  const source = { ...f.projection, bundle: { ...prior,
+    brief: { ...prior.brief, verificationPlan: prior.brief.verificationPlan.map((entry) => ({ ...entry, required: false })) } } };
+  f.setProjection(source);
+  const at = "2026-08-25T00:00:09.000Z";
+  const action = { type: "transition_status", to: "verification_required" } as const;
+  const input = UpdateTaskInputV1Schema.parse({ taskId, action, expectedRevision: prior.manifest.revision,
+    actor: "codex", idempotencyKey: "verification-required" });
+  const manifest = { ...prior.manifest, status: "verification_required" as const, revision: prior.manifest.revision + 1,
+    currentChangeCheckId: prior.changeChecks[0]!.id, currentChangeCheckRevision: prior.changeChecks[0]!.taskRevision, updatedAt: at };
+  const draft = TaskEventV1Schema.parse({ ...identity, schemaVersion: 1,
+    eventId: `event:${taskId}:${manifest.revision}`, previousRevision: prior.manifest.revision, revision: manifest.revision,
+    actor: input.actor, idempotencyKey: input.idempotencyKey, requestDigest: sha256CanonicalJson(input),
+    sourceSnapshotId: actualSnapshotId, occurredAt: at, previousStatus: prior.manifest.status, resultingStatus: manifest.status,
+    previousContextGenerationId: contextGenerationId, resultingContextGenerationId: contextGenerationId,
+    action, previousEventDigest: prior.events.at(-1)!.eventDigest, eventDigest: d("0") });
+  const event = { ...draft, eventDigest: sha256Bytes(canonicalTaskEventDigestJsonV1(draft)) };
+  const result = { task: manifest, mutation: { taskId, revision: manifest.revision, eventId: event.eventId,
+    artifactIds: source.artifacts.map((artifact) => artifact.artifactId), idempotentReplay: false } };
+  const receipt = { schemaVersion: 1 as const, operation: "update_task" as const, taskId, eventId: event.eventId,
+    resultDigest: sha256CanonicalJson(result), result };
+  const entry = { ...prior.idempotencyRecords.at(-1)!, idempotencyKey: input.idempotencyKey,
+    requestDigest: event.requestDigest, resultRevision: manifest.revision, eventId: event.eventId,
+    resultDigest: receipt.resultDigest, createdAt: at };
+  return { ...source, bundle: { ...source.bundle, manifest, events: [...prior.events, event],
+    idempotencyRecords: [...prior.idempotencyRecords, entry] },
+    receipts: [...source.receipts, receipt], artifacts: source.artifacts.map((artifact) => ({ ...artifact, revision: manifest.revision, createdAt: at })) };
+}
+
+describe("Provider verified Task commit boundaries", () => {
+  it("rejects Provider drift after the exact source read and before intent activation", async () => {
+    const f = authorityFixture(fixture("record_verification"));
+    f.provider.inspectState.mockResolvedValue({ revision: 43 });
+    await expect(f.authority.commitTaskVerified(f.input, "2026-08-25T00:00:10.000Z"))
+      .rejects.toMatchObject({ code: "repository_cas_conflict" });
+    expect(f.provider.writeExactObject).not.toHaveBeenCalled();
+    expect(f.store.persistTaskBundle).not.toHaveBeenCalled();
+  });
+  it("rejects drift at CAS without rebasing the verified Task onto another Provider head", async () => {
+    const f = authorityFixture(fixture("record_verification"));
+    f.provider.compareCommit.mockImplementation(async (input) => ({ resolution: "stale", committedRevision: 43, artifacts: input.artifacts }));
+    await expect(f.authority.commitTaskVerified(f.input, "2026-08-25T00:00:10.000Z"))
+      .rejects.toMatchObject({ code: "repository_cas_conflict" });
+    expect(f.provider.compareCommit).toHaveBeenCalledTimes(1);
+    expect(f.store.advanceStrongOperationProviderRevision).not.toHaveBeenCalled();
+    expect(f.store.persistTaskBundle).not.toHaveBeenCalled();
+  });
+  it("allows no-required verification only after the exact reconstructed ordinary transition", async () => {
+    const source = fixture("check_change");
+    const local = noRequiredPredecessor(source);
+    const f = authorityFixture(source, local);
+    const result = await f.authority.commitTaskVerified(f.input, "2026-08-25T00:00:10.000Z");
+    expect(result.task.status).toBe("verified");
+    expect(result.mutation.idempotentReplay).toBe(false);
+    expect(f.provider.compareCommit).toHaveBeenCalledTimes(1);
+  });
+  it("does not authenticate an extra local semantic delta on the no-required path", async () => {
+    const source = fixture("check_change");
+    const local = noRequiredPredecessor(source);
+    const f = authorityFixture(source, { ...local, bundle: { ...local.bundle,
+      manifest: { ...local.bundle.manifest, title: "unauthenticated local edit" } } });
+    await expect(f.authority.commitTaskVerified(f.input, "2026-08-25T00:00:10.000Z"))
+      .rejects.toMatchObject({ code: "repository_read_set_conflict" });
+    expect(f.provider.compareCommit).not.toHaveBeenCalled();
+  });
+});
+
 describe("internal committed strong task projection reader", () => {
-  it.each(["check_change", "record_verification"] as const)("reads and deeply freezes the exact committed %s projection", async (operation) => {
+  it.each(["check_change", "record_verification", "update_task"] as const)("reads and deeply freezes the exact committed %s projection", async (operation) => {
     const f = fixture(operation);
     const result = await readProjection(f.provider, f.expected);
     expect(result).toEqual(f.projection);

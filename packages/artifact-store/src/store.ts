@@ -240,7 +240,8 @@ interface PreparedTaskBundle {
 
 type StrongOperationIntentOperationV1 =
   | "check_change"
-  | "record_verification";
+  | "record_verification"
+  | "update_task";
 
 export interface StrongOperationExactObjectDescriptorV1 {
   readonly role: "projection" | "owner_detail";
@@ -252,7 +253,10 @@ export interface StrongOperationExactObjectDescriptorV1 {
 
 export interface StrongOperationProviderObjectBindingV1 {
   readonly profile: "strong_operation_provider_object_binding_v1";
-  readonly phase: "strong_change_check_v1" | "strong_verification_v1";
+  readonly phase:
+    | "strong_change_check_v1"
+    | "strong_verification_v1"
+    | "strong_task_verified_v1";
   readonly projection: StrongOperationExactObjectDescriptorV1;
   readonly ownerDetail: StrongOperationExactObjectDescriptorV1 | "none";
   readonly compareArtifacts: Readonly<Record<string, JsonValue>>;
@@ -1042,7 +1046,7 @@ export class ArtifactStore {
   #strongOperationIntentPath(
     taskId: string,
     expectedRevision: number,
-    operation: "check_change" | "record_verification",
+    operation: StrongOperationIntentOperationV1,
   ): string {
     const cut = sha256CanonicalJson([
       "strong-operation-intent-cut-v1",
@@ -1217,9 +1221,14 @@ export class ArtifactStore {
       ]) ||
       binding.profile !== "strong_operation_provider_object_binding_v1" ||
       (binding.phase !== "strong_change_check_v1" &&
-        binding.phase !== "strong_verification_v1") ||
+        binding.phase !== "strong_verification_v1" &&
+        binding.phase !== "strong_task_verified_v1") ||
       (marker.operation === "check_change") !==
         (binding.phase === "strong_change_check_v1") ||
+      (marker.operation === "record_verification") !==
+        (binding.phase === "strong_verification_v1") ||
+      (marker.operation === "update_task") !==
+        (binding.phase === "strong_task_verified_v1") ||
       typeof binding.compareArtifacts !== "object" ||
       binding.compareArtifacts === null ||
       Array.isArray(binding.compareArtifacts)
@@ -1304,12 +1313,13 @@ export class ArtifactStore {
     idempotency: StoreIdempotencyControl,
   ): Promise<void> {
     const active: Array<{
-      operation: "check_change" | "record_verification";
+      operation: StrongOperationIntentOperationV1;
       marker: Record<string, unknown>;
     }> = [];
     for (const operation of [
       "check_change",
       "record_verification",
+      "update_task",
     ] as const) {
       const marker = await this.#readStrongOperationIntentMarker(
         this.#strongOperationIntentPath(
@@ -1350,6 +1360,8 @@ export class ArtifactStore {
     const strongOutcome = receipt === undefined ||
         typeof receipt.result !== "object" || receipt.result === null
       ? undefined
+      : receipt.operation === "update_task"
+      ? receipt.result
       : (receipt.result as unknown as Record<string, unknown>).strongOutcome;
     if (
       idempotency.scope?.kind !== "task" ||
@@ -1372,6 +1384,19 @@ export class ArtifactStore {
       eventRecord?.actor !== marker.actor ||
       eventRecord?.idempotencyKey !== marker.idempotencyKey ||
       eventRecord?.requestDigest !== marker.requestDigest ||
+      (owner.operation === "update_task" && (
+        receipt.operation !== "update_task" ||
+        receipt.result.task.status !== "verified" ||
+        receipt.result.task.taskId !== prepared.taskId ||
+        receipt.result.task.revision !== expectedRevision + 1 ||
+        receipt.result.mutation.idempotentReplay ||
+        event.action.type !== "transition_status" ||
+        event.action.to !== "verified" ||
+        event.previousStatus !== "verification_required" ||
+        event.resultingStatus !== "verified" ||
+        event.previousRevision !== expectedRevision ||
+        event.revision !== expectedRevision + 1
+      )) ||
       strongOutcome === undefined
     ) {
       throw new ArtifactStoreError(
@@ -1576,6 +1601,32 @@ export class ArtifactStore {
       },
       this.#lockOptions,
     );
+  }
+
+  /** INTERNAL: recovery locator, not evidence that the Provider committed it. */
+  async readActiveStrongOperationBindingInternalV1(inputValue: Readonly<{
+    taskId: string; expectedRevision: number; operation: "update_task";
+    idempotencyKey: string; actor: string; requestDigest: string;
+  }>): Promise<StrongOperationProviderObjectBindingV1 | undefined> {
+    const input = { taskId: TaskIdSchema.parse(inputValue.taskId), expectedRevision: inputValue.expectedRevision,
+      operation: inputValue.operation, idempotencyKey: IdempotencyKeySchema.parse(inputValue.idempotencyKey),
+      actor: ActorSchema.parse(inputValue.actor), requestDigest: ContentDigestSchema.parse(inputValue.requestDigest) };
+    if (input.operation !== "update_task" || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      throw new ArtifactStoreError("revision_conflict", "Strong recovery revision is invalid.");
+    }
+    return withStoreLock(this.layout.worktreeRoot, this.layout.taskLock(input.taskId), async () => {
+      const marker = await this.#readStrongOperationIntentMarker(
+        this.#strongOperationIntentPath(input.taskId, input.expectedRevision, input.operation),
+      );
+      if (marker === undefined) return undefined;
+      this.#assertStrongOperationMarkerShape(marker, input);
+      if (marker.idempotencyKey !== input.idempotencyKey || marker.actor !== input.actor ||
+        marker.requestDigest !== input.requestDigest || marker.fullInputEqualityTag !== undefined) {
+        throw new ArtifactStoreError("idempotency_conflict", "Strong recovery does not match its reserved Task cut.");
+      }
+      return this.#strongOperationMarkerIsActive(marker)
+        ? structuredClone(marker.providerObjectBinding) as StrongOperationProviderObjectBindingV1 : undefined;
+    }, this.#lockOptions);
   }
 
   /**

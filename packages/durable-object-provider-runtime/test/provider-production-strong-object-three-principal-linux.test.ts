@@ -131,12 +131,12 @@ describe.skipIf(!runnable)("production strong object three-principal Linux", () 
         expect(result.dualHost.preflights.every((item: { singlePid: boolean; advertisedTools: number }) => item.singlePid && item.advertisedTools === 11)).toBe(true);
       } else if (result.dualHost.status === "verified_not_gold") {
         expect(result.dualHost).toMatchObject({
-          executionSurface: "real_host_cli_jsonl", completedCalls: 5,
+          executionSurface: "real_host_cli_jsonl", completedCalls: 6,
           expectedBlockingFindingCount: 1, taskRevision: 12,
         });
         expect(result.dualHost.executions).toHaveLength(23);
-        expect(result.dualHost.closingPlan.calls).toHaveLength(5);
-        expect(result.dualHost.strongCallProviderReceipts).toHaveLength(5);
+        expect(result.dualHost.closingPlan.calls).toHaveLength(6);
+        expect(result.dualHost.strongCallProviderReceipts).toHaveLength(6);
         expect(result.dualHost.providerBindings.length).toBeGreaterThan(0);
         expect(result.durableCurrent.revision).toBe(
           result.dualHost.providerRevision,
@@ -226,14 +226,14 @@ describe("Step16 authority lifecycle", () => {
 });
 
 describe("Step16 fixed root workflow recipe", () => {
-  it("pins all five strong calls, including the Task baseline, in global order", async () => {
+  it("pins all six strong calls, including the Task baseline and verified transition, in global order", async () => {
     const recipe = await fixedRecipeV1();
     const plan = recipe.createStep16FixedClosingPlanV1("a1".repeat(32));
     const calls = plan.calls as Array<{ tool: string; eventOrdinal: number; callOrdinal: number; argumentsDigest: string | null }>;
-    expect(calls.map((call) => call.tool)).toEqual(["refresh_index", "build_task_brief", "refresh_index", "check_change", "record_verification"]);
-    expect(calls.map((call) => call.eventOrdinal)).toEqual([1, 2, 10, 12, 16]);
-    expect(calls.map((call) => call.callOrdinal)).toEqual([1, 2, 3, 4, 5]);
-    expect(calls.map((call) => call.argumentsDigest === null)).toEqual([false, false, true, true, true]);
+    expect(calls.map((call) => call.tool)).toEqual(["refresh_index", "build_task_brief", "refresh_index", "check_change", "record_verification", "update_task"]);
+    expect(calls.map((call) => call.eventOrdinal)).toEqual([1, 2, 10, 12, 16, 17]);
+    expect(calls.map((call) => call.callOrdinal)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(calls.map((call) => call.argumentsDigest === null)).toEqual([false, false, true, true, true, true]);
     expect(Object.isFrozen(plan) && Object.isFrozen(calls) && calls.every(Object.isFrozen)).toBe(true);
     expect(recipe.step16FixedWorkflowStagesV1()).toHaveLength(23);
   });

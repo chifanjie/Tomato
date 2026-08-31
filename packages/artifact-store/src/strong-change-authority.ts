@@ -5,6 +5,8 @@ import {
   TaskEventV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
+  UpdateTaskInputV1Schema,
+  taskVerificationRequirementGuardsV1,
   canonicalTaskEventDigestJsonV1,
   parsePersistedArtifactV1,
   validateTaskArtifactBundleV1,
@@ -48,6 +50,7 @@ import {
   type StrongVerificationMutationOutcomeV1,
   type StrongVerificationPreparationV1,
   type StrongVerificationSecurityProjectionV1,
+  type UpdateTaskInputV1,
 } from "@understand-code/contracts";
 
 import {
@@ -59,7 +62,11 @@ import { digestCanonicalJson } from "./digest.js";
 import {
   parseStrongCanonicalTaskProjectionInternalV1,
   type StrongCanonicalTaskProjectionV1,
+  type VerifiedTaskMutationOutcomeInternalV1,
 } from "./strong-canonical-task-projection-internal.js";
+import { readCommittedStrongTaskProjectionInternalV1 } from "./committed-strong-task-projection-reader-internal.js";
+
+type StrongTaskPhaseV1 = "strong_change_check_v1" | "strong_verification_v1" | "strong_task_verified_v1";
 
 function digest(value: unknown): ContentDigest {
   return `sha256:${createHash("sha256")
@@ -81,7 +88,7 @@ function operationNonce(domain: string, requestDigest: ContentDigest): string {
 }
 
 function compareOperationNonce(
-  phase: "strong_change_check_v1" | "strong_verification_v1",
+  phase: StrongTaskPhaseV1,
   taskCutDigest: ContentDigest,
   providerExpectedRevision: number,
 ): string {
@@ -235,6 +242,7 @@ export interface ProviderPinnedTaskBaselineAuthorityV1 {
 
 /** Provider-owned production port. It is deliberately storage-only. */
 export interface StrongChangeProviderAuthorityV1 {
+  inspectBusinessHead?(): Promise<unknown>;
   inspectState(): Promise<Readonly<{ revision: number }>>;
   readExactObject(input: Readonly<{
     locator: Readonly<{ providerId: string; contentDigest: ContentDigest }>;
@@ -256,7 +264,7 @@ export interface StrongChangeProviderAuthorityV1 {
   compareCommit(input: Readonly<{
     operationNonce: string;
     expectedRevision: number;
-    phase: "strong_change_check_v1" | "strong_verification_v1";
+    phase: StrongTaskPhaseV1;
     artifacts: Readonly<Record<string, unknown>>;
   }>): Promise<Readonly<{
     resolution: "committed" | "replayed" | "stale";
@@ -356,7 +364,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     input: Readonly<{
       taskId: string;
       expectedRevision: number;
-      operation: "check_change" | "record_verification";
+      operation: StrongCanonicalTaskProjectionV1["operation"];
       idempotencyKey: string;
       actor: string;
       requestDigest?: ContentDigest;
@@ -377,7 +385,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
   async abortReservedOperation(input: Readonly<{
     taskId: string;
     expectedRevision: number;
-    operation: "check_change" | "record_verification";
+    operation: StrongCanonicalTaskProjectionV1["operation"];
     idempotencyKey: string;
     actor: string;
     requestDigest: ContentDigest;
@@ -391,7 +399,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     expectedRevision: number;
     idempotencyKey: string;
     actor: string;
-    operation: "check_change" | "record_verification";
+    operation: StrongCanonicalTaskProjectionV1["operation"];
   }>): Promise<Readonly<{
     projection: StrongCanonicalTaskProjectionV1;
     requestDigest: ContentDigest;
@@ -424,6 +432,9 @@ export class ArtifactStoreStrongChangeAuthorityV1
             { operation: "check_change" }
           > => candidate.operation === "check_change" && candidate.eventId === record.eventId,
         )?.result.strongOutcome
+      : input.operation === "update_task" ? current.receipts.find(
+          (candidate) => candidate.operation === "update_task" && candidate.eventId === record.eventId,
+        )?.result
       : current.receipts.find(
           (candidate): candidate is Extract<
             TaskOperationReceiptV1,
@@ -482,7 +493,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       "check_change",
       requestDigest,
     );
-    if (committed.outcome.profile !== "strong_change_check_outcome_v1") {
+    if (!("profile" in committed.outcome) || committed.outcome.profile !== "strong_change_check_outcome_v1") {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
     return StrongChangeCheckMutationOutcomeV1Schema.parse({
@@ -532,7 +543,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       "record_verification",
       local.requestDigest,
     );
-    if (committed.outcome.profile !== "strong_verification_outcome_v1") {
+    if (!("profile" in committed.outcome) || committed.outcome.profile !== "strong_verification_outcome_v1") {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
     return StrongVerificationMutationOutcomeV1Schema.parse({
@@ -599,7 +610,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     current: ReadTaskBundleResult;
     manifest: TaskManifestV1;
     event: TaskEventV1;
-    operation: "check_change" | "record_verification";
+    operation: StrongCanonicalTaskProjectionV1["operation"];
     result: unknown;
     actor: string;
     idempotencyKey: string;
@@ -907,9 +918,209 @@ export class ArtifactStoreStrongChangeAuthorityV1
     };
   }
 
+  async commitTaskVerified(
+    inputValue: UpdateTaskInputV1,
+    proposedAt: string,
+  ): Promise<VerifiedTaskMutationOutcomeInternalV1> {
+    const input = UpdateTaskInputV1Schema.parse(inputValue);
+    if (input.action.type !== "transition_status" || input.action.to !== "verified") {
+      throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+    }
+    const provider = this.#requireProvider();
+    if (provider.inspectBusinessHead === undefined) {
+      throw new StrongChangeAuthorityErrorV1("strong_write_locked");
+    }
+    const requestDigest = digest(input);
+    const intent = { taskId: input.taskId, expectedRevision: input.expectedRevision,
+      idempotencyKey: input.idempotencyKey, actor: input.actor,
+      operation: "update_task" as const, requestDigest };
+    const reader = {
+      inspectBusinessHead: () => provider.inspectBusinessHead!(),
+      readExactObject: async (locator: { providerId: string; contentDigest: ContentDigest }) => ({
+        ...await provider.readExactObject({ locator }), operation: "read_object",
+      }),
+    };
+    try {
+      const local = await this.#localStrongReplay(intent);
+      let candidate: StrongCanonicalTaskProjectionV1;
+      let sourceProviderRevision: number | undefined;
+      if (local !== undefined) {
+        if (local.requestDigest !== requestDigest) {
+          throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
+        }
+        candidate = local.projection;
+      } else {
+        const recovery = await this.#store.readActiveStrongOperationBindingInternalV1(intent);
+        if (recovery !== undefined) {
+          // The intent is only a locator. Original-nonce Provider replay below
+          // still has to establish that these exact bytes were committed.
+          if (recovery.phase !== "strong_task_verified_v1" || recovery.ownerDetail !== "none") {
+            throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+          }
+          const locator = { providerId: recovery.projection.providerId, contentDigest: recovery.projection.contentDigest };
+          const object = await provider.readExactObject({ locator });
+          const bytes = Buffer.from(object.bytes.slice("base64url:".length), "base64url");
+          const json = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+          candidate = this.#parseCanonicalProjection(JSON.parse(json), "update_task", requestDigest);
+          if (!canonicalEqual(object.locator, locator) || object.verifiedContentDigest !== locator.contentDigest ||
+            object.bytes !== `base64url:${bytes.toString("base64url")}` || object.logicalBytes !== bytes.length ||
+            bytes.length !== recovery.projection.logicalBytes || digest(candidate) !== locator.contentDigest ||
+            canonicalizeJson(candidate) !== json) throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+        } else {
+        const head = await provider.inspectBusinessHead();
+        if (typeof head === "object" && head !== null && "phase" in head &&
+          head.phase === "strong_task_verified_v1") {
+          // Provider committed but the process died before local persistence.
+          candidate = await readCommittedStrongTaskProjectionInternalV1(reader, {
+            taskId: input.taskId, operation: "update_task", requestDigest,
+            committedRevision: input.expectedRevision + 1,
+          });
+        } else {
+          const sourceHeadIdentity = canonicalizeJson(head);
+          const fromCheck = typeof head === "object" && head !== null && "phase" in head && head.phase === "strong_change_check_v1";
+          const source = await readCommittedStrongTaskProjectionInternalV1(reader, {
+            taskId: input.taskId, operation: fromCheck ? "check_change" : "record_verification",
+          });
+          if (canonicalizeJson(await provider.inspectBusinessHead()) !== sourceHeadIdentity ||
+            typeof head !== "object" || head === null || !("revision" in head) ||
+            !Number.isSafeInteger(head.revision)) {
+            throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
+          }
+          sourceProviderRevision = head.revision as number;
+          const current = await this.#store.readTaskBundle(input.taskId);
+          const expected = this.#deriveVerificationStateSuffix(source, current);
+          if (!canonicalEqual(current.bundle, expected.bundle) ||
+            !canonicalEqual(current.artifacts, expected.artifacts) ||
+            !canonicalEqual(current.receipts, expected.receipts) ||
+            (current.freshness !== "fresh" && current.freshness !== "partial") ||
+            (current.latestSnapshotId !== undefined && current.latestSnapshotId !== source.bundle.manifest.latestSnapshotId)) {
+            throw new StrongChangeAuthorityErrorV1("repository_read_set_conflict");
+          }
+          const occurredAt = await this.reserveOperationTime(intent, new Date(Math.max(
+            Date.parse(current.bundle.manifest.updatedAt) + 1, Date.parse(proposedAt),
+          )).toISOString());
+          candidate = this.#buildTaskVerifiedProjection(current, input, requestDigest, occurredAt);
+        }
+        }
+      }
+      const resolution = await this.#commitProviderProjection(
+        "strong_task_verified_v1", input.expectedRevision, requestDigest,
+        input.idempotencyKey, input.actor, candidate, { actorDigest: digest(input.actor) },
+        undefined, sourceProviderRevision,
+      );
+      if (local !== undefined && resolution.resolution !== "replayed") {
+        throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+      }
+      const committed = this.#parseCanonicalProjection(resolution.projection, "update_task", requestDigest);
+      if (!("task" in committed.outcome)) throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+      const replayed = local !== undefined || await this.#persistProviderProjection(committed, intent);
+      return { task: committed.outcome.task, mutation: { ...committed.outcome.mutation,
+        idempotentReplay: resolution.resolution === "replayed" || replayed } };
+    } catch (error) {
+      await this.#store.abortReservedStrongOperationIntent(intent);
+      throw error;
+    }
+  }
+
+  #deriveVerificationStateSuffix(source: StrongCanonicalTaskProjectionV1,
+    current: ReadTaskBundleResult): Pick<StrongCanonicalTaskProjectionV1, "bundle" | "artifacts" | "receipts"> {
+    const original = source.bundle;
+    const fromCheck = source.operation === "check_change";
+    if (!("impactConclusion" in original) || original.changeChecks.length !== 1 ||
+      original.changeChecks[0]!.actualSnapshotId !== original.manifest.latestSnapshotId ||
+      (fromCheck ? original.manifest.status !== "check_required" ||
+        original.brief.verificationPlan.some((entry) => entry.required !== false) ||
+        original.changeChecks[0]!.findings.some((finding) => finding.blocking && finding.resolution === undefined)
+        : source.operation !== "record_verification" || original.manifest.status !== "verification_required")) {
+      throw new StrongChangeAuthorityErrorV1("repository_read_set_conflict");
+    }
+    // Replay only pure state history: balanced block/resume, plus the one
+    // no-required transition. No acceptance or semantic artifact delta is trusted.
+    let state: Pick<StrongCanonicalTaskProjectionV1, "bundle" | "artifacts" | "receipts"> = source;
+    for (const event of current.bundle.events.slice(original.events.length)) {
+      const prior = state.bundle;
+      if (Date.parse(event.occurredAt) <= Date.parse(prior.manifest.updatedAt)) {
+        throw new StrongChangeAuthorityErrorV1("repository_read_set_conflict");
+      }
+      const action = event.action;
+      let next = prior.manifest;
+      if (action.type === "block_task" &&
+        (next.status === "check_required" || next.status === "verification_required")) {
+        const { currentChangeCheckId: _id, currentChangeCheckRevision: _revision, ...withoutCheck } = next;
+        next = { ...withoutCheck, status: "blocked", blockedState: { resumeStatus: next.status,
+          reasonCode: action.reasonCode, message: action.message, actor: event.actor, blockedAt: event.occurredAt } };
+      } else if (action.type === "resume_task" && next.status === "blocked" && next.blockedState !== undefined) {
+        const { blockedState, ...unblocked } = next;
+        next = { ...unblocked, status: blockedState.resumeStatus,
+          ...(blockedState.resumeStatus !== "verification_required" ? {} : {
+            currentChangeCheckId: original.changeChecks[0]!.id,
+            currentChangeCheckRevision: original.changeChecks[0]!.taskRevision,
+          }) };
+      } else if (fromCheck && action.type === "transition_status" && action.to === "verification_required" && next.status === "check_required") {
+        next = { ...next, status: "verification_required", currentChangeCheckId: original.changeChecks[0]!.id,
+          currentChangeCheckRevision: original.changeChecks[0]!.taskRevision };
+      } else throw new StrongChangeAuthorityErrorV1("repository_read_set_conflict");
+      const input = UpdateTaskInputV1Schema.parse({ taskId: prior.manifest.taskId, expectedRevision: prior.manifest.revision,
+        actor: event.actor, idempotencyKey: event.idempotencyKey, action });
+      const manifest = TaskManifestV1Schema.parse({ ...next, revision: prior.manifest.revision + 1, updatedAt: event.occurredAt });
+      const expectedEvent = buildEvent({ manifest, previousManifest: prior.manifest,
+        previousEvent: prior.events.at(-1), action: input.action, actor: input.actor,
+        idempotencyKey: input.idempotencyKey, requestDigest: digest(input), occurredAt: event.occurredAt });
+      const result = { task: manifest, mutation: { taskId: manifest.taskId, revision: manifest.revision,
+        eventId: expectedEvent.eventId, artifactIds: state.artifacts.map((artifact) => artifact.artifactId), idempotentReplay: false } };
+      const journal = this.#appendJournal({ current: { ...current, bundle: prior, artifacts: [...state.artifacts], receipts: [...state.receipts] },
+        manifest, event: expectedEvent, operation: "update_task", result, actor: input.actor,
+        idempotencyKey: input.idempotencyKey, requestDigest: digest(input), occurredAt: event.occurredAt });
+      const artifacts = state.artifacts.map((artifact) => {
+        const payload = artifact.artifactType === "task_manifest" ? manifest
+          : artifact.artifactType === "task_operation_journal" ? { idempotencyRecords: journal.records, receipts: journal.receipts }
+          : artifact.payload;
+        return parsePersistedArtifactV1({ ...artifact, revision: manifest.revision,
+          createdAt: event.occurredAt, contentDigest: digest(payload), payload });
+      });
+      state = { bundle: validateTaskArtifactBundleV1({ ...prior, manifest,
+        events: [...prior.events, expectedEvent], idempotencyRecords: journal.records }), artifacts, receipts: journal.receipts };
+    }
+    if (state.bundle.manifest.status !== "verification_required") {
+      throw new StrongChangeAuthorityErrorV1("repository_read_set_conflict");
+    }
+    return state;
+  }
+
+  #buildTaskVerifiedProjection(current: ReadTaskBundleResult, input: UpdateTaskInputV1,
+    requestDigest: ContentDigest, occurredAt: string): StrongCanonicalTaskProjectionV1 {
+    const source = current.bundle;
+    if (!("impactConclusion" in source) || source.manifest.status !== "verification_required" ||
+      source.manifest.revision !== input.expectedRevision || source.changeChecks.length !== 1 ||
+      source.changeChecks[0]!.id !== source.manifest.currentChangeCheckId ||
+      source.changeChecks[0]!.actualSnapshotId !== source.manifest.latestSnapshotId ||
+      taskVerificationRequirementGuardsV1(source.brief.verificationPlan, source.verificationRecords,
+        source.manifest.latestSnapshotId).length !== 0) {
+      throw new StrongChangeAuthorityErrorV1("strong_task_required");
+    }
+    const manifest = TaskManifestV1Schema.parse({ ...source.manifest,
+      status: "verified", revision: input.expectedRevision + 1, updatedAt: occurredAt });
+    const event = buildEvent({ manifest, previousManifest: source.manifest,
+      previousEvent: source.events.at(-1), action: input.action, actor: input.actor,
+      idempotencyKey: input.idempotencyKey, requestDigest, occurredAt });
+    const outcome = { task: manifest, mutation: { taskId: manifest.taskId, revision: manifest.revision,
+      eventId: event.eventId, artifactIds: current.artifacts.map((artifact) => artifact.artifactId),
+      idempotentReplay: false } };
+    const journal = this.#appendJournal({ current, manifest, event, operation: "update_task", result: outcome,
+      actor: input.actor, idempotencyKey: input.idempotencyKey, requestDigest, occurredAt });
+    const artifacts = this.#projectionArtifacts({ manifest, brief: source.brief, claims: source.claims,
+      evidence: source.evidence, impactPaths: source.impactPaths, impactConclusion: source.impactConclusion,
+      changeCheck: source.changeChecks[0]!, verificationRecords: source.verificationRecords,
+      idempotencyRecords: journal.records, receipts: journal.receipts, createdAt: occurredAt });
+    const bundle = validateTaskArtifactBundleV1({ ...source, manifest,
+      events: [...source.events, event], idempotencyRecords: journal.records });
+    return { profile: "strong_canonical_task_projection_v1", operation: "update_task", requestDigest,
+      bundle, artifacts, receipts: journal.receipts, outcome };
+  }
+
   #parseCanonicalProjection(
     value: unknown,
-    operation: "check_change" | "record_verification",
+    operation: StrongCanonicalTaskProjectionV1["operation"],
     requestDigest: ContentDigest,
   ): StrongCanonicalTaskProjectionV1 {
     try {
@@ -951,7 +1162,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
   }
 
   async #commitProviderProjection(
-    phase: "strong_change_check_v1" | "strong_verification_v1",
+    phase: StrongTaskPhaseV1,
     expectedRevision: number,
     requestDigest: ContentDigest,
     idempotencyKey: string,
@@ -959,6 +1170,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     projection: unknown,
     privateArtifacts: Readonly<Record<string, string>> = {},
     privateExactObject?: unknown,
+    fixedProviderRevision?: number,
   ): Promise<Readonly<{
     resolution: "committed" | "replayed";
     projection: unknown;
@@ -971,7 +1183,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       projection,
       phase === "strong_change_check_v1"
         ? "check_change"
-        : "record_verification",
+        : phase === "strong_verification_v1" ? "record_verification" : "update_task",
       requestDigest,
     );
     const canonical = canonicalizeJson(candidate);
@@ -990,7 +1202,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
     const bytes = `base64url:${Buffer.from(canonical, "utf8").toString("base64url")}`;
     const operation = phase === "strong_change_check_v1"
       ? "check_change" as const
-      : "record_verification" as const;
+      : phase === "strong_verification_v1" ? "record_verification" as const : "update_task" as const;
     const fullInputEqualityTag = privateArtifacts.fullInputEqualityTag;
     const privateCanonical = privateExactObject === undefined
       ? undefined
@@ -1055,6 +1267,9 @@ export class ArtifactStoreStrongChangeAuthorityV1
     if (
       !Number.isSafeInteger(inspected.revision) || inspected.revision < 0
     ) throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
+    if (fixedProviderRevision !== undefined && inspected.revision !== fixedProviderRevision) {
+      throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
+    }
     let providerExpectedRevision: number;
     try {
       providerExpectedRevision =
@@ -1084,6 +1299,9 @@ export class ArtifactStoreStrongChangeAuthorityV1
           : { fullInputEqualityTag }),
       });
       throw error;
+    }
+    if (fixedProviderRevision !== undefined && providerExpectedRevision !== fixedProviderRevision) {
+      throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
     }
     const written = await provider.writeExactObject({
       operationNonce: writeOperationNonce,
@@ -1170,6 +1388,9 @@ export class ArtifactStoreStrongChangeAuthorityV1
           );
         }
         break;
+      }
+      if (phase === "strong_task_verified_v1" || fixedProviderRevision !== undefined) {
+        throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
       }
       if (attempt === 8) {
         throw new StrongChangeAuthorityErrorV1("repository_cas_conflict");
@@ -1620,7 +1841,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       "check_change",
       input.requestDigest,
     );
-    if (committed.outcome.profile !== "strong_change_check_outcome_v1") {
+    if (!("profile" in committed.outcome) || committed.outcome.profile !== "strong_change_check_outcome_v1") {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
     const localReplay = await this.#persistProviderProjection(committed, {
@@ -1836,7 +2057,7 @@ export class ArtifactStoreStrongChangeAuthorityV1
       "record_verification",
       input.requestDigest,
     );
-    if (committed.outcome.profile !== "strong_verification_outcome_v1") {
+    if (!("profile" in committed.outcome) || committed.outcome.profile !== "strong_verification_outcome_v1") {
       throw new StrongChangeAuthorityErrorV1("strong_change_provider_invalid");
     }
     const localReplay = await this.#persistProviderProjection(committed, {

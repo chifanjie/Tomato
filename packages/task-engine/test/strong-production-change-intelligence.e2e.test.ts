@@ -19,6 +19,8 @@ import {
   ArtifactStoreStrongChangeAuthorityV1,
   type StrongChangeProviderAuthorityV1,
 } from "@understand-code/artifact-store";
+import { readCommittedStrongTaskProjectionInternalV1 } from
+  "@understand-code/artifact-store/committed-strong-task-projection-reader-internal";
 import {
   ArtifactManifestV1Schema,
   PathSafeRepositoryIdV1Schema,
@@ -29,6 +31,7 @@ import {
   StrongRepoPulseV1Schema,
   StrongRepositorySnapshotV1Schema,
   VerificationPlanEntryIdV1Schema,
+  UpdateTaskInputV1Schema,
   canonicalizeJson,
   derivePathSafeRepositoryChangeIdV1,
   derivePathSafeRepositorySnapshotIdV1,
@@ -489,6 +492,9 @@ describe("production strong Change Intelligence vertical", () => {
     let injectProviderStaleOnce = true;
     const compareOperationNonces: string[] = [];
     const provider: StrongChangeProviderAuthorityV1 = {
+      async inspectBusinessHead() {
+        return { ...providerStore.inspectState(), profile: "provider_runtime_durable_journal_state_v1" };
+      },
       async inspectState() {
         return { revision: providerStore.inspectState().revision };
       },
@@ -948,6 +954,10 @@ describe("production strong Change Intelligence vertical", () => {
       idempotencyKey: "step15-strong-verification",
       actor: ACTOR,
     };
+    await expect(engine.updateTask(UpdateTaskInputV1Schema.parse({
+      taskId: built.task.taskId, expectedRevision: revision, idempotencyKey: "verified-too-early",
+      actor: ACTOR, action: { type: "transition_status", to: "verified" },
+    }), authorization)).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
     const verified = await engine.recordVerification(
       verificationInput,
       authorization,
@@ -989,6 +999,63 @@ describe("production strong Change Intelligence vertical", () => {
     expect(publicAndProviderBytes).not.toContain(secret);
     expect(publicAndProviderBytes).not.toContain(root);
     expect(publicAndProviderBytes).not.toContain(sentinel);
+
+    expect((await store.readTaskBundle(built.task.taskId)).bundle.manifest.status).toBe("verification_required");
+    revision = verified.committedRevision;
+    await update({ type: "block_task", reasonCode: "external_dependency", message: "Await bounded review" }, "verified-block");
+    await update({ type: "resume_task" }, "verified-resume");
+    const completeInput = UpdateTaskInputV1Schema.parse({
+      taskId: built.task.taskId, expectedRevision: revision,
+      idempotencyKey: "step16-provider-verified", actor: ACTOR,
+      action: { type: "transition_status", to: "verified" },
+    });
+    await expect(new TaskEngine(store, { contextProvider }).updateTask(completeInput, authorization)).rejects
+      .toMatchObject({ code: "capability_unavailable" });
+    const beforeComplete = providerStore.inspectState().revision;
+    const compareFailure = vi.spyOn(provider, "compareCommit")
+      .mockRejectedValueOnce(new Error("verified interrupted before CAS"));
+    await expect(engine.updateTask(completeInput, authorization)).rejects.toThrow("verified interrupted before CAS");
+    expect(providerStore.inspectState().revision).toBe(beforeComplete);
+    compareFailure.mockRestore();
+    const verifiedCrash = vi.spyOn(store, "persistTaskBundle")
+      .mockRejectedValueOnce(new Error("verified crash after Provider commit"));
+    await expect(engine.updateTask(completeInput, authorization)).rejects.toThrow("verified crash after Provider commit");
+    expect(providerStore.inspectState().revision).toBe(beforeComplete + 1);
+    expect(providerStore.inspectState().phase).toBe("strong_task_verified_v1");
+    expect((await store.readTaskBundle(built.task.taskId)).bundle.manifest.status).toBe("verification_required");
+    const committedReader = {
+      inspectBusinessHead: () => provider.inspectBusinessHead!(),
+      readExactObject: async (locator: Parameters<StrongChangeProviderAuthorityV1["readExactObject"]>[0]["locator"]) => ({
+        ...await provider.readExactObject({ locator }), operation: "read_object",
+      }),
+    };
+    const committedPins = { taskId: built.task.taskId, operation: "update_task" as const,
+      committedRevision: completeInput.expectedRevision + 1, requestDigest: sha256CanonicalJson(completeInput) };
+    const committedAtCrash = await readCommittedStrongTaskProjectionInternalV1(committedReader, committedPins);
+    // Recovery must replay the original nonce even if another business commit
+    // moved the head; that older projection is not exposed as the current head.
+    if (classificationMode === "unknown") await providerStore.compareCommit({
+      operationNonce: "e".repeat(32), expectedRevision: beforeComplete + 1,
+      phase: "another_task_commit", artifacts: { testInterveningCommit: true },
+    });
+    const finalProviderRevision = beforeComplete + (classificationMode === "unknown" ? 2 : 1);
+    await expect(engine.updateTask({ ...completeInput, idempotencyKey: "different-verified-key" }, authorization))
+      .rejects.toThrow();
+    expect(providerStore.inspectState().revision).toBe(finalProviderRevision);
+    const completed = await engine.updateTask(completeInput, authorization);
+    verifiedCrash.mockRestore();
+    expect(completed.task.status).toBe("verified");
+    expect(completed.mutation).toMatchObject({ revision: completeInput.expectedRevision + 1, idempotentReplay: true });
+    const replayedComplete = await engine.updateTask(completeInput, authorization);
+    expect(replayedComplete).toEqual(completed);
+    expect(providerStore.inspectState().revision).toBe(finalProviderRevision);
+    const committedTask = classificationMode === "unknown" ? committedAtCrash
+      : await readCommittedStrongTaskProjectionInternalV1(committedReader, committedPins);
+    expect(committedTask.bundle.manifest).toEqual(completed.task);
+    expect(Object.isFrozen(committedTask.bundle.manifest)).toBe(true);
+    if (classificationMode === "unknown") await expect(
+      readCommittedStrongTaskProjectionInternalV1(committedReader, committedPins),
+    ).rejects.toMatchObject({ code: "strong_change_provider_invalid" });
     },
     60_000,
   );

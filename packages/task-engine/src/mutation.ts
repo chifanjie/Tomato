@@ -11,6 +11,7 @@ import {
   TaskOperationReceiptV1Schema,
   classifyChangeCheckV1,
   isTaskOrdinaryTransitionV1,
+  taskVerificationRequirementGuardsV1,
   type ChangeCheckV1,
   type ClaimV1,
   type EvidenceBackedChangeCheckV1,
@@ -599,44 +600,9 @@ function applyTransition(
     ) {
       guards.push({ code: "current_check_required" });
     }
-    for (const entry of data.brief.verificationPlan.filter(
-      // Legacy entries can omit `required`; do not weaken their verification
-      // gate merely because the compatibility reader preserves that absence.
-      (candidate) => candidate.required !== false,
-    )) {
-      const record = latestVerification(
-        data.verificationRecords,
-        entry.id,
-        data.manifest.latestSnapshotId,
-      );
-      const recordClaimIds = new Set(record?.claimIds ?? []);
-      if (
-        record === undefined ||
-        recordClaimIds.size !== record.claimIds.length ||
-        recordClaimIds.size !== entry.acceptanceClaimIds.length ||
-        !entry.acceptanceClaimIds.every((claimId) =>
-          recordClaimIds.has(claimId),
-        ) ||
-        (record.status !== "passed" &&
-          !(
-            record.status === "skipped" &&
-            "skipAcceptance" in record &&
-            record.skipAcceptance !== undefined
-          ))
-      ) {
-        guards.push({
-          code:
-            record?.status === "failed"
-              ? "verification_failed"
-              : record?.status === "blocked"
-                ? "verification_blocked"
-                : record?.status === "flaky"
-                  ? "verification_flaky"
-                  : "verification_required",
-          resourceId: entry.id,
-        });
-      }
-    }
+    guards.push(...taskVerificationRequirementGuardsV1(
+      data.brief.verificationPlan, data.verificationRecords, data.manifest.latestSnapshotId,
+    ));
     if (guards.length > 0) gateUnsatisfied(data.manifest, to, guards);
   }
   data.manifest = { ...data.manifest, status: to as TaskManifestV1["status"] };
@@ -963,6 +929,12 @@ function existingReceipt(
     );
   }
   return replayOutcome(receipt);
+}
+
+export function validateTaskVerifiedTransitionInternalV1(current: ReadTaskBundleResult): void {
+  const data = dataFromRead(current);
+  requireMutableTaskRead(data, current);
+  applyTransition(data, "verified", current);
 }
 
 export async function applyTaskUpdate(

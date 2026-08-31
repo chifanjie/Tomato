@@ -214,6 +214,49 @@
                 "cancellation"
               ],
               "additionalProperties": false
+            },
+            "knowledge": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "published"
+                  ]
+                },
+                "candidateGenerationId": {
+                  "type": "string",
+                  "pattern": "^generation-[0-9a-f]{64}$"
+                },
+                "generationId": {
+                  "type": "string",
+                  "pattern": "^generation-[0-9a-f]{64}$"
+                },
+                "taskId": {
+                  "type": "string",
+                  "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                },
+                "taskRevision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sourceSnapshotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "status",
+                "candidateGenerationId",
+                "generationId",
+                "taskId",
+                "taskRevision",
+                "sourceSnapshotId"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

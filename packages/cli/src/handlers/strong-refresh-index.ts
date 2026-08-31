@@ -59,6 +59,7 @@ import { PRODUCT_VERSION } from "../constants.js";
 import {
   ToolFailure,
   artifactUnavailableFailure,
+  idempotencyConflictFailure,
   repositoryNotReadyFailure,
   sourceAccessDeniedFailure,
   strongStoreUnavailableFailure,
@@ -70,8 +71,11 @@ import {
   preflightRepositoryIndex,
   publishStagedRepositoryIndex,
   publishIncrementalStrongCutV1,
+  savePendingRepositoryIndexV1,
+  openActiveRepositoryIndexV1,
   type RepositoryIndexGenerationBindingV1,
 } from "../runtime/repository-indexer.js";
+import { prepareTaskKnowledgeV1 } from "./knowledge-publication.js";
 
 const PRODUCTION_SAFE_GIT_EXECUTABLE_V1 = "/opt/understand-code/bin/git";
 const MAX_CHANGED_SOURCE_BYTES_V1 = 64 * 1024 * 1024;
@@ -1417,6 +1421,7 @@ export async function strongRefreshIndexV1(
       mode: input.mode,
       expectedSourceSnapshotId: input.expectedSourceSnapshotId ?? null,
       actor: input.actor,
+      ...(input.knowledge === undefined ? {} : { knowledge: input.knowledge }),
     });
     const idempotencyKeyDigest = sha256CanonicalJson({
       domain: "refresh-index-idempotency-key-v1",
@@ -1454,7 +1459,7 @@ export async function strongRefreshIndexV1(
       );
       currentSnapshot = providerRefreshObservation.cut?.snapshotArtifact;
       currentPulse = providerRefreshObservation.cut?.pulseArtifact;
-      recovered = await probeRecoveredProviderCutV1(
+      recovered = input.knowledge?.action === "stage" ? undefined : await probeRecoveredProviderCutV1(
         provider,
         requestDigest,
         idempotencyKeyDigest,
@@ -1732,6 +1737,7 @@ export async function strongRefreshIndexV1(
 
     let providerResolution: "committed" | "replayed";
     let publishedProviderRevision: number | undefined;
+    let knowledgeResult: ReturnType<typeof RefreshIndexOutputV1Schema.parse>["structuredContent"]["result"]["knowledge"];
     if (input.mode === "full") {
       const indexOperationId = operationNonceV1({
         domain: "strong-refresh-index-staging-v1",
@@ -1752,120 +1758,191 @@ export async function strongRefreshIndexV1(
           ? recovered.revision
           : undefined;
       try {
-        const built = await buildRepositoryIndex({
+        if (input.knowledge === undefined && recovered === undefined) {
+          const publishedAuthority = await provider.inspectIndexPublicationAuthority();
+          if (publishedAuthority !== undefined) {
+            const active = await openActiveRepositoryIndexV1(canonicalRoot);
+            if (!exactCanonicalEqualV1({ ...active.generation, ...active.authority }, publishedAuthority)) {
+              throw new ToolFailure(artifactUnavailableFailure("stale", "task_knowledge"));
+            }
+            if (active.knowledgeLineage?.status === "published") {
+              throw new ToolFailure(artifactUnavailableFailure("stale", "task_knowledge"));
+            }
+          }
+        }
+        if (input.knowledge !== undefined &&
+          (currentSnapshot === undefined || currentPulse === undefined ||
+            cut.snapshotArtifact.sourceSnapshotId !== currentSnapshot.sourceSnapshotId ||
+            input.expectedSourceSnapshotId !== currentSnapshot.sourceSnapshotId)) {
+          throw new ToolFailure(artifactUnavailableFailure("stale", "task_knowledge"));
+        }
+        const knowledge = input.knowledge === undefined ? undefined : await prepareTaskKnowledgeV1({
+          knowledge: input.knowledge, store, provider, canonicalRoot,
+          snapshot: cut.snapshotArtifact.payload,
+          sourceInventoryDigest: indexPreflight!.sourceInventoryDigest,
+          requestDigest: requestDigest as `sha256:${string}`,
+          idempotencyKeyDigest: idempotencyKeyDigest as `sha256:${string}`,
+          observedProviderRevision: providerRefreshObservation.observedProviderRevision,
+          ...(recovered?.indexGeneration === undefined ? {} : {
+            recoveredGenerationId: recovered.indexGeneration.generationId,
+          }),
+        });
+        const reconstructed = await buildRepositoryIndex({
           ...stagedIndex,
           snapshot: cut.snapshotArtifact.payload,
-          expectedSourceInventoryDigest:
-            indexPreflight!.sourceInventoryDigest,
+          expectedSourceInventoryDigest: indexPreflight!.sourceInventoryDigest,
+          ...(knowledge === undefined ? {} : {
+            knowledgeLineage: knowledge.action === "stage" ? knowledge.knowledgeLineage : knowledge.candidate.knowledgeLineage,
+          }),
         });
+        if (knowledge?.action === "publish" &&
+          !exactCanonicalEqualV1(reconstructed.generation, knowledge.candidate.generation)) {
+          // A candidate's self-digest is not source authority. Reconstruct the
+          // deterministic generation from the captured source, then promote
+          // only the original candidate bytes if the complete binding matches.
+          throw new ToolFailure(artifactUnavailableFailure("corrupt", "task_knowledge"));
+        }
+        const built = knowledge?.action === "publish" ? knowledge : reconstructed;
         const indexGeneration = built.generation;
-        if (
-          recovered?.indexGeneration !== undefined &&
-          !exactCanonicalEqualV1(
-            recovered.indexGeneration,
-            indexGeneration,
-          )
-        ) {
-          throw new TypeError(
-            "Recovered Provider cut binds a different index generation",
-          );
-        }
-        if (recovered === undefined) {
-          const prepared = await commitProviderCutV1(
-            provider,
-            cut,
-            requestDigest,
-            idempotencyKeyDigest,
-            semanticDigest,
-            "full",
-            providerRefreshObservation,
-            indexGeneration,
-          );
-          const finalized = await finalizeFullProviderCutV1(
-            provider,
-            cut,
-            prepared.cutObject,
-            requestDigest,
-            idempotencyKeyDigest,
-            semanticDigest,
-            indexGeneration,
-            providerRefreshObservation.authority,
-            prepared,
-          );
-          finalizedProviderRevision = finalized.finalizedProviderRevision;
-          publishedProviderRevision = finalized.finalizedProviderRevision;
-          providerResolution = prepared.resolution;
-        } else if (recovered.publicationStatus === "prepared") {
-          if (recovered.indexGeneration === undefined) {
-            throw new TypeError(
-              "Recovered prepared Provider cut has no index generation binding",
-            );
-          }
-          const recoveredCutObject =
-            ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
-              recovered.artifacts["cutObject"],
-            );
-          const finalized = await finalizeFullProviderCutV1(
-            provider,
-            cut,
-            recoveredCutObject,
-            requestDigest,
-            idempotencyKeyDigest,
-            semanticDigest,
-            indexGeneration,
-            providerRefreshObservation.authority,
-            {
-              preparedRevision: recovered.revision,
-              preparedOperationNonce: recovered.operationNonce,
-              preparedArtifacts: recovered.artifacts,
-            },
-          );
-          finalizedProviderRevision = finalized.finalizedProviderRevision;
-          publishedProviderRevision = finalized.finalizedProviderRevision;
-          providerResolution = finalized.resolution;
+        if (knowledge?.action === "stage") {
+          // Staging is deliberately before any Provider prepare/finalize or
+          // Store publication. The previously published cut remains readable.
+          await savePendingRepositoryIndexV1({ canonicalRoot, ...built });
+          storePublication = {
+            snapshotReplayed: true, pulseReplayed: true,
+            publishedSnapshot: currentSnapshot!, publishedPulse: currentPulse!,
+          };
+          providerResolution = "replayed";
+          knowledgeResult = {
+            status: "pending", candidateGenerationId: indexGeneration.generationId,
+            generationId: indexGeneration.generationId,
+            taskId: knowledge.knowledgeLineage.taskId,
+            taskRevision: knowledge.knowledgeLineage.taskRevision,
+            sourceSnapshotId: currentSnapshot!.sourceSnapshotId,
+          };
         } else {
-          if (recovered.indexGeneration === undefined) {
+          if (
+            recovered?.indexGeneration !== undefined &&
+            !exactCanonicalEqualV1(
+              recovered.indexGeneration,
+              indexGeneration,
+            )
+          ) {
             throw new TypeError(
-              "Recovered full Provider cut has no index generation binding",
+              "Recovered Provider cut binds a different index generation",
             );
           }
-          providerResolution = await replayRecoveredProviderCutV1(
-            provider,
-            recovered,
-          );
-          const recoveredAuthority = await provider.inspectIndexPublicationAuthority();
-          if (recoveredAuthority === undefined ||
-            recoveredAuthority.generationId !== indexGeneration.generationId ||
-            recoveredAuthority.generationManifestDigest !== indexGeneration.generationManifestDigest ||
-            recoveredAuthority.sourceInventoryDigest !== indexGeneration.sourceInventoryDigest ||
-            recoveredAuthority.sourceSnapshotId !== cut.snapshotArtifact.payload.snapshotId ||
-            recoveredAuthority.finalizedProviderRevision !== recovered.revision) {
-            throw new TypeError("Recovered Provider cut has no exact index authority");
+          if (recovered === undefined) {
+            const prepared = await commitProviderCutV1(
+              provider,
+              cut,
+              requestDigest,
+              idempotencyKeyDigest,
+              semanticDigest,
+              "full",
+              providerRefreshObservation,
+              indexGeneration,
+            );
+            const finalized = await finalizeFullProviderCutV1(
+              provider,
+              cut,
+              prepared.cutObject,
+              requestDigest,
+              idempotencyKeyDigest,
+              semanticDigest,
+              indexGeneration,
+              providerRefreshObservation.authority,
+              prepared,
+            );
+            finalizedProviderRevision = finalized.finalizedProviderRevision;
+            publishedProviderRevision = finalized.finalizedProviderRevision;
+            providerResolution = prepared.resolution;
+          } else if (recovered.publicationStatus === "prepared") {
+            if (recovered.indexGeneration === undefined) {
+              throw new TypeError(
+                "Recovered prepared Provider cut has no index generation binding",
+              );
+            }
+            const recoveredCutObject =
+              ProviderRuntimeIpcFixedObjectLocatorV1Schema.parse(
+                recovered.artifacts["cutObject"],
+              );
+            const finalized = await finalizeFullProviderCutV1(
+              provider,
+              cut,
+              recoveredCutObject,
+              requestDigest,
+              idempotencyKeyDigest,
+              semanticDigest,
+              indexGeneration,
+              providerRefreshObservation.authority,
+              {
+                preparedRevision: recovered.revision,
+                preparedOperationNonce: recovered.operationNonce,
+                preparedArtifacts: recovered.artifacts,
+              },
+            );
+            finalizedProviderRevision = finalized.finalizedProviderRevision;
+            publishedProviderRevision = finalized.finalizedProviderRevision;
+            providerResolution = finalized.resolution;
+          } else {
+            if (recovered.indexGeneration === undefined) {
+              throw new TypeError(
+                "Recovered full Provider cut has no index generation binding",
+              );
+            }
+            providerResolution = await replayRecoveredProviderCutV1(
+              provider,
+              recovered,
+            );
+            const recoveredAuthority = await provider.inspectIndexPublicationAuthority();
+            if (recoveredAuthority === undefined ||
+              recoveredAuthority.generationId !== indexGeneration.generationId ||
+              recoveredAuthority.generationManifestDigest !== indexGeneration.generationManifestDigest ||
+              recoveredAuthority.sourceInventoryDigest !== indexGeneration.sourceInventoryDigest ||
+              recoveredAuthority.sourceSnapshotId !== cut.snapshotArtifact.payload.snapshotId ||
+              recoveredAuthority.finalizedProviderRevision !== recovered.revision) {
+              throw new TypeError("Recovered Provider cut has no exact index authority");
+            }
+            finalizedProviderRevision = recoveredAuthority.finalizedProviderRevision;
+            publishedProviderRevision = recoveredAuthority.finalizedProviderRevision;
           }
-          finalizedProviderRevision = recoveredAuthority.finalizedProviderRevision;
-          publishedProviderRevision = recoveredAuthority.finalizedProviderRevision;
-        }
-        if (finalizedProviderRevision === undefined) {
-          throw new TypeError("Full Provider cut has no finalized revision");
-        }
-        await assertLatestProviderRefreshCutV1(
-          provider,
-          identity,
-          cut,
-          finalizedProviderRevision,
-        );
-        await publishStagedRepositoryIndex({
-          ...stagedIndex,
-          generation: indexGeneration,
-          publication: built.publication,
-          authority: {
-            sourceSnapshotId: cut.snapshotArtifact.payload.snapshotId,
+          if (finalizedProviderRevision === undefined) {
+            throw new TypeError("Full Provider cut has no finalized revision");
+          }
+          await assertLatestProviderRefreshCutV1(
+            provider,
+            identity,
+            cut,
             finalizedProviderRevision,
-          },
-          publishStoreCut,
-        });
+          );
+          await publishStagedRepositoryIndex({
+            ...stagedIndex,
+            generation: indexGeneration,
+            publication: built.publication,
+            authority: {
+              sourceSnapshotId: cut.snapshotArtifact.payload.snapshotId,
+              finalizedProviderRevision,
+            },
+            publishStoreCut,
+          });
+          if (knowledge?.action === "publish") {
+            knowledgeResult = {
+              status: "published", candidateGenerationId: knowledge.candidate.generation.generationId,
+              generationId: indexGeneration.generationId,
+              taskId: knowledge.knowledgeLineage.taskId,
+              taskRevision: knowledge.knowledgeLineage.taskRevision,
+              sourceSnapshotId: cut.snapshotArtifact.sourceSnapshotId,
+            };
+          }
+        }
       } catch (error) {
         primaryFailure = error;
+        if (error instanceof RepositoryIndexError && error.existingRequestDigest !== undefined) {
+          throw new ToolFailure(idempotencyConflictFailure(
+            input.idempotencyKey, requestDigest, error.existingRequestDigest,
+          ));
+        }
         if (error instanceof RepositoryIndexError) mapIndexFailureV1(error);
         throw error;
       } finally {
@@ -1933,7 +2010,9 @@ export async function strongRefreshIndexV1(
       isError: false,
       content: [{
         type: "text",
-        text: input.mode === "full"
+        text: knowledgeResult?.status === "pending"
+          ? "Pending Task knowledge saved. Published Graph, Wiki, Snapshot, and Pulse are unchanged."
+          : input.mode === "full"
           ? "Strong Repository Snapshot, Pulse, and compatible indexes published."
           : "Strong Repository Snapshot and Pulse published.",
       }],
@@ -1957,6 +2036,7 @@ export async function strongRefreshIndexV1(
           truncatedCategories: [],
         },
         result: {
+          ...(knowledgeResult === undefined ? {} : { knowledge: knowledgeResult }),
           operation: {
             operationId,
             mode: input.mode,

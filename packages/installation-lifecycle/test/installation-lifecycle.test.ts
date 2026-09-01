@@ -30,6 +30,7 @@ import {
   INSTALLATION_WORKBENCH_UI,
   INSTALLATION_WRAPPER_FILE,
   doctorInstallationV1,
+  downgradeInstallationV1,
   installInstallationV1,
   managedLegacyWorkbenchUiAllowedV1,
   resolveTrustedProviderInstallationRootV1,
@@ -85,13 +86,14 @@ async function fakeCliBundle(
   body = "process.exitCode = 0;",
   nativeRevision = 1,
   dashboard?: FakeDashboardOptions,
+  releaseVersion?: string,
 ): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "understand-code-cli-bundle-"));
   temporaryRoots.push(root);
   const bundlePath = path.join(root, "understand-code.mjs");
   await writeFile(
     bundlePath,
-    `#!/usr/bin/env node\n// understand-code-owned-v1\n${body}\n`,
+    `#!/usr/bin/env node\n${releaseVersion === undefined ? "" : `/* understand-code-release-v1 product=understand-code version=${releaseVersion} */\n`}// understand-code-owned-v1\n${body}\n`,
     { mode: 0o755 },
   );
   const nativePath = path.join(
@@ -104,6 +106,30 @@ async function fakeCliBundle(
   await writeFile(nativePath, fakeNativeKernelPeerBinary(nativeRevision), {
     mode: 0o644,
   });
+  if (releaseVersion !== undefined) {
+    const [bundleBytes, nativeBytes] = await Promise.all([
+      readFile(bundlePath),
+      readFile(nativePath),
+    ]);
+    await writeFile(
+      path.join(root, "release-manifest.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: "understand-code-alpha-release-v1",
+          product: "understand-code",
+          package: { name: "@understand-code/preview", version: releaseVersion },
+          cli: { sha256: contentDigest(bundleBytes) },
+          native: {
+            tuple: `${process.platform}-${process.arch}`,
+            sha256: contentDigest(nativeBytes),
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      { mode: 0o600 },
+    );
+  }
   if (dashboard !== undefined) {
     const dashboardRoot = path.join(root, "dashboard");
     await mkdir(dashboardRoot, { recursive: true });
@@ -725,6 +751,90 @@ describe("installation lifecycle", () => {
       });
     }
     expect(await readFile(sentinelPath, "utf8")).toBe("preserve me\n");
+  });
+
+  it("supports an explicit semver-guarded downgrade and preserves rollback", async () => {
+    const root = await temporaryRoot();
+    const currentBundle = await fakeCliBundle("// current release", 2, undefined, "2.0.0");
+    const olderBundle = await fakeCliBundle("// older release", 1, undefined, "1.0.0");
+    await installInstallationV1({
+      root,
+      version: "2.0.0",
+      cliBundlePath: currentBundle,
+    });
+
+    const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
+    const untouchedManifest = await readFile(manifestPath);
+    const installationId = (
+      JSON.parse(untouchedManifest.toString("utf8")) as { installationId: string }
+    ).installationId;
+    await expect(
+      downgradeInstallationV1({
+        root,
+        version: "2.0.0",
+        cliBundlePath: currentBundle,
+      }),
+    ).resolves.toMatchObject({
+      status: "refused",
+      reason: "downgrade_target_is_current",
+    });
+    expect(await readFile(manifestPath)).toEqual(untouchedManifest);
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "2.0.0",
+    });
+
+    await expect(
+      downgradeInstallationV1({
+        root,
+        version: "3.0.0",
+        cliBundlePath: currentBundle,
+      }),
+    ).resolves.toMatchObject({
+      status: "refused",
+      reason: "downgrade_target_is_newer",
+    });
+    expect(await readFile(manifestPath)).toEqual(untouchedManifest);
+
+    await expect(
+      downgradeInstallationV1({
+        root,
+        version: "1.0.0",
+        // A newer marked bundle must not be relabeled as the requested older
+        // release merely because the caller supplied a lower version string.
+        cliBundlePath: currentBundle,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_target" });
+    expect(await readFile(manifestPath)).toEqual(untouchedManifest);
+
+    await expect(
+      downgradeInstallationV1({
+        root,
+        version: "1.0.0",
+        cliBundlePath: olderBundle,
+      }),
+    ).resolves.toMatchObject({
+      status: "updated",
+      fromVersion: "2.0.0",
+      version: "1.0.0",
+      rollbackAvailable: true,
+    });
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "1.0.0",
+    });
+    expect(
+      (JSON.parse(await readFile(manifestPath, "utf8")) as { installationId: string })
+        .installationId,
+    ).toBe(installationId);
+    expect(await rollbackInstallationV1({ root })).toMatchObject({
+      status: "rolled_back",
+      version: "2.0.0",
+    });
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "2.0.0",
+    });
   });
 
   it("rolls back a release-sized bundle without exhausting the snapshot parser", async () => {

@@ -34,10 +34,12 @@ export function parsePublishedKnowledgeVersion(value: unknown): PublishedKnowled
 }
 
 /** Scope only knowledge reads; Task/Evidence requests never use this transport. */
-export function createPublishedKnowledgeFetcher(
+export function createKnowledgeFetcher(
+  indexVersion: "published" | "pending",
   generationId: string,
   fetcher: typeof fetch = fetch,
 ): typeof fetch {
+  if (indexVersion !== "published" && indexVersion !== "pending") throw new Error("知识版本类型无效");
   if (!GENERATION_ID.test(generationId)) throw new Error("知识版本编号无效");
   return (input, init) => {
     if (typeof input !== "string" || !input.startsWith("/") || input.startsWith("//")) {
@@ -48,8 +50,24 @@ export function createPublishedKnowledgeFetcher(
       ["/knowledge-graph.json", "/meta.json"].includes(url.pathname)
       || url.pathname.startsWith("/knowledge-base/")
     )) return Promise.reject(new Error("不是知识库读取路径"));
-    url.searchParams.set("indexVersion", "published");
+    url.searchParams.set("indexVersion", indexVersion);
     url.searchParams.set("indexGenerationId", generationId);
     return fetcher(`${url.pathname}${url.search}`, init);
   };
+}
+
+/** Scope knowledge reads to one Provider-pinned published generation. */
+export function createPublishedKnowledgeFetcher(
+  generationId: string,
+  fetcher: typeof fetch = fetch,
+): typeof fetch {
+  return createKnowledgeFetcher("published", generationId, fetcher);
+}
+
+/** Scope Graph/Wiki reads to one Task-bound pending candidate generation. */
+export function createPendingKnowledgeFetcher(
+  generationId: string,
+  fetcher: typeof fetch = fetch,
+): typeof fetch {
+  return createKnowledgeFetcher("pending", generationId, fetcher);
 }

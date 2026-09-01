@@ -49,9 +49,16 @@ import {
   wikiTargetHash,
   type WikiTarget,
 } from "./wiki/wikiContent";
-import { loadTaskWorkbench, type TaskWorkbenchLoadResult } from "./workbench/taskContextLoader";
+import {
+  loadTaskKnowledgeCandidates,
+  loadTaskWorkbench,
+  type TaskKnowledgeCandidatesPayloadV1,
+  type TaskWorkbenchLoadResult,
+  type TaskArtifactLoadResult,
+} from "./workbench/taskContextLoader";
 import {
   KnowledgeFetchContext,
+  createPendingKnowledgeFetcher,
   createPublishedKnowledgeFetcher,
   parsePublishedKnowledgeVersion,
   type PublishedKnowledgeVersion,
@@ -70,6 +77,7 @@ const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
 const TOKEN_STORAGE_KEY = "understand-code-token";
 const WIKI_RELOAD_INTERVAL_MS = 1000;
 const WIKI_RELOAD_MAX_ATTEMPTS = 3;
+const KNOWLEDGE_GENERATION_ID = /^generation-[0-9a-f]{64}$/u;
 
 export type WikiAvailabilityStatus =
   | "loading"
@@ -500,6 +508,14 @@ interface TaskDashboardContext {
   readonly onBackToFinding: () => void;
 }
 
+function selectedPendingKnowledgeGenerationId(
+  context: TaskDashboardContext | undefined,
+): string | undefined {
+  if (context?.route.knowledgeVersion !== "pending") return undefined;
+  const generationId = context.route.knowledgeGenerationId;
+  return generationId && KNOWLEDGE_GENERATION_ID.test(generationId) ? generationId : undefined;
+}
+
 function TaskContextBanner({ context }: { readonly context: TaskDashboardContext }) {
   return (
     <section
@@ -545,6 +561,10 @@ function TaskFirstDashboard({
     readonly loading: boolean;
     readonly result: TaskWorkbenchLoadResult | null;
   }>(() => ({ loading: Boolean(route.taskId), result: null }));
+  const [knowledgeCandidateState, setKnowledgeCandidateState] = useState<{
+    readonly loading: boolean;
+    readonly result: TaskArtifactLoadResult<TaskKnowledgeCandidatesPayloadV1> | null;
+  }>(() => ({ loading: false, result: null }));
 
   const load = useCallback(() => {
     if (!route.taskId) {
@@ -567,6 +587,28 @@ function TaskFirstDashboard({
   }, [accessToken, onTokenInvalid, route.evidenceId, route.section, route.taskId]);
 
   useEffect(() => load(), [load]);
+
+  const loadKnowledgeCandidates = useCallback(() => {
+    if (!route.taskId || route.section !== "planned_changes") {
+      setKnowledgeCandidateState({ loading: false, result: null });
+      return () => undefined;
+    }
+    let cancelled = false;
+    setKnowledgeCandidateState({ loading: true, result: null });
+    void loadTaskKnowledgeCandidates(route, accessToken).then((result) => {
+      if (cancelled) return;
+      if (result.status === "forbidden") {
+        onTokenInvalid();
+        return;
+      }
+      setKnowledgeCandidateState({ loading: false, result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, onTokenInvalid, route.section, route.taskId]);
+
+  useEffect(() => loadKnowledgeCandidates(), [loadKnowledgeCandidates]);
 
   const cookieMode = isCookieWorkbenchAccess(accessToken);
   const navigate = useCallback((nextRoute: TaskFirstRoute, nextSurface: TaskLocalSurface) => {
@@ -713,6 +755,9 @@ function TaskFirstDashboard({
         verificationStatus={payload?.verification.status}
         verificationMessage={payload?.verification.message}
         evidence={payload?.evidence}
+        knowledgeCandidates={knowledgeCandidateState.result}
+        knowledgeCandidatesLoading={knowledgeCandidateState.loading}
+        onRetryKnowledgeCandidates={loadKnowledgeCandidates}
         onRetry={load}
         onSelectSection={selectSection}
         onSelectFinding={selectFinding}
@@ -816,9 +861,22 @@ function Dashboard({
   const [versionError, setVersionError] = useState<string | null>(null);
   const versionRequestRef = useRef<AbortController | null>(null);
   const knowledgeEpochRef = useRef(0);
-  const knowledgeFetcher = useMemo(() => publishedVersion
-    ? createPublishedKnowledgeFetcher(publishedVersion.generationId)
-    : fetch, [publishedVersion]);
+  const pendingKnowledgeGenerationId = selectedPendingKnowledgeGenerationId(taskContext);
+  const knowledgeFetcher = useMemo(() => pendingKnowledgeGenerationId
+    ? createPendingKnowledgeFetcher(pendingKnowledgeGenerationId)
+    : publishedVersion
+      ? createPublishedKnowledgeFetcher(publishedVersion.generationId)
+      : fetch, [pendingKnowledgeGenerationId, publishedVersion]);
+  const themeMetaUrl = useMemo(() => {
+    const url = new URL(dataUrl("meta.json", accessToken), window.location.origin);
+    if (pendingKnowledgeGenerationId) {
+      url.searchParams.set("indexVersion", "pending");
+      url.searchParams.set("indexGenerationId", pendingKnowledgeGenerationId);
+    }
+    return url.origin === window.location.origin
+      ? `${url.pathname}${url.search}`
+      : url.toString();
+  }, [accessToken, pendingKnowledgeGenerationId]);
 
   useEffect(() => () => versionRequestRef.current?.abort(), []);
   const resetKnowledge = useCallback(() => {
@@ -942,11 +1000,11 @@ function Dashboard({
 
   return (
     <KnowledgeFetchContext.Provider value={knowledgeFetcher}>
-    <InitialThemeGate metaUrl={dataUrl("meta.json", accessToken)}>
+    <InitialThemeGate metaUrl={themeMetaUrl}>
       {(initialTheme) => (
         <ThemeProvider initialConfig={initialTheme}>
           <DashboardContent
-            key={publishedVersion?.generationId ?? "current"}
+            key={pendingKnowledgeGenerationId ?? publishedVersion?.generationId ?? "current"}
             accessToken={accessToken}
             onTokenInvalid={onTokenInvalid}
             loadError={loadError}
@@ -967,6 +1025,7 @@ function Dashboard({
             wikiAvailability={wikiAvailability}
             onRetryWiki={() => retryWikiRef.current?.()}
             taskContext={taskContext}
+            pendingKnowledgeGenerationId={pendingKnowledgeGenerationId}
           />
         </ThemeProvider>
       )}
@@ -989,6 +1048,7 @@ function DashboardContent({
   wikiAvailability,
   onRetryWiki,
   taskContext,
+  pendingKnowledgeGenerationId,
 }: {
   accessToken: string;
   onTokenInvalid: () => void;
@@ -1003,7 +1063,11 @@ function DashboardContent({
   wikiAvailability: WikiAvailabilityStatus;
   onRetryWiki: () => void;
   taskContext?: TaskDashboardContext;
+  pendingKnowledgeGenerationId?: string;
 }) {
+  const pendingKnowledgeStale = Boolean(
+    pendingKnowledgeGenerationId && taskContext?.stale,
+  );
   const knowledgeFetcher = useContext(KnowledgeFetchContext) ?? fetch;
   const graph = useDashboardStore((state) => state.graph);
   const dashboardSurface = useDashboardStore((state) => state.dashboardSurface);
@@ -1203,23 +1267,36 @@ function DashboardContent({
       />
 
       {taskContext && !taskContext.stale && <TaskContextBanner context={taskContext} />}
-      {isCookieWorkbenchAccess(accessToken) && (publishedVersion || loadError || ["error", "invalid", "missing"].includes(wikiAvailability)) && (
-        <section className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface px-4 py-3 sm:px-6" aria-label="知识版本" role="status">
+      {(pendingKnowledgeGenerationId || (isCookieWorkbenchAccess(accessToken) && (publishedVersion || loadError || ["error", "invalid", "missing"].includes(wikiAvailability)))) && (
+        <section className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface px-4 py-3 sm:px-6" aria-label="知识版本" role="status" data-state={pendingKnowledgeStale ? "stale" : pendingKnowledgeGenerationId ? "pending" : "published"}>
           <div className="min-w-0 w-full text-sm text-text-secondary sm:w-auto sm:flex-1">
-            <p className="font-semibold text-warning">{publishedVersion
+            <p className="font-semibold text-warning">{pendingKnowledgeGenerationId
+              ? pendingKnowledgeStale ? "待审知识已过期 · 只读" : "待审知识 · 只读"
+              : publishedVersion
               ? publishedVersion.status === "historical" ? "历史知识 · 只读" : "已发布知识 · 只读"
               : "当前知识快照不可用"}</p>
-            <p className="mt-1 text-xs leading-5">{publishedVersion
+            <p className="mt-1 text-xs leading-5">{pendingKnowledgeGenerationId
+              ? pendingKnowledgeStale
+                ? "任务来源快照已变化，此候选不能继续预览；请返回任务重新生成候选。"
+                : "候选知识仅用于审阅，不能作为当前任务证据，也不会触发发布。"
+              : publishedVersion
               ? publishedVersion.status === "historical" ? "与当前源码快照不同，不能作为当前任务证据。" : "此版本与当前源码快照一致。"
               : "可以查看上一次发布的知识，当前任务与证据不会改变。"}</p>
-            {publishedVersion && <p className="mt-1 break-all font-mono text-xs" title={publishedVersion.sourceSnapshotId}>来源快照：{publishedVersion.sourceSnapshotId}</p>}
+            {pendingKnowledgeGenerationId && <p className="mt-1 break-all font-mono text-xs" title={pendingKnowledgeGenerationId}>候选代际：{pendingKnowledgeGenerationId}</p>}
+            {!pendingKnowledgeGenerationId && publishedVersion && <p className="mt-1 break-all font-mono text-xs" title={publishedVersion.sourceSnapshotId}>来源快照：{publishedVersion.sourceSnapshotId}</p>}
             {versionError && <p className="mt-1 text-xs text-danger" role="alert">{versionError}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={versionLoading} onClick={onOpenPublishedVersion} className="min-h-11 rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent disabled:opacity-50">
-              {versionLoading ? "正在读取版本" : publishedVersion ? "重新读取已发布版本" : "查看已发布版本"}
-            </button>
-            {publishedVersion && <button type="button" onClick={onCurrentVersion} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary">返回当前版本</button>}
+            {pendingKnowledgeGenerationId ? (
+              taskContext && <button type="button" onClick={taskContext.onBackToFinding} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary">返回候选审阅</button>
+            ) : (
+              <>
+                <button type="button" disabled={versionLoading} onClick={onOpenPublishedVersion} className="min-h-11 rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent disabled:opacity-50">
+                  {versionLoading ? "正在读取版本" : publishedVersion ? "重新读取已发布版本" : "查看已发布版本"}
+                </button>
+                {publishedVersion && <button type="button" onClick={onCurrentVersion} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary">返回当前版本</button>}
+              </>
+            )}
           </div>
         </section>
       )}

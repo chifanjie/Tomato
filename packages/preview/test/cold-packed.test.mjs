@@ -1216,15 +1216,39 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       jsonrpc: "2.0", id: 1, method: "initialize",
       params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "preview-cold-codex", version: "1.0.0" } },
     });
-    assert.deepEqual(await output.waitFor((message) => message.id === 1, "MCP initialize response"), {
+    const initialized = await output.waitFor((message) => message.id === 1, "MCP initialize response");
+    assert.deepEqual(initialized, {
       jsonrpc: "2.0",
       id: 1,
       result: {
         protocolVersion: "2025-11-25",
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "understand-code", version: manifest.version },
+        instructions: initialized.result.instructions,
       },
     });
+    assert.equal(typeof initialized.result.instructions, "string");
+    for (const phrase of [
+      "provider_unavailable",
+      "knowledge.action=stage",
+      "candidateGenerationId",
+      "not current Task evidence",
+      "knowledge.action=publish",
+      "expectedSourceSnapshotId",
+      "KnowledgeCandidateReview",
+      "planned-changes",
+      "not a publish control",
+    ]) {
+      assert.ok(
+        initialized.result.instructions.includes(phrase),
+        `MCP initialize instructions must include ${phrase}`,
+      );
+    }
+    assert.equal(
+      initialized.result.instructions.includes("not yet available"),
+      false,
+      "MCP initialize instructions must not describe the shipped candidate review UI as unavailable",
+    );
     writeMessage(mcp, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
     writeMessage(mcp, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const listed = await output.waitFor((message) => message.id === 2, "MCP tools/list response");

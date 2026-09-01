@@ -12,13 +12,15 @@ import type {
   TaskManifestV1,
   TaskStatusV1,
   VerificationRecordV1,
-  WorkbenchRouteV1,
 } from "@understand-code/contracts";
 import type {
   TaskArtifactLoadResult,
+  TaskKnowledgeCandidatesPayloadV1,
   TaskEvidenceProjection,
 } from "../../workbench/taskContextLoader";
 import TaskEvidencePanel from "./TaskEvidencePanel";
+import KnowledgeCandidateReview from "./KnowledgeCandidateReview";
+import type { TaskFirstRoute as RoutedTaskFirstRoute } from "./route";
 
 export type TaskArtifactSurfaceStatus =
   | "ready"
@@ -39,7 +41,7 @@ export type TaskFirstSection =
 type TaskWorkbenchDrawer = "navigation" | "evidence";
 
 /** A route accepted by the Workbench entry points. */
-export type TaskFirstRoute = WorkbenchRouteV1;
+export type TaskFirstRoute = RoutedTaskFirstRoute;
 
 /**
  * The API returns a paged `result` object. Keeping this structural type local
@@ -93,6 +95,10 @@ export interface TaskFirstWorkbenchProps {
   readonly verificationStatus?: TaskArtifactSurfaceStatus;
   readonly verificationMessage?: string | null;
   readonly evidence?: TaskArtifactLoadResult<TaskEvidenceProjection>;
+  /** Lazily loaded Task-scoped pending knowledge candidates. */
+  readonly knowledgeCandidates?: TaskArtifactLoadResult<TaskKnowledgeCandidatesPayloadV1> | null;
+  readonly knowledgeCandidatesLoading?: boolean;
+  readonly onRetryKnowledgeCandidates?: () => void;
   readonly onRetry?: () => void;
   readonly onSelectSection?: (section: TaskFirstSection) => void;
   readonly onSelectFinding?: (findingId: string) => void;
@@ -582,6 +588,9 @@ export function TaskFirstWorkbench({
   verificationStatus = "missing",
   verificationMessage,
   evidence = { status: "missing" },
+  knowledgeCandidates,
+  knowledgeCandidatesLoading = false,
+  onRetryKnowledgeCandidates,
   onRetry,
   onSelectSection,
   onSelectFinding,
@@ -709,6 +718,14 @@ export function TaskFirstWorkbench({
             selectedEvidenceId={route.evidenceId}
             onSelectFinding={onSelectFinding}
             onOpenEvidence={(findingId, evidenceId) => onOpenEvidence?.(findingId, evidenceId)}
+          />
+          <KnowledgeCandidateReview
+            route={route}
+            result={knowledgeCandidates}
+            loading={knowledgeCandidatesLoading}
+            onRetry={onRetryKnowledgeCandidates}
+            onOpenKnowledge={onOpenKnowledge}
+            onOpenGraph={onOpenGraph}
           />
           {route.evidenceId && (
             <TaskEvidencePanel

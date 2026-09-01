@@ -86,9 +86,11 @@ describe("MCP lifecycle and real handlers", () => {
         "check_change", "knowledge.action=stage", "candidateGenerationId",
         "read-only", "not current Task evidence", "record_verification",
         "update_task", "verified", "knowledge.action=publish", "expectedTaskRevision",
-        "expectedSourceSnapshotId", "open_workbench", "not yet available"]) {
+        "expectedSourceSnapshotId", "open_workbench", "KnowledgeCandidateReview",
+        "planned-changes", "pending Graph/Wiki", "stale"]) {
         expect(instructions).toContain(phrase);
       }
+      expect(instructions).not.toContain("not yet available");
       expect(instructions.indexOf("knowledge.action=stage")).toBeLessThan(instructions.indexOf("knowledge.action=publish"));
       expect(instructions).not.toContain(root);
       expect(await snapshotRepositoryFiles(root)).toEqual(before);

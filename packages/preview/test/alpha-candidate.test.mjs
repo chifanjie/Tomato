@@ -26,10 +26,13 @@ const candidateManifestFile = "understand-code-alpha-candidate.json";
 const candidateSchemaFile = "understand-code-alpha-candidate-v1.schema.json";
 const checksumFile = "SHA256SUMS";
 const overlayFiles = [
+  "packages/cli/scripts/build-bundle.mjs",
+  "packages/cli/src/mcp/server.ts",
   "packages/preview/package.json",
   "packages/preview/README.md",
   candidateScript,
   "packages/preview/schemas/alpha-candidate-v1.schema.json",
+  "packages/preview/test/cold-packed.test.mjs",
 ];
 
 function sha256(bytes) {
@@ -371,7 +374,7 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
     ]);
     assert.deepEqual(
       schemaBytes,
-      await readFile(path.join(worktreeRoot, overlayFiles[3])),
+      await readFile(path.join(worktreeRoot, "packages/preview/schemas/alpha-candidate-v1.schema.json")),
       "the candidate must copy the exact reviewed schema bytes",
     );
 
@@ -411,6 +414,22 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
     const expandedTarball = gunzipSync(tarballBytes, {
       maxOutputLength: 20 * 1024 * 1024,
     });
+    const nativePeerEntries = (await run(
+      "tar",
+      ["-tzf", tarballPath],
+      { cwd: worktreeRoot },
+    )).stdout.trimEnd().split("\n").filter((entry) =>
+      entry.endsWith("provider_kernel_peer.node"),
+    ).sort();
+    assert.deepEqual(
+      nativePeerEntries,
+      [
+        `package/dist/native/${candidate.build.nativeTuple}/provider_kernel_peer.node`,
+        `package/dist/plugin-roots/claude/plugins/understand-code/bin/native/${candidate.build.nativeTuple}/provider_kernel_peer.node`,
+        `package/dist/plugin-roots/codex/plugins/understand-code/bin/native/${candidate.build.nativeTuple}/provider_kernel_peer.node`,
+      ].sort(),
+      "the candidate verifier must accept the base peer and both self-contained Host copies",
+    );
     for (const forbidden of [sourceRoot, temporaryParent, secret]) {
       const marker = Buffer.from(forbidden, "utf8");
       assert.equal(manifestBytes.includes(marker), false);

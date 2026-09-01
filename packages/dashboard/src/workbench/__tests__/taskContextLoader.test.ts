@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RepoPulseSurfaceResponseV1 } from "@understand-code/contracts";
-import { loadTaskWorkbench } from "../taskContextLoader";
+import {
+  loadTaskKnowledgeCandidates,
+  loadTaskWorkbench,
+  parseTaskKnowledgeCandidates,
+} from "../taskContextLoader";
 
 const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
@@ -181,6 +185,47 @@ describe("loadTaskWorkbench", () => {
     for (const [url, init] of fetchMock.mock.calls) {
       expect(String(url)).not.toContain("token=");
       expect(init).toMatchObject({ credentials: "same-origin" });
+    }
+  });
+});
+
+describe("Task knowledge candidate projection", () => {
+  const generationId = `generation-${"a".repeat(64)}`;
+  const predecessorGenerationId = `generation-${"b".repeat(64)}`;
+  const candidatePayload = {
+    schemaVersion: 1,
+    taskId,
+    currentTaskRevision: 12,
+    currentSnapshotId: "snapshot:actual",
+    candidates: [{
+      candidateGenerationId: generationId,
+      taskRevision: 12,
+      sourceSnapshotId: "snapshot:actual",
+      predecessorGenerationId,
+      sourceSnapshotMatchesCurrent: true,
+    }],
+  };
+
+  it("strictly parses a bounded candidate list and preserves lineage", () => {
+    expect(parseTaskKnowledgeCandidates(candidatePayload, taskId)).toEqual(candidatePayload);
+    expect(parseTaskKnowledgeCandidates({ ...candidatePayload, candidates: Array(33).fill(candidatePayload.candidates[0]) }, taskId)).toBeNull();
+    expect(parseTaskKnowledgeCandidates({ ...candidatePayload, candidates: [{ ...candidatePayload.candidates[0], taskRevision: 13 }] }, taskId)).toBeNull();
+    expect(parseTaskKnowledgeCandidates({ ...candidatePayload, candidates: [{ ...candidatePayload.candidates[0] }, { ...candidatePayload.candidates[0] }] }, taskId)).toBeNull();
+    expect(parseTaskKnowledgeCandidates({ ...candidatePayload, extra: true }, taskId)).toBeNull();
+  });
+
+  it("maps candidate endpoint status and binds the requested Task", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(candidatePayload), { status: 200 })) as unknown as typeof fetch;
+    const result = await loadTaskKnowledgeCandidates(route, "token", fetcher);
+    expect(result).toMatchObject({ status: "ready", value: candidatePayload });
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringContaining(`/tasks/${taskId}/knowledge-candidates.json`),
+      expect.objectContaining({ headers: { accept: "application/json" } }),
+    );
+
+    for (const [status, expected] of [[404, "missing"], [401, "forbidden"], [409, "stale"], [422, "invalid"], [503, "error"]] as const) {
+      const response = await loadTaskKnowledgeCandidates(route, "token", vi.fn(async () => new Response("{}", { status })) as unknown as typeof fetch);
+      expect(response.status).toBe(expected);
     }
   });
 });

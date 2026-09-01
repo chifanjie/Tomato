@@ -66,4 +66,33 @@ describe("taskFirstRouteFromLocation", () => {
       "/workbench?view=tasks&taskId=task%3Ademo&section=planned_changes&findingId=finding%3Aone",
     );
   });
+
+  it("round-trips an exact pending knowledge selection and fails closed for malformed selectors", () => {
+    const generationId = `generation-${"c".repeat(64)}`;
+    const state = taskFirstLocationStateFromLocation({
+      pathname: "/workbench",
+      search: `?view=tasks&taskId=task%3Ademo&section=planned_changes&surface=wiki&knowledgeVersion=pending&knowledgeGenerationId=${generationId}`,
+    });
+    expect(state?.route).toMatchObject({
+      taskId: "task:demo",
+      section: "planned_changes",
+      knowledgeVersion: "pending",
+      knowledgeGenerationId: generationId,
+    });
+    expect(taskFirstLocationUrl(state!, { workbenchCookieMode: true })).toContain(
+      `knowledgeVersion=pending&knowledgeGenerationId=${generationId}`,
+    );
+
+    for (const search of [
+      "?view=tasks&taskId=task%3Ademo&knowledgeVersion=published&knowledgeGenerationId=" + generationId,
+      "?view=tasks&taskId=task%3Ademo&knowledgeVersion=pending&knowledgeGenerationId=bad",
+      `?view=tasks&taskId=task%3Ademo&knowledgeVersion=pending&knowledgeGenerationId=${generationId}&knowledgeGenerationId=${generationId}`,
+    ]) {
+      expect(taskFirstLocationStateFromLocation({ pathname: "/workbench", search })?.route).not.toHaveProperty("knowledgeVersion");
+    }
+    expect(taskFirstLocationStateFromLocation({
+      pathname: "/workbench",
+      search: `?view=tasks&knowledgeVersion=pending&knowledgeGenerationId=${generationId}`,
+    })?.route).not.toHaveProperty("knowledgeVersion");
+  });
 });

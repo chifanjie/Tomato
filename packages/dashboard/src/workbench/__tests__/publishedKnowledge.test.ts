@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPublishedKnowledgeFetcher, parsePublishedKnowledgeVersion } from "../publishedKnowledge";
+import {
+  createPendingKnowledgeFetcher,
+  createPublishedKnowledgeFetcher,
+  parsePublishedKnowledgeVersion,
+} from "../publishedKnowledge";
 
 const generationId = `generation-${"a".repeat(64)}`;
 const version = {
@@ -35,6 +39,16 @@ describe("published knowledge read transport", () => {
       await pinned(path, init);
       expect(fetcher).toHaveBeenLastCalledWith(`${path}?indexVersion=published&indexGenerationId=${generationId}`, init);
     }
+  });
+
+  it("pins pending Graph/Wiki reads to the exact candidate generation", async () => {
+    const fetcher = vi.fn(async () => new Response("{}"));
+    const pending = createPendingKnowledgeFetcher(generationId, fetcher);
+    await pending("/knowledge-graph.json", { credentials: "same-origin" });
+    expect(fetcher).toHaveBeenLastCalledWith(
+      `/knowledge-graph.json?indexVersion=pending&indexGenerationId=${generationId}`,
+      { credentials: "same-origin" },
+    );
   });
 
   it.each(["/tasks/task/brief.json", "/config.json", "//other.test/knowledge-graph.json", "https://other.test/knowledge-base/a.md", "/knowledge-base/../tasks/task/brief.json"])("does not retarget non-knowledge requests: %s", async (url) => {

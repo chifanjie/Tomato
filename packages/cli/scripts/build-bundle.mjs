@@ -100,6 +100,7 @@ const result = await build({
   banner: {
     js: [
       "#!/usr/bin/env node",
+      `/* understand-code-release-v1 product=understand-code version=${bundleOptions.productVersion} */`,
       'import { createRequire as __understandCreateRequire } from "node:module";',
       "const require = __understandCreateRequire(import.meta.url);",
     ].join("\n"),

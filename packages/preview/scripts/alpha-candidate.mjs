@@ -793,16 +793,40 @@ async function verifyArchive(candidateRoot, candidate) {
     throw new Error("Packed release identity is invalid");
   }
   const nativeEntry = `package/${releaseManifest.native.path}`;
-  const nativeEntries = [...files.keys()].filter((entry) =>
-    entry.includes("/dist/native/") || entry.endsWith("provider_kernel_peer.node"),
-  );
-  if (nativeEntries.length !== 1 || nativeEntries[0] !== nativeEntry) {
+  // The package intentionally carries one base peer plus an exact copy in
+  // each self-contained Host plugin.  Inventory all native paths, then bind
+  // every expected copy to the manifest's single platform tuple.  Counting
+  // by basename alone would reject the plugin copies; accepting only the base
+  // path would let an unexpected native payload hide in the unsigned tgz.
+  const nativePrefixes = [
+    "package/dist/native/",
+    "package/dist/plugin-roots/claude/plugins/understand-code/bin/native/",
+    "package/dist/plugin-roots/codex/plugins/understand-code/bin/native/",
+  ];
+  const nativeEntries = [...files.keys()]
+    .filter((entry) =>
+      nativePrefixes.some((prefix) => entry.startsWith(prefix)) ||
+      entry.endsWith("/provider_kernel_peer.node"),
+    )
+    .sort(compareUnicodeCodeUnits);
+  const expectedNativeEntries = [
+    nativeEntry,
+    `package/dist/plugin-roots/claude/plugins/understand-code/bin/native/${candidate.build.nativeTuple}/provider_kernel_peer.node`,
+    `package/dist/plugin-roots/codex/plugins/understand-code/bin/native/${candidate.build.nativeTuple}/provider_kernel_peer.node`,
+  ].sort(compareUnicodeCodeUnits);
+  if (
+    nativeEntries.length !== expectedNativeEntries.length ||
+    nativeEntries.some((entry, index) => entry !== expectedNativeEntries[index])
+  ) {
     throw new Error("Packed native tuple inventory is invalid");
   }
   const nativeBytes = files.get(nativeEntry);
   if (nativeBytes === undefined) throw new Error("Packed native tuple is missing");
-  if (sha256(nativeBytes) !== releaseManifest.native.sha256) {
-    throw new Error("Packed native tuple digest is invalid");
+  for (const entry of nativeEntries) {
+    const bytes = files.get(entry);
+    if (bytes === undefined || sha256(bytes) !== releaseManifest.native.sha256) {
+      throw new Error("Packed native tuple digest is invalid");
+    }
   }
 }
 

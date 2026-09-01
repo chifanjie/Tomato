@@ -257,8 +257,12 @@ candidate remains read-only and is not current Task evidence. Only after the
 actual verification and the Provider-backed Task transition to `verified` may
 `knowledge.action=publish` use that candidate ID, its source Snapshot and the
 current Task revision. These instructions do not unlock the Alpha or authorize
-extra tool calls. Candidate discovery/preview HTTP is implemented, but its UI
-review controls are not yet connected; stage success is not a completed review.
+extra tool calls. Candidate discovery/preview HTTP is implemented, and the
+Task-first Dashboard now exposes a read-only `KnowledgeCandidateReview` card.
+Its Graph/Wiki links are enabled only when the candidate's source Snapshot
+matches the current Snapshot; stage success is not a completed review, and the
+candidate remains ineligible as current Task evidence until the verification
+and Provider-backed publish gates pass.
 
 `open_workbench` is present in the public contract but remains Provider-gated in
 this Alpha. Without an accepted strong Store it returns `provider_unavailable`,

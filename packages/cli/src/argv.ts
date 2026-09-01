@@ -15,11 +15,19 @@ export type CliInvocation =
     }
   | {
       readonly kind: "installation";
-      readonly operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall";
+      readonly operation:
+        | "install"
+        | "upgrade"
+        | "downgrade"
+        | "rollback"
+        | "doctor"
+        | "uninstall";
       readonly root?: string;
       readonly home?: string;
       readonly host?: "codex" | "claude";
       readonly providerInstallationRoot?: string;
+      readonly version?: string;
+      readonly cliBundlePath?: string;
       readonly provider?: true;
       /** Privileged Provider Service Handoff installation entrypoint. */
       readonly providerService?: true;
@@ -57,6 +65,19 @@ function safePathArgument(value: unknown): value is string {
     typeof value === "string" &&
     Buffer.byteLength(value, "utf8") <= MAX_PATH_BYTES &&
     !/[\u0000-\u001f\u007f]/u.test(value)
+  );
+}
+
+function safeVersionArgument(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.exec(value);
+  if (match === null) return false;
+  const prerelease = match[4];
+  return prerelease === undefined || prerelease.split(".").every(
+    (identifier) =>
+      !/^\d+$/u.test(identifier) ||
+      identifier.length === 1 ||
+      !identifier.startsWith("0"),
   );
 }
 
@@ -137,10 +158,15 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       capabilityDigest: capabilityDigest as `sha256:${string}`,
     };
   }
-  if (["install", "upgrade", "rollback", "doctor", "uninstall"].includes(values[0] ?? "")) {
+  if (
+    ["install", "upgrade", "downgrade", "rollback", "doctor", "uninstall"].includes(
+      values[0] ?? "",
+    )
+  ) {
     const operation = values[0] as
       | "install"
       | "upgrade"
+      | "downgrade"
       | "rollback"
       | "doctor"
       | "uninstall";
@@ -148,6 +174,8 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     let home: string | undefined;
     let host: "codex" | "claude" | undefined;
     let providerInstallationRoot: string | undefined;
+    let version: string | undefined;
+    let cliBundlePath: string | undefined;
     let provider: true | undefined;
     let providerService: true | undefined;
     let serviceConfig: string | undefined;
@@ -162,6 +190,28 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
           throw new CliArgumentError();
         }
         provider = true;
+        continue;
+      }
+      if (flag === "--version") {
+        if (operation !== "downgrade" || version !== undefined) {
+          throw new CliArgumentError();
+        }
+        const candidate = values[index + 1];
+        if (!safeVersionArgument(candidate)) throw new CliArgumentError();
+        version = candidate;
+        index += 1;
+        continue;
+      }
+      if (flag === "--cli-bundle") {
+        if (operation !== "downgrade" || cliBundlePath !== undefined) {
+          throw new CliArgumentError();
+        }
+        const candidate = values[index + 1];
+        if (!safePathArgument(candidate) || !pathIsAbsolute(candidate)) {
+          throw new CliArgumentError();
+        }
+        cliBundlePath = candidate;
+        index += 1;
         continue;
       }
       if (flag === "--provider-service") {
@@ -186,7 +236,8 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         // may precede the --provider-service marker).
         const validForProviderService =
           flag === "--service-manifest" ||
-          ((operation === "install" || operation === "upgrade") &&
+          ((operation === "install" ||
+            operation === "upgrade") &&
             flag !== "--service-readiness");
         if (!validForDoctor && !validForProviderService) {
           throw new CliArgumentError();
@@ -218,6 +269,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         if (
           operation !== "install" &&
           operation !== "upgrade" &&
+          operation !== "downgrade" &&
           operation !== "doctor"
         ) {
           throw new CliArgumentError();
@@ -233,7 +285,9 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       }
       if (flag === "--provider-installation-root") {
         if (
-          (operation !== "install" && operation !== "upgrade") ||
+          (operation !== "install" &&
+            operation !== "upgrade" &&
+            operation !== "downgrade") ||
           providerInstallationRoot !== undefined
         ) {
           throw new CliArgumentError();
@@ -267,7 +321,14 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     ) {
       throw new CliArgumentError();
     }
+    if (
+      operation === "downgrade" &&
+      (version === undefined || cliBundlePath === undefined)
+    ) {
+      throw new CliArgumentError();
+    }
     if (providerService === true) {
+      if (operation === "downgrade") throw new CliArgumentError();
       const installInputsInvalid =
         operation === "install" &&
         (serviceConfig === undefined || serviceKey === undefined);
@@ -336,6 +397,8 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       ...(providerInstallationRoot === undefined
         ? {}
         : { providerInstallationRoot }),
+      ...(version === undefined ? {} : { version }),
+      ...(cliBundlePath === undefined ? {} : { cliBundlePath }),
       ...(provider === undefined ? {} : { provider }),
       ...(providerService === undefined ? {} : { providerService }),
       ...(serviceConfig === undefined ? {} : { serviceConfig }),
@@ -405,6 +468,7 @@ export function helpText(): string {
     "  understand-code mcp --stdio --root <absolute-worktree-path> [--installation-root <absolute-host-installation-root>]",
     "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
     "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
+    "  understand-code downgrade --version <semver> --cli-bundle <absolute-cli-bundle> [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor --host codex|claude",

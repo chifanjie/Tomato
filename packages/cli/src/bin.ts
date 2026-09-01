@@ -22,6 +22,7 @@ import {
 } from "@understand-code/durable-object-provider-runtime";
 import {
   InstallationLifecycleError,
+  downgradeInstallationV1,
   doctorInstallationV1,
   installInstallationV1,
   resolveTrustedProviderInstallationRootV1,
@@ -130,6 +131,12 @@ async function runInstallation(
         if (!result.ok) process.exitCode = 1;
         return;
       }
+      // The Provider service runtime has its own signed lifecycle protocol;
+      // until that protocol exposes a downgrade operation, reject explicitly
+      // rather than falling through to uninstall.
+      if (invocation.operation === "downgrade") {
+        throw new CliArgumentError();
+      }
       if (invocation.operation === "doctor") {
         const result = await doctorProviderServiceV1(target);
         process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -160,6 +167,20 @@ async function runInstallation(
       const result = await upgradeInstallationV1({
         ...input,
         version: PRODUCT_VERSION,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ ok: result.status === "updated" || result.status === "already_current", ...result })}\n`,
+      );
+      if (result.status === "refused" || result.status === "not_installed") {
+        process.exitCode = 1;
+      }
+      return;
+    }
+    if (invocation.operation === "downgrade") {
+      const result = await downgradeInstallationV1({
+        ...input,
+        version: invocation.version,
+        cliBundlePath: invocation.cliBundlePath,
       });
       process.stdout.write(
         `${JSON.stringify({ ok: result.status === "updated" || result.status === "already_current", ...result })}\n`,

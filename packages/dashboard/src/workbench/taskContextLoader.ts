@@ -37,6 +37,31 @@ export interface TaskArtifactLoadResult<T> {
   readonly message?: string;
 }
 
+/**
+ * A Task-scoped knowledge generation waiting for review.  This is deliberately
+ * a dashboard-local projection: the authoritative candidate and its lineage
+ * remain owned by the Workbench/Provider reader.
+ */
+export interface TaskKnowledgeCandidateV1 {
+  readonly candidateGenerationId: string;
+  readonly taskRevision: number;
+  readonly sourceSnapshotId: string;
+  readonly predecessorGenerationId?: string;
+  readonly sourceSnapshotMatchesCurrent: boolean;
+  readonly publishedGenerationId?: string;
+}
+
+export interface TaskKnowledgeCandidatesPayloadV1 {
+  readonly schemaVersion: 1;
+  readonly taskId: string;
+  readonly currentTaskRevision: number;
+  readonly currentSnapshotId: string;
+  readonly candidates: readonly TaskKnowledgeCandidateV1[];
+}
+
+export type TaskKnowledgeCandidate = TaskKnowledgeCandidateV1;
+export type TaskKnowledgeCandidatesPayload = TaskKnowledgeCandidatesPayloadV1;
+
 export interface TaskEvidenceRecord {
   readonly id: string;
   readonly kind: "source" | "config" | "test" | "document";
@@ -123,6 +148,16 @@ function artifactEndpointUrl(
   );
 }
 
+function knowledgeCandidatesEndpointUrl(route: WorkbenchRouteV1, token: string): string | null {
+  if (!route.taskId) return null;
+  const base = import.meta.env.BASE_URL || "/";
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  return withDashboardAccess(
+    `${normalizedBase}tasks/${encodeURIComponent(route.taskId)}/knowledge-candidates.json`,
+    token,
+  );
+}
+
 function evidenceEndpointUrl(route: WorkbenchRouteV1): string | null {
   if (!route.taskId || !route.evidenceId) return null;
   const base = import.meta.env.BASE_URL || "/";
@@ -183,6 +218,135 @@ function artifactStatusForResponse(status: number): TaskArtifactLoadStatus {
   if (status === 409) return "stale";
   if (status === 422) return "invalid";
   return "error";
+}
+
+function knowledgeCandidateString(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 256
+    && !/[\s\u0000-\u001f\u007f]/u.test(value);
+}
+
+const KNOWLEDGE_GENERATION_ID = /^generation-[0-9a-f]{64}$/u;
+
+function knowledgeCandidateGeneration(value: unknown): value is string {
+  return typeof value === "string" && KNOWLEDGE_GENERATION_ID.test(value);
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+/** Strictly parse the list response; malformed/future revisions fail closed. */
+export function parseTaskKnowledgeCandidates(
+  value: unknown,
+  expectedTaskId: string,
+): TaskKnowledgeCandidatesPayloadV1 | null {
+  if (!knowledgeCandidateString(expectedTaskId)
+    || value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!exactKeys(record, ["schemaVersion", "taskId", "currentTaskRevision", "currentSnapshotId", "candidates"])) return null;
+  if (record.schemaVersion !== 1 || record.taskId !== expectedTaskId
+    || !Number.isSafeInteger(record.currentTaskRevision)
+    || (record.currentTaskRevision as number) < 0
+    || !knowledgeCandidateString(record.currentSnapshotId)
+    || !Array.isArray(record.candidates) || record.candidates.length > 32) return null;
+
+  const seen = new Set<string>();
+  const candidates: TaskKnowledgeCandidateV1[] = [];
+  for (const candidateValue of record.candidates) {
+    if (candidateValue === null || typeof candidateValue !== "object" || Array.isArray(candidateValue)) return null;
+    const candidate = candidateValue as Record<string, unknown>;
+    if (!exactKeys(candidate, [
+      "candidateGenerationId", "taskRevision", "sourceSnapshotId", "predecessorGenerationId",
+      "sourceSnapshotMatchesCurrent", "publishedGenerationId",
+    ])) return null;
+    if (!knowledgeCandidateGeneration(candidate.candidateGenerationId)
+      || seen.has(candidate.candidateGenerationId)
+      || !Number.isSafeInteger(candidate.taskRevision)
+      || (candidate.taskRevision as number) < 0
+      || (candidate.taskRevision as number) > (record.currentTaskRevision as number)
+      || !knowledgeCandidateString(candidate.sourceSnapshotId)
+      || typeof candidate.sourceSnapshotMatchesCurrent !== "boolean"
+      || candidate.sourceSnapshotMatchesCurrent !== (candidate.sourceSnapshotId === record.currentSnapshotId)) return null;
+    if (candidate.predecessorGenerationId !== undefined
+      && (!knowledgeCandidateGeneration(candidate.predecessorGenerationId)
+        || candidate.predecessorGenerationId === candidate.candidateGenerationId)) return null;
+    if (candidate.publishedGenerationId !== undefined
+      && !knowledgeCandidateGeneration(candidate.publishedGenerationId)) return null;
+    seen.add(candidate.candidateGenerationId);
+    candidates.push({
+      candidateGenerationId: candidate.candidateGenerationId,
+      taskRevision: candidate.taskRevision as number,
+      sourceSnapshotId: candidate.sourceSnapshotId,
+      ...(candidate.predecessorGenerationId === undefined ? {} : {
+        predecessorGenerationId: candidate.predecessorGenerationId,
+      }),
+      sourceSnapshotMatchesCurrent: candidate.sourceSnapshotMatchesCurrent,
+      ...(candidate.publishedGenerationId === undefined ? {} : {
+        publishedGenerationId: candidate.publishedGenerationId,
+      }),
+    });
+  }
+  return {
+    schemaVersion: 1,
+    taskId: expectedTaskId,
+    currentTaskRevision: record.currentTaskRevision as number,
+    currentSnapshotId: record.currentSnapshotId,
+    candidates,
+  };
+}
+
+function knowledgeCandidatesResponseMessage(status: TaskArtifactLoadStatus): string {
+  switch (status) {
+    case "missing":
+      return "当前任务尚未生成待审知识候选。 / No pending knowledge candidate was found for this Task.";
+    case "forbidden":
+      return "本地任务会话已失效，无法读取待审知识候选。 / The local Task session is no longer valid.";
+    case "stale":
+      return "待审知识候选与当前仓库 Snapshot 不一致。 / The pending knowledge candidate is stale.";
+    case "invalid":
+      return "待审知识候选未通过严格契约校验。 / The pending knowledge candidate failed validation.";
+    case "error":
+      return "本地 Preview 无法读取待审知识候选。 / The local Preview could not read pending knowledge.";
+    case "ready":
+      return "";
+  }
+}
+
+/** Lazily read the current Task's pending knowledge candidates. */
+export async function loadTaskKnowledgeCandidates(
+  route: WorkbenchRouteV1,
+  accessToken: string,
+  fetcher: Fetcher = fetch,
+): Promise<TaskArtifactLoadResult<TaskKnowledgeCandidatesPayloadV1>> {
+  const url = knowledgeCandidatesEndpointUrl(route, accessToken);
+  if (url === null || route.taskId === undefined) {
+    return { status: "missing", message: knowledgeCandidatesResponseMessage("missing") };
+  }
+  try {
+    const response = await fetcher(url, {
+      ...dashboardFetchInit(accessToken),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      const status = artifactStatusForResponse(response.status);
+      return { status, message: knowledgeCandidatesResponseMessage(status) };
+    }
+    let value: unknown;
+    try {
+      value = await response.json();
+    } catch {
+      return { status: "invalid", message: knowledgeCandidatesResponseMessage("invalid") };
+    }
+    const parsed = parseTaskKnowledgeCandidates(value, route.taskId);
+    return parsed === null
+      ? { status: "invalid", message: knowledgeCandidatesResponseMessage("invalid") }
+      : { status: "ready", value: parsed };
+  } catch {
+    return { status: "error", message: knowledgeCandidatesResponseMessage("error") };
+  }
 }
 
 function parsePayload(value: unknown): TaskWorkbenchPayload | null {

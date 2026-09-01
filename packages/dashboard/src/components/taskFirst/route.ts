@@ -2,10 +2,20 @@ import type { WorkbenchRouteV1 } from "@understand-code/contracts";
 
 export type TaskFirstLocation = Pick<Location, "pathname" | "search">;
 
+const KNOWLEDGE_GENERATION_ID = /^generation-[0-9a-f]{64}$/u;
+
+/** Frontend-only selection for inspecting a Task's read-only candidate. */
+export interface TaskKnowledgeSelection {
+  readonly knowledgeVersion?: "pending";
+  readonly knowledgeGenerationId?: string;
+}
+
+export type TaskFirstRoute = WorkbenchRouteV1 & TaskKnowledgeSelection;
+
 export type TaskLocalSurface = "task" | "graph" | "wiki";
 
 export interface TaskFirstLocationState {
-  readonly route: WorkbenchRouteV1;
+  readonly route: TaskFirstRoute;
   readonly surface: TaskLocalSurface;
 }
 
@@ -40,7 +50,7 @@ function decodeSegment(value: string | null): string | undefined {
  */
 export function taskFirstRouteFromLocation(
   location: TaskFirstLocation,
-): WorkbenchRouteV1 | null {
+): TaskFirstRoute | null {
   return taskFirstLocationStateFromLocation(location)?.route ?? null;
 }
 
@@ -58,7 +68,7 @@ export function taskFirstLocationStateFromLocation(
     pathMode === "check" ? "verification_plan" : "summary"
   );
   const section = TASK_SECTION_ALIASES[rawSection] ?? rawSection;
-  const route: WorkbenchRouteV1 = {
+  const route: TaskFirstRoute = {
     view: "tasks",
     ...(taskId === undefined ? {} : { taskId }),
     ...(section.length > 0 ? { section } : {}),
@@ -67,8 +77,22 @@ export function taskFirstLocationStateFromLocation(
   for (const key of ["findingId", "evidenceId", "impactPathId", "focus"] as const) {
     const value = decodeSegment(query.get(key));
     if (value !== undefined) {
-      (route as Record<string, string>)[key] = value;
+      (route as unknown as Record<string, string>)[key] = value;
     }
+  }
+  // Candidate selection is intentionally an all-or-nothing pair.  Malformed,
+  // duplicated, or future selector values are ignored rather than allowing a
+  // route to claim knowledge that the Task did not authorize.
+  if (
+    taskId !== undefined
+    && route.view === "tasks"
+    && query.getAll("knowledgeVersion").length === 1
+    && query.getAll("knowledgeGenerationId").length === 1
+    && query.get("knowledgeVersion") === "pending"
+    && KNOWLEDGE_GENERATION_ID.test(query.get("knowledgeGenerationId") ?? "")
+  ) {
+    (route as unknown as Record<string, string>)["knowledgeVersion"] = "pending";
+    (route as unknown as Record<string, string>)["knowledgeGenerationId"] = query.get("knowledgeGenerationId") ?? "";
   }
   const surfaceValue = query.get("surface");
   const surface: TaskLocalSurface = surfaceValue === "graph" || surfaceValue === "wiki"
@@ -97,6 +121,14 @@ export function taskFirstLocationUrl(
   if (route.impactPathId) params.set("impactPathId", route.impactPathId);
   if (surface !== "task") params.set("surface", surface);
   if (surface !== "task" && route.focus) params.set("focus", route.focus);
+  if (route.view === "tasks"
+    && route.taskId
+    && route.knowledgeVersion === "pending"
+    && route.knowledgeGenerationId
+    && KNOWLEDGE_GENERATION_ID.test(route.knowledgeGenerationId)) {
+    params.set("knowledgeVersion", "pending");
+    params.set("knowledgeGenerationId", route.knowledgeGenerationId);
+  }
   const search = params.toString();
   const pathname = options.workbenchCookieMode
     ? "/workbench"

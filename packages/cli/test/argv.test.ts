@@ -173,6 +173,37 @@ describe("CLI arguments", () => {
       operation: "upgrade",
       root: "/tmp/understand-code",
     });
+    expect(() =>
+      parseCliArguments(["downgrade", "--root", "/tmp/understand-code"]),
+    ).toThrow(CliArgumentError);
+    expect(
+      parseCliArguments([
+        "downgrade",
+        "--version",
+        "1.0.0",
+        "--cli-bundle",
+        "/opt/understand-code/older.mjs",
+        "--root",
+        "/tmp/understand-code",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "downgrade",
+      version: "1.0.0",
+      cliBundlePath: "/opt/understand-code/older.mjs",
+      root: "/tmp/understand-code",
+    });
+    for (const version of ["1.0.0-01", "1.0.0-alpha..1", "1.0.0+meta..x"]) {
+      expect(() =>
+        parseCliArguments([
+          "downgrade",
+          "--version",
+          version,
+          "--cli-bundle",
+          "/opt/understand-code/older.mjs",
+        ]),
+      ).toThrow(CliArgumentError);
+    }
     expect(parseCliArguments(["install", "--host", "claude", "--home", "/tmp/understand-code"])).toEqual({
       kind: "installation",
       operation: "install",
@@ -266,6 +297,16 @@ describe("CLI arguments", () => {
       kind: "installation",
       operation: "rollback",
     });
+    expect(() =>
+      parseCliArguments([
+        "downgrade",
+        "--provider-service",
+        "--root",
+        "/var/lib/understand-code/provider",
+        "--service-manifest",
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
+      ]),
+    ).toThrow(CliArgumentError);
   });
 
   it("keeps an omitted root as a protocol-visible binding error", () => {

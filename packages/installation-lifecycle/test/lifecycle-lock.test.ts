@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -21,6 +22,7 @@ import {
   uninstallInstallationV1,
   upgradeInstallationV1,
 } from "../src/index.js";
+import type { InstallationOptionsV1 } from "../src/index.js";
 
 const temporaryRoots: string[] = [];
 
@@ -199,6 +201,46 @@ describe("installation lifecycle lock", () => {
     await rm(lockPath(root), { recursive: true, force: true });
     await expect(uninstallInstallationV1({ root })).resolves.toMatchObject({
       status: "removed",
+    });
+  });
+
+  it("keeps the locked canonical root when a mutable target resolves elsewhere later", async () => {
+    const lockedRoot = await temporaryRoot();
+    const alternateRoot = await temporaryRoot();
+    const firstBundle = await fakeBundle("first");
+    const nextBundle = await fakeBundle("next");
+    await installInstallationV1({
+      root: lockedRoot,
+      version: "1.0.0",
+      cliBundlePath: firstBundle,
+    });
+    await installInstallationV1({
+      root: alternateRoot,
+      version: "1.0.0",
+      cliBundlePath: firstBundle,
+    });
+    const canonicalLockedRoot = await realpath(lockedRoot);
+
+    let targetReads = 0;
+    const mutableTarget = {
+      get root(): string {
+        targetReads += 1;
+        return targetReads === 1 ? lockedRoot : alternateRoot;
+      },
+      version: "2.0.0",
+      cliBundlePath: nextBundle,
+    } as InstallationOptionsV1;
+    const result = await upgradeInstallationV1(mutableTarget);
+
+    expect(result).toMatchObject({ status: "updated", root: canonicalLockedRoot });
+    expect(targetReads).toBe(1);
+    expect(await doctorInstallationV1({ root: lockedRoot })).toMatchObject({
+      status: "healthy",
+      version: "2.0.0",
+    });
+    expect(await doctorInstallationV1({ root: alternateRoot })).toMatchObject({
+      status: "healthy",
+      version: "1.0.0",
     });
   });
 });

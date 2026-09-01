@@ -323,6 +323,17 @@ type InstallationLifecycleLockOwnerV1 = Readonly<{
   acquiredAt: string;
 }>;
 
+/**
+ * Identity of the canonical installation root held by a lifecycle lease.
+ * Keeping this alongside the lock identity prevents a caller from resolving
+ * an alias again after the lock was acquired and accidentally mutating a
+ * different directory.
+ */
+type InstallationLifecycleRootIdentityV1 = Readonly<{
+  dev: number;
+  ino: number;
+}>;
+
 type InstallationLifecycleLockInspectionV1 = Readonly<{
   state: "held";
   lockPath: string;
@@ -336,6 +347,8 @@ type InstallationLifecycleLockInspectionV1 = Readonly<{
 type InstallationLifecycleLockLeaseV1 = Readonly<{
   lockPath: string;
   nonce: string;
+  rootDev: number;
+  rootIno: number;
   directoryDev: number;
   directoryIno: number;
   ownerDev: number;
@@ -541,12 +554,12 @@ async function writeInstallationLifecycleLockOwnerV1(
 
 async function assertInstallationLifecycleRootV1(
   root: string,
-): Promise<"present" | "missing"> {
+): Promise<InstallationLifecycleRootIdentityV1 | undefined> {
   let metadata;
   try {
     metadata = await lstat(root);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw new InstallationLifecycleError(
       "io_error",
       "Unable to inspect installation root for lifecycle lock.",
@@ -574,7 +587,10 @@ async function assertInstallationLifecycleRootV1(
       { root },
     );
   }
-  return "present";
+  return Object.freeze({
+    dev: metadata.dev,
+    ino: metadata.ino,
+  });
 }
 
 async function createInstallationLifecycleRecoveryClaimV1(
@@ -843,8 +859,21 @@ async function abandonCreatedInstallationLifecycleLockV1(
 async function releaseInstallationLifecycleLockV1(
   lease: InstallationLifecycleLockLeaseV1,
 ): Promise<void> {
+  const root = path.dirname(lease.lockPath);
+  const rootIdentity = await assertInstallationLifecycleRootV1(root);
+  if (
+    rootIdentity === undefined ||
+    rootIdentity.dev !== lease.rootDev ||
+    rootIdentity.ino !== lease.rootIno
+  ) {
+    throw new InstallationLifecycleError(
+      "installation_tampered",
+      "Installation root changed while releasing lifecycle lock.",
+      { root },
+    );
+  }
   const inspected = await inspectInstallationLifecycleLockV1(
-    path.dirname(lease.lockPath),
+    root,
   );
   if (
     inspected === undefined ||
@@ -859,7 +888,7 @@ async function releaseInstallationLifecycleLockV1(
       "Installation lifecycle lock ownership changed while held.",
     );
   }
-  if (await lifecycleLockPathExistsV1(lifecycleLockRecoveryPathV1(path.dirname(lease.lockPath)))) {
+  if (await lifecycleLockPathExistsV1(lifecycleLockRecoveryPathV1(root))) {
     throw new InstallationLifecycleError(
       "installation_tampered",
       "Installation lifecycle lock is under recovery.",
@@ -895,7 +924,7 @@ async function releaseInstallationLifecycleLockV1(
     throw new InstallationLifecycleError(
       "installation_tampered",
       "Installation lifecycle lock could not be released safely.",
-      { root: path.dirname(lease.lockPath) },
+      { root },
     );
   }
 }
@@ -904,8 +933,8 @@ async function acquireInstallationLifecycleLockV1(
   root: string,
   recoveryAttempts = 0,
 ): Promise<InstallationLifecycleLockAcquireResultV1> {
-  const rootState = await assertInstallationLifecycleRootV1(root);
-  if (rootState === "missing") return Object.freeze({ status: "missing" as const });
+  const rootIdentity = await assertInstallationLifecycleRootV1(root);
+  if (rootIdentity === undefined) return Object.freeze({ status: "missing" as const });
   const lockPath = lifecycleLockPathV1(root);
   const recoveryPath = lifecycleLockRecoveryPathV1(root);
   // A recovery claim is itself an exclusive, owner-only gate.  Its presence
@@ -946,6 +975,18 @@ async function acquireInstallationLifecycleLockV1(
     acquiredAt: new Date().toISOString(),
   });
   try {
+    const currentRootIdentity = await assertInstallationLifecycleRootV1(root);
+    if (
+      currentRootIdentity === undefined ||
+      currentRootIdentity.dev !== rootIdentity.dev ||
+      currentRootIdentity.ino !== rootIdentity.ino
+    ) {
+      throw new InstallationLifecycleError(
+        "installation_tampered",
+        "Installation root changed while acquiring lifecycle lock.",
+        { root },
+      );
+    }
     directoryMetadata = await lstat(lockPath);
     if (
       directoryMetadata.isSymbolicLink() ||
@@ -969,6 +1010,8 @@ async function acquireInstallationLifecycleLockV1(
     const lease: InstallationLifecycleLockLeaseV1 = {
       lockPath,
       nonce: owner.nonce,
+      rootDev: rootIdentity.dev,
+      rootIno: rootIdentity.ino,
       directoryDev: inspected.directoryDev,
       directoryIno: inspected.directoryIno,
       ownerDev: inspected.ownerDev,
@@ -1017,6 +1060,19 @@ async function withInstallationLifecycleLockV1<T>(
 ): Promise<T> {
   let operationError: unknown;
   try {
+    const root = path.dirname(lease.lockPath);
+    const rootIdentity = await assertInstallationLifecycleRootV1(root);
+    if (
+      rootIdentity === undefined ||
+      rootIdentity.dev !== lease.rootDev ||
+      rootIdentity.ino !== lease.rootIno
+    ) {
+      throw new InstallationLifecycleError(
+        "installation_tampered",
+        "Installation root changed while lifecycle lock was held.",
+        { root },
+      );
+    }
     return await operation();
   } catch (error) {
     operationError = error;
@@ -3067,7 +3123,11 @@ async function installInstallationNoLockV1(
             manifest.files.find((next) => next.path === file.path)?.sha256,
         );
       if (!filesMatch) {
-        const upgraded = await applyInstallationVersionChangeV1(options);
+        const upgraded = await applyInstallationVersionChangeV1(
+          options,
+          undefined,
+          root,
+        );
         return {
           status:
             upgraded.status === "updated"
@@ -3095,7 +3155,11 @@ async function installInstallationNoLockV1(
       };
     }
     if (before.status === "healthy" && existingManifest.version !== version) {
-      const upgraded = await applyInstallationVersionChangeV1(options);
+      const upgraded = await applyInstallationVersionChangeV1(
+        options,
+        undefined,
+        root,
+      );
       return {
         status:
           upgraded.status === "updated"
@@ -3209,8 +3273,10 @@ export async function installInstallationV1(
 async function applyInstallationVersionChangeV1(
   options: InstallationOptionsV1,
   expectedManifest?: Readonly<{ version: string; installationId: string; digest: string }>,
+  resolvedRoot?: string,
 ): Promise<UpgradeResultV1> {
-  const root = await resolveInstallationTargetV1(options, { create: false });
+  const root =
+    resolvedRoot ?? (await resolveInstallationTargetV1(options, { create: false }));
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
   const existingManifest = await readManifestAt(root);
   if (existingManifest === undefined) {
@@ -3591,10 +3657,10 @@ export async function upgradeInstallationV1(
     };
   }
   if (attempt.status === "missing") {
-    return applyInstallationVersionChangeV1(options);
+    return applyInstallationVersionChangeV1(options, undefined, root);
   }
   return withInstallationLifecycleLockV1(attempt.lease, () =>
-    applyInstallationVersionChangeV1(options),
+    applyInstallationVersionChangeV1(options, undefined, root),
   );
 }
 
@@ -3609,8 +3675,10 @@ export async function upgradeInstallationV1(
  */
 async function downgradeInstallationNoLockV1(
   options: InstallationOptionsV1,
+  resolvedRoot?: string,
 ): Promise<DowngradeResultV1> {
-  const root = await resolveInstallationTargetV1(options, { create: false });
+  const root =
+    resolvedRoot ?? (await resolveInstallationTargetV1(options, { create: false }));
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
   const existingManifest = await readManifestAt(root);
   if (existingManifest === undefined) {
@@ -3683,11 +3751,15 @@ async function downgradeInstallationNoLockV1(
     };
   }
 
-  return applyInstallationVersionChangeV1(options, {
-    version: existingManifest.version,
-    installationId: existingManifest.installationId,
-    digest: digest(Buffer.from(canonicalJson(existingManifest), "utf8")),
-  });
+  return applyInstallationVersionChangeV1(
+    options,
+    {
+      version: existingManifest.version,
+      installationId: existingManifest.installationId,
+      digest: digest(Buffer.from(canonicalJson(existingManifest), "utf8")),
+    },
+    root,
+  );
 }
 
 /** Downgrade an existing installation under the root lifecycle lock. */
@@ -3706,18 +3778,20 @@ export async function downgradeInstallationV1(
     };
   }
   if (attempt.status === "missing") {
-    return downgradeInstallationNoLockV1(options);
+    return downgradeInstallationNoLockV1(options, root);
   }
   return withInstallationLifecycleLockV1(attempt.lease, () =>
-    downgradeInstallationNoLockV1(options),
+    downgradeInstallationNoLockV1(options, root),
   );
 }
 
 /** Restore the immediately preceding healthy installation snapshot. */
 async function rollbackInstallationNoLockV1(
   input: InstallationTargetInputV1,
+  resolvedRoot?: string,
 ): Promise<RollbackResultV1> {
-  const root = await resolveInstallationTargetV1(input, { create: false });
+  const root =
+    resolvedRoot ?? (await resolveInstallationTargetV1(input, { create: false }));
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
   const manifest = await readManifestAt(root);
   if (manifest === undefined) {
@@ -3851,10 +3925,10 @@ export async function rollbackInstallationV1(
     };
   }
   if (attempt.status === "missing") {
-    return rollbackInstallationNoLockV1(input);
+    return rollbackInstallationNoLockV1(input, root);
   }
   return withInstallationLifecycleLockV1(attempt.lease, () =>
-    rollbackInstallationNoLockV1(input),
+    rollbackInstallationNoLockV1(input, root),
   );
 }
 
@@ -4043,8 +4117,10 @@ export async function managedLegacyWorkbenchUiAllowedV1(
  */
 async function uninstallInstallationNoLockV1(
   input: InstallationTargetInputV1,
+  resolvedRoot?: string,
 ): Promise<UninstallResultV1> {
-  const root = await resolveInstallationTargetV1(input, { create: false });
+  const root =
+    resolvedRoot ?? (await resolveInstallationTargetV1(input, { create: false }));
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
   const doctor = await inspectInstallation(root, { allowLegacy: true });
   if (doctor.status === "not_installed") {
@@ -4141,9 +4217,9 @@ export async function uninstallInstallationV1(
     };
   }
   if (attempt.status === "missing") {
-    return uninstallInstallationNoLockV1(input);
+    return uninstallInstallationNoLockV1(input, root);
   }
   return withInstallationLifecycleLockV1(attempt.lease, () =>
-    uninstallInstallationNoLockV1(input),
+    uninstallInstallationNoLockV1(input, root),
   );
 }

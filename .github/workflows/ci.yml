@@ -52,6 +52,7 @@ jobs:
         run: |
           pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match typecheck
           pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match test
+          pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build
           pnpm --filter @understand-code/contracts --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match exec vitest run test/safe-git-bootstrap.test.ts --maxWorkers=1

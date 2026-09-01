@@ -62,7 +62,10 @@ jobs:
   provider_unit:
     name: Provider unit gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The contract suite includes the full fixture matrix and can exceed the
+    # default runner window without being hung. Keep the hard timeout, but
+    # give the unit shard the same headroom as the aggregate gate.
+    timeout-minutes: 90
     env:
       CI: true
 
@@ -369,6 +372,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare native-safe workspace home
+        run: |
+          ci_home="/opt/understand-code-ci-home-${GITHUB_RUN_ID}"
+          ci_tmp="$ci_home/tmp"
+          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$ci_home"
+          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$ci_tmp"
+          test "$(stat -c '%u:%g:%a' "$ci_home")" = "$(id -u):$(id -g):700"
+          test "$(stat -c '%u:%g:%a' "$ci_tmp")" = "$(id -u):$(id -g):700"
+          echo "UNDERSTAND_CODE_CI_HOME=$ci_home" >> "$GITHUB_ENV"
+          echo "HOME=$ci_home" >> "$GITHUB_ENV"
+          echo "TMPDIR=$ci_tmp" >> "$GITHUB_ENV"
+
       - name: Run workspace quality gate
         run: |
           pnpm run build:all
@@ -402,6 +417,13 @@ jobs:
 
       - name: Audit active dashboard surface
         run: pnpm --filter @understand-code/dashboard audit:surface
+
+      - name: Remove native-safe workspace home
+        if: ${{ always() }}
+        run: |
+          case "${UNDERSTAND_CODE_CI_HOME:-}" in
+            /opt/understand-code-ci-home-*) sudo rm -rf -- "$UNDERSTAND_CODE_CI_HOME" ;;
+          esac
 
   preview_candidate:
     name: Preview candidate package

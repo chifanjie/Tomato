@@ -245,6 +245,12 @@ describe("Provider operation-plan supervisor UDS transport (internal)", () => {
     const server = await serverV1((socket) => {
       socket.write("{");
       const drip = setInterval(() => socket.write(" "), 10);
+      socket.on("error", (error) => {
+        clearInterval(drip);
+        if ((error as NodeJS.ErrnoException).code !== "EPIPE") {
+          throw error;
+        }
+      });
       socket.once("close", () => clearInterval(drip));
     });
     try {

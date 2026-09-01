@@ -6,11 +6,17 @@
 
 - 本会话已接过旧会话 `019ff55b-a532-7952-b656-aae468eebc54` 的目标；以下结果是当前工作树上的继续执行，不重做第15步、已发布知识历史浏览、后端待审知识闭环或原生插件生命周期。
 - Task-first Dashboard 已在既有 `planned_changes` 区域接入只读 `KnowledgeCandidateReview`：候选列表严格绑定 Task，来源快照变化时按钮禁用；候选 Graph/Wiki 通过 `knowledgeVersion=pending` 与精确 `knowledgeGenerationId` 读取，不提供发布控件，也不把候选当作当前证据。
-- 安装生命周期已补齐根锁竞争/恢复回归、严格 SemVer 降级校验，以及 CLI 嵌入 release identity 和相邻 release manifest 的版本、CLI/native 摘要绑定；较新 bundle 不能伪装成旧版本降级目标。CLI 参数拒绝前导零数字预发布标识等非法 SemVer。
-- 本轮新鲜门禁证据：Dashboard 全量 `56` 个测试文件 / `612` 个断言、生产构建通过；安装生命周期 `17/17` 通过并完成类型检查；Preview typecheck/build、runtime `8/8`、插件 `7` 通过 / `2` 平台跳过、cold-packed `1/1`、unsigned Alpha candidate `1/1`、真实浏览器 Workbench `1/1`、Surface Release `7` 通过 / `2` 平台跳过；根 `pnpm typecheck` 通过。仓库级 `pnpm test` 的 C09 aggregate、packed-distribution 和前置全量 Vitest 通过，但随后被工作树原先已有的未跟踪 `packages/durable-object-provider-client/test/provider-runtime-strong-mutation-client-internal.test.ts` 的10项 fixture失败阻断；不修改该用户文件，8个已跟踪 Client 测试单独 `65/65` 通过，不能把根测试写成全绿。
-- 仍未关闭：真实隔离 Codex/Claude 登录后的模型任务与 Verified 晋级、Step17 发行门、CI 账户付款/spending-limit 外部阻塞；生命周期锁对跨主体可写安装根的 root owner/mode 威胁仍按当前同主体安装假设记录，未把假设写成安全证明。任何一项都不得以本地测试替代。
+- 安装生命周期已补齐根锁竞争/恢复回归、严格 SemVer 降级校验，以及 CLI 嵌入 release identity 和相邻 release manifest 的版本、CLI/native 摘要绑定；较新 bundle 不能伪装成旧版本降级目标。另以 `8f99f04` 将锁定的 canonical root `dev/ino` 绑定到整个 install/upgrade/downgrade/rollback/uninstall 过程，避免可变 target 在加锁后改指另一目录；CLI 参数拒绝前导零数字预发布标识等非法 SemVer。
+- 本轮新鲜门禁证据：Dashboard 全量 `56` 个测试文件 / `612` 个断言、生产构建通过；安装生命周期 `18/18` 通过并完成类型检查；Preview typecheck/build、runtime `8/8`、插件 `7` 通过 / `2` 平台跳过、cold-packed `1/1`、unsigned Alpha candidate `1/1`、真实浏览器 Workbench `1/1`、Surface Release `7` 通过 / `2` 平台跳过；根 `pnpm typecheck` 通过。仓库级 `pnpm test` 的 C09 aggregate、packed-distribution 和前置全量 Vitest 通过，但随后被工作树原先已有的未跟踪 `packages/durable-object-provider-client/test/provider-runtime-strong-mutation-client-internal.test.ts` 的10项 fixture失败阻断；不修改该用户文件，8个已跟踪 Client 测试单独 `65/65` 通过，不能把根测试写成全绿。
+- 仍未关闭：真实隔离 Codex/Claude 登录后的模型任务与 Verified 晋级、Step17 发行门、CI 账户付款/spending-limit 外部阻塞；生命周期锁对跨主体可写安装根的 owner/mode 威胁仍按当前同主体安装假设记录，root `dev/ino` 竞态已由 `8f99f04` 固定但未把跨主体假设写成安全证明。任何一项都不得以本地测试替代。
 
 本轮提交只应包含本节所述源代码、测试、Preview 文档/门禁和本检查点；用户已有脏文档、`site/`、`.learnings/`、`.pnpm-store/`、拓扑证明目录及未跟踪 Provider 源码/测试继续保持不动。
+
+## 2026-09-01 CI 门复核与最小修复
+
+- 新 SHA `d393f69b27df67bc973976cef31867c3086dbb0e` 的 [Actions run 33478775744](https://github.com/chifanjie/Tomato/actions/runs/33478775744) 已完成但不是绿：Ubuntu Native 的原生测试本身 `54 passed / 12 skipped`，随后 workflow 因未先构建 `@understand-code/durable-object-provider-contracts` 而在 `@understand-code/contracts` build 报 `provider-error` 缺失；macOS Native 仅实际 canonical Git binding 一项因 `ERR_NATIVE_KERNEL_BRIDGE_SAFE_GIT_UNAVAILABLE` 失败（其余 `55 passed / 10 skipped`）；Workspace 的 Client 测试夹具出现竞态 `EPIPE`；Provider C09 aggregate 未通过，Provider unit 在 45 分钟门限被取消。以上均未改变本轮业务实现的定向门禁结果。
+- 后续最小修复：`21001bd` 已将 Native workflow 的 durable-object-provider-contracts build 放到 contracts build 前；持续字节流的测试 peer 仅过滤预期 `EPIPE` 并清理 interval，不吞其他 socket 错误。两项修复的本地定向回归为 `provider-operation-plan-supervisor-transport-internal.test.ts 16/16`、安装生命周期 `18/18`，workflow YAML 与 `git diff --check` 通过。
+- macOS canonical Git 失败暂按 Darwin runner 环境阻塞保留；未放宽 SafeGit admission、未跳过测试。需在后续可用 CI 运行中补充 `xcrun` realpath/owner/mode/ACL/flags 诊断后再决定兼容修复。C09/Provider 长门与真实模型/Verified/Step17 仍不能写成通过。
 
 ## 当前游标
 

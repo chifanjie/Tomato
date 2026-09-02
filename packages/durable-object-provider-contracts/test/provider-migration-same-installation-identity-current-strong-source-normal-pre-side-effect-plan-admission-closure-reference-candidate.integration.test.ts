@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { setImmediate as scheduleImmediate } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -249,6 +250,12 @@ function resourceBytes(relativePath: string): Uint8Array {
 
 function resourceJson(relativePath: string): unknown {
   return JSON.parse(new TextDecoder().decode(resourceBytes(relativePath)));
+}
+
+function yieldForPendingWorkerRpc(): Promise<void> {
+  return new Promise((resolveYield) => {
+    scheduleImmediate(resolveYield);
+  });
 }
 
 function cloneJsonV1<T>(value: T): T {
@@ -2975,15 +2982,18 @@ describe("D-44 formal Plan and compound publication reference integration", () =
   it("derives the formal Plan from a fresh D-43 and commits, then replays the same nonce byte-identically", async () => {
     const operationNonce = LowerHex32V1Schema.parse("d4".repeat(16));
     const firstFixture = await d43MintFixtureV1();
+    await yieldForPendingWorkerRpc();
     const machine = d44CompoundPublicationMachineV1(firstFixture);
     const first = await d44OperationFixtureV1({
       compoundPublicationReferenceMachineCapability: machine,
       operationNonce,
     });
+    await yieldForPendingWorkerRpc();
     const firstResult =
       await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1(
         first.ready.buildInput,
       );
+    await yieldForPendingWorkerRpc();
     expect(firstResult).toMatchObject({ ok: true });
     if (!firstResult.ok) return;
 
@@ -3051,14 +3061,17 @@ describe("D-44 formal Plan and compound publication reference integration", () =
       publishedFormalPlanPin: value.formalPlanPin,
     });
 
+    await yieldForPendingWorkerRpc();
     const replay = await d44OperationFixtureV1({
       compoundPublicationReferenceMachineCapability: machine,
       operationNonce,
     });
+    await yieldForPendingWorkerRpc();
     const replayResult =
       await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1(
         replay.ready.buildInput,
       );
+    await yieldForPendingWorkerRpc();
     expect(replayResult.ok).toBe(true);
     if (!replayResult.ok) return;
     expect(replayResult.value.replay).toBe(true);
@@ -3334,10 +3347,12 @@ describe("D-45 migration-only Acceptance compare-append reference integration", 
 
   it("fails stale when another D-45 operation wins the irreversible D-40 handoff", async () => {
     const base = await d43MintFixtureV1();
+    await yieldForPendingWorkerRpc();
     const compoundPublicationReferenceMachineCapability =
       d44CompoundPublicationMachineV1(base);
     const acceptanceReferenceMachineCapability =
       await d45AcceptanceMachineV1();
+    await yieldForPendingWorkerRpc();
     const acceptanceIdentityVerificationCapability =
       currentFixture.identityCapability;
     const publicationOperationNonce = LowerHex32V1Schema.parse(
@@ -3350,6 +3365,7 @@ describe("D-45 migration-only Acceptance compare-append reference integration", 
       publicationOperationNonce,
       acceptanceOperationNonce: LowerHex32V1Schema.parse("a6".repeat(16)),
     });
+    await yieldForPendingWorkerRpc();
     const stale = await d45OperationFixtureV1({
       compoundPublicationReferenceMachineCapability,
       acceptanceReferenceMachineCapability,
@@ -3357,10 +3373,12 @@ describe("D-45 migration-only Acceptance compare-append reference integration", 
       publicationOperationNonce,
       acceptanceOperationNonce: LowerHex32V1Schema.parse("a7".repeat(16)),
     });
+    await yieldForPendingWorkerRpc();
     const firstResult =
       await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1(
         first.ready.buildInput,
       );
+    await yieldForPendingWorkerRpc();
     if (!firstResult.ok) {
       throw new TypeError(
         `first D-45 failed: ${firstResult.stage}/${firstResult.reason}`,
@@ -3370,6 +3388,7 @@ describe("D-45 migration-only Acceptance compare-append reference integration", 
       await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1(
         stale.ready.buildInput,
       );
+    await yieldForPendingWorkerRpc();
     expect(staleResult).toMatchObject({
       ok: false,
       stage: "acceptance_handoff",

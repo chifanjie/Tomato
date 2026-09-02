@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, chown, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -110,6 +110,17 @@ describe("Provider Doctor", () => {
       const targetRoot = await mkdtemp(join(tmpdir(), "ucpd-kernel-target-"));
       const serviceRoot = await mkdtemp(join(tmpdir(), "ucpd-kernel-service-"));
       await chmod(serviceRoot, 0o700);
+      // Unix-domain sockets inherit the group of their containing directory.
+      // Keep this same-UID fixture deterministic even when TMPDIR itself has a
+      // different inherited group (for example, a CI runtime directory).
+      await chown(serviceRoot, process.getuid!(), process.getgid!());
+      // Keep the signed executable identity inside the owner-only fixture root.
+      // Hosted toolcache runtimes may be replaced or relinked while a test is
+      // running, which would make this identity check depend on runner state.
+      const executablePath = join(serviceRoot, "runtime.bin");
+      await writeFile(executablePath, Buffer.from("#!/bin/sh\nexit 0\n"), {
+        mode: 0o700,
+      });
       const signing = generateProviderServiceSigningKeyPairV1();
       const authKey = randomBytes(32);
       const config = createProviderServiceHandoffConfigV1({
@@ -128,13 +139,13 @@ describe("Provider Doctor", () => {
           },
           runtimeRoot: serviceRoot,
           socketPath: join(serviceRoot, "runtime.sock"),
-          executablePath: process.execPath,
+          executablePath,
           configPath: join(serviceRoot, "service.json"),
           authKeyPath: join(serviceRoot, "auth.key"),
           readinessPath: join(serviceRoot, "readiness.json"),
           signingKeyPath: join(serviceRoot, "signing.key"),
           installationIdentityDigest: SERVICE_INSTALLATION_DIGEST,
-          binaryDigest: await executableDigestV1(process.execPath),
+          binaryDigest: await executableDigestV1(executablePath),
           capabilityDigest: SERVICE_CAPABILITY_DIGEST,
         },
       });

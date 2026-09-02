@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,6 +53,10 @@ async function fixtureV1(providerId = PROVIDER): Promise<{
 }> {
   const root = await mkdtemp(join(tmpdir(), "uc-live-readiness-"));
   roots.add(root);
+  // Some hosted Node distributions expose process.execPath through a
+  // symlink.  The signed handoff deliberately admits only the canonical
+  // regular executable, so make the fixture use that same path identity.
+  const executablePath = await realpath(process.execPath);
   await chmod(root, 0o700);
   const keyPair = generateProviderServiceSigningKeyPairV1();
   const key = randomBytes(32);
@@ -71,13 +75,13 @@ async function fixtureV1(providerId = PROVIDER): Promise<{
       },
       runtimeRoot: root,
       socketPath: join(root, "runtime.sock"),
-      executablePath: process.execPath,
+      executablePath,
       configPath: join(root, "service.json"),
       authKeyPath: join(root, "auth.key"),
       readinessPath: join(root, "readiness.json"),
       signingKeyPath: join(root, "signing.key"),
       installationIdentityDigest: TARGET,
-      binaryDigest: await executableDigestV1(process.execPath),
+      binaryDigest: await executableDigestV1(executablePath),
       capabilityDigest: CAPABILITY,
     },
     privateKey: keyPair.privateKey,

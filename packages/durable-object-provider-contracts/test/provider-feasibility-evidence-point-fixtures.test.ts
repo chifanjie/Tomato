@@ -51,6 +51,26 @@ function yieldForPendingWorkerRpc(): Promise<void> {
   });
 }
 
+const INVALID_REPLAY_SHARD_SIZE = 32;
+const invalidReplayShardRanges = Array.from(
+  {
+    length: Math.ceil(
+      PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1.length /
+        INVALID_REPLAY_SHARD_SIZE,
+    ),
+  },
+  (_, shardIndex) => {
+    const start = shardIndex * INVALID_REPLAY_SHARD_SIZE;
+    return {
+      start,
+      end: Math.min(
+        start + INVALID_REPLAY_SHARD_SIZE,
+        PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1.length,
+      ),
+    };
+  },
+);
+
 const goldenBytes = resourceBytes(
   PROVIDER_FEASIBILITY_EVIDENCE_POINT_GOLDEN_RESOURCE_PATH_V1,
 );
@@ -449,7 +469,7 @@ describe("provider feasibility evidence point fixture resources", () => {
     ).toThrow();
   });
 
-  it("replays all 227 recipes with exact witness, diagnostic, opaque error, and crypto counts", async () => {
+  async function replayInvalidCaseRange(start: number, end: number): Promise<void> {
     const golden =
       await verifyProviderFeasibilityEvidencePointGoldenResourceV1(
         goldenBytes,
@@ -458,7 +478,8 @@ describe("provider feasibility evidence point fixture resources", () => {
     const invalid =
       verifyProviderFeasibilityEvidencePointInvalidResourceV1(invalidBytes);
     let executed = 0;
-    for (const [index, invalidCase] of invalid.cases.entries()) {
+    for (let index = start; index < end; index += 1) {
+      const invalidCase = invalid.cases[index]!;
       expect(invalidCase.caseId).toBe(invalid.caseIds[index]);
       expect(invalidCase.mutation.operation).toBe(invalidCase.caseId);
       const witness =
@@ -524,8 +545,16 @@ describe("provider feasibility evidence point fixture resources", () => {
       executed += 1;
       await yieldForPendingWorkerRpc();
     }
-    expect(executed).toBe(227);
-  }, 300_000);
+    expect(executed).toBe(end - start);
+  }
+
+  for (const { start, end } of invalidReplayShardRanges) {
+    it(
+      `replays invalid recipes ${start + 1}-${end} with exact witness, diagnostic, opaque error, and crypto counts`,
+      async () => replayInvalidCaseRange(start, end),
+      60_000,
+    );
+  }
 
   it("rejects raw-byte substitutions before semantic use", async () => {
     const changedGolden = goldenBytes.slice();

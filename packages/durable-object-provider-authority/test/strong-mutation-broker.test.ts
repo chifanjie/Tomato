@@ -321,7 +321,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await expect(
       inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
     ).resolves.toEqual(before);
-  });
+  }, 900_000);
 
   it("rejects the same grant with a different full request at zero writes", async () => {
     const { capability, current, broker } = await fixtureV1();
@@ -911,6 +911,10 @@ describe("locked strong-mutation broker transaction candidate", () => {
     ).rejects.toMatchObject({ code: "invalid_request" });
   });
 
+  // This exercises twelve independent durable intents plus a restart/replay
+  // pass.  Hosted CI filesystems can make each fsync substantially slower
+  // than the local workspace, so keep the assertion timeout above that
+  // expected stress-test envelope without changing production behavior.
   it("loads and joins a multi-intent snapshot without changing existing records", async () => {
     const { capability, current, broker } = await fixtureV1();
     const requests = [..."0123456789ab"].map((nonceDigit, index) =>

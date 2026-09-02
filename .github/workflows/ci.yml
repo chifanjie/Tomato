@@ -49,6 +49,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run native descriptor-binding gate
+        id: native_descriptor_gate
         run: |
           pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match typecheck
           pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match test
@@ -58,6 +59,56 @@ jobs:
           pnpm --filter @understand-code/contracts --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match exec vitest run test/safe-git-bootstrap.test.ts --maxWorkers=1
+
+      - name: Diagnose rejected macOS canonical Git
+        if: ${{ failure() && runner.os == 'macOS' && steps.native_descriptor_gate.outcome == 'failure' }}
+        run: |
+          # Read only the system Git path and its ancestors. Keep the failed
+          # admission test authoritative; never change ownership, ACLs or flags.
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { closeSync, constants, existsSync, lstatSync, openSync, realpathSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1 } from './packages/native-kernel-bridge/dist/index.js';
+
+          const candidate = execFileSync('/usr/bin/xcrun', ['--find', 'git'], {
+            encoding: 'utf8', timeout: 5000,
+          }).trim();
+          const canonical = realpathSync(candidate);
+          const commandLineToolsPath = '/Library/Developer/CommandLineTools/usr/bin/git';
+          const commandLineToolsGit = existsSync(commandLineToolsPath)
+            ? realpathSync(commandLineToolsPath) : null;
+          console.log(JSON.stringify({ candidate, canonical, commandLineToolsGit }));
+          const paths = new Set(['/']);
+          for (const executable of new Set([canonical, commandLineToolsGit].filter(Boolean))) {
+            let ancestor = '/';
+            for (const component of executable.split('/').filter(Boolean)) {
+              ancestor = join(ancestor, component);
+              paths.add(ancestor);
+            }
+          }
+          for (const path of paths) {
+            const metadata = lstatSync(path);
+            let descriptor;
+            let nativeAccessControl = 'accepted';
+            try {
+              descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+              assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(descriptor, {
+                expectedKind: metadata.isDirectory() ? 'directory' : 'regular-file',
+              });
+            } catch (error) {
+              nativeAccessControl = error.code ?? error.name;
+            } finally {
+              if (descriptor !== undefined) closeSync(descriptor);
+            }
+            console.log(JSON.stringify({ path, uid: metadata.uid, gid: metadata.gid,
+              mode: (metadata.mode & 0o7777).toString(8), nlink: metadata.nlink,
+              size: metadata.size, nativeAccessControl }));
+            console.log(execFileSync('/bin/ls', ['-ldeO', path], {
+              encoding: 'utf8', timeout: 5000, maxBuffer: 65536,
+            }).trim());
+          }
+          NODE
 
   provider_unit:
     name: Provider unit gate

@@ -205,6 +205,8 @@ describe("generated JSON Schema distribution", () => {
     }
   });
 
+  // These two aggregate cases compile the full public schema inventory. Keep
+  // every schema covered while allowing for slower hosted runner CPUs.
   it("compiles every tracked schema with an independent draft-2020 validator", () => {
     const ajv = new Ajv2020({
       allErrors: true,
@@ -220,7 +222,7 @@ describe("generated JSON Schema distribution", () => {
       );
       expect(() => ajv.compile(schema), fileName).not.toThrow();
     }
-  });
+  }, 15_000);
 
   it("accepts a generated structural example and rejects unknown fields for every public schema", () => {
     const ajv = new Ajv2020({
@@ -257,5 +259,5 @@ describe("generated JSON Schema distribution", () => {
         `${fileName} accepted an unknown transport field`,
       ).toBe(false);
     }
-  });
+  }, 15_000);
 });

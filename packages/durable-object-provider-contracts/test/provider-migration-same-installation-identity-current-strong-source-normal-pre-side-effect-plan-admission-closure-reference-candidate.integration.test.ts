@@ -1518,6 +1518,8 @@ describe("D-41 test-only signed pre-side-effect integration", () => {
     expectZeroSinkSnapshotV1(owner.audit.snapshot);
   }, 20_000);
 
+  // The fixture performs a full source/endpoint/quota replay and is materially
+  // slower on a clean hosted runner than on a warm local workspace.
   it("closes the public none-authority candidate once under a concurrent replay, including hash-DAG, 4 MiB cap, and exact zero writes", async () => {
     const fixture = await operationFixtureV1();
     const input = fixture.ready.buildInput;
@@ -1582,7 +1584,7 @@ describe("D-41 test-only signed pre-side-effect integration", () => {
       deliveredGet: 0,
     });
     expectZeroSinkSnapshotV1(fixture.audit.snapshot);
-  });
+  }, 20_000);
 
   it("does not consult Object.prototype.then across endpoint preparation, pre-plan mint, or public success fulfillment", async () => {
     const thenReads = { count: 0 };

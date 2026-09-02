@@ -1089,6 +1089,8 @@ describe("provider Registry evidence-binding topology proof", () => {
     }
   }, 30_000);
 
+  // Regenerating the proof walks the production AST and all generated schemas;
+  // allow the slower clean CI filesystem enough time to finish the check.
   it("rejects allocation-ledger drift in topology generation", async () => {
     const sourcePath = "src/provider-point-raw-admission-internal.ts";
     const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
@@ -1103,7 +1105,7 @@ describe("provider Registry evidence-binding topology proof", () => {
         sourceOverrides: { [sourcePath]: mutatedSource },
       }),
     ).rejects.toThrow(/accounting control-flow AST drifted/u);
-  }, 30_000);
+  }, 90_000);
 
   it("keeps the exact 22/21/23 topology order and the explicit relaxation inventory", () => {
     expect(proof.inputKeys).toHaveLength(22);

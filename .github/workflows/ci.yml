@@ -374,7 +374,11 @@ jobs:
 
       - name: Prepare native-safe workspace home
         run: |
-          ci_home="/opt/understand-code-ci-home-${GITHUB_RUN_ID}"
+          # GitHub's workspace volume does not consistently expose the
+          # descriptor xattr calls used by the native FD gate.  /run is a
+          # private tmpfs on the hosted Linux image and keeps the authority
+          # ancestry owner-only without weakening the production checks.
+          ci_home="/run/understand-code-ci-home-${GITHUB_RUN_ID}"
           ci_tmp="$ci_home/tmp"
           sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$ci_home"
           sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$ci_tmp"
@@ -421,9 +425,10 @@ jobs:
       - name: Remove native-safe workspace home
         if: ${{ always() }}
         run: |
-          case "${UNDERSTAND_CODE_CI_HOME:-}" in
-            /opt/understand-code-ci-home-*) sudo rm -rf -- "$UNDERSTAND_CODE_CI_HOME" ;;
-          esac
+          expected_ci_home="/run/understand-code-ci-home-${GITHUB_RUN_ID}"
+          if [ "${UNDERSTAND_CODE_CI_HOME:-}" = "$expected_ci_home" ]; then
+            sudo rm -rf -- "$expected_ci_home"
+          fi
 
   preview_candidate:
     name: Preview candidate package

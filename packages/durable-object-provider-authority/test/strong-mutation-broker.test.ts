@@ -321,7 +321,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await expect(
       inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
     ).resolves.toEqual(before);
-  }, 900_000);
+  });
 
   it("rejects the same grant with a different full request at zero writes", async () => {
     const { capability, current, broker } = await fixtureV1();
@@ -955,7 +955,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await expect(
       inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
     ).resolves.toEqual(before);
-  });
+  }, 900_000);
 
   it("durably resolves pending to resolved, binds every response field, and records strict response verification", async () => {
     const { capability, current, broker } = await fixtureV1();

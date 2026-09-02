@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,10 +53,13 @@ async function fixtureV1(providerId = PROVIDER): Promise<{
 }> {
   const root = await mkdtemp(join(tmpdir(), "uc-live-readiness-"));
   roots.add(root);
-  // Some hosted Node distributions expose process.execPath through a
-  // symlink.  The signed handoff deliberately admits only the canonical
-  // regular executable, so make the fixture use that same path identity.
-  const executablePath = await realpath(process.execPath);
+  // Keep the executable fixture inside the owner-only test root.  Hosted
+  // runners may replace or relink their toolcache Node binary while the test
+  // is running, which would make an otherwise deterministic identity check
+  // depend on runner implementation details.  The production verifier still
+  // applies the same no-follow, metadata, and digest checks to real binaries.
+  const executablePath = join(root, "runtime.bin");
+  await writeFile(executablePath, Buffer.from("#!/bin/sh\nexit 0\n"), { mode: 0o700 });
   await chmod(root, 0o700);
   const keyPair = generateProviderServiceSigningKeyPairV1();
   const key = randomBytes(32);

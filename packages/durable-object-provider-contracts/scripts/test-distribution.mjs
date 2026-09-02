@@ -69,7 +69,9 @@ const C09_MINIMAL_RUNTIME_TIMEOUT_MS = 4 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_WALL_MS = 10 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_TREE_RSS_BYTES = 1_536 * 1024 * 1024;
 const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 1;
-const C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS = 2;
+// Three browser lanes keep the final lane inside the fixed ten-minute gate;
+// the process-tree RSS monitor below remains the hard resource safety bound.
+const C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS = 3;
 const C09_DEDICATED_WORKER_OUTPUT_MAX_BYTES = 2 * 1024 * 1024;
 const C09_DEDICATED_MONITOR_READY_TIMEOUT_MS = 10_000;
 const C09_DEDICATED_MONITOR_STOP_TIMEOUT_MS = 10_000;

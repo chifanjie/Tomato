@@ -229,7 +229,7 @@ describe("CI workflow contract", () => {
       [...workflow.matchAll(/timeout-minutes:\s*(\d+)/g)].map((match) =>
         Number(match[1]),
       ),
-    ).toEqual([20, 45, 60, 90, 45, 45, 20, 5]);
+    ).toEqual([20, 90, 60, 90, 45, 45, 20, 5]);
     expect(workflow).toMatch(/on:\n\s+push:\n\s+pull_request:/);
   });
 });

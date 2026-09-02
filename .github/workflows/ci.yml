@@ -48,6 +48,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Pin macOS Command Line Tools for SafeGit
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          # Hosted Xcode bundles can be runner-owned (for example, /Applications is 775).
+          # Use the root-owned CLT chain instead of weakening SafeGit admission.
+          test -x /Library/Developer/CommandLineTools/usr/bin/git
+          echo "DEVELOPER_DIR=/Library/Developer/CommandLineTools" >> "$GITHUB_ENV"
+
       - name: Run native descriptor-binding gate
         id: native_descriptor_gate
         run: |

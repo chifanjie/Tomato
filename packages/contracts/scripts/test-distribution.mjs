@@ -478,7 +478,21 @@ try {
       "NodeNext",
       typeProbePath,
     ],
-    { cwd: consumerRoot },
+    {
+      cwd: consumerRoot,
+      // The cold consumer imports every declared export to prove declaration
+      // reachability.  That complete graph can exceed Node's ~2 GiB default
+      // old-space cap on hosted runners; keep the probe intact and give only
+      // this short-lived compiler process a bounded larger heap.
+      env: {
+        NODE_OPTIONS: [
+          process.env.NODE_OPTIONS,
+          "--max-old-space-size=4096",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      },
+    },
   );
 
   const browserEntryPath = join(consumerRoot, "browser-entry.js");

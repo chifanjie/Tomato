@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { generateProviderContractJsonSchemasV1 } from "../src/json-schema.js";
 import {
@@ -953,97 +953,112 @@ describe("provider Registry evidence-binding topology proof", () => {
     ).toEqual(workerDirectoriesBefore);
   }, 30_000);
 
-  it("snapshots lifecycle-token source overrides and rejects hidden property forms", async () => {
-    const sourcePath = "src/provider-runtime-attestation-point.ts";
-    const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
+  describe("lifecycle-token source overrides", () => {
+    let lifecycleParserRuntimeTraceToken: object | undefined;
 
-    await expect(
-      generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-        sourceOverrides: { [sourcePath]: source },
-        precomputedParserRuntimeTraceToken: Object.freeze({}),
-      }),
-    ).rejects.toThrow(/precomputed parser runtime trace token context drifted/u);
+    // Keep parser-runtime precomputation separate from proof generation: joining
+    // both phases in one test can starve Vitest's task-update ACK on slow hosts.
+    beforeAll(async () => {
+      lifecycleParserRuntimeTraceToken =
+        await precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1({
+          packageRoot,
+        });
+      expect(lifecycleParserRuntimeTraceToken).toBeTypeOf("object");
+    }, 60_000);
 
-    const nonEnumerableOverride = {};
-    Object.defineProperty(nonEnumerableOverride, sourcePath, {
-      value: source,
-      enumerable: false,
-      configurable: true,
-      writable: true,
-    });
-    await expect(
-      generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-        sourceOverrides: nonEnumerableOverride,
-      }),
-    ).rejects.toThrow(/source override must be an enumerable data property/u);
+    it("rejects lifecycle-token context drift and hidden property forms", async () => {
+      const sourcePath = "src/provider-runtime-attestation-point.ts";
+      const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
 
-    const symbolOverride = {};
-    Object.defineProperty(symbolOverride, Symbol("hidden-source-override"), {
-      value: source,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-    await expect(
-      generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-        sourceOverrides: symbolOverride,
-      }),
-    ).rejects.toThrow(/source override keys must be strings/u);
+      await expect(
+        generateProviderRegistryEvidenceBindingTopologyProofV1({
+          packageRoot,
+          generatedSchemas,
+          sourceOverrides: { [sourcePath]: source },
+          precomputedParserRuntimeTraceToken: Object.freeze({}),
+        }),
+      ).rejects.toThrow(/precomputed parser runtime trace token context drifted/u);
 
-    let accessorGetterHits = 0;
-    const accessorOverride = {};
-    Object.defineProperty(accessorOverride, sourcePath, {
-      get() {
-        accessorGetterHits += 1;
-        return source;
-      },
-      enumerable: true,
-      configurable: true,
-    });
-    await expect(
-      generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-        sourceOverrides: accessorOverride,
-      }),
-    ).rejects.toThrow(/source override must be an enumerable data property/u);
-    expect(accessorGetterHits).toBe(0);
-
-    const token =
-      await precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1({
-        packageRoot,
+      const nonEnumerableOverride = {};
+      Object.defineProperty(nonEnumerableOverride, sourcePath, {
+        value: source,
+        enumerable: false,
+        configurable: true,
+        writable: true,
       });
-    expect(token).toBeTypeOf("object");
+      await expect(
+        generateProviderRegistryEvidenceBindingTopologyProofV1({
+          packageRoot,
+          generatedSchemas,
+          sourceOverrides: nonEnumerableOverride,
+        }),
+      ).rejects.toThrow(/source override must be an enumerable data property/u);
 
-    const mutableOverrides = {};
-    const generatedProofPromise =
-      generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-        sourceOverrides: mutableOverrides,
-        precomputedParserRuntimeTraceToken: token,
+      const symbolOverride = {};
+      Object.defineProperty(symbolOverride, Symbol("hidden-source-override"), {
+        value: source,
+        enumerable: true,
+        configurable: true,
+        writable: true,
       });
-    Object.defineProperty(mutableOverrides, sourcePath, {
-      value: "export const afterStartMutation = true;\n",
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-    expect(Reflect.ownKeys(mutableOverrides)).toEqual([sourcePath]);
-    const generatedProof = await generatedProofPromise;
-    expect(generatedProof.aggregateSemanticDigest).toBe(
-      proof.aggregateSemanticDigest,
-    );
-    expect(
-      generatedProof.sourceAnchors.productionParserRuntimeTraceSemanticDigest,
-    ).toBe(proof.sourceAnchors.productionParserRuntimeTraceSemanticDigest);
-  }, 90_000);
+      await expect(
+        generateProviderRegistryEvidenceBindingTopologyProofV1({
+          packageRoot,
+          generatedSchemas,
+          sourceOverrides: symbolOverride,
+        }),
+      ).rejects.toThrow(/source override keys must be strings/u);
+
+      let accessorGetterHits = 0;
+      const accessorOverride = {};
+      Object.defineProperty(accessorOverride, sourcePath, {
+        get() {
+          accessorGetterHits += 1;
+          return source;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+      await expect(
+        generateProviderRegistryEvidenceBindingTopologyProofV1({
+          packageRoot,
+          generatedSchemas,
+          sourceOverrides: accessorOverride,
+        }),
+      ).rejects.toThrow(/source override must be an enumerable data property/u);
+      expect(accessorGetterHits).toBe(0);
+
+    }, 60_000);
+
+    it("preserves lifecycle-token snapshot semantics after a post-start source mutation", async () => {
+      if (lifecycleParserRuntimeTraceToken === undefined) {
+        throw new Error("lifecycle parser runtime trace token was not precomputed");
+      }
+      const sourcePath = "src/provider-runtime-attestation-point.ts";
+      const mutableOverrides = {};
+      const generatedProofPromise =
+        generateProviderRegistryEvidenceBindingTopologyProofV1({
+          packageRoot,
+          generatedSchemas,
+          sourceOverrides: mutableOverrides,
+          precomputedParserRuntimeTraceToken: lifecycleParserRuntimeTraceToken,
+        });
+      Object.defineProperty(mutableOverrides, sourcePath, {
+        value: "export const afterStartMutation = true;\n",
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+      expect(Reflect.ownKeys(mutableOverrides)).toEqual([sourcePath]);
+      const generatedProof = await generatedProofPromise;
+      expect(generatedProof.aggregateSemanticDigest).toBe(
+        proof.aggregateSemanticDigest,
+      );
+      expect(
+        generatedProof.sourceAnchors.productionParserRuntimeTraceSemanticDigest,
+      ).toBe(proof.sourceAnchors.productionParserRuntimeTraceSemanticDigest);
+    }, 60_000);
+  });
 
   it("binds the scalar formulas to the production walker AST and allocation-ledger differential", async () => {
     const accountingAst = assertRawAdmissionAccountingAstV1({ packageRoot });

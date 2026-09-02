@@ -63,13 +63,14 @@ const EXPECTED_PLAN_V1: Step16ExpectedHostEventPlanV1 = Object.freeze({
 
 const HOST_SHIM_SOURCE_V1 = [
   `#!${process.execPath}`,
-  'const { readFileSync, writeFileSync } = require("node:fs");',
+  'const { readFileSync, writeFileSync, writeSync } = require("node:fs");',
   'readFileSync(0);',
   'if (process.env.TEST_ARGV_FILE) writeFileSync(process.env.TEST_ARGV_FILE, JSON.stringify(process.argv.slice(2)), { mode: 0o600 });',
   'if (process.env.TEST_IDENTITY_FILE) writeFileSync(process.env.TEST_IDENTITY_FILE, JSON.stringify({ pid: process.pid, uid: process.getuid(), euid: process.geteuid(), gid: process.getgid(), egid: process.getegid(), groups: process.getgroups() }), { mode: 0o600 });',
   'if (process.env.TEST_SPAWN_FILE) writeFileSync(process.env.TEST_SPAWN_FILE, "spawned", { mode: 0o600 });',
   'if (process.env.TEST_EXIT_FILE) process.on("exit", code => writeFileSync(process.env.TEST_EXIT_FILE, String(code), { mode: 0o600 }));',
   'const chunks = JSON.parse(process.env.TEST_CHUNKS_BASE64 || "[]");',
+  'const exitAfterWrite = process.env.TEST_EXIT_AFTER_WRITE === "true";',
   'let index = 0;',
   'const writeNext = () => {',
   '  if (index >= chunks.length) {',
@@ -78,6 +79,13 @@ const HOST_SHIM_SOURCE_V1 = [
   '  }',
   '  let chunk = Buffer.from(chunks[index++], "base64");',
   '  if (index === chunks.length && process.env.TEST_STDOUT_PAD_BYTES) chunk = Buffer.concat([chunk, Buffer.alloc(Number(process.env.TEST_STDOUT_PAD_BYTES), 0x20)]);',
+  '  if (exitAfterWrite && index === chunks.length) {',
+  '    const prefix = Buffer.from(chunks[index - 1], "base64");',
+  '    writeSync(1, prefix);',
+  '    if (chunk.byteLength > prefix.byteLength) process.stdout.write(chunk.subarray(prefix.byteLength));',
+  '    process.exit(0);',
+  '    return;',
+  '  }',
   '  process.stdout.write(chunk, () => setImmediate(writeNext));',
   '};',
   'writeNext();',
@@ -180,6 +188,7 @@ function inputV1(
     holdOpen?: boolean;
     spawnFile?: string;
     exitFile?: string;
+    exitAfterWrite?: boolean;
     identityFile?: string;
     stdoutPaddingBytes?: number;
   }> = {},
@@ -200,6 +209,7 @@ function inputV1(
         ? {}
         : { TEST_SPAWN_FILE: options.spawnFile }),
       ...(options.exitFile === undefined ? {} : { TEST_EXIT_FILE: options.exitFile }),
+      ...(options.exitAfterWrite ? { TEST_EXIT_AFTER_WRITE: "true" } : {}),
       ...(options.identityFile === undefined
         ? {} : { TEST_IDENTITY_FILE: options.identityFile }),
       ...(options.stdoutPaddingBytes === undefined
@@ -352,7 +362,11 @@ describe.skipIf(IS_EFFECTIVE_ROOT_V1)("Step16 supervised real Host executor (int
     await expectExecutionCodeV1(
       runStep16RealHostJsonlSessionWithSupervisorInternalV1(
         {
-          ...inputV1(fixture, { exitFile, stdoutPaddingBytes: 180_000 }),
+          ...inputV1(fixture, {
+            exitFile,
+            exitAfterWrite: true,
+            stdoutPaddingBytes: 180_000,
+          }),
           timeoutMs: 1_000,
         },
         {

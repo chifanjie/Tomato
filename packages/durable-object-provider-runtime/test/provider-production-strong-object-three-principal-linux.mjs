@@ -103,6 +103,7 @@ import {
   projectProviderRuntimeDurableLifecycleArtifactsV1,
 } from "@understand-code/durable-object-provider-runtime/durable-acceptance-current";
 import {
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1,
   closeProviderRuntimeNativeExactObjectPublisherV1,
   closeProviderRuntimeNativeExactObjectSourceV1,
   commitProviderRuntimeNativeExactObjectV1,
@@ -1104,6 +1105,22 @@ function dropTo(uid, gid) {
       groups.some((value) => value !== gid)) throw new Error("privilege drop was not exact");
 }
 
+// The production harness starts as root and then enters dedicated service
+// principals.  GitHub's runner checkout can be non-traversable from those
+// principals, so force the native addon to load while the supervisor still
+// has access to the root-owned checkout.  All subsequent native operations
+// (including the exact-object owner checks) still execute after dropTo().
+async function warmNativeKernelBridgeV1(path) {
+  const handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY);
+  try {
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "directory",
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
 async function strictCryptoCapability() {
   const {
     attestProviderStrictEd25519CryptoHostV1,
@@ -1304,6 +1321,7 @@ async function authorityRole(fixturePath) {
 
 async function runtimeRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
+  await warmNativeKernelBridgeV1(fixture.runtimeRoot);
   const { mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1 } = await import("@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal");
   const serviceKey = privateKey(SERVICE_SEED);
   const identityCapability = await mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1({
@@ -1471,6 +1489,7 @@ function exactOutcomeV1(actual, status, reason) {
 
 async function nativeExactObjectRole(fixturePath) {
   const fixture = await readFixture(fixturePath);
+  await warmNativeKernelBridgeV1(fixture.nativeProbeRoot);
   dropTo(fixture.serviceUid, fixture.serviceGid);
   const root = fixture.nativeProbeRoot;
   const renameExchange = await createRenameExchangeV1(root);

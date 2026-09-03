@@ -325,9 +325,15 @@ async function fixedKnowledgeFixtureV1() {
   const run = async (action: "stage" | "publish", selectedLineage = lineage) => {
     const source = `
       const input = JSON.parse(process.argv[1]);
+      // The source checkout is owned by the runner and its ancestry is not
+      // part of the caller's authority boundary. Load the original indexer
+      // closure while still root, then execute all filesystem operations
+      // below as the actual caller principal. This keeps the test on the
+      // production code path without turning an ancestry permission failure
+      // into ERR_MODULE_NOT_FOUND.
+      const indexer = await import(input.moduleUrl);
       if (process.getuid() === 0) { process.setgroups([]); process.setgid(input.identity.gid); process.setuid(input.identity.uid); }
       const fs = await import("node:fs/promises");
-      const indexer = await import(input.moduleUrl);
       await fs.mkdir(input.repositoryRoot, { mode: 0o700, recursive: true });
       await fs.mkdir(input.installationRoot, { mode: 0o700, recursive: true });
       await fs.writeFile(input.repositoryRoot + "/safe.ts", "export const safe = true;\\n");
@@ -478,7 +484,7 @@ describe.skipIf(process.platform !== "linux" || process.geteuid?.() !== 0)("Step
 describe.skipIf(process.platform !== "linux" || process.geteuid?.() !== 0)("Step16 root control file", () => {
   it("keeps a valid but unauthorised profile blocked before launching either native CLI", async () => {
     const recipe = await fixedRecipeV1();
-    const root = await mkdtemp("/opt/step16-root-auth-gate-test-");
+    const root = await realpath(await mkdtemp(join(tmpdir(), "step16-root-auth-gate-test-")));
     const path = join(root, "profile.json");
     try {
       const executors = Object.fromEntries(["codex", "claude"].map((host) => [host, { executable: `/missing-${host}`, executableDigest: `sha256:${"a".repeat(64)}`, env: {} }]));
@@ -492,7 +498,7 @@ describe.skipIf(process.platform !== "linux" || process.geteuid?.() !== 0)("Step
   for (const variant of ["exact", "writable", "symlink"] as const) {
     it(`handles ${variant} root control state without accepting an unsafe replacement`, async () => {
       const recipe = await fixedRecipeV1();
-      const root = await mkdtemp("/opt/step16-root-control-test-");
+      const root = await realpath(await mkdtemp(join(tmpdir(), "step16-root-control-test-")));
       const path = join(root, "control.json");
       try {
         await writeFile(path, JSON.stringify({ rootControl: true }), { mode: 0o600 });

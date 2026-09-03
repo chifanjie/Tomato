@@ -262,6 +262,10 @@ export async function readStep16KnowledgeIndexAsCallerV1(repositoryRoot, childId
   const source = `
 const [moduleUrl, root, identityJson, requestJson] = process.argv.slice(1);
 const identity = JSON.parse(identityJson), request = JSON.parse(requestJson);
+// Resolve the original indexer closure before dropping privileges. The
+// caller still performs the actual no-follow reads below; only the module
+// bytes come from the root-owned production closure/checkout.
+const indexer = await import(moduleUrl);
 if (process.getuid() === 0) {
   process.setgroups([]);
   process.setgid(identity.gid);
@@ -269,7 +273,6 @@ if (process.getuid() === 0) {
 }
 if (process.getuid() !== identity.uid || process.getgid() !== identity.gid ||
     (process.platform === "linux" && process.getgroups().some((gid) => gid !== identity.gid))) throw new Error("knowledge_reader_principal_mismatch");
-const indexer = await import(moduleUrl);
 let value;
 if (request.kind === "pending") {
   value = await indexer.listPendingRepositoryIndexesV1({ canonicalRoot: root, taskId: request.taskId });

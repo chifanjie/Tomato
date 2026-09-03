@@ -140,6 +140,66 @@ function runWorker(action, root, version, crashPhase) {
   throw new Error(`lifecycle worker remained busy for ${action}/${crashPhase ?? "normal"}`);
 }
 
+function spawnWorkerAsync(action, root, version, crashPhase) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let child;
+    try {
+      child = spawn(process.execPath, [self, "--worker", action, root, version], {
+        env: {
+          ...process.env,
+          NODE_ENV: crashPhase === undefined ? "production" : "test",
+          ...(crashPhase === undefined
+            ? {}
+            : { PROVIDER_STRONG_CLIENT_LIFECYCLE_CRASH_PHASE_V1: crashPhase }),
+        },
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+    } catch (error) {
+      rejectPromise(error);
+      return;
+    }
+    let stderr = "";
+    let settled = false;
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", (error) => {
+      if (!settled) {
+        settled = true;
+        rejectPromise(error);
+      }
+    });
+    child.once("close", (status, signal) => {
+      if (settled) return;
+      settled = true;
+      resolvePromise({ status, signal, stderr });
+    });
+  });
+}
+
+async function runWorkerAsync(action, root, version, crashPhase) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const result = await spawnWorkerAsync(action, root, version, crashPhase);
+    const busy = result.status !== 0 && /trust lifecycle is busy/u.test(result.stderr);
+    if (busy) {
+      // Let another phase case make progress before retrying this root.  The
+      // lock is per installation root, so this does not alter serialization.
+      await new Promise((resolvePromise) => setImmediate(resolvePromise));
+      continue;
+    }
+    if (crashPhase === undefined) {
+      if (result.status !== 0) {
+        throw new Error(`lifecycle worker failed: ${result.stderr}`);
+      }
+      return;
+    }
+    if (result.signal !== "SIGKILL") {
+      throw new Error(`lifecycle phase ${crashPhase} did not crash at its durable cut: ${result.stderr}`);
+    }
+    return;
+  }
+  throw new Error(`lifecycle worker remained busy for ${action}/${crashPhase ?? "normal"}`);
+}
+
 function runWorkerExpectStoppedGatewayRefusal(root) {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const result = spawnSync(process.execPath, [self, "--worker", "uninstall", root, "v1"], {
@@ -245,52 +305,71 @@ const phaseMatrix = {
 };
 
 let verifiedCuts = 0;
-for (const [action, phases] of Object.entries(phaseMatrix)) {
-  for (const phase of phases) {
-    const root = await mkdtemp(join(tmpdir(), `uc-step15-trust-${action}-`));
-    await chmod(root, 0o700);
-    try {
-      if (action !== "install") runWorker("install", root, "v1");
-      if (action === "rollback" || action === "uninstall") {
-        runWorker("rotate", root, "v2");
-      }
-      runWorker(action, root, action === "rotate" ? "v2" : "v1", phase);
-      runWorker(action, root, action === "rotate" ? "v2" : "v1");
-      if (action === "uninstall") {
-        for (const path of [
-          join(root, "provider-production-strong-client-trust-v1.json"),
-          providerProductionStrongClientDescriptorPathV1(root),
-          providerProductionStrongClientGatewayDirectoryPathV1(root),
-          join(root, ".provider-production-strong-client-trust-rollback-v1.json"),
-          join(root, ".provider-production-strong-client-trust-rollback-v1.json.snapshot"),
-          join(root, ".provider-production-strong-client-trust-rollback-v1.json.descriptor"),
-          ...["", ".snapshot", ".descriptor", ".rollback", ".rollback-descriptor"].map(
-            (suffix) => join(root, `.provider-production-strong-client-trust-transaction-v1.json${suffix}`),
-          ),
-        ]) {
-          try {
-            await lstat(path);
-            throw new Error("uninstall recovery retained managed state");
-          } catch (error) {
-            if (error?.code !== "ENOENT") throw error;
-          }
-        }
-      } else {
-        await assertVersion(root, action === "rotate" ? "v2" : "v1");
-        runWorker("uninstall", root, "v1");
-      }
-      verifiedCuts += 1;
-    } finally {
-      await rm(providerProductionStrongClientDescriptorPathV1(root), { force: true });
-      await rm(providerProductionStrongClientGatewayDirectoryPathV1(root), {
-        recursive: true,
-        force: true,
-      });
-      await rm(root, { recursive: true, force: true });
-      await rm(`${root}-runtime`, { recursive: true, force: true });
+
+async function runCrashPhaseCase(action, phase) {
+  const root = await mkdtemp(join(tmpdir(), `uc-step15-trust-${action}-`));
+  await chmod(root, 0o700);
+  try {
+    if (action !== "install") await runWorkerAsync("install", root, "v1");
+    if (action === "rollback" || action === "uninstall") {
+      await runWorkerAsync("rotate", root, "v2");
     }
+    await runWorkerAsync(action, root, action === "rotate" ? "v2" : "v1", phase);
+    await runWorkerAsync(action, root, action === "rotate" ? "v2" : "v1");
+    if (action === "uninstall") {
+      for (const path of [
+        join(root, "provider-production-strong-client-trust-v1.json"),
+        providerProductionStrongClientDescriptorPathV1(root),
+        providerProductionStrongClientGatewayDirectoryPathV1(root),
+        join(root, ".provider-production-strong-client-trust-rollback-v1.json"),
+        join(root, ".provider-production-strong-client-trust-rollback-v1.json.snapshot"),
+        join(root, ".provider-production-strong-client-trust-rollback-v1.json.descriptor"),
+        ...["", ".snapshot", ".descriptor", ".rollback", ".rollback-descriptor"].map(
+          (suffix) => join(root, `.provider-production-strong-client-trust-transaction-v1.json${suffix}`),
+        ),
+      ]) {
+        try {
+          await lstat(path);
+          throw new Error("uninstall recovery retained managed state");
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+    } else {
+      await assertVersion(root, action === "rotate" ? "v2" : "v1");
+      await runWorkerAsync("uninstall", root, "v1");
+    }
+    verifiedCuts += 1;
+  } finally {
+    await rm(providerProductionStrongClientDescriptorPathV1(root), { force: true });
+    await rm(providerProductionStrongClientGatewayDirectoryPathV1(root), {
+      recursive: true,
+      force: true,
+    });
+    await rm(root, { recursive: true, force: true });
+    await rm(`${root}-runtime`, { recursive: true, force: true });
   }
 }
+
+const phaseCases = Object.entries(phaseMatrix).flatMap(([action, phases]) =>
+  phases.map((phase) => ({ action, phase })));
+// Each case uses a private installation root and keeps its own lifecycle
+// operations serialized.  A small pool removes avoidable Node-process startup
+// latency while retaining every crash cut and post-restart assertion.
+const phaseConcurrency = Math.min(4, phaseCases.length);
+let nextPhaseCase = 0;
+const phaseWorkers = Array.from({ length: phaseConcurrency }, async () => {
+  while (true) {
+    const index = nextPhaseCase;
+    nextPhaseCase += 1;
+    if (index >= phaseCases.length) return;
+    const { action, phase } = phaseCases[index];
+    await runCrashPhaseCase(action, phase);
+  }
+});
+const phaseOutcomes = await Promise.allSettled(phaseWorkers);
+const failedPhase = phaseOutcomes.find((outcome) => outcome.status === "rejected");
+if (failedPhase?.status === "rejected") throw failedPhase.reason;
 
 let rejectedForeignDirectories = 0;
 for (const mode of [0o755, 0o700]) {

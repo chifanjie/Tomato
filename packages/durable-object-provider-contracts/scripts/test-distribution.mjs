@@ -90,8 +90,11 @@ const C09_DISTRIBUTION_REPLAY_LANES_V1 = Object.freeze([
 // young generation, ArrayBuffers, native code, and Vite workers retain room.
 const C09_NODE_OPTIONS =
   "--max-old-space-size=1024 --max-semi-space-size=16";
+// Browser replay runs three lanes concurrently.  Give each lane the proven
+// 768 MiB profile so the aggregate process tree retains RSS headroom without
+// relaxing the 1,536 MiB gate or lengthening the fixed ten-minute window.
 const C09_BROWSER_RUNTIME_NODE_OPTIONS =
-  `${C09_NODE_OPTIONS} --disallow-code-generation-from-strings`;
+  "--max-old-space-size=768 --max-semi-space-size=16 --disallow-code-generation-from-strings";
 // The normative resource gate remains the 1,536 MiB same-sample aggregate RSS
 // limit above.  The topology --check-only emit completes before loading the
 // heavy proof parent state, eliminating their heap overlap.  This is the

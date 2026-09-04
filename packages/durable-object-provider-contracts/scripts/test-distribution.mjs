@@ -90,11 +90,11 @@ const C09_DISTRIBUTION_REPLAY_LANES_V1 = Object.freeze([
 // young generation, ArrayBuffers, native code, and Vite workers retain room.
 const C09_NODE_OPTIONS =
   "--max-old-space-size=1024 --max-semi-space-size=16";
-// Browser replay runs three lanes concurrently.  Give each lane the proven
-// 768 MiB profile so the aggregate process tree retains RSS headroom without
-// relaxing the 1,536 MiB gate or lengthening the fixed ten-minute window.
+// Browser replay retains the standard replay heap profile; the parent drops
+// the full invalid corpus below before these three lanes start, while the
+// process-tree monitor continues to enforce the normative RSS ceiling.
 const C09_BROWSER_RUNTIME_NODE_OPTIONS =
-  "--max-old-space-size=768 --max-semi-space-size=16 --disallow-code-generation-from-strings";
+  `${C09_NODE_OPTIONS} --disallow-code-generation-from-strings`;
 // The normative resource gate remains the 1,536 MiB same-sample aggregate RSS
 // limit above.  The topology --check-only emit completes before loading the
 // heavy proof parent state, eliminating their heap overlap.  This is the
@@ -6688,21 +6688,32 @@ try {
       timeoutMs: C09_RUNTIME_TIMEOUT_MS,
     },
   );
-  const c09ExpectedInvalidManifest = JSON.parse(
-    await readFile(
-      installedProviderRegistryEvidenceBindingPointInvalidPath,
-      "utf8",
-    ),
-  );
-  if (
-    c09ExpectedInvalidManifest.caseCount !== 354 ||
-    c09ExpectedInvalidManifest.shardSize !== 32 ||
-    c09ExpectedInvalidManifest.maxWorkers !== 4 ||
-    !Array.isArray(c09ExpectedInvalidManifest.shards) ||
-    c09ExpectedInvalidManifest.shards.length !== 12
-  ) {
-    throw new Error("Cold-installed C09 replay manifest topology drifted");
-  }
+  const c09ExpectedInvalidManifest = await (async () => {
+    const parsedManifest = JSON.parse(
+      await readFile(
+        installedProviderRegistryEvidenceBindingPointInvalidPath,
+        "utf8",
+      ),
+    );
+    if (
+      parsedManifest.caseCount !== 354 ||
+      parsedManifest.shardSize !== 32 ||
+      parsedManifest.maxWorkers !== 4 ||
+      !Array.isArray(parsedManifest.shards) ||
+      parsedManifest.shards.length !== 12
+    ) {
+      throw new Error("Cold-installed C09 replay manifest topology drifted");
+    }
+    // The full invalid corpus is only needed by the isolated workers.  The
+    // parent-side report validators consume these three aggregate fields;
+    // project them before entering the browser replay so the 15.9 MiB JSON
+    // object (and its expanded V8 graph) is not retained alongside three lanes.
+    return Object.freeze({
+      aggregateContentDigest: parsedManifest.aggregateContentDigest,
+      aggregateSemanticDomain: parsedManifest.aggregateSemanticDomain,
+      shards: Object.freeze(parsedManifest.shards),
+    });
+  })();
   const c09ReplayCorePath = join(
     consumerRoot,
     "provider-registry-evidence-binding-distribution-replay-core.mjs",

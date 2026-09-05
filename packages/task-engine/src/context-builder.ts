@@ -583,6 +583,9 @@ export function buildContextDraft(
           ...(step.evidenceId === undefined
             ? {}
             : { evidenceId: step.evidenceId }),
+          ...(step.provenance === undefined
+            ? {}
+            : { provenance: step.provenance }),
           confidence:
             step.classification === "observed" ? "exact" : "heuristic",
         })),

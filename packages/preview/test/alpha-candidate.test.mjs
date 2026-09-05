@@ -31,6 +31,7 @@ const overlayFiles = [
   "packages/preview/package.json",
   "packages/preview/README.md",
   candidateScript,
+  "packages/preview/scripts/build.mjs",
   "packages/preview/schemas/alpha-candidate-v1.schema.json",
   "packages/preview/test/cold-packed.test.mjs",
 ];
@@ -274,7 +275,7 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
     assert.equal(candidate.releaseReady, false);
     assert.deepEqual(candidate.limitations, {
       signature: "unavailable",
-      sbom: "unavailable",
+      sbom: "available",
       trustedProvenance: "unavailable",
       crossPlatform: "not_evaluated",
     });
@@ -405,6 +406,22 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
     assert.equal(releaseManifest.package.name, candidate.package.name);
     assert.equal(releaseManifest.package.version, candidate.package.version);
     assert.equal(releaseManifest.native.tuple, candidate.build.nativeTuple);
+    const sbomBytes = await tarEntry(tarballPath, "package/dist/sbom.cdx.json", worktreeRoot);
+    const provenanceBytes = await tarEntry(tarballPath, "package/dist/provenance.json", worktreeRoot);
+    assert.equal(sha256(sbomBytes), releaseManifest.sbom.sha256);
+    assert.equal(sha256(provenanceBytes), releaseManifest.provenance.sha256);
+    const sbom = JSON.parse(sbomBytes.toString("utf8"));
+    assert.equal(sbom.bomFormat, "CycloneDX");
+    assert.ok(sbom.components.length > 0);
+    for (const component of sbom.components) {
+      assert.equal(typeof component.name, "string");
+      assert.equal(typeof component.version, "string");
+      assert.ok(component.licenses?.length > 0);
+      assert.ok(component.hashes?.some((hash) => hash.alg === "SHA-256"));
+    }
+    const provenance = JSON.parse(provenanceBytes.toString("utf8"));
+    assert.equal(provenance.schemaVersion, "understand-code-alpha-provenance-v1");
+    assert.equal(provenance.source.vcs, "git");
     assert.deepEqual(candidate.embeddedReleaseManifest, {
       path: "package/dist/release-manifest.json",
       schemaVersion: releaseManifest.schemaVersion,

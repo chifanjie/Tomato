@@ -36,7 +36,7 @@ const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 12 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 89;
+const EXPECTED_PACKED_FILE_COUNT = 91;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const PRODUCT_VERSION_PATTERN =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -62,6 +62,8 @@ const packedFileRules = [
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
   { label: "host executable", pattern: /^package\/dist\/host-bin\.mjs$/u, count: 1, mode: 0o755 },
   { label: "release manifest", pattern: /^package\/dist\/release-manifest\.json$/u, count: 1, mode: 0o644 },
+  { label: "CycloneDX SBOM", pattern: /^package\/dist\/sbom\.cdx\.json$/u, count: 1, mode: 0o644 },
+  { label: "SLSA provenance", pattern: /^package\/dist\/provenance\.json$/u, count: 1, mode: 0o644 },
   { label: "Dashboard bundle manifest", pattern: /^package\/dist\/dashboard-manifest\.json$/u, count: 1, mode: 0o644 },
   { label: "Codex host release", pattern: /^package\/dist\/host-adapters\/codex\/(?:config\.toml|manifest\.json|mcp\.json)$/u, count: 3, mode: 0o644 },
   { label: "Claude host release", pattern: /^package\/dist\/host-adapters\/claude\/(?:\.mcp\.json|manifest\.json)$/u, count: 2, mode: 0o644 },
@@ -1008,6 +1010,16 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         },
       },
       pluginRoots,
+      sbom: {
+        format: "CycloneDX-1.5",
+        path: "dist/sbom.cdx.json",
+        sha256: `sha256:${digest(packedFiles.get("package/dist/sbom.cdx.json"))}`,
+      },
+      provenance: {
+        format: "slsa-provenance-v1",
+        path: "dist/provenance.json",
+        sha256: `sha256:${digest(packedFiles.get("package/dist/provenance.json"))}`,
+      },
     });
     const hostDefinitions = {
       codex: {

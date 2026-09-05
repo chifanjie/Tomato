@@ -216,7 +216,7 @@
       "required": ["signature", "sbom", "trustedProvenance", "crossPlatform"],
       "properties": {
         "signature": { "const": "unavailable" },
-        "sbom": { "const": "unavailable" },
+        "sbom": { "const": "available" },
         "trustedProvenance": { "const": "unavailable" },
         "crossPlatform": { "const": "not_evaluated" }
       }

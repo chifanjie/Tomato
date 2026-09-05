@@ -206,6 +206,7 @@ export interface ImpactStep {
   classification: ImpactClassification;
   reason: string;
   evidenceId?: string;
+  provenance?: NonNullable<GraphEdge["provenance"]>;
 }
 
 export interface ImpactPath {

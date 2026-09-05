@@ -232,8 +232,12 @@ entrypoint, marketplace/plugin configuration paths, product version, and the
 reviewed payload SHA-256 digests. The release manifest also binds the one native
 provider-peer tuple carried by this platform-specific Alpha tgz, the bundled
 Server/contracts runtime, and the exact final Dashboard file inventory.
-They provide Alpha artifact traceability; they are not a signature, SBOM, provenance,
-or formal Release attestation.
+The release bundle also carries a deterministic CycloneDX SBOM
+(`dist/sbom.cdx.json`) with package and shipped-file identities, versions,
+license assertions, and SHA-256 digests, plus an unsigned SLSA-style build
+provenance record (`dist/provenance.json`) bound to the Git commit, tree, and
+lockfile. These records provide verifiable inventory and build traceability;
+publisher signatures remain unavailable and release authenticity stays locked.
 
 The MCP server advertises `get_repo_pulse`, `build_task_brief`, `get_task_brief`,
 `update_task`, `check_change`, `record_verification`, `open_workbench`,

@@ -145,6 +145,8 @@ type ReleaseManifestV1 = Readonly<{
     codex: PluginReleaseReferenceV1;
     claude: PluginReleaseReferenceV1;
   }>;
+  sbom: Readonly<{ format: "CycloneDX-1.5"; path: "dist/sbom.cdx.json"; sha256: string }>;
+  provenance: Readonly<{ format: "slsa-provenance-v1"; path: "dist/provenance.json"; sha256: string }>;
 }>;
 
 type PackageMetadataV1 = Readonly<{
@@ -472,6 +474,8 @@ function parseReleaseManifest(value: unknown): ReleaseManifestV1 | undefined {
   const dashboard = value.dashboard;
   const hostAdapters = value.hostAdapters;
   const pluginRoots = value.pluginRoots;
+  const sbom = value.sbom;
+  const provenance = value.provenance;
   const expectedTuple = `${process.platform}-${process.arch}`;
   const expectedNativePath =
     `dist/native/${expectedTuple}/provider_kernel_peer.node`;
@@ -505,7 +509,15 @@ function parseReleaseManifest(value: unknown): ReleaseManifestV1 | undefined {
     !validHostAdapterReference(hostAdapters.claude, "claude") ||
     !isRecord(pluginRoots) ||
     !validPluginReference(pluginRoots.codex, "codex") ||
-    !validPluginReference(pluginRoots.claude, "claude")
+    !validPluginReference(pluginRoots.claude, "claude") ||
+    !isRecord(sbom) ||
+    sbom.format !== "CycloneDX-1.5" ||
+    sbom.path !== "dist/sbom.cdx.json" ||
+    !isDigest(sbom.sha256) ||
+    !isRecord(provenance) ||
+    provenance.format !== "slsa-provenance-v1" ||
+    provenance.path !== "dist/provenance.json" ||
+    !isDigest(provenance.sha256)
   ) {
     return undefined;
   }
@@ -871,6 +883,8 @@ async function inspectBundleIntegrity(
         claudeMcpBytes,
         serverBytes,
         contractsBytes,
+        sbomBytes,
+        provenanceBytes,
         dashboardInventory,
         dashboardManifestBytes,
       ] = await Promise.all([
@@ -916,6 +930,8 @@ async function inspectBundleIntegrity(
           release.runtime.contracts.path,
           MAX_JSON_BYTES,
         ),
+        readContainedRegularFile(packageRoot, release.sbom.path, MAX_METADATA_BYTES),
+        readContainedRegularFile(packageRoot, release.provenance.path, MAX_METADATA_BYTES),
         buildDashboardInventory(packageRoot),
         readContainedRegularFile(
           packageRoot,
@@ -936,6 +952,16 @@ async function inspectBundleIntegrity(
         !validIntegrationConfig(parseJson(claudeMcpBytes), "claude") ||
         digest(serverBytes) !== release.runtime.server.sha256 ||
         digest(contractsBytes) !== release.runtime.contracts.sha256 ||
+        digest(sbomBytes) !== release.sbom.sha256 ||
+        digest(provenanceBytes) !== release.provenance.sha256 ||
+        (() => {
+          const sbom = parseJson(sbomBytes);
+          return !isRecord(sbom) || sbom.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.5" || !Array.isArray(sbom.components) || sbom.components.length === 0;
+        })() ||
+        (() => {
+          const provenance = parseJson(provenanceBytes);
+          return !isRecord(provenance) || provenance.schemaVersion !== "understand-code-alpha-provenance-v1" || provenance.product !== "understand-code" || !Array.isArray(provenance.subject);
+        })() ||
         release.runtime.productVersion !== PRODUCT_VERSION ||
         release.dashboard.productVersion !== PRODUCT_VERSION ||
         dashboardInventory.length !== release.dashboard.fileCount ||

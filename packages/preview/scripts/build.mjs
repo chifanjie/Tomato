@@ -111,6 +111,11 @@ function sha256(bytes) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+function npmPurl(name, version) {
+  const scoped = name.startsWith("@") ? name.slice(1).split("/") : [name];
+  return `pkg:npm/${scoped.map((part) => encodeURIComponent(part)).join("/")}@${encodeURIComponent(version)}`;
+}
+
 async function buildDirectoryInventory(root) {
   const inventory = [];
   async function walk(current, relativeDirectory) {
@@ -144,6 +149,42 @@ async function buildDirectoryInventory(root) {
   return inventory;
 }
 
+async function buildPackageComponents() {
+  const seen = new Set();
+  const components = [];
+  const queue = [path.join(workspaceRoot, "package.json")];
+  for (const name of await readdir(path.join(workspaceRoot, "packages"))) {
+    queue.push(path.join(workspaceRoot, "packages", name, "package.json"));
+  }
+  while (queue.length > 0) {
+    const manifestPath = queue.shift();
+    let bytes;
+    try { bytes = await readFile(manifestPath); } catch { continue; }
+    let manifest;
+    try { manifest = JSON.parse(bytes.toString("utf8")); } catch { continue; }
+    if (!manifest || typeof manifest.name !== "string" || typeof manifest.version !== "string") continue;
+    const key = `${manifest.name}@${manifest.version}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const license = typeof manifest.license === "string"
+      ? { expression: manifest.license }
+      : { expression: "NOASSERTION" };
+    components.push({
+      type: "library",
+      name: manifest.name,
+      version: manifest.version,
+      purl: npmPurl(manifest.name, manifest.version),
+      licenses: [{ license }],
+      hashes: [{ alg: "SHA-256", content: createHash("sha256").update(bytes).digest("hex") }],
+    });
+    for (const dependencyName of Object.keys({ ...(manifest.dependencies ?? {}) })) {
+      const dependencyPath = path.join(workspaceRoot, "node_modules", ...dependencyName.split("/"), "package.json");
+      queue.push(dependencyPath);
+    }
+  }
+  return components.sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
+}
+
 async function writeDashboardBundleManifest() {
   const inventory = await buildDirectoryInventory(path.join(distRoot, "dashboard"));
   const manifest = {
@@ -161,6 +202,7 @@ async function writeDashboardBundleManifest() {
 }
 
 async function writeReleaseMetadata() {
+  const packageMetadataBytes = await readFile(path.join(packageRoot, "package.json"));
   const cliPath = path.join(distRoot, "understand-code.mjs");
   const previewBinPath = path.join(distRoot, "bin.mjs");
   const hostBinPath = path.join(distRoot, "host-bin.mjs");
@@ -242,6 +284,58 @@ async function writeReleaseMetadata() {
       configs: definition.configs,
     };
   }
+  // Generate a deterministic CycloneDX inventory for every regular file that
+  // will be shipped in `dist` (metadata files are added immediately below).
+  // This gives each shipped component an identity, version, license assertion,
+  // and content digest without claiming publisher authenticity.
+  const sbomInventory = await buildDirectoryInventory(distRoot);
+  const fileComponents = sbomInventory.map((entry) => ({
+    type: "file",
+    name: entry.path,
+    version: PRODUCT_VERSION,
+    hashes: [{ alg: "SHA-256", content: entry.sha256.slice("sha256:".length) }],
+    licenses: [{ license: { expression: "NOASSERTION" } }],
+    properties: [{ name: "understand-code:bytes", value: String(entry.bytes) }],
+  }));
+  const packageComponent = {
+    type: "application",
+    name: packageMetadata.name,
+    version: PRODUCT_VERSION,
+    purl: npmPurl(packageMetadata.name, PRODUCT_VERSION),
+    licenses: [{ license: { expression: "NOASSERTION" } }],
+    hashes: [{ alg: "SHA-256", content: createHash("sha256").update(packageMetadataBytes).digest("hex") }],
+  };
+  const packageComponents = (await buildPackageComponents()).filter(
+    (component) => !(component.name === packageMetadata.name && component.version === PRODUCT_VERSION),
+  );
+  const serialDigest = sha256(Buffer.from(JSON.stringify([...packageComponents, ...fileComponents]), "utf8")).slice("sha256:".length, "sha256:".length + 32);
+  const sbom = {
+    bomFormat: "CycloneDX",
+    specVersion: "1.5",
+    serialNumber: `urn:uuid:${serialDigest.slice(0, 8)}-${serialDigest.slice(8, 12)}-${serialDigest.slice(12, 16)}-${serialDigest.slice(16, 20)}-${serialDigest.slice(20)}`,
+    version: 1,
+    metadata: { component: packageComponent },
+    components: [packageComponent, ...packageComponents, ...fileComponents],
+  };
+  const sbomBytes = Buffer.from(`${JSON.stringify(sbom, null, 2)}\n`, "utf8");
+  await writeFile(path.join(distRoot, "sbom.cdx.json"), sbomBytes);
+  const provenance = {
+    schemaVersion: "understand-code-alpha-provenance-v1",
+    product: "understand-code",
+    package: { name: packageMetadata.name, version: PRODUCT_VERSION },
+    buildType: "https://slsa.dev/provenance/v1",
+    builder: { id: "understand-code-preview/scripts/build.mjs" },
+    invocation: { command: "npm run build", platform: process.platform, arch: process.arch },
+    source: {
+      vcs: "git",
+      commit: (await exec("git", ["rev-parse", "HEAD"], { cwd: workspaceRoot })).stdout.trim(),
+      tree: (await exec("git", ["rev-parse", "HEAD^{tree}"], { cwd: workspaceRoot })).stdout.trim(),
+      lockfile: sha256(await readFile(path.join(workspaceRoot, "pnpm-lock.yaml"))),
+    },
+    subject: sbomInventory.map(({ path: filePath, sha256: digest }) => ({ name: filePath, digest: { sha256: digest.slice(7) } })),
+  };
+  const provenanceBytes = Buffer.from(`${JSON.stringify(provenance, null, 2)}\n`, "utf8");
+  await writeFile(path.join(distRoot, "provenance.json"), provenanceBytes);
   const releaseManifest = {
     schemaVersion: "understand-code-alpha-release-v1",
     product: "understand-code",
@@ -283,6 +377,16 @@ async function writeReleaseMetadata() {
     },
     hostAdapters,
     pluginRoots: {},
+    sbom: {
+      format: "CycloneDX-1.5",
+      path: "dist/sbom.cdx.json",
+      sha256: sha256(sbomBytes),
+    },
+    provenance: {
+      format: "slsa-provenance-v1",
+      path: "dist/provenance.json",
+      sha256: sha256(provenanceBytes),
+    },
   };
   const pluginDefinitions = Object.freeze({
     codex: Object.freeze({

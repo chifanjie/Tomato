@@ -250,6 +250,44 @@
                             "imported-package",
                             "heuristic"
                           ]
+                        },
+                        "provenance": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "filePath": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16384
+                              },
+                              "lineNumber": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "confidence": {
+                                "type": "string",
+                                "enum": [
+                                  "exact",
+                                  "same-file",
+                                  "imported-package"
+                                ]
+                              },
+                              "source": {
+                                "type": "string",
+                                "const": "static-analysis"
+                              }
+                            },
+                            "required": [
+                              "filePath",
+                              "lineNumber",
+                              "confidence",
+                              "source"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [

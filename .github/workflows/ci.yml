@@ -382,7 +382,7 @@ jobs:
             if (
               trustedVerifier === undefined ||
               trustedVerifier.length === 0 ||
-              !verifyStep16DualHostEligibleEvidenceV1(evidence, trustedVerifier)
+              !(await verifyStep16DualHostEligibleEvidenceV1(evidence, trustedVerifier))
             ) {
               process.stderr.write(`${JSON.stringify({
                 schemaVersion: 1,

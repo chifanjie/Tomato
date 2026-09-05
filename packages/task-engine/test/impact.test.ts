@@ -103,7 +103,7 @@ function observedEvidence(
 const chainGraph = graph(
   ["a", "b", "c", "d"],
   [
-    edge("a", "b"),
+    edge("a", "b", { provenance: [{ filePath: "src/a.ts", lineNumber: 4, confidence: "same-file", source: "static-analysis" }] }),
     edge("b", "c"),
     edge("d", "c", { direction: "backward" }),
   ],
@@ -138,6 +138,9 @@ describe("traceImpact", () => {
       classification: "observed",
       evidenceIds: ["evidence:a-b"],
     });
+    expect(result.paths[0]?.steps[0]?.provenance).toEqual([{
+      filePath: "src/a.ts", lineNumber: 4, confidence: "same-file", source: "static-analysis",
+    }]);
     expect(result.paths[1]).toMatchObject({
       endNodeId: "c",
       classification: "observed",

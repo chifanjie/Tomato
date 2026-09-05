@@ -51,6 +51,15 @@ export const ImpactConfidenceV1Schema = z.enum([
 
 export type ImpactConfidenceV1 = z.infer<typeof ImpactConfidenceV1Schema>;
 
+/** Static resolver provenance retained on each impact step for source review. */
+export const ImpactStepProvenanceV1Schema = z.strictObject({
+  filePath: NonEmptyStringSchema,
+  lineNumber: z.number().int().positive(),
+  confidence: z.enum(["exact", "same-file", "imported-package"]),
+  source: z.literal("static-analysis"),
+});
+export type ImpactStepProvenanceV1 = z.infer<typeof ImpactStepProvenanceV1Schema>;
+
 export const ImpactStepV1Schema = z.strictObject({
   source: OpaqueIdentifierSchema,
   edgeType: NonEmptyStringSchema,
@@ -58,6 +67,7 @@ export const ImpactStepV1Schema = z.strictObject({
   direction: z.enum(["upstream", "downstream"]),
   evidenceId: EvidenceIdSchema.optional(),
   confidence: ImpactConfidenceV1Schema.optional(),
+  provenance: z.array(ImpactStepProvenanceV1Schema).min(1).optional(),
 });
 
 export type ImpactStepV1 = z.infer<typeof ImpactStepV1Schema>;

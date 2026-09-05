@@ -318,6 +318,9 @@ function classifyStep(
     ...(evidence?.evidenceId === undefined
       ? {}
       : { evidenceId: evidence.evidenceId }),
+    ...(arc.edge.provenance === undefined
+      ? {}
+      : { provenance: arc.edge.provenance }),
   };
 }
 

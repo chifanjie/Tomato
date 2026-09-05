@@ -232,4 +232,13 @@ describe("CI workflow contract", () => {
     ).toEqual([20, 90, 60, 90, 45, 45, 20, 5]);
     expect(workflow).toMatch(/on:\n\s+push:\n\s+pull_request:/);
   });
+
+  it("awaits the async Step16 Gold receipt verifier in the closing gate", () => {
+    expect(workflow).toContain(
+      "!(await verifyStep16DualHostEligibleEvidenceV1(evidence, trustedVerifier))",
+    );
+    expect(workflow).not.toContain(
+      "!verifyStep16DualHostEligibleEvidenceV1(evidence, trustedVerifier)",
+    );
+  });
 });

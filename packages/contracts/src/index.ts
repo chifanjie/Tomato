@@ -14,5 +14,6 @@ export * from "./invariants.js";
 export * from "./mcp.js";
 export * from "./json-schema.js";
 export * from "./alpha-gold.js";
+export * from "./alpha-gold-task-definitions.js";
 export * from "./alpha-gold-verifier.js";
 export * from "./step16-host-receipts.js";

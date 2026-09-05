@@ -534,7 +534,7 @@ function validateCandidateManifest(candidate) {
   );
   if (
     candidate.limitations.signature !== "unavailable" ||
-    candidate.limitations.sbom !== "unavailable" ||
+    candidate.limitations.sbom !== "available" ||
     candidate.limitations.trustedProvenance !== "unavailable" ||
     candidate.limitations.crossPlatform !== "not_evaluated"
   ) {
@@ -779,6 +779,8 @@ async function verifyArchive(candidateRoot, candidate) {
   assertPlainObject(releaseManifest, "Packed release manifest");
   assertPlainObject(releaseManifest.package, "Packed release package");
   assertPlainObject(releaseManifest.native, "Packed release native entry");
+  assertPlainObject(releaseManifest.sbom, "Packed release SBOM entry");
+  assertPlainObject(releaseManifest.provenance, "Packed release provenance entry");
   if (
     packageManifest.name !== candidate.package.name ||
     packageManifest.version !== candidate.package.version ||
@@ -788,7 +790,13 @@ async function verifyArchive(candidateRoot, candidate) {
     releaseManifest.package.version !== candidate.package.version ||
     releaseManifest.native.tuple !== candidate.build.nativeTuple ||
     releaseManifest.native.path !== `dist/native/${candidate.build.nativeTuple}/provider_kernel_peer.node` ||
-    !SHA256_PATTERN.test(releaseManifest.native.sha256)
+    !SHA256_PATTERN.test(releaseManifest.native.sha256) ||
+    releaseManifest.sbom.format !== "CycloneDX-1.5" ||
+    releaseManifest.sbom.path !== "dist/sbom.cdx.json" ||
+    !SHA256_PATTERN.test(releaseManifest.sbom.sha256) ||
+    releaseManifest.provenance.format !== "slsa-provenance-v1" ||
+    releaseManifest.provenance.path !== "dist/provenance.json" ||
+    !SHA256_PATTERN.test(releaseManifest.provenance.sha256)
   ) {
     throw new Error("Packed release identity is invalid");
   }
@@ -827,6 +835,50 @@ async function verifyArchive(candidateRoot, candidate) {
     if (bytes === undefined || sha256(bytes) !== releaseManifest.native.sha256) {
       throw new Error("Packed native tuple digest is invalid");
     }
+  }
+  const sbomBytes = files.get(`package/${releaseManifest.sbom.path}`);
+  const provenanceBytes = files.get(`package/${releaseManifest.provenance.path}`);
+  if (
+    sbomBytes === undefined ||
+    provenanceBytes === undefined ||
+    sha256(sbomBytes) !== releaseManifest.sbom.sha256 ||
+    sha256(provenanceBytes) !== releaseManifest.provenance.sha256
+  ) {
+    throw new Error("Packed release attestation metadata is missing or invalid");
+  }
+  const sbom = parseJson(sbomBytes, "Packed SBOM");
+  if (
+    sbom.bomFormat !== "CycloneDX" ||
+    sbom.specVersion !== "1.5" ||
+    !Array.isArray(sbom.components) ||
+    sbom.components.length === 0
+  ) {
+    throw new Error("Packed SBOM is invalid");
+  }
+  for (const component of sbom.components) {
+    if (
+      !component ||
+      typeof component !== "object" ||
+      typeof component.name !== "string" ||
+      typeof component.version !== "string" ||
+      !Array.isArray(component.licenses) ||
+      component.licenses.length === 0 ||
+      !Array.isArray(component.hashes) ||
+      !component.hashes.some((hash) => hash?.alg === "SHA-256" && /^[0-9a-f]{64}$/u.test(hash.content ?? ""))
+    ) {
+      throw new Error("Packed SBOM component is incomplete");
+    }
+  }
+  const provenance = parseJson(provenanceBytes, "Packed provenance");
+  if (
+    provenance.schemaVersion !== "understand-code-alpha-provenance-v1" ||
+    provenance.product !== "understand-code" ||
+    provenance.package?.name !== candidate.package.name ||
+    provenance.package?.version !== candidate.package.version ||
+    provenance.source?.vcs !== "git" ||
+    !Array.isArray(provenance.subject)
+  ) {
+    throw new Error("Packed provenance is invalid");
   }
 }
 
@@ -1020,7 +1072,7 @@ async function assembleCandidate(requestedPath) {
       },
       limitations: {
         signature: "unavailable",
-        sbom: "unavailable",
+        sbom: "available",
         trustedProvenance: "unavailable",
         crossPlatform: "not_evaluated",
       },

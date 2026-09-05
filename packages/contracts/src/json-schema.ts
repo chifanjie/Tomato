@@ -8,6 +8,7 @@ import {
   Step16DualHostEligibleEvidenceV1Schema,
   Step16DualHostEvidenceV1Schema,
 } from "./alpha-gold.js";
+import { AlphaGoldTaskDefinitionManifestV1Schema } from "./alpha-gold-task-definitions.js";
 
 import {
   ArtifactEnvelopeBaseV1Schema,
@@ -71,6 +72,7 @@ import {
 
 export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "alpha-gold-task-corpus": AlphaGoldTaskCorpusV1Schema,
+  "alpha-gold-task-definition-manifest": AlphaGoldTaskDefinitionManifestV1Schema,
   "alpha-gold-runner-contract": AlphaGoldRunnerContractV1Schema,
   "alpha-gold-gate-evidence": AlphaGoldGateEvidenceV1Schema,
   "step16-dual-host-blocked-evidence": Step16DualHostBlockedEvidenceV1Schema,

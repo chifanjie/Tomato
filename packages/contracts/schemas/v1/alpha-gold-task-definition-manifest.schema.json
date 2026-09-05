@@ -1,0 +1,250 @@
+{
+  "$id": "urn:understand-code:schema:v1:alpha-gold-task-definition-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "alpha_gold_task_definition_manifest_v1"
+    },
+    "corpusId": {
+      "type": "string",
+      "const": "step16-alpha-gold-v1"
+    },
+    "corpusManifestDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "versioned_two_person_reviewed"
+      ]
+    },
+    "ownerReview": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "pending"
+            },
+            "reviewerIds": {
+              "type": "array",
+              "items": false,
+              "minItems": 0,
+              "maxItems": 0
+            }
+          },
+          "required": [
+            "status",
+            "reviewerIds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "approved"
+            },
+            "reviewerIds": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              ]
+            },
+            "reviewedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            }
+          },
+          "required": [
+            "status",
+            "reviewerIds",
+            "reviewedAt"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "definitions": {
+      "minItems": 24,
+      "maxItems": 24,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "corpus": {
+            "type": "string",
+            "enum": [
+              "alpha-a",
+              "alpha-b"
+            ]
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "targetPaths": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "requiredStages": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "const": "repo_pulse"
+              },
+              {
+                "type": "string",
+                "const": "task_brief"
+              },
+              {
+                "type": "string",
+                "const": "change_check"
+              },
+              {
+                "type": "string",
+                "const": "verification"
+              }
+            ]
+          },
+          "coverageTags": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cross_file",
+                "test_impact",
+                "unplanned_change",
+                "known_unknown_boundary"
+              ]
+            }
+          },
+          "review": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "pending"
+                  },
+                  "reviewerIds": {
+                    "type": "array",
+                    "items": false,
+                    "minItems": 0,
+                    "maxItems": 0
+                  }
+                },
+                "required": [
+                  "status",
+                  "reviewerIds"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "approved"
+                  },
+                  "reviewerIds": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    ]
+                  },
+                  "reviewedAt": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                  }
+                },
+                "required": [
+                  "status",
+                  "reviewerIds",
+                  "reviewedAt"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "slotId",
+          "corpus",
+          "ordinal",
+          "title",
+          "intent",
+          "targetPaths",
+          "requiredStages",
+          "coverageTags",
+          "review"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "corpusId",
+    "corpusManifestDigest",
+    "status",
+    "ownerReview",
+    "definitions"
+  ],
+  "additionalProperties": false
+}

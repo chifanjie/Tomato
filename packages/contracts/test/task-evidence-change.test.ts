@@ -1066,6 +1066,28 @@ describe("Impact, Change Check, and Verification V1 contracts", () => {
     ).toBe(false);
   });
 
+  it("retains static resolver provenance on an inferred impact step", () => {
+    const result = ImpactPathV1Schema.safeParse({
+      ...impactPath,
+      classification: "inferred",
+      steps: [{
+        ...impactPath.steps[0],
+        evidenceId: undefined,
+        confidence: "heuristic",
+        provenance: [{
+          filePath: "src/a.ts",
+          lineNumber: 4,
+          confidence: "same-file",
+          source: "static-analysis",
+        }],
+      }],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.steps[0]?.provenance?.[0]?.lineNumber).toBe(4);
+    }
+  });
+
   it("rejects inferred or stale Evidence on an observed Impact path", () => {
     const evidenceVariants = [
       {

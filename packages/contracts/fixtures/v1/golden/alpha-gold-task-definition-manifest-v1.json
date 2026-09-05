@@ -1,0 +1,581 @@
+{
+  "schemaVersion": 1,
+  "profile": "alpha_gold_task_definition_manifest_v1",
+  "corpusId": "step16-alpha-gold-v1",
+  "corpusManifestDigest": "sha256:a28d28fde25d384407b304db732d37dae4a1d7eb20b4f7ffcfb9ed7bcaaf293b",
+  "status": "draft",
+  "ownerReview": {
+    "status": "pending",
+    "reviewerIds": []
+  },
+  "definitions": [
+    {
+      "slotId": "alpha-a-slot-01",
+      "corpus": "alpha-a",
+      "ordinal": 1,
+      "title": "Gold task alpha-a-slot-01",
+      "intent": "Exercise the TypeScript change path for slot 1.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-02",
+      "corpus": "alpha-a",
+      "ordinal": 2,
+      "title": "Gold task alpha-a-slot-02",
+      "intent": "Exercise the TypeScript change path for slot 2.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-03",
+      "corpus": "alpha-a",
+      "ordinal": 3,
+      "title": "Gold task alpha-a-slot-03",
+      "intent": "Exercise the TypeScript change path for slot 3.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-04",
+      "corpus": "alpha-a",
+      "ordinal": 4,
+      "title": "Gold task alpha-a-slot-04",
+      "intent": "Exercise the TypeScript change path for slot 4.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-05",
+      "corpus": "alpha-a",
+      "ordinal": 5,
+      "title": "Gold task alpha-a-slot-05",
+      "intent": "Exercise the TypeScript change path for slot 5.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-06",
+      "corpus": "alpha-a",
+      "ordinal": 6,
+      "title": "Gold task alpha-a-slot-06",
+      "intent": "Exercise the TypeScript change path for slot 6.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-07",
+      "corpus": "alpha-a",
+      "ordinal": 7,
+      "title": "Gold task alpha-a-slot-07",
+      "intent": "Exercise the TypeScript change path for slot 7.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-08",
+      "corpus": "alpha-a",
+      "ordinal": 8,
+      "title": "Gold task alpha-a-slot-08",
+      "intent": "Exercise the TypeScript change path for slot 8.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-09",
+      "corpus": "alpha-a",
+      "ordinal": 9,
+      "title": "Gold task alpha-a-slot-09",
+      "intent": "Exercise the TypeScript change path for slot 9.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-10",
+      "corpus": "alpha-a",
+      "ordinal": 10,
+      "title": "Gold task alpha-a-slot-10",
+      "intent": "Exercise the TypeScript change path for slot 10.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-11",
+      "corpus": "alpha-a",
+      "ordinal": 11,
+      "title": "Gold task alpha-a-slot-11",
+      "intent": "Exercise the TypeScript change path for slot 11.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-12",
+      "corpus": "alpha-a",
+      "ordinal": 12,
+      "title": "Gold task alpha-a-slot-12",
+      "intent": "Exercise the TypeScript change path for slot 12.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-13",
+      "corpus": "alpha-a",
+      "ordinal": 13,
+      "title": "Gold task alpha-a-slot-13",
+      "intent": "Exercise the TypeScript change path for slot 13.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-14",
+      "corpus": "alpha-a",
+      "ordinal": 14,
+      "title": "Gold task alpha-a-slot-14",
+      "intent": "Exercise the TypeScript change path for slot 14.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-15",
+      "corpus": "alpha-a",
+      "ordinal": 15,
+      "title": "Gold task alpha-a-slot-15",
+      "intent": "Exercise the TypeScript change path for slot 15.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-16",
+      "corpus": "alpha-a",
+      "ordinal": 16,
+      "title": "Gold task alpha-a-slot-16",
+      "intent": "Exercise the TypeScript change path for slot 16.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-17",
+      "corpus": "alpha-a",
+      "ordinal": 17,
+      "title": "Gold task alpha-a-slot-17",
+      "intent": "Exercise the TypeScript change path for slot 17.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-a-slot-18",
+      "corpus": "alpha-a",
+      "ordinal": 18,
+      "title": "Gold task alpha-a-slot-18",
+      "intent": "Exercise the TypeScript change path for slot 18.",
+      "targetPaths": [
+        "packages/core/src"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-01",
+      "corpus": "alpha-b",
+      "ordinal": 1,
+      "title": "Gold task alpha-b-slot-01",
+      "intent": "Exercise the large Go change path for slot 1.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-02",
+      "corpus": "alpha-b",
+      "ordinal": 2,
+      "title": "Gold task alpha-b-slot-02",
+      "intent": "Exercise the large Go change path for slot 2.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-03",
+      "corpus": "alpha-b",
+      "ordinal": 3,
+      "title": "Gold task alpha-b-slot-03",
+      "intent": "Exercise the large Go change path for slot 3.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-04",
+      "corpus": "alpha-b",
+      "ordinal": 4,
+      "title": "Gold task alpha-b-slot-04",
+      "intent": "Exercise the large Go change path for slot 4.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-05",
+      "corpus": "alpha-b",
+      "ordinal": 5,
+      "title": "Gold task alpha-b-slot-05",
+      "intent": "Exercise the large Go change path for slot 5.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    },
+    {
+      "slotId": "alpha-b-slot-06",
+      "corpus": "alpha-b",
+      "ordinal": 6,
+      "title": "Gold task alpha-b-slot-06",
+      "intent": "Exercise the large Go change path for slot 6.",
+      "targetPaths": [
+        "internal/domain"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      }
+    }
+  ]
+}

@@ -65,7 +65,8 @@ export function taskFirstLocationStateFromLocation(
   const taskId = decodeSegment(pathMatch?.[1] ?? query.get("taskId"));
   const pathMode = pathMatch?.[2];
   const rawSection = query.get("section") ?? (
-    pathMode === "check" ? "verification_plan" : "summary"
+    pathMode === "check" ? "verification_plan"
+      : query.get("impactPathId") !== null ? "planned_changes" : "summary"
   );
   const section = TASK_SECTION_ALIASES[rawSection] ?? rawSection;
   const route: TaskFirstRoute = {

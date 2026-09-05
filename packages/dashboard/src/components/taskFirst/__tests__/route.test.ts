@@ -26,6 +26,18 @@ describe("taskFirstRouteFromLocation", () => {
     expect(taskFirstRouteFromLocation({ pathname: "/", search: "#graph" })).toBeNull();
   });
 
+  it("opens an Impact deep link on the planned changes surface by default", () => {
+    expect(taskFirstRouteFromLocation({
+      pathname: "/workbench",
+      search: "?view=tasks&taskId=task%3Ademo&impactPathId=impact%3Aone",
+    })).toEqual({
+      view: "tasks",
+      taskId: "task:demo",
+      section: "planned_changes",
+      impactPathId: "impact:one",
+    });
+  });
+
   it("round-trips Task-local Graph and Wiki surfaces without changing the Task authority view", () => {
     const graph = taskFirstLocationStateFromLocation({
       pathname: "/workbench",

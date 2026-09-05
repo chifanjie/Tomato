@@ -6,4 +6,4 @@
 
 调用边保留静态来源、源码文件、行号和解析置信度；重复边会确定性合并。它们仍是静态推断，未被伪装成运行时 Evidence 或 Verified 知识。
 
-验证记录：核心整包 958 项通过；CLI 整包 250 项通过；冻结后重新运行的 TS/Go/call-resolver 61 项通过；生产索引、仓内导入和无 node_modules 的嵌入解析器 16 项通过；Preview 冷包 Alpha 通过（14 秒）。当前仍未声明双 Host 认证任务、24 Gold Task、签名/SBOM/Provenance 或正式 Release 完成。已知后续缺口是 Go 不同 receiver 的同名方法仍需要唯一符号身份；本轮没有用丢弃方法的方式掩盖该问题。
+验证记录：核心整包 958 项通过；CLI 整包 250 项通过；冻结后重新运行的 TS/Go/call-resolver 61 项通过；生产索引、仓内导入和无 node_modules 的嵌入解析器 16 项通过；Preview 冷包 Alpha 通过（14 秒）。当前仍未声明双 Host 认证任务、24 Gold Task、签名/SBOM/Provenance 或正式 Release 完成。Go 不同 receiver 的同名方法现在使用唯一符号身份保留在图中；动态方法分派仍按 unresolved 处理，不会被当成静态确认调用。

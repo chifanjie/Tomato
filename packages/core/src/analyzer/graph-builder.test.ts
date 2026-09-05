@@ -452,3 +452,25 @@ describe("GraphBuilder", () => {
     });
   });
 });
+
+describe("GraphBuilder method symbol identity", () => {
+  it("keeps same-named receiver methods as distinct function nodes", () => {
+    const builder = new GraphBuilder("methods", "abc123");
+    builder.addFileWithAnalysis("src/methods.go", {
+      functions: [
+        { name: "String", symbolName: "Alpha.String", lineRange: [1, 3], params: [] },
+        { name: "String", symbolName: "Beta.String", lineRange: [5, 7], params: [] },
+      ],
+      classes: [], imports: [], exports: [],
+    }, {
+      summary: "methods", tags: ["go"], complexity: "simple", fileSummary: "methods",
+      summaries: { String: "method" },
+    });
+    const graph = builder.build();
+    expect(graph.nodes.filter((node) => node.type === "function").map((node) => node.id)).toEqual([
+      "function:src/methods.go:Alpha.String",
+      "function:src/methods.go:Beta.String",
+    ]);
+    expect(new Set(graph.nodes.map((node) => node.id)).size).toBe(graph.nodes.length);
+  });
+});

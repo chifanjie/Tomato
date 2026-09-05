@@ -356,7 +356,6 @@ export class GoExtractor implements LanguageExtractor {
     const paramsNode = node.childForFieldName("parameters");
     const params = extractParams(paramsNode ?? null);
     const returnType = extractResultType(node);
-
     functions.push({
       name: nameNode.text,
       lineRange: [
@@ -387,9 +386,12 @@ export class GoExtractor implements LanguageExtractor {
     const paramsNode = node.childForFieldName("parameters");
     const params = extractParams(paramsNode ?? null);
     const returnType = extractResultType(node);
+    const receiverNode = node.childForFieldName("receiver");
+    const receiverType = receiverNode ? extractReceiverType(receiverNode) : undefined;
 
     functions.push({
       name: nameNode.text,
+      ...(receiverType === undefined ? {} : { symbolName: `${receiverType}.${nameNode.text}` }),
       lineRange: [
         node.startPosition.row + 1,
         node.endPosition.row + 1,
@@ -399,9 +401,7 @@ export class GoExtractor implements LanguageExtractor {
     });
 
     // Track receiver type for struct association
-    const receiverNode = node.childForFieldName("receiver");
     if (receiverNode) {
-      const receiverType = extractReceiverType(receiverNode);
       if (receiverType) {
         if (!methodsByReceiver.has(receiverType)) {
           methodsByReceiver.set(receiverType, []);

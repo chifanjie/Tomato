@@ -155,7 +155,9 @@ export class GraphBuilder {
 
     // Create function nodes with "contains" edges
     for (const fn of analysis.functions) {
-      const funcId = `function:${filePath}:${fn.name}`;
+      const symbolName = fn.symbolName ?? fn.name;
+      const funcId = `function:${filePath}:${symbolName}`;
+      if (this.nodeIds.has(funcId)) continue;
       this.nodeIds.add(funcId);
       this.nodes.push({
         id: funcId,

@@ -194,6 +194,39 @@ describe("GraphBuilder", () => {
     });
   });
 
+  it("retains and merges call provenance on duplicate edges", () => {
+    const builder = new GraphBuilder("test-project", "abc123");
+    builder.addCallEdge("src/a.ts", "run", "src/b.ts", "load", {
+      filePath: "src/a.ts",
+      lineNumber: 20,
+      confidence: "imported-package",
+      source: "static-analysis",
+    });
+    builder.addCallEdge("src/a.ts", "run", "src/b.ts", "load", {
+      filePath: "src/a.ts",
+      lineNumber: 10,
+      confidence: "imported-package",
+      source: "static-analysis",
+    });
+
+    const calls = builder.build().edges.filter((edge) => edge.type === "calls");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.provenance).toEqual([
+      {
+        filePath: "src/a.ts",
+        lineNumber: 10,
+        confidence: "imported-package",
+        source: "static-analysis",
+      },
+      {
+        filePath: "src/a.ts",
+        lineNumber: 20,
+        confidence: "imported-package",
+        source: "static-analysis",
+      },
+    ]);
+  });
+
   it("should set project metadata correctly", () => {
     const builder = new GraphBuilder("my-awesome-project", "deadbeef");
 

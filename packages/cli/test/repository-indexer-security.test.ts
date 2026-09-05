@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { traceImpact } from "@understand-code/task-engine";
 
 import {
   buildRepositoryIndex,
@@ -103,8 +104,14 @@ describe("repository index strong preflight", () => {
       'import { twice } from "./helper.js";\nexport function main(value: number): number { return twice(value); }\n');
     await writeFile(path.join(root, "src/helper.ts"),
       'export function twice(value: number): number { return value * 2; }\nconst example = "function fake() {}";\n');
+    await writeFile(path.join(root, "go.mod"), 'module example.test/work\ngo 1.24\n');
+    await mkdir(path.join(root, "lib"));
+    await writeFile(path.join(root, "lib/calc.go"),
+      'package mathlib\nfunc Double(value int) int { return value * 2 }\n');
+    await writeFile(path.join(root, "src/offset.go"),
+      'package worker\nfunc offset(value int) int { return value + 1 }\n');
     await writeFile(path.join(root, "src/worker.go"),
-      'package worker\nimport "fmt"\ntype Config struct { Count int }\nfunc Calculate(value int) int { fmt.Println(value); return value + 1 }\n');
+      'package worker\nimport ( "fmt"; calc "example.test/work/lib" )\ntype Config struct { Count int }\nfunc Calculate(value int) int { fmt.Println(value); return offset(calc.Double(value)) }\n');
     const snapshot = {
       schemaVersion: 1, snapshotId: "snapshot:parser-fixture", repositoryId: "repository:fixture",
       worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
@@ -115,6 +122,15 @@ describe("repository index strong preflight", () => {
     const second = await buildRepositoryIndex({ ...input, operationId: "5".repeat(32) });
     expect(second.graphDigest).toBe(first.graphDigest);
     expect(second.generation).toEqual(first.generation);
+    const routedDocuments = first.publication.files
+      .filter((file) => file.relativePath === "knowledge-base/wiki-index.json");
+    expect(routedDocuments).toHaveLength(1);
+    const wikiIndex = JSON.parse(routedDocuments[0]!.bytes.toString("utf8")) as {
+      pages?: Array<{ route?: { order: number } }>;
+    };
+    const routeOrders = (wikiIndex.pages ?? [])
+      .flatMap((page) => page.route === undefined ? [] : [page.route.order]);
+    expect(new Set(routeOrders).size).toBe(routeOrders.length);
     expect(first.graph.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "function", name: "main", filePath: "src/main.ts" }),
       expect.objectContaining({ type: "function", name: "twice", filePath: "src/helper.ts" }),
@@ -125,6 +141,32 @@ describe("repository index strong preflight", () => {
     expect(first.graph.edges).toContainEqual(expect.objectContaining({
       type: "imports", source: "file:src/main.ts", target: "file:src/helper.ts",
     }));
+    expect(first.graph.edges).toContainEqual(expect.objectContaining({
+      type: "calls", source: "function:src/main.ts:main", target: "function:src/helper.ts:twice",
+      provenance: [{ filePath: "src/main.ts", lineNumber: 2,
+        confidence: "imported-package", source: "static-analysis" }],
+    }));
+    expect(first.graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "imports", source: "file:src/worker.go", target: "file:lib/calc.go" }),
+      expect.objectContaining({ type: "calls", source: "function:src/worker.go:Calculate",
+        target: "function:lib/calc.go:Double" }),
+      expect.objectContaining({ type: "calls", source: "function:src/worker.go:Calculate",
+        target: "function:src/offset.go:offset" }),
+    ]));
+    expect(first.graph.edges.some((edge) => edge.target.includes("Println"))).toBe(false);
+    const impact = traceImpact({
+      graph: first.graph, startNodeIds: ["function:src/helper.ts:twice"],
+      repoPulse: { status: "fresh", artifactFreshness: { graph: "fresh" },
+        completeness: { callGraph: { status: "partial", reasons: ["unsupported dynamic bindings"] } } },
+      options: { direction: "upstream" },
+    });
+    expect(impact.paths).toContainEqual(expect.objectContaining({
+      endNodeId: "function:src/main.ts:main", classification: "inferred",
+    }));
+    expect(impact.diagnostics).toContainEqual(expect.objectContaining({ code: "call_graph_incomplete" }));
+    const stagedGraph = JSON.parse(await readFile(path.join(installationRoot,
+      ".refresh-index-staging-v1", "4".repeat(32), "knowledge-graph.json"), "utf8"));
+    expect(stagedGraph.edges).toEqual(first.graph.edges);
     const fingerprints = JSON.parse((await readFile(path.join(installationRoot,
       ".refresh-index-staging-v1", "4".repeat(32), "fingerprints.json"))).toString("utf8"));
     expect(fingerprints.files["src/worker.go"].hasStructuralAnalysis).toBe(true);

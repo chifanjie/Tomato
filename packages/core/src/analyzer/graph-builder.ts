@@ -9,6 +9,7 @@ import type {
   StepInfo,
   ResourceInfo,
   SectionInfo,
+  GraphEdgeProvenance,
 } from "../types.js";
 import { LanguageRegistry } from "../languages/language-registry.js";
 
@@ -34,6 +35,30 @@ interface NonCodeFileAnalysisMeta extends NonCodeFileMeta {
   steps?: StepInfo[];
   resources?: ResourceInfo[];
   sections?: SectionInfo[];
+}
+
+function mergeProvenance(
+  existing: readonly GraphEdgeProvenance[] | undefined,
+  next: GraphEdgeProvenance,
+): GraphEdgeProvenance[] {
+  const merged = [...(existing ?? []), next];
+  const unique = new Map(
+    merged.map((item) => [
+      `${item.filePath}\u0000${item.lineNumber}\u0000${item.confidence}\u0000${item.source}`,
+      item,
+    ]),
+  );
+  return [...unique.values()].sort((left, right) =>
+    compareUnicodeCodeUnits(left.filePath, right.filePath) ||
+    left.lineNumber - right.lineNumber ||
+    compareUnicodeCodeUnits(left.confidence, right.confidence) ||
+    compareUnicodeCodeUnits(left.source, right.source),
+  );
+}
+
+function compareUnicodeCodeUnits(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 const KIND_TO_NODE_TYPE: Record<string, GraphNode["type"]> = {
@@ -63,6 +88,7 @@ export class GraphBuilder {
   private readonly languages = new Set<string>();
   private readonly nodeIds = new Set<string>();
   private readonly edgeKeys = new Set<string>();
+  private readonly callEdges = new Map<string, GraphEdge>();
   private readonly projectName: string;
   private readonly gitHash: string;
   private readonly languageRegistry: LanguageRegistry;
@@ -194,17 +220,29 @@ export class GraphBuilder {
     callerFunc: string,
     calleeFile: string,
     calleeFunc: string,
+    provenance?: GraphEdgeProvenance,
   ): void {
     const key = `calls|function:${callerFile}:${callerFunc}|function:${calleeFile}:${calleeFunc}`;
-    if (this.edgeKeys.has(key)) return;
+    if (this.edgeKeys.has(key)) {
+      if (provenance !== undefined) {
+        const edge = this.callEdges.get(key);
+        if (edge !== undefined) {
+          edge.provenance = mergeProvenance(edge.provenance, provenance);
+        }
+      }
+      return;
+    }
     this.edgeKeys.add(key);
-    this.edges.push({
+    const edge: GraphEdge = {
       source: `function:${callerFile}:${callerFunc}`,
       target: `function:${calleeFile}:${calleeFunc}`,
       type: "calls",
       direction: "forward",
       weight: 0.8,
-    });
+      ...(provenance === undefined ? {} : { provenance: [provenance] }),
+    };
+    this.edges.push(edge);
+    this.callEdges.set(key, edge);
   }
 
   addNonCodeFile(filePath: string, meta: NonCodeFileMeta): string {

@@ -430,6 +430,83 @@ type reader interface {
   // ---- Call Graph ----
 
   describe("extractCallGraph", () => {
+    it("binds only proven package and import calls", () => {
+      const { tree, parser, root } = parse(`package app
+
+import (
+    "example.com/pkg"
+    f "example.com/fmt"
+    _ "example.com/side"
+)
+
+func helper() {}
+func Work() {
+    helper()
+    pkg.Do()
+    f.Call()
+    value := 1
+    value()
+    object.Do()
+    func() { helper() }()
+}
+
+func (s *Server) Method() { helper() }
+`);
+      const structure = extractor.extractStructure(root);
+      expect(structure.packageName).toBe("app");
+      expect(structure.callableFunctions).toEqual(["helper", "Work"]);
+      expect(structure.callableExports).toEqual([{ name: "Work", localName: "Work" }]);
+
+      const calls = extractor.extractCallGraph(root);
+      const workCalls = calls.filter((entry) => entry.caller === "Work");
+      expect(workCalls.find((entry) => entry.callee === "helper")?.binding).toEqual({ kind: "package", name: "helper" });
+      expect(workCalls.find((entry) => entry.callee === "pkg.Do")?.binding).toEqual({ kind: "import", source: "example.com/pkg", name: "Do", packageName: "pkg" });
+      expect(workCalls.find((entry) => entry.callee === "f.Call")?.binding).toEqual({ kind: "import", source: "example.com/fmt", name: "Call" });
+      expect(workCalls.find((entry) => entry.callee === "value")?.binding).toBeUndefined();
+      expect(workCalls.find((entry) => entry.callee === "object.Do")?.binding).toBeUndefined();
+      expect(calls.filter((entry) => entry.callee === "helper").map((entry) => entry.caller).sort()).toEqual(["Method", "Work"]);
+
+      tree.delete();
+      parser.delete();
+    });
+
+    it("suppresses bindings shadowed by local types and still records nested arguments", () => {
+      const { tree, parser, root } = parse(`package app
+
+func helper() {}
+func Main() {
+    type helper func()
+    helper(inner())
+}
+`);
+      const calls = extractor.extractCallGraph(root).filter((entry) => entry.caller === "Main");
+      expect(calls.map((entry) => entry.callee)).toEqual(["helper", "inner"]);
+      expect(calls[0].binding).toBeUndefined();
+      expect(calls[1].binding).toEqual({ kind: "package", name: "inner" });
+      tree.delete();
+      parser.delete();
+    });
+
+    it("covers multiple package var names and type-switch aliases as shadows", () => {
+      const { tree, parser, root } = parse(`package app
+
+var first, Target = 1, func() {}
+
+func Main(value any) {
+    Target()
+    switch item := value.(type) {
+    case func():
+        item()
+    }
+}
+`);
+      const calls = extractor.extractCallGraph(root).filter((entry) => entry.caller === "Main");
+      expect(calls.map((entry) => entry.callee)).toEqual(["Target", "item"]);
+      expect(calls.every((entry) => entry.binding === undefined)).toBe(true);
+      tree.delete();
+      parser.delete();
+    });
+
     it("extracts simple function calls", () => {
       const { tree, parser, root } = parse(`package main
 

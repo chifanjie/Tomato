@@ -50,6 +50,14 @@ export interface GraphNode {
   knowledgeMeta?: KnowledgeMeta;
 }
 
+/** Source location and resolver confidence for a statically discovered graph edge. */
+export interface GraphEdgeProvenance {
+  filePath: string;
+  lineNumber: number;
+  confidence: "exact" | "same-file" | "imported-package";
+  source: "static-analysis";
+}
+
 // GraphEdge with rich relationship modeling
 export interface GraphEdge {
   source: string;
@@ -58,6 +66,8 @@ export interface GraphEdge {
   direction: "forward" | "backward" | "bidirectional";
   description?: string;
   weight: number; // 0-1
+  /** Optional evidence retained for edges produced by a resolver. */
+  provenance?: GraphEdgeProvenance[];
 }
 
 // Layer (logical grouping)
@@ -178,6 +188,11 @@ export interface StructuralAnalysis {
   classes: Array<{ name: string; lineRange: [number, number]; methods: string[]; properties: string[] }>;
   imports: Array<{ source: string; specifiers: string[]; lineNumber: number }>;
   exports: Array<{ name: string; lineNumber: number; isDefault?: boolean }>;
+  /** Statically bound local functions exported by this file, excluding re-exports. */
+  callableExports?: Array<{ name: string; localName: string }>;
+  /** Go package clause and top-level functions; receiver methods are excluded. */
+  packageName?: string;
+  callableFunctions?: string[];
   // Non-code structural data (all optional for backward compat)
   sections?: SectionInfo[];
   definitions?: DefinitionInfo[];
@@ -197,6 +212,11 @@ export interface CallGraphEntry {
   caller: string;
   callee: string;
   lineNumber: number;
+  /** Absent when lexical binding cannot be established; never guess from the name. */
+  binding?:
+    | { kind: "local"; name: string }
+    | { kind: "import"; source: string; name: string; packageName?: string }
+    | { kind: "package"; name: string };
 }
 
 export interface AnalyzerPlugin {

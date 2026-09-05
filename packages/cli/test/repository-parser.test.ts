@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { build } from "esbuild";
+import type { CallGraphEntry } from "@understand-code/core";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
@@ -15,10 +16,12 @@ interface ParserProbeResult {
   readonly typescript: {
     readonly functions: Array<{ readonly name: string }>;
     readonly imports: Array<{ readonly source: string }>;
+    readonly calls: CallGraphEntry[];
   };
   readonly go: {
     readonly functions: Array<{ readonly name: string }>;
     readonly imports: Array<{ readonly source: string }>;
+    readonly calls: CallGraphEntry[];
   };
 }
 
@@ -49,10 +52,12 @@ describe("production repository parser bundle", () => {
           typescript: {
             functions: typescript?.functions.map(({ name }) => ({ name })) ?? [],
             imports: typescript?.imports.map(({ source }) => ({ source })) ?? [],
+            calls: registry.extractCallGraph("src/index.ts", "import { helper } from './helper';\\nexport function run() { return helper(); }"),
           },
           go: {
             functions: go?.functions.map(({ name }) => ({ name })) ?? [],
             imports: go?.imports.map(({ source }) => ({ source })) ?? [],
+            calls: registry.extractCallGraph("cmd/main.go", 'package main\\nimport "fmt"\\nfunc Run() { fmt.Println("ok") }'),
           },
         }));
       `;
@@ -103,6 +108,13 @@ describe("production repository parser bundle", () => {
       expect(parsed.typescript.imports.map(({ source }) => source)).toContain("./helper");
       expect(parsed.go.functions.map(({ name }) => name)).toContain("Run");
       expect(parsed.go.imports.map(({ source }) => source)).toContain("fmt");
+      expect(parsed.typescript.calls).toContainEqual(expect.objectContaining({
+        caller: "run", callee: "helper", binding: { kind: "import", source: "./helper", name: "helper" },
+      }));
+      expect(parsed.go.calls).toContainEqual(expect.objectContaining({
+        caller: "Run", callee: "fmt.Println",
+        binding: { kind: "import", source: "fmt", name: "Println", packageName: "fmt" },
+      }));
 
       // The probe must be self-contained. Reading the bundle also guards the
       // test against accidentally replacing the embedded assets with a path

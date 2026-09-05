@@ -11,6 +11,8 @@ import {
   createIgnoreFilter,
   extractFileFingerprint,
   generateKnowledgeBase,
+  resolveCalls,
+  type CallResolverFile,
   type FingerprintStore,
   type GeneratedDocument,
   type KnowledgeGraph,
@@ -28,6 +30,7 @@ import {
   readStableRepositoryFile,
 } from "@understand-code/repository-state";
 import { repositoryParserRegistryV1 } from "./repository-parser.js";
+import { createRepositoryImportResolverV1 } from "./repository-imports.js";
 
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const SKIP_DIRECTORIES = new Set([
@@ -655,23 +658,10 @@ function sourceExcerpt(content: string): string {
   return content.length <= 800 ? content : `${content.slice(0, 800)}\n…`;
 }
 
-function resolveImportPath(relativePath: string, source: string, known: ReadonlySet<string>): string | undefined {
-  if (!source.startsWith(".")) return undefined;
-  const base = path.posix.normalize(path.posix.join(path.posix.dirname(relativePath), source));
-  // Node-style TS source commonly imports the eventual .js filename. Prefer
-  // an exact repository file, then its source counterpart when it is absent.
-  const sourceCounterparts = base.endsWith(".js") ? [base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx"]
-    : base.endsWith(".jsx") ? [base.slice(0, -4) + ".tsx"]
-      : base.endsWith(".mjs") ? [base.slice(0, -4) + ".mts"]
-        : base.endsWith(".cjs") ? [base.slice(0, -4) + ".cts"] : [];
-  const candidates = [base, ...sourceCounterparts, ...[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].map((ext) => `${base}${ext}`),
-    ...[".ts", ".tsx", ".js", ".jsx"].map((ext) => `${base}/index${ext}`)];
-  return candidates.find((candidate) => known.has(candidate));
-}
 
 function fallbackDocument(
   existing: GeneratedDocument | undefined,
-  input: { readonly id: string; readonly path: string; readonly title: string; readonly stage: "purpose" | "evidence"; readonly nodeId: string; readonly filePath: string; readonly excerpt: string; readonly lineRange: [number, number] },
+  input: { readonly id: string; readonly path: string; readonly title: string; readonly stage: "purpose" | "evidence"; readonly routeOrder: number; readonly nodeId: string; readonly filePath: string; readonly excerpt: string; readonly lineRange: [number, number] },
 ): GeneratedDocument {
   return {
     ...(existing ?? {
@@ -692,7 +682,7 @@ function fallbackDocument(
     role: "featured",
     directNodeIds: [input.nodeId],
     contextNodeIds: [],
-    route: { order: input.stage === "purpose" ? 0 : 1, stage: input.stage },
+    route: { order: input.routeOrder, stage: input.stage },
     content: input.stage === "purpose"
       ? `# ${input.title}\n\n## 项目边界\n\n本页由本地源码扫描生成，描述当前绑定仓库中的真实文件与可追踪入口。\n\n## 入口证据\n\n${input.filePath} 是当前索引发现的入口文件；后续页面和搜索结果均绑定同一源码快照。\n\n## 维护提示\n\n源码变化后重新运行 refresh_index mode=full，以重新生成图谱和知识索引。`
       : `# ${input.title}\n\n## 文件职责\n\n${input.filePath} 已纳入本次源码图谱。\n\n## 源码证据\n\n\`${input.filePath}\` 的实际内容已被安全读取并绑定到当前快照。`,
@@ -722,6 +712,15 @@ function ensureRouteDocuments(
   if (source === undefined) throw new RepositoryIndexError(`indexed source disappeared: ${firstFile.filePath}`);
   const anchor = graph.nodes.find((node) => node.filePath === firstFile.filePath && node.type !== "file") ?? firstFile;
   const byPath = new Map(documents.map((document) => [document.path, document]));
+  const usedRouteOrders = new Set(
+    documents.flatMap((document) => document.route === undefined ? [] : [document.route.order]),
+  );
+  const allocateRouteOrder = (preferred: number): number => {
+    let order = preferred;
+    while (usedRouteOrders.has(order)) order += 1;
+    usedRouteOrders.add(order);
+    return order;
+  };
   const overview = byPath.get("项目总览.md");
   const entry = byPath.get("源码入口.md");
   const usableRouteDocument = (document: GeneratedDocument | undefined): boolean =>
@@ -737,6 +736,7 @@ function ensureRouteDocuments(
       path: "项目总览.md",
       title: "项目总览",
       stage: "purpose",
+      routeOrder: allocateRouteOrder(0),
       nodeId: anchor.id,
       filePath: firstFile.filePath,
       excerpt: sourceExcerpt(source.content),
@@ -749,6 +749,7 @@ function ensureRouteDocuments(
       path: "源码入口.md",
       title: "源码入口",
       stage: "evidence",
+      routeOrder: allocateRouteOrder(1),
       nodeId: firstFile.id,
       filePath: firstFile.filePath,
       excerpt: sourceExcerpt(source.content),
@@ -893,13 +894,36 @@ export async function buildRepositoryIndex(
       });
     }
   }
-  const known = new Set(sourceFiles.map((source) => source.relativePath));
+  const resolveImport = createRepositoryImportResolverV1(sourceFiles);
+  const callFiles: CallResolverFile[] = [];
   for (const source of sourceFiles) {
     const analysis = analyses.get(source.relativePath);
-    for (const imported of analysis?.imports ?? []) {
-      const target = resolveImportPath(source.relativePath, imported.source, known);
-      if (target !== undefined) builder.addImportEdge(source.relativePath, target);
-    }
+    if (!analysis) continue;
+    const imports = analysis.imports.map((imported) => {
+      const resolvedPaths = resolveImport(source.relativePath, imported.source);
+      for (const target of resolvedPaths) builder.addImportEdge(source.relativePath, target);
+      return { ...imported, resolvedPaths };
+    });
+    callFiles.push({
+      path: source.relativePath,
+      imports,
+      functions: analysis.functions.map((fn) => ({
+        name: fn.name, startLine: fn.lineRange[0], endLine: fn.lineRange[1],
+      })),
+      callableExports: analysis.callableExports,
+      ...(source.relativePath.endsWith(".go") && analysis.packageName ? {
+        packageName: analysis.packageName,
+        packageScope: `${path.posix.dirname(source.relativePath)}\0${analysis.packageName}`,
+        callableFunctions: analysis.callableFunctions,
+      } : {}),
+      callGraph: registry.extractCallGraph(source.relativePath, source.content) ?? [],
+    });
+  }
+  for (const call of resolveCalls(callFiles).calls) {
+    builder.addCallEdge(call.callerFile, call.callerFunc, call.calleeFile, call.calleeFunc, {
+      filePath: call.callerFile, lineNumber: call.lineNumber,
+      confidence: call.confidence, source: "static-analysis",
+    });
   }
   const graph = builder.build();
   graph.project.analyzedAt = generatedAt;

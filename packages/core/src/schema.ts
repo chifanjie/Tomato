@@ -392,6 +392,12 @@ export const GraphEdgeSchema = z.object({
   direction: z.enum(["forward", "backward", "bidirectional"]),
   description: z.string().optional(),
   weight: z.number().min(0).max(1),
+  provenance: z.array(z.object({
+    filePath: z.string(),
+    lineNumber: z.number().int().positive(),
+    confidence: z.enum(["exact", "same-file", "imported-package"]),
+    source: z.literal("static-analysis"),
+  })).min(1).optional(),
 });
 
 export const LayerSchema = z.object({

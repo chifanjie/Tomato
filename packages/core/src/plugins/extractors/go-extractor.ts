@@ -74,6 +74,57 @@ function isExported(name: string): boolean {
   return first >= 65 && first <= 90; // A-Z
 }
 
+const GO_BUILTINS = new Set(["append", "cap", "clear", "close", "complex", "copy", "delete", "imag", "len", "make", "max", "min", "new", "panic", "print", "println", "real", "recover"]);
+
+interface GoImportBinding {
+  source: string;
+  qualifier: string;
+  isDefault: boolean;
+}
+
+function nodeText(node: TreeSitterNode | null): string | undefined {
+  return node?.text;
+}
+
+function collectDeclarationNames(node: TreeSitterNode | null, output: Set<string>): void {
+  if (!node) return;
+  if (node.type === "identifier") {
+    output.add(node.text);
+    return;
+  }
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child) collectDeclarationNames(child, output);
+  }
+}
+
+function collectPatternNames(node: TreeSitterNode | null, output: Set<string>): void {
+  if (!node) return;
+  if (node.type === "identifier") {
+    output.add(node.text);
+    return;
+  }
+  // A selector/index on the left side is an assignment, not a declaration.
+  if (node.type === "selector_expression" || node.type === "index_expression") return;
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child) collectPatternNames(child, output);
+  }
+}
+
+function collectDeclarationSpecNames(node: TreeSitterNode, output: Set<string>): void {
+  if (node.type === "var_spec" || node.type === "const_spec" || node.type === "type_spec") {
+    for (const name of node.childrenForFieldName("name")) {
+      if (name.type === "type_identifier") output.add(name.text);
+      else collectPatternNames(name, output);
+    }
+  }
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child) collectDeclarationSpecNames(child, output);
+  }
+}
+
 /**
  * Go extractor for tree-sitter structural analysis and call graph extraction.
  *
@@ -94,6 +145,8 @@ export class GoExtractor implements LanguageExtractor {
     const classes: StructuralAnalysis["classes"] = [];
     const imports: StructuralAnalysis["imports"] = [];
     const exports: StructuralAnalysis["exports"] = [];
+    const callableFunctions: string[] = [];
+    const callableExports: Array<{ name: string; localName: string }> = [];
 
     // Track methods per receiver type so we can attach them to structs
     const methodsByReceiver = new Map<string, string[]>();
@@ -105,6 +158,13 @@ export class GoExtractor implements LanguageExtractor {
       switch (node.type) {
         case "function_declaration":
           this.extractFunction(node, functions, exports);
+          {
+            const name = nodeText(node.childForFieldName("name"));
+            if (name) {
+              callableFunctions.push(name);
+              if (isExported(name)) callableExports.push({ name, localName: name });
+            }
+          }
           break;
 
         case "method_declaration":
@@ -129,56 +189,158 @@ export class GoExtractor implements LanguageExtractor {
       }
     }
 
-    return { functions, classes, imports, exports };
+    const packageClause = findChild(rootNode, "package_clause");
+    const packageName = nodeText(packageClause
+      ? packageClause.childForFieldName("name") ??
+        findChild(packageClause, "package_identifier") ??
+        findChild(packageClause, "identifier")
+      : null);
+    return { functions, classes, imports, exports, packageName, callableFunctions, callableExports };
   }
 
   extractCallGraph(rootNode: TreeSitterNode): CallGraphEntry[] {
     const entries: CallGraphEntry[] = [];
-    const functionStack: string[] = [];
-
-    const walkForCalls = (node: TreeSitterNode) => {
-      let pushedName = false;
-
-      // Track entering function/method declarations
-      if (node.type === "function_declaration") {
-        const nameNode = node.childForFieldName("name");
-        if (nameNode) {
-          functionStack.push(nameNode.text);
-          pushedName = true;
+    const imports = this.collectImportBindings(rootNode);
+    const hasDotImport = this.hasDotImport(rootNode);
+    const packageScope = this.collectPackageScope(rootNode);
+    const visitFunction = (node: TreeSitterNode): void => {
+      const caller = nodeText(node.childForFieldName("name"));
+      if (!caller) return;
+      const shadowed = this.collectShadowedNames(node);
+      for (const name of packageScope) shadowed.add(name);
+      const body = node.childForFieldName("body");
+      if (!body) return;
+      const walk = (current: TreeSitterNode): void => {
+        // Calls in function literals belong to the literal's closure. Without
+        // a separate lexical function node, suppress them rather than attributing
+        // them to the enclosing function.
+        if (current !== body && current.type === "func_literal") return;
+        if (current.type === "call_expression") {
+          const calleeNode = current.childForFieldName("function");
+          if (calleeNode) {
+            const callee = calleeNode.text;
+            const entry: CallGraphEntry = {
+              caller,
+              callee,
+              lineNumber: current.startPosition.row + 1,
+            };
+            const binding = this.resolveCallBinding(calleeNode, callee, shadowed, imports, hasDotImport);
+            if (binding) entry.binding = binding;
+            entries.push(entry);
+          }
         }
-      } else if (node.type === "method_declaration") {
-        const nameNode = node.childForFieldName("name");
-        if (nameNode) {
-          functionStack.push(nameNode.text);
-          pushedName = true;
+        for (let index = 0; index < current.childCount; index += 1) {
+          const child = current.child(index);
+          if (child) walk(child);
         }
-      }
-
-      // Extract call expressions
-      if (node.type === "call_expression") {
-        const calleeNode = node.childForFieldName("function");
-        if (calleeNode && functionStack.length > 0) {
-          entries.push({
-            caller: functionStack[functionStack.length - 1],
-            callee: calleeNode.text,
-            lineNumber: node.startPosition.row + 1,
-          });
-        }
-      }
-
-      for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i);
-        if (child) walkForCalls(child);
-      }
-
-      if (pushedName) {
-        functionStack.pop();
-      }
+      };
+      walk(body);
     };
-
-    walkForCalls(rootNode);
+    for (let index = 0; index < rootNode.childCount; index += 1) {
+      const node = rootNode.child(index);
+      if (node?.type === "function_declaration" || node?.type === "method_declaration") visitFunction(node);
+    }
 
     return entries;
+  }
+
+  private collectImportBindings(rootNode: TreeSitterNode): GoImportBinding[] {
+    const bindings: GoImportBinding[] = [];
+    for (let index = 0; index < rootNode.childCount; index += 1) {
+      const declaration = rootNode.child(index);
+      if (!declaration || declaration.type !== "import_declaration") continue;
+      const specList = findChild(declaration, "import_spec_list");
+      const specs = specList ? findChildren(specList, "import_spec") : [findChild(declaration, "import_spec")].filter((spec): spec is TreeSitterNode => spec !== null);
+      for (const spec of specs) {
+        const pathNode = spec.childForFieldName("path");
+        if (!pathNode) continue;
+        const pathContent = findChild(pathNode, "interpreted_string_literal_content");
+        const source = pathContent ? pathContent.text : pathNode.text.replace(/^"|"$/g, "");
+        const alias = spec.childForFieldName("name")?.text;
+        if (alias === undefined) {
+          const parts = source.split("/");
+          bindings.push({ source, qualifier: parts[parts.length - 1], isDefault: true });
+        } else if (alias !== "." && alias !== "_") {
+          bindings.push({ source, qualifier: alias, isDefault: false });
+        }
+      }
+    }
+    return bindings;
+  }
+
+  private collectPackageScope(rootNode: TreeSitterNode): Set<string> {
+    const names = new Set<string>();
+    for (let index = 0; index < rootNode.childCount; index += 1) {
+      const node = rootNode.child(index);
+      if (node?.type === "var_declaration" || node?.type === "const_declaration" || node?.type === "type_declaration") {
+        collectDeclarationSpecNames(node, names);
+      }
+    }
+    return names;
+  }
+
+  private hasDotImport(rootNode: TreeSitterNode): boolean {
+    for (let index = 0; index < rootNode.childCount; index += 1) {
+      const declaration = rootNode.child(index);
+      if (!declaration || declaration.type !== "import_declaration") continue;
+      const specList = findChild(declaration, "import_spec_list");
+      const specs = specList ? findChildren(specList, "import_spec") : [findChild(declaration, "import_spec")].filter((spec): spec is TreeSitterNode => spec !== null);
+      if (specs.some((spec) => spec.childForFieldName("name")?.text === ".")) return true;
+    }
+    return false;
+  }
+
+  private collectShadowedNames(functionNode: TreeSitterNode): Set<string> {
+    const names = new Set<string>();
+    collectDeclarationNames(functionNode.childForFieldName("parameters"), names);
+    collectDeclarationNames(functionNode.childForFieldName("receiver"), names);
+    collectDeclarationNames(functionNode.childForFieldName("result"), names);
+    const body = functionNode.childForFieldName("body");
+    const walk = (node: TreeSitterNode): void => {
+      if (node !== body && node.type === "func_literal") return;
+      if (node.type === "short_var_declaration" || node.type === "range_clause") {
+        collectPatternNames(node.childForFieldName("left"), names);
+      } else if (node.type === "var_declaration" || node.type === "const_declaration" || node.type === "type_declaration") {
+        collectDeclarationSpecNames(node, names);
+      } else if (node.type === "receive_statement") {
+        collectPatternNames(node.childForFieldName("left"), names);
+      } else if (node.type === "type_switch_statement") {
+        // The short declaration in a type switch can bind an alias without
+        // exposing a stable field across grammar versions. Collecting its
+        // identifiers conservatively prevents package-name guesses.
+        collectDeclarationNames(node, names);
+      }
+      for (let index = 0; index < node.childCount; index += 1) {
+        const child = node.child(index);
+        if (child) walk(child);
+      }
+    };
+    if (body) walk(body);
+    return names;
+  }
+
+  private resolveCallBinding(
+    calleeNode: TreeSitterNode,
+    callee: string,
+    shadowed: ReadonlySet<string>,
+    imports: readonly GoImportBinding[],
+    hasDotImport: boolean,
+  ): CallGraphEntry["binding"] {
+    if (calleeNode.type === "identifier") {
+      if (GO_BUILTINS.has(callee) || shadowed.has(callee) || hasDotImport || imports.some((entry) => entry.qualifier === callee)) return undefined;
+      return { kind: "package", name: callee };
+    }
+    if (calleeNode.type !== "selector_expression") return undefined;
+    const object = calleeNode.childForFieldName("operand") ?? calleeNode.child(0);
+    const qualifier = object?.type === "identifier" ? object.text : undefined;
+    if (!qualifier || shadowed.has(qualifier)) return undefined;
+    const imported = imports.filter((entry) => entry.qualifier === qualifier);
+    if (imported.length !== 1) return undefined;
+    const name = calleeNode.childForFieldName("field")?.text ?? callee.split(".").pop();
+    if (!name) return undefined;
+    return imported[0].isDefault
+      ? { kind: "import", source: imported[0].source, name, packageName: qualifier }
+      : { kind: "import", source: imported[0].source, name };
   }
 
   // ---- Private helpers ----

@@ -66,6 +66,23 @@ describe("schema validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  it("preserves optional call edge provenance", () => {
+    const graph = structuredClone(validGraph);
+    graph.edges[0] = {
+      ...graph.edges[0],
+      type: "calls",
+      provenance: [{
+        filePath: "src/index.ts",
+        lineNumber: 12,
+        confidence: "same-file",
+        source: "static-analysis",
+      }],
+    };
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data?.edges[0]?.provenance).toEqual(graph.edges[0].provenance);
+  });
+
   it("rejects graph with missing required fields", () => {
     const incomplete = { version: "1.0.0" };
     const result = validateGraph(incomplete);

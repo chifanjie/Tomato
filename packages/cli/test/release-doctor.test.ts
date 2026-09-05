@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   runReleaseDoctorV1,
+  validReleaseAttestationPayloads,
   type ReleaseDoctorCheckIdV1,
   type ReleaseDoctorResultV1,
 } from "../src/release-doctor.js";
@@ -130,6 +131,68 @@ function check(
 }
 
 describe("Release Doctor", () => {
+  it("requires SBOM file components and provenance subjects to close over the payload", () => {
+    const packageVersion = "0.1.0";
+    const payload = Buffer.from("#!/usr/bin/env node\n", "utf8");
+    const payloadDigest = createHash("sha256").update(payload).digest("hex");
+    const inventory = [{
+      path: "bin.mjs",
+      sha256: `sha256:${payloadDigest}`,
+      bytes: payload.byteLength,
+    }] as const;
+    const packageManifest = Buffer.from('{"name":"@understand-code/preview"}\n');
+    const packageDigest = createHash("sha256").update(packageManifest).digest("hex");
+    const packageComponent = {
+      type: "application",
+      name: "@understand-code/preview",
+      version: packageVersion,
+      licenses: [{ license: { expression: "NOASSERTION" } }],
+      hashes: [{ alg: "SHA-256", content: packageDigest }],
+    };
+    const sbom = {
+      bomFormat: "CycloneDX",
+      specVersion: "1.5",
+      metadata: { component: packageComponent },
+      components: [
+        packageComponent,
+        {
+          type: "file",
+          name: "bin.mjs",
+          version: packageVersion,
+          licenses: [{ license: { expression: "NOASSERTION" } }],
+          hashes: [{ alg: "SHA-256", content: payloadDigest }],
+          properties: [{ name: "understand-code:bytes", value: String(payload.byteLength) }],
+        },
+      ],
+    };
+    const provenance = {
+      schemaVersion: "understand-code-alpha-provenance-v1",
+      product: "understand-code",
+      package: { name: "@understand-code/preview", version: packageVersion },
+      source: { vcs: "git" },
+      subject: [{ name: "bin.mjs", digest: { sha256: payloadDigest } }],
+    };
+    expect(validReleaseAttestationPayloads(sbom, provenance, inventory, packageVersion)).toBe(true);
+    expect(validReleaseAttestationPayloads(
+      sbom,
+      { ...provenance, subject: [] },
+      inventory,
+      packageVersion,
+    )).toBe(false);
+    expect(validReleaseAttestationPayloads(
+      { ...sbom, components: [packageComponent] },
+      provenance,
+      inventory,
+      packageVersion,
+    )).toBe(false);
+    expect(validReleaseAttestationPayloads(
+      sbom,
+      provenance,
+      [{ ...inventory[0], bytes: inventory[0].bytes + 1 }],
+      packageVersion,
+    )).toBe(false);
+  });
+
   it("reports a missing release manifest without exposing local paths", async () => {
     const repositoryRoot = await createGitRepository({ seedArtifacts: false });
     await seedSchemaValidArtifacts(repositoryRoot);

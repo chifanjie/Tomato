@@ -382,11 +382,12 @@ This mechanism is not a history-retention policy, an anti-rollback control, or
 independent provenance/authenticity proof.
 
 This output is a local, unsigned Alpha Candidate only. It is not an RC or formal
-Release, has no signature, SBOM, or trusted provenance, and evaluates only the
-current platform/native tuple. It does not establish cross-platform readiness,
-publisher authenticity, Provider Authority, an execution fence, or unlocked
-strong writes. Keep those limitations visible; do not rename or present this
-directory as a signed or release-ready distribution.
+Release, has no publisher signature or trusted provenance, and carries only an
+unsigned inventory SBOM. It evaluates only the current platform/native tuple.
+It does not establish cross-platform readiness, publisher authenticity, Provider
+Authority, an execution fence, or unlocked strong writes. Keep those limitations
+visible; do not rename or present this directory as a signed or release-ready
+distribution.
 
 ## Preview commands
 

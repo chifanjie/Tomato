@@ -21,6 +21,8 @@ export const RELEASE_DOCTOR_SCHEMA_VERSION =
 const MAX_JSON_BYTES = 64 * 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
 const MAX_NATIVE_BYTES = 32 * 1024 * 1024;
+const MAX_RELEASE_INVENTORY_FILES = 16_384;
+const MAX_RELEASE_INVENTORY_BYTES = 512 * 1024 * 1024;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 
 export type ReleaseDoctorCheckIdV1 =
@@ -349,6 +351,151 @@ function validDashboardBundleManifest(
     value.root === "dashboard" &&
     value.fileCount === fileCount &&
     value.inventorySha256 === inventorySha256
+  );
+}
+
+export type ReleasePayloadInventoryEntryV1 = Readonly<{
+  path: string;
+  sha256: string;
+  bytes: number;
+}>;
+
+/**
+ * Return the exact payload that was present when build.mjs generated the
+ * unsigned SBOM and provenance. The three root metadata files are generated
+ * after that inventory and therefore are deliberately excluded. This check is
+ * integrity evidence only; publisher authenticity still requires a signature.
+ */
+async function buildReleasePayloadInventory(
+  packageRoot: string,
+): Promise<readonly ReleasePayloadInventoryEntryV1[]> {
+  const inventory: ReleasePayloadInventoryEntryV1[] = [];
+  let totalBytes = 0;
+  async function walk(relativeDirectory: string): Promise<void> {
+    const directoryRelative = relativeDirectory === ""
+      ? "dist"
+      : `dist/${relativeDirectory}`;
+    const directory = path.join(packageRoot, ...directoryRelative.split("/"));
+    const metadata = await lstat(directory);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new Error("release_payload_directory_invalid");
+    }
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
+    for (const entry of entries) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      if (relativeDirectory === "" &&
+        (entry.name === "release-manifest.json" ||
+          entry.name === "sbom.cdx.json" ||
+          entry.name === "provenance.json")) {
+        continue;
+      }
+      if (entry.isSymbolicLink()) throw new Error("release_payload_symlink");
+      if (entry.isDirectory()) {
+        await walk(relativePath);
+        continue;
+      }
+      if (!entry.isFile() || inventory.length >= MAX_RELEASE_INVENTORY_FILES) {
+        throw new Error("release_payload_inventory_invalid");
+      }
+      const bytes = await readContainedRegularFile(
+        packageRoot,
+        `dist/${relativePath}`,
+        MAX_JSON_BYTES,
+      );
+      totalBytes += bytes.byteLength;
+      if (totalBytes > MAX_RELEASE_INVENTORY_BYTES) {
+        throw new Error("release_payload_inventory_too_large");
+      }
+      inventory.push({
+        path: relativePath,
+        sha256: digest(bytes),
+        bytes: bytes.byteLength,
+      });
+    }
+  }
+  await walk("");
+  inventory.sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  return inventory;
+}
+
+export function validReleaseAttestationPayloads(
+  sbom: unknown,
+  provenance: unknown,
+  inventory: readonly ReleasePayloadInventoryEntryV1[],
+  packageVersion: string,
+): boolean {
+  if (!isRecord(sbom) || sbom.bomFormat !== "CycloneDX" ||
+    sbom.specVersion !== "1.5" || !Array.isArray(sbom.components) ||
+    sbom.components.length === 0 || !isRecord(sbom.metadata) ||
+    !isRecord(sbom.metadata.component) ||
+    sbom.metadata.component.name !== "@understand-code/preview" ||
+    sbom.metadata.component.version !== packageVersion) {
+    return false;
+  }
+  const fileComponents = new Map<string, Record<string, unknown>>();
+  const componentIds = new Set<string>();
+  for (const component of sbom.components) {
+    if (!isRecord(component) ||
+      (component.type !== "file" && component.type !== "library" && component.type !== "application") ||
+      typeof component.name !== "string" || component.name.length === 0 ||
+      typeof component.version !== "string" || component.version.length === 0 ||
+      !Array.isArray(component.licenses) || component.licenses.length === 0 ||
+      !Array.isArray(component.hashes) ||
+      !component.hashes.some((hash) => isRecord(hash) && hash.alg === "SHA-256" &&
+        typeof hash.content === "string" && /^[0-9a-f]{64}$/u.test(hash.content))) {
+      return false;
+    }
+    const identity = `${component.type}:${component.name}@${component.version}`;
+    if (componentIds.has(identity)) return false;
+    componentIds.add(identity);
+    if (component.type === "file") {
+      if (!safeRelativePath(component.name) || fileComponents.has(component.name)) return false;
+      fileComponents.set(component.name, component);
+    }
+  }
+  if (fileComponents.size !== inventory.length) return false;
+  for (const entry of inventory) {
+    const component = fileComponents.get(entry.path);
+    if (component === undefined || component.version !== packageVersion) return false;
+    const hashes = component.hashes;
+    if (!Array.isArray(hashes)) return false;
+    const hash = hashes.find((candidate: unknown) =>
+      isRecord(candidate) && candidate.alg === "SHA-256" && typeof candidate.content === "string",
+    );
+    const bytesProperty = Array.isArray(component.properties)
+      ? component.properties.find((candidate) =>
+        isRecord(candidate) && candidate.name === "understand-code:bytes",
+      )
+      : undefined;
+    if (!isRecord(hash) || hash.content !== entry.sha256.slice("sha256:".length) ||
+      !isRecord(bytesProperty) || bytesProperty.value !== String(entry.bytes)) return false;
+  }
+  if (!isRecord(provenance) ||
+    provenance.schemaVersion !== "understand-code-alpha-provenance-v1" ||
+    provenance.product !== "understand-code" ||
+    !isRecord(provenance.package) ||
+    provenance.package.name !== "@understand-code/preview" ||
+    provenance.package.version !== packageVersion ||
+    !isRecord(provenance.source) || provenance.source.vcs !== "git" ||
+    !Array.isArray(provenance.subject) ||
+    provenance.subject.length !== inventory.length) return false;
+  const subjects = new Map<string, string>();
+  for (const subject of provenance.subject) {
+    if (!isRecord(subject) || typeof subject.name !== "string" ||
+      !safeRelativePath(subject.name) || subjects.has(subject.name) ||
+      !isRecord(subject.digest) || typeof subject.digest.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(subject.digest.sha256)) return false;
+    subjects.set(subject.name, subject.digest.sha256);
+  }
+  return inventory.every((entry) =>
+    subjects.get(entry.path) === entry.sha256.slice("sha256:".length),
   );
 }
 
@@ -885,6 +1032,7 @@ async function inspectBundleIntegrity(
         contractsBytes,
         sbomBytes,
         provenanceBytes,
+        releasePayloadInventory,
         dashboardInventory,
         dashboardManifestBytes,
       ] = await Promise.all([
@@ -932,6 +1080,7 @@ async function inspectBundleIntegrity(
         ),
         readContainedRegularFile(packageRoot, release.sbom.path, MAX_METADATA_BYTES),
         readContainedRegularFile(packageRoot, release.provenance.path, MAX_METADATA_BYTES),
+        buildReleasePayloadInventory(packageRoot),
         buildDashboardInventory(packageRoot),
         readContainedRegularFile(
           packageRoot,
@@ -954,14 +1103,12 @@ async function inspectBundleIntegrity(
         digest(contractsBytes) !== release.runtime.contracts.sha256 ||
         digest(sbomBytes) !== release.sbom.sha256 ||
         digest(provenanceBytes) !== release.provenance.sha256 ||
-        (() => {
-          const sbom = parseJson(sbomBytes);
-          return !isRecord(sbom) || sbom.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.5" || !Array.isArray(sbom.components) || sbom.components.length === 0;
-        })() ||
-        (() => {
-          const provenance = parseJson(provenanceBytes);
-          return !isRecord(provenance) || provenance.schemaVersion !== "understand-code-alpha-provenance-v1" || provenance.product !== "understand-code" || !Array.isArray(provenance.subject);
-        })() ||
+        !validReleaseAttestationPayloads(
+          parseJson(sbomBytes),
+          parseJson(provenanceBytes),
+          releasePayloadInventory,
+          release.package.version,
+        ) ||
         release.runtime.productVersion !== PRODUCT_VERSION ||
         release.dashboard.productVersion !== PRODUCT_VERSION ||
         dashboardInventory.length !== release.dashboard.fileCount ||

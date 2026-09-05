@@ -116,7 +116,7 @@ function npmPurl(name, version) {
   return `pkg:npm/${scoped.map((part) => encodeURIComponent(part)).join("/")}@${encodeURIComponent(version)}`;
 }
 
-async function buildDirectoryInventory(root) {
+async function buildDirectoryInventory(root, excludedRootFiles = new Set()) {
   const inventory = [];
   async function walk(current, relativeDirectory) {
     const metadata = await lstat(current);
@@ -132,6 +132,9 @@ async function buildDirectoryInventory(root) {
       const relativePath = relativeDirectory === ""
         ? entry.name
         : `${relativeDirectory}/${entry.name}`;
+      if (relativeDirectory === "" && excludedRootFiles.has(entry.name)) {
+        continue;
+      }
       const absolutePath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         await walk(absolutePath, relativePath);
@@ -288,7 +291,10 @@ async function writeReleaseMetadata() {
   // will be shipped in `dist` (metadata files are added immediately below).
   // This gives each shipped component an identity, version, license assertion,
   // and content digest without claiming publisher authenticity.
-  const sbomInventory = await buildDirectoryInventory(distRoot);
+  const sbomInventory = await buildDirectoryInventory(
+    distRoot,
+    new Set(["release-manifest.json", "sbom.cdx.json", "provenance.json"]),
+  );
   const fileComponents = sbomInventory.map((entry) => ({
     type: "file",
     name: entry.path,

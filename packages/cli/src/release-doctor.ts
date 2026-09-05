@@ -14,6 +14,9 @@ import {
 
 import { PRODUCT_VERSION } from "./constants.js";
 import { openActiveRepositoryIndexV1 } from "./runtime/repository-indexer.js";
+import {
+  verifyReleaseAttestationV1,
+} from "./release-attestation.js";
 
 export const RELEASE_DOCTOR_SCHEMA_VERSION =
   "understand-code-release-doctor-v1" as const;
@@ -73,6 +76,14 @@ export type ReleaseDoctorResultV1 = Readonly<{
 export type ReleaseDoctorOptionsV1 = Readonly<{
   packageRoot?: string;
   repositoryRoot?: string;
+  /**
+   * Optional publisher material supplied by the caller. No key is bundled in
+   * the package and omission deliberately leaves authenticity locked.
+   */
+  releaseAttestation?: Readonly<{
+    envelope: unknown;
+    trustBundle: unknown;
+  }>;
 }>;
 
 type DigestReferenceV1 = Readonly<{
@@ -497,6 +508,91 @@ export function validReleaseAttestationPayloads(
   return inventory.every((entry) =>
     subjects.get(entry.path) === entry.sha256.slice("sha256:".length),
   );
+}
+
+/**
+ * Verify caller-supplied publisher material against the exact files in an
+ * installed package. This boundary is intentionally opt-in: no public key is
+ * embedded in the product, and a missing envelope/trust bundle remains
+ * locked. A valid signature over a different package is rejected by binding
+ * every signed digest to the locally observed payload.
+ */
+async function inspectReleaseAuthenticity(
+  packageRoot: string | undefined,
+  release: ReleaseManifestV1 | undefined,
+  input: ReleaseDoctorOptionsV1["releaseAttestation"],
+): Promise<ReleaseDoctorCheckV1> {
+  if (input === undefined) {
+    return locked(
+      "release_authenticity",
+      "release_attestation_unavailable",
+      "Alpha hashes provide integrity inventory, not publisher authenticity.",
+      "Supply an external Ed25519 release envelope and matching trust bundle; otherwise release authenticity remains locked.",
+    );
+  }
+  if (packageRoot === undefined || release === undefined) {
+    return fail(
+      "release_authenticity",
+      "release_attestation_unavailable",
+      "Publisher material cannot be checked until the installed release is valid.",
+      "Reinstall @understand-code/preview from the original verified tgz, then rerun Doctor with external publisher material.",
+    );
+  }
+  try {
+    const [releaseBytes, sbomBytes, provenanceBytes, inventory] = await Promise.all([
+      readContainedRegularFile(packageRoot, "dist/release-manifest.json", MAX_METADATA_BYTES),
+      readContainedRegularFile(packageRoot, release.sbom.path, MAX_METADATA_BYTES),
+      readContainedRegularFile(packageRoot, release.provenance.path, MAX_METADATA_BYTES),
+      buildReleasePayloadInventory(packageRoot),
+    ]);
+    const sbom = parseJson(sbomBytes);
+    const provenance = parseJson(provenanceBytes);
+    if (!validReleaseAttestationPayloads(sbom, provenance, inventory, release.package.version)) {
+      throw new Error("attestation_payload_invalid");
+    }
+    if (!verifyReleaseAttestationV1(input.envelope, input.trustBundle)) {
+      throw new Error("attestation_signature_invalid");
+    }
+    const envelope = input.envelope;
+    if (!isRecord(envelope) || !isRecord(envelope.claims) ||
+      envelope.claims.product !== "understand-code" ||
+      !isRecord(envelope.claims.package) ||
+      envelope.claims.package.name !== release.package.name ||
+      envelope.claims.package.version !== release.package.version ||
+      !isRecord(envelope.claims.releaseManifest) ||
+      envelope.claims.releaseManifest.sha256 !== digest(releaseBytes) ||
+      !isRecord(envelope.claims.sbom) ||
+      envelope.claims.sbom.sha256 !== digest(sbomBytes) ||
+      !isRecord(envelope.claims.provenance) ||
+      envelope.claims.provenance.sha256 !== digest(provenanceBytes) ||
+      !isRecord(envelope.claims.payloadInventory) ||
+      envelope.claims.payloadInventory.sha256 !==
+        digest(Buffer.from(JSON.stringify(inventory), "utf8")) ||
+      envelope.claims.payloadInventory.fileCount !== inventory.length) {
+      throw new Error("attestation_binding_mismatch");
+    }
+    return pass(
+      "release_authenticity",
+      "The externally supplied Ed25519 publisher signature matches this exact release payload.",
+      {
+        observed: typeof envelope.keyId === "string" ? envelope.keyId : undefined,
+        required: "external trust bundle and signature envelope",
+      },
+    );
+  } catch (error) {
+    const code = error instanceof Error &&
+      error.message === "attestation_binding_mismatch"
+      ? "release_attestation_binding_mismatch"
+      : error instanceof Error && error.message === "attestation_payload_invalid"
+        ? "release_attestation_payload_invalid"
+        : "release_attestation_invalid";
+    return fail(
+      "release_authenticity",
+      code,
+      "The supplied release attestation is invalid or does not bind to this installed payload.",
+      "Obtain a publisher signature and trust bundle for this exact release, then rerun Doctor.",
+    );
+  }
 }
 
 function parseJson(bytes: Uint8Array): unknown {
@@ -1374,11 +1470,10 @@ export async function runReleaseDoctorV1(
     await inspectNativeTuple(packageRoot, releaseManifest.manifest),
     await inspectPluginPayload("codex", packageRoot, releaseManifest.manifest),
     await inspectPluginPayload("claude", packageRoot, releaseManifest.manifest),
-    locked(
-      "release_authenticity",
-      "release_attestation_unavailable",
-      "Alpha hashes provide integrity inventory, not publisher authenticity.",
-      "Verify the tgz SHA-256 out of band; signing, SBOM, and provenance remain a release milestone.",
+    await inspectReleaseAuthenticity(
+      packageRoot,
+      releaseManifest.manifest,
+      options.releaseAttestation,
     ),
     locked(
       "provider_strong_writes",

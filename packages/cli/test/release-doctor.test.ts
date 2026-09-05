@@ -250,6 +250,19 @@ describe("Release Doctor", () => {
       code: "provider_strong_writes_locked",
     });
 
+    const suppliedWithoutRelease = await runReleaseDoctorV1({
+      packageRoot: incompletePackageRoot,
+      repositoryRoot,
+      releaseAttestation: {
+        envelope: {},
+        trustBundle: {},
+      },
+    });
+    expect(check(suppliedWithoutRelease, "release_authenticity")).toMatchObject({
+      status: "fail",
+      code: "release_attestation_unavailable",
+    });
+
     const publicBytes = JSON.stringify(result);
     expect(publicBytes).not.toContain(repositoryRoot);
     expect(publicBytes).not.toContain(incompletePackageRoot);

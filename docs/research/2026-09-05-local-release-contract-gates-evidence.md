@@ -16,6 +16,7 @@ This record covers only locally reproducible work completed while Claude authent
 - CLI build followed by Preview build: passed.
 - Preview Alpha candidate assembly and verification: 1/1 passed.
 - Preview cold packed install lifecycle: passed; the archive contains 91 allowlisted files, including SBOM and provenance.
+- Preview Surface Release gate: passed; candidate `ef7f9ee` packed 91 regular files and the Codex/Claude wrapper lifecycle passed (Linux `execve` cases remain explicitly skipped on macOS).
 - Preview runtime, plugin wrapper, and browser-facing lifecycle tests remain passing from the same build.
 
 ## New evidence-bound behavior
@@ -24,6 +25,7 @@ This record covers only locally reproducible work completed while Claude authent
 - Alpha Gold task definitions are deterministic and cover all 24 frozen slots. The checked-in fixture is explicitly `draft` with pending owner/task review; versioning requires distinct two-person approvals.
 - The Step16 CI closing gate awaits `verifyStep16DualHostEligibleEvidenceV1`; a rejected promise can no longer pass the shell gate.
 - Preview release metadata contains a CycloneDX 1.5 SBOM with workspace/package dependency identities and shipped-file SHA-256 entries, plus an unsigned provenance record bound to Git commit/tree and the lockfile digest. Candidate and Release Doctor checks validate the metadata and fail closed on tampering.
+- Release Doctor now enumerates the installed `dist` payload and requires exact filename, byte-count, and SHA-256 closure across the SBOM file components and provenance subjects; the three root attestation metadata files are excluded from that payload by construction.
 
 ## Remaining blockers
 

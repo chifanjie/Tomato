@@ -27,6 +27,10 @@ const PATTERN_SAMPLES = new Map<string, string>([
     "alpha-a-slot-01",
   ],
   [
+    "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+",
+    "packages/core/src",
+  ],
+  [
     "^ed25519-spki-sha256:[0-9a-f]{64}$",
     `ed25519-spki-sha256:${"0".repeat(64)}`,
   ],

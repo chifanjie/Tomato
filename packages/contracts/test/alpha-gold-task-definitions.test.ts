@@ -78,6 +78,23 @@ describe("versioned Alpha Gold task definitions", () => {
   it("has an independently compiled JSON Schema", () => {
     const schema = JSON.parse(readFileSync(join(schemaRoot, "alpha-gold-task-definition-manifest.schema.json"), "utf8"));
     const validate = new Ajv2020({ strict: false }).compile(schema);
-    expect(validate(readJson("alpha-gold-task-definition-manifest-v1.json"))).toBe(true);
+    const fixture = readJson("alpha-gold-task-definition-manifest-v1.json");
+    expect(validate(fixture)).toBe(true);
+    expect(validate({
+      ...fixture,
+      definitions: fixture.definitions.map((task: any, index: number) => index === 0
+        ? { ...task, targetPaths: ["../outside"] }
+        : task),
+    })).toBe(false);
+    expect(validate({
+      ...fixture,
+      definitions: fixture.definitions.map((task: any, index: number) => index === 0
+        ? { ...task, requiredStages: [...task.requiredStages, "extra"] }
+        : task),
+    })).toBe(false);
+    expect(validate({
+      ...fixture,
+      status: "versioned_two_person_reviewed",
+    })).toBe(false);
   });
 });

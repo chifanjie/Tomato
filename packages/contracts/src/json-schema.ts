@@ -374,6 +374,137 @@ function alphaGoldGateEvidenceTransportInvariantsV1(): Array<Record<string, unkn
   ];
 }
 
+/**
+ * Zod refinements cannot be represented by z.toJSONSchema.  Keep the
+ * independently consumable Gold definition schema at the same structural
+ * boundary as the runtime parser: tuple lengths, relative paths, and the
+ * conditional review gate must be enforced by JSON Schema as well.
+ */
+function alphaGoldTaskDefinitionManifestTransportInvariantsV1(
+  generated: Record<string, unknown>,
+): void {
+  const properties = generated.properties;
+  if (properties === null || typeof properties !== "object") return;
+  const definitions = (properties as Record<string, unknown>).definitions;
+  if (definitions === null || typeof definitions !== "object") return;
+  const definitionItems = (definitions as Record<string, unknown>).items;
+  if (definitionItems === null || typeof definitionItems !== "object") return;
+  const item = definitionItems as Record<string, unknown>;
+  const itemProperties = item.properties;
+  if (itemProperties === null || typeof itemProperties !== "object") return;
+  const taskProperties = itemProperties as Record<string, unknown>;
+
+  const slotId = taskProperties.slotId;
+  if (slotId !== null && typeof slotId === "object") {
+    (slotId as Record<string, unknown>).pattern =
+      "^(?:alpha-a-slot-(?:0[1-9]|1[0-8])|alpha-b-slot-0[1-6])$";
+  }
+  const targetPaths = taskProperties.targetPaths;
+  if (targetPaths !== null && typeof targetPaths === "object") {
+    const targetPathItems = (targetPaths as Record<string, unknown>).items;
+    if (targetPathItems !== null && typeof targetPathItems === "object") {
+      (targetPathItems as Record<string, unknown>).pattern =
+        "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+";
+    }
+  }
+  const requiredStages = taskProperties.requiredStages;
+  if (requiredStages !== null && typeof requiredStages === "object") {
+    Object.assign(requiredStages as Record<string, unknown>, {
+      minItems: 4,
+      maxItems: 4,
+    });
+  }
+  const coverageTags = taskProperties.coverageTags;
+  if (coverageTags !== null && typeof coverageTags === "object") {
+    (coverageTags as Record<string, unknown>).uniqueItems = true;
+  }
+
+  const approvedReview = {
+    type: "object",
+    properties: {
+      status: { const: "approved" },
+      reviewerIds: {
+        type: "array",
+        prefixItems: [
+          { type: "string", minLength: 1, maxLength: 256 },
+          { type: "string", minLength: 1, maxLength: 256 },
+        ],
+        items: false,
+        minItems: 2,
+        maxItems: 2,
+        uniqueItems: true,
+      },
+      reviewedAt: {
+        type: "string",
+        pattern: "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+      },
+    },
+    required: ["status", "reviewerIds", "reviewedAt"],
+    additionalProperties: false,
+  };
+  const review = taskProperties.review;
+  if (review !== null && typeof review === "object") {
+    const reviewSchema = review as Record<string, unknown>;
+    const oneOf = reviewSchema.oneOf;
+    if (Array.isArray(oneOf)) {
+      const existingApproved = oneOf.find((entry) =>
+        entry !== null && typeof entry === "object" &&
+        (entry as Record<string, unknown>).properties !== null &&
+        typeof (entry as Record<string, unknown>).properties === "object" &&
+        ((entry as Record<string, unknown>).properties as Record<string, unknown>).status !== null &&
+        typeof ((entry as Record<string, unknown>).properties as Record<string, unknown>).status === "object" &&
+        (((entry as Record<string, unknown>).properties as Record<string, unknown>).status as Record<string, unknown>).const === "approved",
+      );
+      if (existingApproved !== undefined && typeof existingApproved === "object") {
+        Object.assign(existingApproved as Record<string, unknown>, approvedReview);
+      }
+    }
+  }
+
+  item.allOf = [
+    {
+      if: {
+        properties: { corpus: { const: "alpha-b" } },
+        required: ["corpus"],
+      },
+      then: { properties: { ordinal: { maximum: 6 } } },
+    },
+    {
+      if: {
+        properties: { corpus: { const: "alpha-a" } },
+        required: ["corpus"],
+      },
+      then: { properties: { slotId: { pattern: "^alpha-a-slot-[0-9]{2}$" } } },
+    },
+    {
+      if: {
+        properties: { corpus: { const: "alpha-b" } },
+        required: ["corpus"],
+      },
+      then: { properties: { slotId: { pattern: "^alpha-b-slot-[0-9]{2}$" } } },
+    },
+  ];
+
+  const ownerReview = (properties as Record<string, unknown>).ownerReview;
+  const status = (properties as Record<string, unknown>).status;
+  if (ownerReview !== null && typeof ownerReview === "object" && status !== null && typeof status === "object") {
+    generated.allOf = [
+      {
+        if: {
+          properties: { status: { const: "versioned_two_person_reviewed" } },
+          required: ["status"],
+        },
+        then: {
+          properties: {
+            ownerReview: approvedReview,
+            definitions: { items: { properties: { review: approvedReview } } },
+          },
+        },
+      },
+    ];
+  }
+}
+
 function schemaDocument(
   name: ContractJsonSchemaNameV1,
   schema: z.ZodType,
@@ -385,6 +516,9 @@ function schemaDocument(
   normalizeEmptyTupleSchemasV1(generated);
   if (name === "alpha-gold-gate-evidence") {
     generated.allOf = alphaGoldGateEvidenceTransportInvariantsV1();
+  }
+  if (name === "alpha-gold-task-definition-manifest") {
+    alphaGoldTaskDefinitionManifestTransportInvariantsV1(generated);
   }
   return {
     $id: `urn:understand-code:schema:v1:${name}`,

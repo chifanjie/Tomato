@@ -67,6 +67,13 @@ describe("release attestation verifier", () => {
       ...trustBundle,
       keys: [trustBundle.keys[0], trustBundle.keys[0]],
     })).toBe(false);
+    expect(verifyReleaseAttestationV1({
+      ...envelope,
+      claims: { ...envelope.claims, unexpected: true },
+    }, trustBundle)).toBe(false);
+    expect(verifyReleaseAttestationV1({
+      ...envelope,
+      trustHint: "ignored-by-older-verifiers",
+    }, trustBundle)).toBe(false);
   });
 });
-

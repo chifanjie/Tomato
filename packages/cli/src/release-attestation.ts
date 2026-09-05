@@ -17,6 +17,8 @@ const ED25519_SPKI_DER_PREFIX_V1 = Buffer.from([
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const KEY_ID_PATTERN = /^ed25519-spki-sha256:[0-9a-f]{64}$/u;
 const SIGNATURE_PATTERN = /^ed25519:[0-9a-f]{128}$/u;
+const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/u;
+const MAX_TRUST_KEYS = 64;
 
 /** The exact immutable release references covered by a publisher signature. */
 export type ReleaseAttestationClaimsV1 = Readonly<{
@@ -50,7 +52,16 @@ export type ReleaseTrustBundleV1 = Readonly<{
 }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const expected = [...keys].sort().join("\u0000");
+  return Object.keys(value).sort().join("\u0000") === expected;
 }
 
 function isSha256(value: unknown): value is string {
@@ -84,19 +95,26 @@ function releaseClaims(value: unknown): ReleaseAttestationClaimsV1 | undefined {
     ? value.payloadInventory
     : undefined;
   if (!isRecord(value) ||
+    !hasExactKeys(value, ["package", "payloadInventory", "product", "provenance", "releaseManifest", "sbom", "schemaVersion"]) ||
     value.schemaVersion !== RELEASE_ATTESTATION_SCHEMA_VERSION_V1 ||
     value.product !== "understand-code" ||
     !isRecord(value.package) ||
+    !hasExactKeys(value.package, ["name", "version"]) ||
     value.package.name !== "@understand-code/preview" ||
     typeof value.package.version !== "string" ||
-    value.package.version.length === 0 ||
-    !isRecord(value.releaseManifest) || !isSha256(value.releaseManifest.sha256) ||
-    !isRecord(value.sbom) || !isSha256(value.sbom.sha256) ||
-    !isRecord(value.provenance) || !isSha256(value.provenance.sha256) ||
+    !VERSION_PATTERN.test(value.package.version) ||
+    !isRecord(value.releaseManifest) || !hasExactKeys(value.releaseManifest, ["sha256"]) ||
+    !isSha256(value.releaseManifest.sha256) ||
+    !isRecord(value.sbom) || !hasExactKeys(value.sbom, ["sha256"]) ||
+    !isSha256(value.sbom.sha256) ||
+    !isRecord(value.provenance) || !hasExactKeys(value.provenance, ["sha256"]) ||
+    !isSha256(value.provenance.sha256) ||
     payloadInventory === undefined ||
+    !hasExactKeys(payloadInventory, ["fileCount", "sha256"]) ||
     !isSha256(payloadInventory.sha256) ||
     !Number.isSafeInteger(payloadInventory.fileCount) ||
-    (payloadInventory.fileCount as number) < 1) {
+    (payloadInventory.fileCount as number) < 1 ||
+    (payloadInventory.fileCount as number) > 16_384) {
     return undefined;
   }
   return value as unknown as ReleaseAttestationClaimsV1;
@@ -123,15 +141,17 @@ export function deriveReleaseTrustKeyIdV1(spkiBase64: string): string {
 
 function parseTrustBundle(value: unknown): readonly ReleaseTrustBundleKeyV1[] | undefined {
   if (!isRecord(value) ||
+    !hasExactKeys(value, ["keys", "product", "schemaVersion"]) ||
     value.schemaVersion !== RELEASE_TRUST_BUNDLE_SCHEMA_VERSION_V1 ||
     value.product !== "understand-code" ||
-    !Array.isArray(value.keys) || value.keys.length === 0) {
+    !Array.isArray(value.keys) || value.keys.length === 0 || value.keys.length > MAX_TRUST_KEYS) {
     return undefined;
   }
   const ids = new Set<string>();
   const keys: ReleaseTrustBundleKeyV1[] = [];
   for (const candidate of value.keys) {
     if (!isRecord(candidate) || candidate.algorithm !== "Ed25519" ||
+      !hasExactKeys(candidate, ["algorithm", "keyId", "publicKeySpkiBase64"]) ||
       typeof candidate.keyId !== "string" || !KEY_ID_PATTERN.test(candidate.keyId) ||
       typeof candidate.publicKeySpkiBase64 !== "string" ||
       decodeCanonicalSpki(candidate.publicKeySpkiBase64) === undefined ||
@@ -156,6 +176,7 @@ export function verifyReleaseAttestationV1(
 ): boolean {
   try {
     if (!isRecord(envelope) ||
+      !hasExactKeys(envelope, ["algorithm", "claims", "keyId", "schemaVersion", "signature"]) ||
       envelope.schemaVersion !== RELEASE_ATTESTATION_SCHEMA_VERSION_V1 ||
       envelope.algorithm !== "Ed25519" ||
       typeof envelope.keyId !== "string" || !KEY_ID_PATTERN.test(envelope.keyId) ||

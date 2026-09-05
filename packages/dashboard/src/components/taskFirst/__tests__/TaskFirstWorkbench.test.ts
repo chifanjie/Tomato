@@ -335,6 +335,65 @@ describe("TaskFirstWorkbench", () => {
     expect(verificationHtml).toContain("The focused test passed.");
   });
 
+  it("renders persisted Impact Paths with provenance and deep-link callbacks", async () => {
+    const onSelectImpactPath = vi.fn();
+    const onOpenEvidence = vi.fn();
+    const onOpenGraph = vi.fn();
+    const html = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "planned_changes", impactPathId: "impact:demo" },
+      page: { ...page, section: "planned_changes" },
+      impact: {
+        paths: [{
+          id: "impact:demo",
+          sourceNodeId: "function:entry",
+          targetNodeId: "function:consumer",
+          classification: "observed",
+          claimIds: ["claim:goal"],
+          steps: [{
+            source: "function:entry",
+            edgeType: "calls",
+            target: "function:consumer",
+            direction: "downstream",
+            evidenceId: "evidence:demo",
+            provenance: [{ filePath: "src/index.ts", lineNumber: 4, confidence: "exact", source: "static-analysis" }],
+          }],
+        }],
+        conclusion: { status: "paths_observed", impactPathIds: ["impact:demo"], boundaryEvidenceIds: [] },
+      },
+      impactStatus: "ready",
+      onSelectImpactPath,
+      onOpenEvidence: (findingId, evidenceId) => onOpenEvidence(findingId, evidenceId),
+      onOpenEvidenceGraph: onOpenGraph,
+    }));
+    expect(html).toContain('data-testid="task-impact-paths"');
+    expect(html).toContain("已观察到 1 条影响路径");
+    expect(html).toContain("src/index.ts:4 · exact");
+    expect(html).toContain("证据 evidence:demo");
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "planned_changes", impactPathId: "impact:demo" },
+      page: { ...page, section: "planned_changes" },
+      impact: {
+        paths: [{ id: "impact:demo", sourceNodeId: "function:entry", targetNodeId: "function:consumer", classification: "observed", claimIds: ["claim:goal"], steps: [{ source: "function:entry", edgeType: "calls", target: "function:consumer", direction: "downstream", evidenceId: "evidence:demo", provenance: [{ filePath: "src/index.ts", lineNumber: 4, confidence: "exact", source: "static-analysis" }] }] }],
+        conclusion: { status: "paths_observed", impactPathIds: ["impact:demo"], boundaryEvidenceIds: [] },
+      },
+      impactStatus: "ready",
+      onSelectImpactPath,
+      onOpenEvidence: (findingId, evidenceId) => onOpenEvidence(findingId, evidenceId),
+      onOpenEvidenceGraph: onOpenGraph,
+    })));
+    const pathButton = container.querySelector<HTMLButtonElement>('[data-testid="task-impact-path"] button');
+    await act(async () => pathButton?.click());
+    expect(onSelectImpactPath).toHaveBeenCalledWith("impact:demo");
+    const evidenceButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "证据 evidence:demo");
+    await act(async () => evidenceButton?.click());
+    expect(onOpenEvidence).toHaveBeenCalledWith(undefined, "evidence:demo");
+    await act(async () => root.unmount());
+  });
+
   it("shows explicit plan obligations while keeping legacy omissions visible", () => {
     const plannedHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
       route: { ...route, section: "planned_changes" },

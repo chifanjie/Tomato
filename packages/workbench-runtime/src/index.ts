@@ -395,6 +395,7 @@ export type WorkbenchDashboardReadRequestV1 = WorkbenchDashboardRequestBindingV1
   | { readonly kind: "task_brief"; readonly taskId: string; readonly section: TaskBriefSectionV1 }
   | { readonly kind: "task_change_check"; readonly taskId: string }
   | { readonly kind: "task_verification"; readonly taskId: string }
+  | { readonly kind: "task_impact"; readonly taskId: string }
   | { readonly kind: "task_knowledge_candidates"; readonly taskId: string }
 );
 
@@ -2050,7 +2051,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
     return { status: "matched", request: { ...binding, ...selection, kind: "wiki_page", relativePath } };
   }
 
-  const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification|knowledge-candidates)\.json$/u.exec(url.pathname);
+  const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification|impact|knowledge-candidates)\.json$/u.exec(url.pathname);
   if (taskArtifact === null) return { status: "not_matched" };
   let taskId: string;
   try {
@@ -2081,7 +2082,8 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
     request: {
       ...binding,
       kind: artifactKind === "change-check" ? "task_change_check"
-        : artifactKind === "knowledge-candidates" ? "task_knowledge_candidates" : "task_verification",
+        : artifactKind === "knowledge-candidates" ? "task_knowledge_candidates"
+          : artifactKind === "impact" ? "task_impact" : "task_verification",
       taskId,
     },
   };

@@ -354,6 +354,7 @@ describe("workbench runtime session", () => {
       "/knowledge-base/search-index.json",
       `/tasks/${taskId}/brief.json?section=summary`,
       `/tasks/${taskId}/change-check.json`,
+      `/tasks/${taskId}/impact.json`,
       `/tasks/${taskId}/verification.json`,
     ];
     for (const route of jsonRoutes) {
@@ -374,6 +375,7 @@ describe("workbench runtime session", () => {
       "wiki_search",
       "task_brief",
       "task_change_check",
+      "task_impact",
       "task_verification",
       "wiki_page",
     ]);

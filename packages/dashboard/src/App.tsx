@@ -650,6 +650,16 @@ function TaskFirstDashboard({
     navigate({ view: "tasks", taskId: route.taskId, section: "planned_changes", findingId }, "task");
   }, [navigate, route.taskId]);
 
+  const selectImpactPath = useCallback((impactPathId: string) => {
+    if (!route.taskId) return;
+    navigate({
+      view: "tasks",
+      taskId: route.taskId,
+      section: "planned_changes",
+      impactPathId,
+    }, "task");
+  }, [navigate, route.taskId]);
+
   const openEvidence = useCallback((findingId: string | undefined, evidenceId: string) => {
     if (!route.taskId) return;
     navigate({
@@ -751,6 +761,9 @@ function TaskFirstDashboard({
         changeCheck={payload?.changeCheck.value}
         changeCheckStatus={payload?.changeCheck.status}
         changeCheckMessage={payload?.changeCheck.message}
+        impact={payload?.impact.value}
+        impactStatus={payload?.impact.status}
+        impactMessage={payload?.impact.message}
         verificationRecords={payload?.verification.value}
         verificationStatus={payload?.verification.status}
         verificationMessage={payload?.verification.message}
@@ -761,6 +774,7 @@ function TaskFirstDashboard({
         onRetry={load}
         onSelectSection={selectSection}
         onSelectFinding={selectFinding}
+        onSelectImpactPath={selectImpactPath}
         onOpenEvidence={openEvidence}
         onOpenEvidenceGraph={(nodeId) => navigateToSurface("graph", route, nodeId)}
         onOpenKnowledge={(nextRoute) => navigateToSurface("wiki", nextRoute)}

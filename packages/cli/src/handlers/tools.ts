@@ -1356,7 +1356,7 @@ function publicDashboardMeta(value: unknown, graphNodeCount: number): Record<str
 
 async function taskDashboardProjection(
   runtime: Awaited<ReturnType<typeof openRuntime>>,
-  input: Extract<WorkbenchDashboardReadRequestV1, { kind: "task_brief" | "task_change_check" | "task_verification" }>,
+  input: Extract<WorkbenchDashboardReadRequestV1, { kind: "task_brief" | "task_change_check" | "task_verification" | "task_impact" }>,
 ): Promise<WorkbenchDashboardReadResultV1> {
   let context: Awaited<ReturnType<typeof readTaskScopedContext>>;
   try {
@@ -1403,7 +1403,8 @@ async function taskDashboardProjection(
     };
   }
 
-  const artifactType = input.kind === "task_change_check" ? "change_check" : "verification";
+  const artifactType = input.kind === "task_change_check" ? "change_check"
+    : input.kind === "task_impact" ? "impact" : "verification";
   const artifact = context.read.artifacts.find((candidate) => candidate.artifactType === artifactType);
   if (artifact === undefined) return dashboardReadFailure("missing");
   return { status: "ready", json: { task: bundle.manifest, artifact, freshness } };
@@ -1560,7 +1561,8 @@ export const createWorkbenchDashboardReaderInternalV1 = (
   if (
     input.kind === "task_brief" ||
     input.kind === "task_change_check" ||
-    input.kind === "task_verification"
+    input.kind === "task_verification" ||
+    input.kind === "task_impact"
   ) return taskDashboardProjection(runtime, input);
 
   if ("indexVersion" in input && input.indexVersion === "pending") {

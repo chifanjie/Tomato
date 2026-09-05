@@ -57,6 +57,50 @@ const legacyPulse = {
 } satisfies RepoPulseSurfaceResponseV1;
 
 describe("loadTaskWorkbench", () => {
+  it("loads a Task-bound Impact artifact and preserves its conclusion and provenance", async () => {
+    const impactArtifact = {
+      schemaVersion: 1,
+      artifactType: "impact",
+      artifactId: "impact-artifact:demo",
+      taskId,
+      repositoryId: task.repositoryId,
+      worktreeId: task.worktreeId,
+      sourceSnapshotId: task.latestSnapshotId,
+      revision: task.revision,
+      producerVersion: task.producerVersion,
+      createdAt: task.updatedAt,
+      contentDigest: `sha256:${"b".repeat(64)}`,
+      payload: {
+        paths: [{
+          id: "impact:demo",
+          sourceNodeId: "function:src/index.ts:entry",
+          targetNodeId: "function:src/index.ts:consumer",
+          classification: "observed",
+          claimIds: ["claim:acceptance"],
+          steps: [{
+            source: "function:src/index.ts:entry",
+            edgeType: "calls",
+            target: "function:src/index.ts:consumer",
+            direction: "downstream",
+            evidenceId: "evidence:source",
+            provenance: [{ filePath: "src/index.ts", lineNumber: 2, confidence: "exact", source: "static-analysis" }],
+          }],
+        }],
+        conclusion: { status: "paths_observed", impactPathIds: ["impact:demo"], boundaryEvidenceIds: [] },
+      },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/impact.json")) return new Response(JSON.stringify({ task, artifact: impactArtifact }), { status: 200 });
+      if (url.includes("/brief.json")) return new Response(JSON.stringify({ task, brief, section: "summary", items: [], pulse: null, freshness: { sourceSnapshotId: task.latestSnapshotId, current: true } }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    const result = await loadTaskWorkbench(route, "token", fetcher);
+    expect(result.status).toBe("ready");
+    expect(result.payload?.impact).toMatchObject({ status: "ready", value: { conclusion: { status: "paths_observed" }, paths: [{ id: "impact:demo", steps: [{ provenance: [{ filePath: "src/index.ts", lineNumber: 2 }] }] }] } });
+    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining(`/tasks/${taskId}/impact.json`), expect.objectContaining({ headers: { accept: "application/json" } }));
+  });
+
   it("loads and validates a persisted Task Brief projection", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       task,

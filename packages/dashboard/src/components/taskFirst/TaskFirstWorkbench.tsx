@@ -4,6 +4,7 @@ import type {
   CandidateLevelV1,
   ChangeCheckV1,
   PlannedChangeExpectationV1,
+  ImpactPayloadV1,
   RepoPulseSurfaceResponseV1,
   RepoPulseStatusV1,
   TaskBriefPageItemV1,
@@ -89,6 +90,9 @@ export interface TaskFirstWorkbenchProps {
   readonly observedSnapshotId?: string;
   /** Persisted read-only Change Intelligence projections. */
   readonly changeCheck?: ChangeCheckV1 | null;
+  readonly impact?: ImpactPayloadV1 | null;
+  readonly impactStatus?: TaskArtifactSurfaceStatus;
+  readonly impactMessage?: string | null;
   readonly changeCheckStatus?: TaskArtifactSurfaceStatus;
   readonly changeCheckMessage?: string | null;
   readonly verificationRecords?: readonly VerificationRecordV1[] | null;
@@ -102,6 +106,7 @@ export interface TaskFirstWorkbenchProps {
   readonly onRetry?: () => void;
   readonly onSelectSection?: (section: TaskFirstSection) => void;
   readonly onSelectFinding?: (findingId: string) => void;
+  readonly onSelectImpactPath?: (impactPathId: string) => void;
   readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
   readonly onOpenEvidenceGraph?: (nodeId: string) => void;
   readonly onOpenKnowledge?: (route: TaskFirstRoute) => void;
@@ -487,6 +492,91 @@ function VerificationCard({
   );
 }
 
+const IMPACT_CLASSIFICATION_LABELS: Record<ImpactPayloadV1["paths"][number]["classification"], string> = {
+  observed: "已观察",
+  inferred: "推断",
+  unknown_boundary: "未知边界",
+};
+
+function impactConclusionLabel(conclusion: ImpactPayloadV1["conclusion"]): string {
+  if (conclusion === undefined) return "整体影响结论未记录";
+  if (conclusion.status === "paths_observed") return `已观察到 ${conclusion.impactPathIds.length} 条影响路径`;
+  if (conclusion.status === "none_observed") return "未观察到影响路径";
+  if (conclusion.status === "partial") return "影响分析部分完成，存在边界";
+  return "影响分析未知，存在边界";
+}
+
+function ImpactCard({
+  impact,
+  status = "missing",
+  message,
+  selectedImpactPathId,
+  onSelectImpactPath,
+  onOpenEvidence,
+  onOpenGraph,
+}: {
+  readonly impact?: ImpactPayloadV1 | null;
+  readonly status?: TaskArtifactSurfaceStatus;
+  readonly message?: string | null;
+  readonly selectedImpactPathId?: string;
+  readonly onSelectImpactPath?: (impactPathId: string) => void;
+  readonly onOpenEvidence?: (evidenceId: string) => void;
+  readonly onOpenGraph?: (nodeId: string) => void;
+}) {
+  const resolvedStatus = impact ? "ready" : status;
+  const paths = impact?.paths ?? [];
+  const conclusion = impact?.conclusion;
+  const conclusionLabel = impactConclusionLabel(conclusion);
+  return (
+    <section className="mb-5 rounded-md border border-border-subtle bg-elevated/20 p-4" data-testid="task-impact-paths">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">影响路径</p>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">只读取任务中已持久化的影响路径；路径不足或未知边界会保留其原始结论。</p>
+        </div>
+        <span className="uc-status-badge" data-severity={artifactSeverity(resolvedStatus)}>{ARTIFACT_STATUS_LABELS[resolvedStatus]}</span>
+      </div>
+      {impact ? (
+        <>
+          <p className="mt-4 rounded border border-border-medium bg-surface/60 px-3 py-2 text-sm text-text-secondary" data-testid="task-impact-conclusion">{conclusionLabel}</p>
+          {paths.length === 0 ? (
+            <p className="mt-4 text-sm leading-6 text-text-muted">{conclusion?.status === "none_observed" ? "没有观察到影响路径。" : "当前没有可展示的影响路径。"}</p>
+          ) : (
+            <ol className="mt-4 space-y-3" aria-label="影响路径列表">
+              {paths.map((path) => {
+                const selected = selectedImpactPathId === path.id;
+                return (
+                  <li key={path.id} className={`rounded border px-3 py-3 ${selected ? "border-accent/45 bg-accent/10" : "border-border-subtle bg-surface/60"}`} data-testid="task-impact-path" data-impact-path-id={path.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <button type="button" onClick={() => onSelectImpactPath?.(path.id)} disabled={!onSelectImpactPath} aria-current={selected ? "true" : undefined} className="min-h-11 min-w-0 flex-1 rounded px-1 py-1 text-left text-sm font-medium text-text-primary disabled:cursor-default">{path.sourceNodeId} → {path.targetNodeId}</button>
+                      <span className="text-xs text-text-muted">{IMPACT_CLASSIFICATION_LABELS[path.classification]} · {path.steps.length} 步</span>
+                    </div>
+                    {path.boundaryReason && <p className="mt-2 text-xs text-warning">边界：{path.boundaryReason}</p>}
+                    {path.truncatedAt && <p className="mt-1 text-xs text-warning">已截断：{path.truncatedAt.reason}{path.truncatedAt.hiddenCount === undefined ? "" : ` · 隐藏 ${path.truncatedAt.hiddenCount}`}</p>}
+                    <ol className="mt-3 space-y-2 border-l border-border-medium pl-3" aria-label={`影响路径 ${path.id} 的步骤`}>
+                      {path.steps.map((step, index) => (
+                        <li key={`${path.id}-${index}`} className="text-xs text-text-secondary">
+                          <div className="flex flex-wrap items-center gap-1"><span className="font-mono text-text-primary">{step.source}</span><span aria-hidden="true">—{step.edgeType}→</span><span className="font-mono text-text-primary">{step.target}</span><span className="text-text-muted">· {step.direction}</span></div>
+                          {step.provenance?.map((provenance, provenanceIndex) => <div key={`${provenance.filePath}:${provenance.lineNumber}:${provenanceIndex}`} className="mt-1 font-mono text-text-muted">{provenance.filePath}:{provenance.lineNumber} · {provenance.confidence}</div>)}
+                          {step.evidenceId && <button type="button" onClick={() => onOpenEvidence?.(step.evidenceId!)} disabled={!onOpenEvidence} className="mt-1 min-h-9 rounded border border-border-medium px-2 py-1 font-mono text-accent disabled:cursor-default">证据 {step.evidenceId}</button>}
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => onOpenGraph?.(path.sourceNodeId)} disabled={!onOpenGraph} className="min-h-9 rounded border border-border-medium px-2 py-1 text-xs text-accent disabled:cursor-default">在图谱中打开起点</button>
+                      <button type="button" onClick={() => onOpenGraph?.(path.targetNodeId)} disabled={!onOpenGraph} className="min-h-9 rounded border border-border-medium px-2 py-1 text-xs text-accent disabled:cursor-default">在图谱中打开终点</button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </>
+      ) : <p className="mt-4 text-sm leading-6 text-text-muted">{message ?? "当前任务没有可用的影响路径。"}</p>}
+    </section>
+  );
+}
+
 function strongBranchLabel(pulse?: RepoPulseSurfaceResponseV1 | null): string | null {
   if (pulse?.viewKind !== "strong_repo_pulse") return null;
   if (pulse.branchState.status === "safe") return pulse.branchState.name;
@@ -582,6 +672,9 @@ export function TaskFirstWorkbench({
   sourceSnapshotId,
   observedSnapshotId,
   changeCheck,
+  impact,
+  impactStatus = "missing",
+  impactMessage,
   changeCheckStatus = "missing",
   changeCheckMessage,
   verificationRecords,
@@ -594,6 +687,7 @@ export function TaskFirstWorkbench({
   onRetry,
   onSelectSection,
   onSelectFinding,
+  onSelectImpactPath,
   onOpenEvidence,
   onOpenEvidenceGraph,
   onOpenKnowledge,
@@ -718,6 +812,15 @@ export function TaskFirstWorkbench({
             selectedEvidenceId={route.evidenceId}
             onSelectFinding={onSelectFinding}
             onOpenEvidence={(findingId, evidenceId) => onOpenEvidence?.(findingId, evidenceId)}
+          />
+          <ImpactCard
+            impact={impact}
+            status={impactStatus}
+            message={impactMessage}
+            selectedImpactPathId={route.impactPathId}
+            onSelectImpactPath={onSelectImpactPath}
+            onOpenEvidence={(evidenceId) => onOpenEvidence?.(undefined, evidenceId)}
+            onOpenGraph={onOpenEvidenceGraph}
           />
           <KnowledgeCandidateReview
             route={route}

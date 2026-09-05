@@ -1,5 +1,6 @@
 import {
   ChangeCheckArtifactV1Schema,
+  ImpactArtifactV1Schema,
   RepoPulseSurfaceResponseV1Schema,
   TaskBriefPageItemV1Schema,
   TaskBriefSectionV1Schema,
@@ -8,6 +9,7 @@ import {
   VerificationArtifactV1Schema,
   type RepoPulseSurfaceResponseV1,
   type ChangeCheckV1,
+  type ImpactPayloadV1,
   type TaskBriefPageItemV1,
   type TaskBriefSectionV1,
   type TaskBriefV1,
@@ -111,6 +113,7 @@ export interface TaskWorkbenchPayload {
     readonly current: boolean;
   };
   readonly changeCheck: TaskArtifactLoadResult<ChangeCheckV1>;
+  readonly impact: TaskArtifactLoadResult<ImpactPayloadV1>;
   readonly verification: TaskArtifactLoadResult<readonly VerificationRecordV1[]>;
   readonly evidence: TaskArtifactLoadResult<TaskEvidenceProjection>;
 }
@@ -137,7 +140,7 @@ function endpointUrl(route: WorkbenchRouteV1, token: string): string | null {
 function artifactEndpointUrl(
   route: WorkbenchRouteV1,
   token: string,
-  kind: "change-check" | "verification",
+  kind: "change-check" | "impact" | "verification",
 ): string | null {
   if (!route.taskId) return null;
   const base = import.meta.env.BASE_URL || "/";
@@ -184,10 +187,11 @@ function responseMessage(status: TaskWorkbenchLoadStatus): string {
 }
 
 function artifactResponseMessage(
-  kind: "change-check" | "verification",
+  kind: "change-check" | "impact" | "verification",
   status: TaskArtifactLoadStatus,
 ): string {
-  const label = kind === "change-check" ? "Change Check / 变更检查" : "Verification / 验证记录";
+  const label = kind === "change-check" ? "Change Check / 变更检查"
+    : kind === "impact" ? "Impact / 影响路径" : "Verification / 验证记录";
   switch (status) {
     case "missing":
       return `No persisted ${label} was found for this Task. / 当前任务尚未发布${label}。`;
@@ -385,6 +389,7 @@ function parsePayload(value: unknown): TaskWorkbenchPayload | null {
       current: freshnessRecord.current,
     },
     changeCheck: { status: "missing", message: artifactResponseMessage("change-check", "missing") },
+    impact: { status: "missing", message: artifactResponseMessage("impact", "missing") },
     verification: { status: "missing", message: artifactResponseMessage("verification", "missing") },
     evidence: { status: "missing", message: "No Task Evidence is selected. / 尚未选择任务证据。" },
   };
@@ -501,7 +506,7 @@ async function loadTaskEvidence(
 
 function parseArtifact<T>(
   value: unknown,
-  kind: "change-check" | "verification",
+  kind: "change-check" | "impact" | "verification",
   taskId: string,
 ): T | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -511,6 +516,10 @@ function parseArtifact<T>(
     const result = ChangeCheckArtifactV1Schema.safeParse(artifactValue);
     return result.success && result.data.taskId === taskId ? result.data.payload as T : null;
   }
+  if (kind === "impact") {
+    const result = ImpactArtifactV1Schema.safeParse(artifactValue);
+    return result.success && result.data.taskId === taskId ? result.data.payload as T : null;
+  }
   const result = VerificationArtifactV1Schema.safeParse(artifactValue);
   return result.success && result.data.taskId === taskId ? result.data.payload.records as T : null;
 }
@@ -518,7 +527,7 @@ function parseArtifact<T>(
 async function loadTaskArtifact<T>(
   route: WorkbenchRouteV1,
   accessToken: string,
-  kind: "change-check" | "verification",
+  kind: "change-check" | "impact" | "verification",
   fetcher: Fetcher,
 ): Promise<TaskArtifactLoadResult<T>> {
   const url = artifactEndpointUrl(route, accessToken, kind);
@@ -575,12 +584,13 @@ export async function loadTaskWorkbench(
     const payload = parsePayload(value);
     if (payload === null) return { status: "invalid", message: responseMessage("invalid") };
 
-    const [changeCheck, verification, evidence] = await Promise.all([
+    const [changeCheck, impact, verification, evidence] = await Promise.all([
       loadTaskArtifact<ChangeCheckV1>(route, accessToken, "change-check", fetcher),
+      loadTaskArtifact<ImpactPayloadV1>(route, accessToken, "impact", fetcher),
       loadTaskArtifact<readonly VerificationRecordV1[]>(route, accessToken, "verification", fetcher),
       loadTaskEvidence(route, accessToken, fetcher),
     ]);
-    if (changeCheck.status === "forbidden" || verification.status === "forbidden" || evidence.status === "forbidden") {
+    if (changeCheck.status === "forbidden" || impact.status === "forbidden" || verification.status === "forbidden" || evidence.status === "forbidden") {
       return { status: "forbidden", message: "The local Task session is no longer valid. / 本地任务会话已失效。" };
     }
     return {
@@ -588,6 +598,7 @@ export async function loadTaskWorkbench(
       payload: {
         ...payload,
         changeCheck,
+        impact,
         verification,
         evidence,
       },

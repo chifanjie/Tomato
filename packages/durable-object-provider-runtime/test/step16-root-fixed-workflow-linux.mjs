@@ -117,6 +117,16 @@ export async function readStep16RootHostProfileV1(path) {
   return profile;
 }
 
+export function requireStep16CodexLoginStatusV1({ stdout, stderr }) {
+  assert(typeof stdout === "string" && typeof stderr === "string", "Codex login status is invalid");
+  // Codex writes login status to stderr; preserve both streams so an explicit
+  // rejection cannot be hidden by a success line on the other stream.
+  const normalized = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+  assert(normalized.length !== 0, "Codex login status is empty");
+  assert(!/^Not logged in$/mu.test(normalized) && /^Logged in(?: using .+)?$/mu.test(normalized), "Codex is not logged in");
+  return true;
+}
+
 // Configuration and login checks only: never invokes a model or a Task tool.
 export async function step16RootPreflightV1(fixture, environment = process.env) {
   const blocked = (blocker) => ({ evidence: { schemaVersion: 1, profile: "step16_root_supervised_fixed_workflow_v1", status: "blocked", countsTowardG2OrG3: false, blocker } });
@@ -142,7 +152,8 @@ export async function step16RootPreflightV1(fixture, environment = process.env) 
         uid: fixture.callerUid, gid: fixture.callerGid, env: executor.env, cwd: fixture.step16RepositoryRoot,
         encoding: "utf8", timeout: 20_000, maxBuffer: 1024 * 1024,
       });
-      assert(host !== "claude" || JSON.parse(status.stdout).loggedIn === true, "Claude is not logged in");
+      if (host === "codex") requireStep16CodexLoginStatusV1(status);
+      else assert(JSON.parse(status.stdout).loggedIn === true, "Claude is not logged in");
     } catch { return blocked(`${host}_cli_or_login_unavailable`); }
   }
   return { profile };

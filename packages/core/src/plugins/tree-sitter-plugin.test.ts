@@ -1,5 +1,25 @@
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeAll } from "vitest";
 import { TreeSitterPlugin } from "./tree-sitter-plugin.js";
+import { goConfig, typescriptConfig } from "../languages/configs/index.js";
+
+const require = createRequire(import.meta.url);
+
+function fixedWasmAssets(): {
+  readonly runtime: Uint8Array;
+  readonly languages: Readonly<Record<string, Uint8Array>>;
+} {
+  const bytes = (asset: string): Uint8Array => new Uint8Array(readFileSync(require.resolve(asset)));
+  return {
+    runtime: bytes("web-tree-sitter/web-tree-sitter.wasm"),
+    languages: {
+      typescript: bytes("tree-sitter-typescript/tree-sitter-typescript.wasm"),
+      tsx: bytes("tree-sitter-typescript/tree-sitter-tsx.wasm"),
+      go: bytes("tree-sitter-go/tree-sitter-go.wasm"),
+    },
+  };
+}
 
 describe("TreeSitterPlugin", () => {
   let plugin: TreeSitterPlugin;
@@ -7,6 +27,46 @@ describe("TreeSitterPlugin", () => {
   beforeAll(async () => {
     plugin = new TreeSitterPlugin();
     await plugin.init();
+  });
+
+  it("initializes TypeScript and Go from explicit fixed wasm bytes", async () => {
+    const fixed = new TreeSitterPlugin(
+      [typescriptConfig, goConfig],
+      undefined,
+      { wasm: fixedWasmAssets() },
+    );
+    await fixed.init();
+
+    const typescript = fixed.analyzeFile(
+      "src/index.ts",
+      "import { helper } from './helper';\nexport function run(): string { return helper(); }",
+    );
+    expect(typescript.functions.map((fn) => fn.name)).toContain("run");
+    expect(typescript.imports.map((entry) => entry.source)).toContain("./helper");
+
+    const go = fixed.analyzeFile(
+      "cmd/main.go",
+      'package main\n\nimport "fmt"\n\nfunc Run() { fmt.Println("ok") }',
+    );
+    expect(go.functions.map((fn) => fn.name)).toContain("Run");
+    expect(go.imports.map((entry) => entry.source)).toContain("fmt");
+  });
+
+  it("rejects missing fixed grammar assets instead of degrading silently", async () => {
+    const fixed = new TreeSitterPlugin(
+      [typescriptConfig, goConfig],
+      undefined,
+      {
+        wasm: {
+          ...fixedWasmAssets(),
+          languages: {
+            typescript: fixedWasmAssets().languages.typescript!,
+            tsx: fixedWasmAssets().languages.tsx!,
+          },
+        },
+      },
+    );
+    await expect(fixed.init()).rejects.toThrow(/go/u);
   });
 
   describe("analyzeFile", () => {

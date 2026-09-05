@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 import { copyCurrentNativeKernelPeerAssetV1 } from "./native-kernel-peer-asset.mjs";
+import { encodeRepositoryParserAssetsV1 } from "./parser-assets.mjs";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -75,6 +76,9 @@ const bundleOptions = parseArguments(process.argv.slice(2));
 const output = bundleOptions.output;
 const bundleProfile = bundleProfiles[bundleOptions.bundleProfile];
 if (bundleProfile === undefined) throw new Error("Unknown bundle profile.");
+const { notices: parserNotices, ...parserAssets } = bundleOptions.bundleProfile === "full"
+  ? await encodeRepositoryParserAssetsV1()
+  : { notices: "" };
 
 await mkdir(path.dirname(output), { recursive: true });
 const result = await build({
@@ -96,11 +100,15 @@ const result = await build({
     __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__: JSON.stringify(
       bundleProfile.toolSurfaceProfile,
     ),
+    __UNDERSTAND_CODE_PARSER_ASSETS_V1__: bundleOptions.bundleProfile === "full"
+      ? JSON.stringify(parserAssets)
+      : "undefined",
   },
   banner: {
     js: [
       "#!/usr/bin/env node",
       `/* understand-code-release-v1 product=understand-code version=${bundleOptions.productVersion} */`,
+      ...(parserNotices === "" ? [] : [`/* Fixed parser third-party notices\n${parserNotices.replaceAll("*/", "* /")}\n*/`]),
       'import { createRequire as __understandCreateRequire } from "node:module";',
       "const require = __understandCreateRequire(import.meta.url);",
     ].join("\n"),

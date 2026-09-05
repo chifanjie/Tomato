@@ -95,6 +95,43 @@ describe("repository index strong preflight", () => {
     await expectNoManagedWrite(root);
   });
 
+  it("stages deterministic TS and Go structure with actual local import edges", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src/main.ts"),
+      'import { twice } from "./helper.js";\nexport function main(value: number): number { return twice(value); }\n');
+    await writeFile(path.join(root, "src/helper.ts"),
+      'export function twice(value: number): number { return value * 2; }\nconst example = "function fake() {}";\n');
+    await writeFile(path.join(root, "src/worker.go"),
+      'package worker\nimport "fmt"\ntype Config struct { Count int }\nfunc Calculate(value int) int { fmt.Println(value); return value + 1 }\n');
+    const snapshot = {
+      schemaVersion: 1, snapshotId: "snapshot:parser-fixture", repositoryId: "repository:fixture",
+      worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
+      createdAt: "2026-09-05T04:00:00.000Z",
+    } as any;
+    const input = { canonicalRoot: root, canonicalInstallationRoot: installationRoot, snapshot };
+    const first = await buildRepositoryIndex({ ...input, operationId: "4".repeat(32) });
+    const second = await buildRepositoryIndex({ ...input, operationId: "5".repeat(32) });
+    expect(second.graphDigest).toBe(first.graphDigest);
+    expect(second.generation).toEqual(first.generation);
+    expect(first.graph.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "function", name: "main", filePath: "src/main.ts" }),
+      expect.objectContaining({ type: "function", name: "twice", filePath: "src/helper.ts" }),
+      expect.objectContaining({ type: "function", name: "Calculate", filePath: "src/worker.go" }),
+      expect.objectContaining({ type: "class", name: "Config", filePath: "src/worker.go" }),
+    ]));
+    expect(first.graph.nodes.some((node) => node.name === "fake")).toBe(false);
+    expect(first.graph.edges).toContainEqual(expect.objectContaining({
+      type: "imports", source: "file:src/main.ts", target: "file:src/helper.ts",
+    }));
+    const fingerprints = JSON.parse((await readFile(path.join(installationRoot,
+      ".refresh-index-staging-v1", "4".repeat(32), "fingerprints.json"))).toString("utf8"));
+    expect(fingerprints.files["src/worker.go"].hasStructuralAnalysis).toBe(true);
+    expect(fingerprints.files["src/worker.go"].imports).not.toHaveLength(0);
+    await expectNoManagedWrite(root);
+  });
+
   it("stages outside the repository and publishes only on an explicit commit", async () => {
     const root = await repositoryRoot();
     const installationRoot = await repositoryRoot();

@@ -266,6 +266,26 @@ describe("Step16 fixed root workflow recipe", () => {
     expect(await recipe.step16RootPreflightV1({}, {})).toMatchObject({ evidence: { status: "blocked", blocker: "root_host_profile_unavailable", countsTowardG2OrG3: false } });
   });
 
+  it.each([
+    { stdout: "", stderr: "", accepted: false },
+    { stdout: "Not logged in\n", stderr: "", accepted: false },
+    { stdout: "", stderr: "Not logged in\n", accepted: false },
+    { stdout: "Logged in using ChatGPT\n", stderr: "", accepted: true },
+    { stdout: "", stderr: "Logged in using ChatGPT\n", accepted: true },
+    { stdout: "Logged in using ChatGPT\n", stderr: "Not logged in\n", accepted: false },
+    { stdout: "Not logged in\n", stderr: "Logged in using ChatGPT\n", accepted: false },
+    { stdout: "", stderr: "unknown status\n", accepted: false },
+  ])("checks both Codex login status streams: %j", async ({ stdout, stderr, accepted }) => {
+    const { requireStep16CodexLoginStatusV1 } = await fixedRecipeV1();
+    // A successful process exit alone is insufficient. Exercise the same
+    // execFile stream capture used by preflight without authenticating a Host.
+    const status = await execFileAsync(process.execPath, ["-e",
+      "process.stdout.write(process.argv[1]); process.stderr.write(process.argv[2]);",
+      stdout, stderr], { encoding: "utf8", timeout: 5_000 });
+    if (accepted) expect(requireStep16CodexLoginStatusV1(status)).toBe(true);
+    else expect(() => requireStep16CodexLoginStatusV1(status)).toThrow();
+  });
+
   it("reads future Task/evidence/Snapshot arguments from real committed artifacts and rejects changed bytes", async () => {
     const recipe = await fixedRecipeV1();
     const { ArtifactStore } = await import("../../artifact-store/dist/index.js");

@@ -27,7 +27,11 @@ const EXTERNAL_COMMAND_TIMEOUT_MS = 30_000;
 const EXPECTED_CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
-const MAX_PACKED_TARBALL_BYTES = 4 * 1024 * 1024;
+// The production CLI now embeds the fixed, compressed Tree-sitter runtime and
+// grammar inventory so an installed Host never resolves mutable WASM files.
+// Keep the per-file, plugin-total, and expanded archive bounds unchanged; the
+// aggregate tgz budget covers the resulting duplicated Host plugin payloads.
+const MAX_PACKED_TARBALL_BYTES = 8 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;

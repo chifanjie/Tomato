@@ -17,6 +17,23 @@ type TreeSitterParser = import("web-tree-sitter").Parser;
 type TreeSitterLanguage = import("web-tree-sitter").Language;
 
 /**
+ * Fixed, caller-owned Tree-sitter runtime and grammar assets.
+ *
+ * Production bundles should pass this value instead of relying on package
+ * resolution. The keys in `languages` are language ids (plus `tsx` for the
+ * TypeScript JSX grammar). The bytes are copied by the caller from the
+ * versioned release assets and are never selected from the environment.
+ */
+export interface TreeSitterWasmAssets {
+  readonly runtime: Uint8Array;
+  readonly languages: Readonly<Record<string, Uint8Array>>;
+}
+
+export interface TreeSitterPluginOptions {
+  readonly wasm?: TreeSitterWasmAssets;
+}
+
+/**
  * Config-driven tree-sitter plugin.
  *
  * Accepts LanguageConfig objects to determine which languages to support
@@ -44,6 +61,7 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
 
   // Language-specific extractors (keyed by language id)
   private extractors = new Map<string, LanguageExtractor>();
+  private readonly wasmAssets?: TreeSitterWasmAssets;
 
   /**
    * Create a TreeSitterPlugin with the given language configs.
@@ -53,7 +71,12 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
    * @param configs Language configurations to load
    * @param extractors Optional language extractors; if none provided, registers all builtin extractors
    */
-  constructor(configs?: LanguageConfig[], extractors?: LanguageExtractor[]) {
+  constructor(
+    configs?: LanguageConfig[],
+    extractors?: LanguageExtractor[],
+    options?: TreeSitterPluginOptions,
+  ) {
+    this.wasmAssets = options?.wasm;
     if (configs) {
       this.configs = configs.filter((c) => c.treeSitter);
     } else {
@@ -128,7 +151,14 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
     const ParserCls = mod.Parser;
     const LanguageCls = mod.Language;
 
-    await ParserCls.init();
+    if (this.wasmAssets !== undefined) {
+      if (!(this.wasmAssets.runtime instanceof Uint8Array) || this.wasmAssets.runtime.byteLength === 0) {
+        throw new Error("tree-sitter: fixed runtime wasm asset is empty or invalid");
+      }
+      await ParserCls.init({ wasmBinary: this.wasmAssets.runtime });
+    } else {
+      await ParserCls.init();
+    }
     this._ParserClass = ParserCls as unknown as new () => TreeSitterParser;
 
     if (this.configs.length > 0) {
@@ -140,25 +170,31 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
 
         const loadGrammar = async () => {
           try {
-            const wasmPath = require.resolve(
+            const wasm = this.resolveWasmAsset(
+              config.id,
               `${config.treeSitter!.wasmPackage}/${config.treeSitter!.wasmFile}`,
             );
-            const lang = await LanguageCls.load(wasmPath);
+            const lang = await LanguageCls.load(wasm);
             this._languages.set(config.id, lang);
 
             // Special handling for TypeScript: also load TSX grammar
             if (config.id === "typescript") {
               try {
-                const tsxWasm = require.resolve(
+                const tsxWasm = this.resolveWasmAsset(
+                  "tsx",
                   `${config.treeSitter!.wasmPackage}/tree-sitter-tsx.wasm`,
                 );
                 const tsxLang = await LanguageCls.load(tsxWasm);
                 this._languages.set("tsx", tsxLang);
-              } catch {
+              } catch (error) {
+                if (this.wasmAssets !== undefined) throw error;
                 // TSX grammar not available; .tsx files will fall back to TS grammar
               }
             }
-          } catch {
+          } catch (error) {
+            if (this.wasmAssets !== undefined) {
+              throw new Error(`tree-sitter: fixed grammar asset failed to load for ${config.id}`, { cause: error });
+            }
             // Grammar not available — this language will be skipped gracefully
             console.debug?.(
               `tree-sitter: Could not load grammar for ${config.id}, skipping structural analysis`,
@@ -172,13 +208,16 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
       await Promise.all(loadPromises);
     } else {
       // Legacy fallback: load TS/JS grammars directly
-      const tsWasm = require.resolve(
+      const tsWasm = this.resolveWasmAsset(
+        "typescript",
         "tree-sitter-typescript/tree-sitter-typescript.wasm",
       );
-      const tsxWasm = require.resolve(
+      const tsxWasm = this.resolveWasmAsset(
+        "tsx",
         "tree-sitter-typescript/tree-sitter-tsx.wasm",
       );
-      const jsWasm = require.resolve(
+      const jsWasm = this.resolveWasmAsset(
+        "javascript",
         "tree-sitter-javascript/tree-sitter-javascript.wasm",
       );
 
@@ -194,6 +233,17 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
     }
 
     this._initialized = true;
+  }
+
+  private resolveWasmAsset(languageId: string, packageAsset: string): string | Uint8Array {
+    if (this.wasmAssets !== undefined) {
+      const asset = this.wasmAssets.languages[languageId];
+      if (!(asset instanceof Uint8Array) || asset.byteLength === 0) {
+        throw new Error(`tree-sitter: fixed grammar wasm asset is missing or invalid for ${languageId}`);
+      }
+      return asset;
+    }
+    return require.resolve(packageAsset);
   }
 
   /**

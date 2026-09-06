@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  taskFirstEvidenceRoute,
   taskFirstLocationStateFromLocation,
   taskFirstLocationUrl,
   taskFirstRouteFromLocation,
@@ -76,6 +77,25 @@ describe("taskFirstRouteFromLocation", () => {
       surface: "task",
     }, { workbenchCookieMode: true })).toBe(
       "/workbench?view=tasks&taskId=task%3Ademo&section=planned_changes&findingId=finding%3Aone",
+    );
+  });
+
+  it("keeps the selected Impact Path when opening its evidence", () => {
+    const route = taskFirstEvidenceRoute({
+      view: "tasks",
+      taskId: "task:demo",
+      section: "planned_changes",
+      impactPathId: "impact:one",
+    }, "evidence:one");
+    expect(route).toEqual({
+      view: "tasks",
+      taskId: "task:demo",
+      section: "planned_changes",
+      impactPathId: "impact:one",
+      evidenceId: "evidence:one",
+    });
+    expect(taskFirstLocationUrl({ route, surface: "task" })).toBe(
+      "/tasks/task%3Ademo?section=planned_changes&evidenceId=evidence%3Aone&impactPathId=impact%3Aone",
     );
   });
 

@@ -106,6 +106,22 @@ export function taskFirstSectionPath(section: string): string {
   return TASK_SECTION_ALIASES[section] ?? section;
 }
 
+/** Build a Task route for evidence opened from an Impact Path step. */
+export function taskFirstEvidenceRoute(
+  route: TaskFirstRoute,
+  evidenceId: string,
+  findingId?: string,
+): TaskFirstRoute {
+  return {
+    view: "tasks",
+    taskId: route.taskId,
+    section: "planned_changes",
+    ...(findingId === undefined ? {} : { findingId }),
+    ...(route.impactPathId === undefined ? {} : { impactPathId: route.impactPathId }),
+    evidenceId,
+  };
+}
+
 export function taskFirstLocationUrl(
   state: TaskFirstLocationState,
   options: { readonly workbenchCookieMode?: boolean } = {},

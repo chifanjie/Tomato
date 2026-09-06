@@ -24,6 +24,7 @@ import TaskFirstWorkbench, {
   type TaskFirstSection,
 } from "./components/taskFirst/TaskFirstWorkbench";
 import {
+  taskFirstEvidenceRoute,
   taskFirstLocationStateFromLocation,
   taskFirstLocationUrl,
   taskFirstSectionPath,
@@ -662,14 +663,8 @@ function TaskFirstDashboard({
 
   const openEvidence = useCallback((findingId: string | undefined, evidenceId: string) => {
     if (!route.taskId) return;
-    navigate({
-      view: "tasks",
-      taskId: route.taskId,
-      section: "planned_changes",
-      ...(findingId ? { findingId } : {}),
-      evidenceId,
-    }, "task");
-  }, [navigate, route.taskId]);
+    navigate(taskFirstEvidenceRoute(route, evidenceId, findingId), "task");
+  }, [navigate, route]);
 
   const result = loadState.result;
   const payload = result?.status === "ready" ? result.payload : undefined;
@@ -700,8 +695,9 @@ function TaskFirstDashboard({
       taskId: route.taskId,
       section: "planned_changes",
       ...(route.findingId ? { findingId: route.findingId } : {}),
+      ...(route.impactPathId ? { impactPathId: route.impactPathId } : {}),
     }, "task");
-  }, [navigate, route.findingId, route.taskId]);
+  }, [navigate, route.findingId, route.impactPathId, route.taskId]);
 
   const selectProductSurface = useCallback((nextSurface: ProductSurface) => {
     if (nextSurface === "tasks") return;

@@ -1,0 +1,884 @@
+{
+  "schemaVersion": 1,
+  "profile": "alpha_a_task_review_draft_v1",
+  "corpusId": "step16-alpha-gold-v1",
+  "status": "draft_pending_review",
+  "source": {
+    "document": "docs/research/2026-09-02-alpha-a-gold-task-draft.md",
+    "revision": "34da354968a6071d914e4e4a4fca738e6c2d8a29",
+    "revisionPolicy": "repository_commit_pin",
+    "taskCount": 18
+  },
+  "alphaB": {
+    "status": "not_provided",
+    "reason": "explicit_repository_owner_authorization_required",
+    "sourcePolicy": "do_not_copy_private_source_evidence"
+  },
+  "reviewGate": {
+    "status": "pending",
+    "reviewerIds": [],
+    "note": "Product/QA must confirm or amend each candidate before versioning; this file is not Gold."
+  },
+  "tasks": [
+    {
+      "slotId": "alpha-a-slot-01",
+      "corpus": "alpha-a",
+      "ordinal": 1,
+      "title": "A01 指纹变化与更新决策保持同一结构语义",
+      "intent": "函数/类签名、导出状态、导入集合或实现体变化时，compareFingerprints 与 classifyUpdate 应给出一致的变化级别和重分析范围。",
+      "targetPaths": [
+        "packages/core/src/fingerprint.ts",
+        "packages/core/src/change-classifier.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "fingerprint.ts:79-251 extractFileFingerprint/compareFingerprints",
+        "change-classifier.ts:21-91 classifyUpdate"
+      ],
+      "sourcePaths": [
+        "packages/core/src/fingerprint.ts",
+        "packages/core/src/change-classifier.ts",
+        "packages/core/src/__tests__/fingerprint.test.ts",
+        "packages/core/src/__tests__/change-classifier.test.ts"
+      ],
+      "expectedOutcomes": [
+        "同一 old/new fixture 的级别、动作和 filesToReanalyze 完全一致",
+        "结构变化包含可解释且稳定的 detail"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/fingerprint.test.ts",
+        "packages/core/src/__tests__/change-classifier.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/fingerprint.test.ts",
+        "pnpm --filter @understand-code/core test src/__tests__/change-classifier.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-02",
+      "corpus": "alpha-a",
+      "ordinal": 2,
+      "title": "A02 增量扫描处理删除、新增和 Git 变更列表",
+      "intent": "删除文件、新文件、不可分析文件及 Git diff 错误/空 diff 在增量路径上产生明确、保守且可审计的结果。",
+      "targetPaths": [
+        "packages/core/src/fingerprint.ts",
+        "packages/core/src/staleness.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "fingerprint.ts:253-385 buildFingerprintStore/analyzeChanges",
+        "staleness.ts:13-46 getChangedFiles/isStale"
+      ],
+      "sourcePaths": [
+        "packages/core/src/fingerprint.ts",
+        "packages/core/src/staleness.ts",
+        "packages/core/src/__tests__/fingerprint.test.ts",
+        "packages/core/src/__tests__/staleness.test.ts"
+      ],
+      "expectedOutcomes": [
+        "newFiles/deletedFiles/structurallyChangedFiles 分类稳定且保留路径顺序",
+        "Git 错误不被静默改写为干净",
+        "范围外 docs/unplanned.md 变体被显式识别"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/fingerprint.test.ts",
+        "packages/core/src/__tests__/staleness.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/fingerprint.test.ts",
+        "pnpm --filter @understand-code/core test src/__tests__/staleness.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-03",
+      "corpus": "alpha-a",
+      "ordinal": 3,
+      "title": "A03 修正目录结构变化的边界判定",
+      "intent": "只有顶层目录确实新增或完全消失时触发 ARCHITECTURE_UPDATE；同目录新增文件保持局部更新，空路径和 Windows 分隔符有明确结果。",
+      "targetPaths": [
+        "packages/core/src/change-classifier.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact",
+        "unplanned_change"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "change-classifier.ts:21-130 classifyUpdate/detectDirectoryChanges/topDirectory"
+      ],
+      "sourcePaths": [
+        "packages/core/src/change-classifier.ts",
+        "packages/core/src/__tests__/change-classifier.test.ts"
+      ],
+      "expectedOutcomes": [
+        "同目录新增、真正新目录、删除目录最后文件和兄弟文件四组结果符合边界规则",
+        "unplanned 文件不误触发架构更新"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/change-classifier.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/change-classifier.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-04",
+      "corpus": "alpha-a",
+      "ordinal": 4,
+      "title": "A04 增量图谱合并保持节点、边和提交元数据一致",
+      "intent": "变更文件旧节点及关联边原子替换，未变更拓扑保留；合并和 save/load 往返不产生悬空边、重复节点或隐私化路径漂移。",
+      "targetPaths": [
+        "packages/core/src/staleness.ts",
+        "packages/core/src/persistence/index.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "staleness.ts:54-90 mergeGraphUpdate",
+        "persistence/index.ts:38-105 sanitiseFilePaths/saveGraph/loadGraph",
+        "types.ts:1-80"
+      ],
+      "sourcePaths": [
+        "packages/core/src/staleness.ts",
+        "packages/core/src/persistence/index.ts",
+        "packages/core/src/types.ts",
+        "packages/core/src/__tests__/staleness.test.ts",
+        "packages/core/src/persistence/persistence.test.ts"
+      ],
+      "expectedOutcomes": [
+        "只改 target、删除文件、空变更和跨文件边均保持正确拓扑",
+        "无边指向 removed node，save/load 后除时间字段外等价",
+        "unplanned 路径不会误删节点"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/staleness.test.ts",
+        "packages/core/src/persistence/persistence.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/staleness.test.ts",
+        "pnpm --filter @understand-code/core test src/persistence/persistence.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-05",
+      "corpus": "alpha-a",
+      "ordinal": 5,
+      "title": "A05 规范化节点 ID 保留函数、类和流程步骤身份",
+      "intent": "双前缀、项目名前缀、裸路径和 step-flow 组合生成唯一、幂等的 canonical ID，并正确重写边端点。",
+      "targetPaths": [
+        "packages/core/src/analyzer/normalize-graph.ts",
+        "packages/core/src/analyzer/graph-builder.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "normalize-graph.ts:1-132 normalizeNodeId/stripToValidPrefix",
+        "graph-builder.ts:130-213 addFileWithAnalysis/addCallEdge",
+        "types.ts:1-57"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/normalize-graph.ts",
+        "packages/core/src/analyzer/graph-builder.ts",
+        "packages/core/src/types.ts",
+        "packages/core/src/__tests__/normalize-graph.test.ts",
+        "packages/core/src/analyzer/graph-builder.test.ts"
+      ],
+      "expectedOutcomes": [
+        "normalizeNodeId 二次调用结果相同",
+        "同名 step 由 flow discriminator 区分",
+        "规范化后边端点均指向存在节点"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/normalize-graph.test.ts",
+        "packages/core/src/analyzer/graph-builder.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/normalize-graph.test.ts",
+        "pnpm --filter @understand-code/core test src/analyzer/graph-builder.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-06",
+      "corpus": "alpha-a",
+      "ordinal": 6,
+      "title": "A06 批量输出复杂度、边重写、去重和悬空边统计",
+      "intent": "normalizeBatchOutput 对数值/别名 complexity、重复节点/边及缺失端点给出准确统计且不改变调用方输入。",
+      "targetPaths": [
+        "packages/core/src/analyzer/normalize-graph.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "normalize-graph.ts:113-329 normalizeComplexity/normalizeBatchOutput"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/normalize-graph.ts",
+        "packages/core/src/__tests__/normalize-graph.test.ts"
+      ],
+      "expectedOutcomes": [
+        "numeric 0/11 和别名复杂度被规范化",
+        "重复节点按约定去重，悬空边被丢弃并有 missing reason",
+        "输入数组深拷贝前后相等"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/normalize-graph.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/normalize-graph.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-07",
+      "corpus": "alpha-a",
+      "ordinal": 7,
+      "title": "A07 调用解析在别名、多匹配和 Go 导出名场景下保持 Unknown",
+      "intent": "same-file、imported-package、exact 置信度语义保持不变；别名或多候选不能唯一确定时输出 unresolved，不制造调用边。",
+      "targetPaths": [
+        "packages/core/src/analyzer/call-resolver.ts",
+        "packages/core/src/analyzer/graph-builder.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "call-resolver.ts:30-104 splitSelector/resolveCalls",
+        "graph-builder.ts:192-213 addCallEdge"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/call-resolver.ts",
+        "packages/core/src/analyzer/graph-builder.ts",
+        "packages/core/src/analyzer/call-resolver.test.ts",
+        "packages/core/src/analyzer/graph-builder.test.ts"
+      ],
+      "expectedOutcomes": [
+        "只有唯一 imported/project match 产生边",
+        "命名空间别名、多候选和小写 Go 函数保持 unresolved",
+        "nodes 内容不因解析改变"
+      ],
+      "verificationPaths": [
+        "packages/core/src/analyzer/call-resolver.test.ts",
+        "packages/core/src/analyzer/graph-builder.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/analyzer/call-resolver.test.ts",
+        "pnpm --filter @understand-code/core test src/analyzer/graph-builder.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-08",
+      "corpus": "alpha-a",
+      "ordinal": 8,
+      "title": "A08 GraphBuilder 对重复节点、非代码定义和语言元数据保持稳定",
+      "intent": "构建文件、函数、类及非代码子节点时 ID、contains/imports/calls 边和语言元数据稳定；未知 definition kind 明确降级并保留文件节点。",
+      "targetPaths": [
+        "packages/core/src/analyzer/graph-builder.ts",
+        "packages/core/src/languages/language-registry.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "graph-builder.ts:60-337 GraphBuilder.addFile/addFileWithAnalysis/addNonCodeFileWithAnalysis/addChildNode/mapKindToNodeType/build",
+        "language-registry.ts:9-59 LanguageRegistry.getForFile",
+        "types.ts:1-57"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/graph-builder.ts",
+        "packages/core/src/languages/language-registry.ts",
+        "packages/core/src/types.ts",
+        "packages/core/src/analyzer/graph-builder.test.ts",
+        "packages/core/src/__tests__/language-registry.test.ts"
+      ],
+      "expectedOutcomes": [
+        "重复节点/边只出现一次且 warning 可定位",
+        "未知 kind 降为 concept，文件节点和语言集合保留",
+        "build 排序和元数据稳定"
+      ],
+      "verificationPaths": [
+        "packages/core/src/analyzer/graph-builder.test.ts",
+        "packages/core/src/__tests__/language-registry.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/analyzer/graph-builder.test.ts",
+        "pnpm --filter @understand-code/core test src/__tests__/language-registry.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-09",
+      "corpus": "alpha-a",
+      "ordinal": 9,
+      "title": "A09 Tree-sitter 初始化失败时保持可预期降级",
+      "intent": "配置 grammar、TSX 特殊 grammar、未初始化调用和缺失 WASM 时明确处于初始化/降级状态；上层不把空分析误标为完整结构。",
+      "targetPaths": [
+        "packages/core/src/plugins/tree-sitter-plugin.ts",
+        "packages/core/src/fingerprint.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "tree-sitter-plugin.ts:31-299 constructor/init/languageKeyFromPath/getParser/analyzeFile/extractCallGraph",
+        "languages/language-registry.ts:9-59",
+        "languages/types.ts",
+        "languages/configs/index.ts",
+        "fingerprint.ts:253-296 buildFingerprintStore"
+      ],
+      "sourcePaths": [
+        "packages/core/src/plugins/tree-sitter-plugin.ts",
+        "packages/core/src/plugins/tree-sitter-plugin.test.ts",
+        "packages/core/src/languages/language-registry.ts",
+        "packages/core/src/languages/types.ts",
+        "packages/core/src/languages/configs/index.ts",
+        "packages/core/src/fingerprint.ts",
+        "packages/core/src/__tests__/fingerprint.test.ts"
+      ],
+      "expectedOutcomes": [
+        "grammar 缺失只产生可审计的空/降级分析，不伪装成功",
+        "未初始化同步调用不使用半成品 parser",
+        "tsx、大小写扩展名和资源释放行为稳定"
+      ],
+      "verificationPaths": [
+        "packages/core/src/plugins/tree-sitter-plugin.test.ts",
+        "packages/core/src/__tests__/fingerprint.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/plugins/tree-sitter-plugin.test.ts",
+        "pnpm --filter @understand-code/core test src/__tests__/fingerprint.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-10",
+      "corpus": "alpha-a",
+      "ordinal": 10,
+      "title": "A10 文件名优先于扩展名的语言注册规则",
+      "intent": "Dockerfile、Makefile、docker-compose.yml、.env.* 等特殊文件优先命中 filename config；普通扩展名、大小写和未知路径行为明确。",
+      "targetPaths": [
+        "packages/core/src/languages/language-registry.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "language-registry.ts:9-64 LanguageRegistry.register/getByExtension/getForFile/createDefault",
+        "languages/types.ts"
+      ],
+      "sourcePaths": [
+        "packages/core/src/languages/language-registry.ts",
+        "packages/core/src/languages/types.ts",
+        "packages/core/src/__tests__/language-registry.test.ts"
+      ],
+      "expectedOutcomes": [
+        "filename lookup 优先于 extension fallback 且返回单一 config",
+        "大小写及 filename/extension 冲突行为由测试固定",
+        "调用方数组不被突变"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/language-registry.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/language-registry.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-11",
+      "corpus": "alpha-a",
+      "ordinal": 11,
+      "title": "A11 FrameworkRegistry manifest 路径与重复检测",
+      "intent": "从根目录或嵌套 manifest 识别框架，关键词匹配大小写不敏感，同框架只返回一次且不泄露内部数组。",
+      "targetPaths": [
+        "packages/core/src/languages/framework-registry.ts",
+        "packages/core/src/languages/frameworks/index.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "framework-registry.ts:9-86 FrameworkRegistry.register/detectFrameworks",
+        "frameworks/index.ts"
+      ],
+      "sourcePaths": [
+        "packages/core/src/languages/framework-registry.ts",
+        "packages/core/src/languages/frameworks/index.ts",
+        "packages/core/src/__tests__/framework-registry.test.ts"
+      ],
+      "expectedOutcomes": [
+        "src/package.json 等嵌套 manifest 命中同一注册框架时只输出一次",
+        "输出顺序稳定，空 manifest 不误报"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/framework-registry.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/framework-registry.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-12",
+      "corpus": "alpha-a",
+      "ordinal": 12,
+      "title": "A12 LLM 文件/项目响应解析只接受可审计结构",
+      "intent": "prompt 与 parser 对 markdown fence、前后解释文本、缺字段、非法 complexity 和错误 JSON 处理一致；无效内容安全返回 null。",
+      "targetPaths": [
+        "packages/core/src/analyzer/llm-analyzer.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "llm-analyzer.ts:24-202 buildFileAnalysisPrompt/buildProjectSummaryPrompt/extractJson/parseFileAnalysisResponse/parseProjectSummaryResponse"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/llm-analyzer.ts",
+        "packages/core/src/analyzer/llm-analyzer.test.ts"
+      ],
+      "expectedOutcomes": [
+        "仅合法可审计结构产生 LLMFileAnalysis/LLMProjectSummary",
+        "null、数组、多个对象、非法复杂度不会抛错或伪造摘要"
+      ],
+      "verificationPaths": [
+        "packages/core/src/analyzer/llm-analyzer.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/analyzer/llm-analyzer.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-13",
+      "corpus": "alpha-a",
+      "ordinal": 13,
+      "title": "A13 启发式/LLM Layer 分配保持路径与 Other 语义",
+      "intent": "统一 Unix/Windows 分隔符、复数目录、LLM pattern 前缀和未分配文件的 Core/Other 行为；仅 file 节点进入 layer。",
+      "targetPaths": [
+        "packages/core/src/analyzer/layer-detector.ts",
+        "packages/core/src/analyzer/tour-generator.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "layer-detector.ts:128-355 matchFileToLayer/detectLayers/parseLayerDetectionResponse/applyLLMLayers",
+        "tour-generator.ts:187-330 generateHeuristicTour",
+        "types.ts:57-80"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/layer-detector.ts",
+        "packages/core/src/analyzer/tour-generator.ts",
+        "packages/core/src/types.ts",
+        "packages/core/src/__tests__/layer-detector.test.ts",
+        "packages/core/src/__tests__/tour-generator.test.ts"
+      ],
+      "expectedOutcomes": [
+        "每个 file 至多归属一个 stable layer:<slug>",
+        "Windows/复数路径和无匹配节点进入约定的 Core/Other",
+        "LLM 任意 node ID 不直接写图"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/layer-detector.test.ts",
+        "packages/core/src/__tests__/tour-generator.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/layer-detector.test.ts",
+        "pnpm --filter @understand-code/core test src/__tests__/tour-generator.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-14",
+      "corpus": "alpha-a",
+      "ordinal": 14,
+      "title": "A14 启发式 Tour 在环、孤立节点和多语言下可复现",
+      "intent": "generateHeuristicTour 在 DAG、环、无边图及有/无 layers 时覆盖全部 code/concept 节点，顺序稳定；LLM 非法步骤被过滤。",
+      "targetPaths": [
+        "packages/core/src/analyzer/tour-generator.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "tour-generator.ts:52-366 parseTourGenerationResponse/generateHeuristicTour"
+      ],
+      "sourcePaths": [
+        "packages/core/src/analyzer/tour-generator.ts",
+        "packages/core/src/__tests__/tour-generator.test.ts"
+      ],
+      "expectedOutcomes": [
+        "连续运行两次 JSON 字节相同且所有节点都有 step/order",
+        "环中和孤立 concept 不丢失，非法 LLM steps 不抛错",
+        "zh-CN 与默认语言 fallback 稳定"
+      ],
+      "verificationPaths": [
+        "packages/core/src/__tests__/tour-generator.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/__tests__/tour-generator.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-15",
+      "corpus": "alpha-a",
+      "ordinal": 15,
+      "title": "A15 Wiki V2 产物构建保持证据、覆盖率和排序一致",
+      "intent": "文档、evidence、node documentation、search index、generation report 使用同一输入边界；冲突证据失败关闭，函数/类引用覆盖不能被伪装页面绕过。",
+      "targetPaths": [
+        "packages/core/src/knowledge-base/artifacts.ts",
+        "packages/core/src/knowledge-base/types.ts",
+        "packages/core/src/knowledge-base/wiki-contract.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "knowledge-base/artifacts.ts:103-205,209-486,656-706 resolveEvidence/registerEvidence/buildDocuments/validateInputReferences/buildReferenceCoverage/buildKnowledgeArtifacts",
+        "knowledge-base/types.ts:1-120",
+        "knowledge-base/wiki-contract.ts:211-356,685-752"
+      ],
+      "sourcePaths": [
+        "packages/core/src/knowledge-base/artifacts.ts",
+        "packages/core/src/knowledge-base/types.ts",
+        "packages/core/src/knowledge-base/wiki-contract.ts",
+        "packages/core/src/knowledge-base/__tests__/artifacts.test.ts"
+      ],
+      "expectedOutcomes": [
+        "四件套来自同一边界且按 ID 稳定排序",
+        "冲突/外部 evidence 和缺 route stage 不进入 verified",
+        "函数/类引用 coverage 可追溯"
+      ],
+      "verificationPaths": [
+        "packages/core/src/knowledge-base/__tests__/artifacts.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/artifacts.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-16",
+      "corpus": "alpha-a",
+      "ordinal": 16,
+      "title": "A16 Artifact 验证拒绝路径穿越、元数据漂移和 Markdown 伪占位",
+      "intent": "验证器同时核对四份 JSON 的时间/语言/mode/commit/graph digest、节点映射及 Markdown 安全路径；代码围栏内 TODO 不误判，正文泛化占位失败或 needs-review。",
+      "targetPaths": [
+        "packages/core/src/knowledge-base/artifact-verifier.ts",
+        "packages/core/src/knowledge-base/publication-quality.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "artifact-verifier.ts:48-285 safeMarkdownPath/verifyMetadata/verifyMappings/verifyMarkdown/validateKnowledgeArtifactSetV2",
+        "publication-quality.ts:103-187 maskMarkdownCode"
+      ],
+      "sourcePaths": [
+        "packages/core/src/knowledge-base/artifact-verifier.ts",
+        "packages/core/src/knowledge-base/publication-quality.ts",
+        "packages/core/src/knowledge-base/__tests__/artifact-verifier.test.ts"
+      ],
+      "expectedOutcomes": [
+        "../、绝对路径、NUL 和不同 commit 产物均拒绝",
+        "围栏内 TODO 被遮罩，正文伪占位进入错误/needs-review",
+        "错误集合可审计"
+      ],
+      "verificationPaths": [
+        "packages/core/src/knowledge-base/__tests__/artifact-verifier.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/artifact-verifier.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-17",
+      "corpus": "alpha-a",
+      "ordinal": 17,
+      "title": "A17 Writer merge 严格执行任务归属、来源证据和批次重试",
+      "intent": "writer 输出必须归属于计划任务和正确 graph node；重复文档/path、缺 source task/symbol anchor 和 snapshot 不一致进入 retry，范围外文件不能 accepted。",
+      "targetPaths": [
+        "packages/core/src/knowledge-base/merge.ts",
+        "packages/core/src/knowledge-base/writer-contracts.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "unplanned_change"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "knowledge-base/merge.ts:49-325,481-629 stableSymbolAnchors/validateFileTaskOwnership/validateFileWriterIdentity/validateEvidenceAgainstSource/validateTopicWriterOutputs/mergeKnowledgeBaseWriterOutputs",
+        "knowledge-base/__tests__/writer-contracts.test.ts"
+      ],
+      "sourcePaths": [
+        "packages/core/src/knowledge-base/merge.ts",
+        "packages/core/src/knowledge-base/writer-contracts.ts",
+        "packages/core/src/knowledge-base/__tests__/merge.test.ts",
+        "packages/core/src/knowledge-base/__tests__/writer-contracts.test.ts"
+      ],
+      "expectedOutcomes": [
+        "同批次重复 path/node、缺证据或 unplanned 文件进入 rejected/needs_retry",
+        "accepted 不包含越界文档，retry 记录可恢复"
+      ],
+      "verificationPaths": [
+        "packages/core/src/knowledge-base/__tests__/merge.test.ts",
+        "packages/core/src/knowledge-base/__tests__/writer-contracts.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/merge.test.ts",
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/writer-contracts.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    },
+    {
+      "slotId": "alpha-a-slot-18",
+      "corpus": "alpha-a",
+      "ordinal": 18,
+      "title": "A18 Publication quality 阈值、证据组和中文代码遮罩可解释",
+      "intent": "按文档 role/category 使用必需章节、汉字量、证据数、行锚点和行为边阈值；Markdown fenced/inline code 遮罩不污染正文质量判断。",
+      "targetPaths": [
+        "packages/core/src/knowledge-base/publication-quality.ts",
+        "packages/core/src/knowledge-base/merge.ts"
+      ],
+      "requiredStages": [
+        "repo_pulse",
+        "task_brief",
+        "change_check",
+        "verification"
+      ],
+      "coverageTags": [
+        "cross_file",
+        "test_impact",
+        "known_unknown_boundary"
+      ],
+      "review": {
+        "status": "pending",
+        "reviewerIds": []
+      },
+      "sourceAnchors": [
+        "publication-quality.ts:43-93,103-391 REQUIRED_SECTIONS/maskMarkdownCode/requiredSectionsForDocument/isValidPublicationEvidence/evaluatePublication/evaluatePublicationCorpus",
+        "merge.ts:65-92"
+      ],
+      "sourcePaths": [
+        "packages/core/src/knowledge-base/publication-quality.ts",
+        "packages/core/src/knowledge-base/merge.ts",
+        "packages/core/src/knowledge-base/__tests__/publication-quality.test.ts"
+      ],
+      "expectedOutcomes": [
+        "缺章节/直接证据/行为边时 decision 和 issues 稳定",
+        "代码注释不计入中文正文，失败文档保持 needs-review/retry 而不被降阈值放行"
+      ],
+      "verificationPaths": [
+        "packages/core/src/knowledge-base/__tests__/publication-quality.test.ts",
+        "packages/core/src/knowledge-base/__tests__/merge.test.ts"
+      ],
+      "verificationCommands": [
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/publication-quality.test.ts",
+        "pnpm --filter @understand-code/core test src/knowledge-base/__tests__/merge.test.ts",
+        "pnpm --filter @understand-code/core build"
+      ]
+    }
+  ]
+}

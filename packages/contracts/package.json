@@ -99,6 +99,7 @@
     "test:distribution": "node scripts/test-distribution.mjs",
     "verify:fixtures": "node scripts/generate-fixtures.mjs --check",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
+    "verify:alpha-a-review-draft": "pnpm run build && node scripts/verify-alpha-a-task-review-draft.mjs",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build && pnpm run verify:schemas && pnpm run verify:fixtures && vitest run && pnpm run test:distribution"
   },

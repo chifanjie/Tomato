@@ -911,6 +911,12 @@ export async function buildRepositoryIndex(
         name: fn.name, startLine: fn.lineRange[0], endLine: fn.lineRange[1],
       })),
       callableExports: analysis.callableExports,
+      exportNames: analysis.exports
+        .filter((item) => item.isTypeOnly !== true)
+        .map((item) => item.isDefault ? "default" : item.name),
+      reExports: analysis.reExports?.map((item) => ({
+        ...item, resolvedPaths: resolveImport(source.relativePath, item.source),
+      })),
       ...(source.relativePath.endsWith(".go") && analysis.packageName ? {
         packageName: analysis.packageName,
         packageScope: `${path.posix.dirname(source.relativePath)}\0${analysis.packageName}`,

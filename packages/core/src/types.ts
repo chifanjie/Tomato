@@ -187,9 +187,11 @@ export interface StructuralAnalysis {
   functions: Array<{ name: string; lineRange: [number, number]; params: string[]; returnType?: string; symbolName?: string }>;
   classes: Array<{ name: string; lineRange: [number, number]; methods: string[]; properties: string[] }>;
   imports: Array<{ source: string; specifiers: string[]; lineNumber: number }>;
-  exports: Array<{ name: string; lineNumber: number; isDefault?: boolean }>;
+  exports: Array<{ name: string; lineNumber: number; isDefault?: boolean; isTypeOnly?: boolean }>;
   /** Statically bound local functions exported by this file, excluding re-exports. */
   callableExports?: Array<{ name: string; localName: string }>;
+  /** Static ESM forwarding; `*` names represent a star export or namespace. */
+  reExports?: Array<{ source: string; name: string; importedName: string; lineNumber: number }>;
   /** Go package clause and top-level functions; receiver methods are excluded. */
   packageName?: string;
   callableFunctions?: string[];

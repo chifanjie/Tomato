@@ -25,6 +25,70 @@ function parse(code: string) {
 describe("TypeScriptExtractor static call bindings", () => {
   const extractor = new TypeScriptExtractor();
 
+  it("extracts runtime re-exports, preserving aliases and excluding type-only exports", () => {
+    const { parser, tree, root } = parse([
+      'import { original as imported } from "./impl.js";',
+      'export { imported as forwarded };',
+      'export { original as renamed, default as main } from "./impl.js";',
+      'export * from "./more.js";',
+      'export * as namespace from "./impl.js";',
+      'export type { TypeOnly } from "./types.js";',
+      'export { type TypeOnly, runtime } from "./mixed.js";',
+      'function local() {}',
+      'export type { local };',
+    ].join("\n"));
+    try {
+      expect(root.hasError).toBe(false);
+      const structure = extractor.extractStructure(root);
+      expect(structure.reExports).toEqual([
+        { source: "./impl.js", name: "forwarded", importedName: "original", lineNumber: 2 },
+        { source: "./impl.js", name: "renamed", importedName: "original", lineNumber: 3 },
+        { source: "./impl.js", name: "main", importedName: "default", lineNumber: 3 },
+        { source: "./more.js", name: "*", importedName: "*", lineNumber: 4 },
+        { source: "./impl.js", name: "namespace", importedName: "*", lineNumber: 5 },
+        { source: "./mixed.js", name: "runtime", importedName: "runtime", lineNumber: 7 },
+      ]);
+      expect(structure.imports).toContainEqual({ source: "./more.js", specifiers: [], lineNumber: 4 });
+      expect(structure.callableExports).toEqual([]);
+      expect(structure.exports).toEqual(expect.arrayContaining([
+        { name: "forwarded", lineNumber: 2 },
+        { name: "renamed", lineNumber: 3 },
+        { name: "main", lineNumber: 3 },
+        { name: "TypeOnly", lineNumber: 6, isTypeOnly: true },
+        { name: "runtime", lineNumber: 7 },
+        { name: "local", lineNumber: 9, isTypeOnly: true },
+      ]));
+    } finally { tree.delete(); parser.delete(); }
+  });
+
+  it("records runtime enum and namespace exports so star exports cannot shadow them", () => {
+    const { parser, tree, root } = parse([
+      "export enum helper { A }",
+      "export namespace namespaceHelper { export function run() {} }",
+      "export module moduleHelper { export function run() {} }",
+    ].join("\n"));
+    try {
+      expect(extractor.extractStructure(root).exports).toEqual([
+        { name: "helper", lineNumber: 1 },
+        { name: "namespaceHelper", lineNumber: 2 },
+        { name: "moduleHelper", lineNumber: 3 },
+      ]);
+    } finally { tree.delete(); parser.delete(); }
+  });
+
+  it("keeps a runtime export when a type-only export with the same name appears first", () => {
+    const { parser, tree, root } = parse([
+      'export type { helper } from "./types.js";',
+      "export const helper = () => 1;",
+    ].join("\n"));
+    try {
+      expect(extractor.extractStructure(root).exports).toEqual([
+        { name: "helper", lineNumber: 1, isTypeOnly: true },
+        { name: "helper", lineNumber: 2 },
+      ]);
+    } finally { tree.delete(); parser.delete(); }
+  });
+
   it("binds local functions and named, aliased, default, and namespace imports", () => {
     const { parser, tree, root } = parse(`
       import def, { twice as renamed, plain } from "./helper.js";

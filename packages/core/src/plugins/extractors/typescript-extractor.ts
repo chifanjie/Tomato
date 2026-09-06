@@ -214,12 +214,20 @@ export class TypeScriptExtractor implements LanguageExtractor {
       );
     }
 
+    const context = this.buildBindingContext(rootNode);
+    const reExports = this.extractReExports(rootNode, context);
+    for (const entry of reExports) {
+      if (!imports.some((item) => item.source === entry.source && item.lineNumber === entry.lineNumber)) {
+        imports.push({ source: entry.source, specifiers: [], lineNumber: entry.lineNumber });
+      }
+    }
     return {
       functions,
       classes,
       imports,
       exports,
-      callableExports: this.buildBindingContext(rootNode).callableExports,
+      callableExports: context.callableExports,
+      reExports,
     };
   }
 
@@ -422,7 +430,7 @@ export class TypeScriptExtractor implements LanguageExtractor {
       seenExports.add(name);
     };
     for (const node of topLevelNodes) {
-      if (node.type !== "export_statement") continue;
+      if (node.type !== "export_statement" || node.children.some((child) => child.type === "type")) continue;
       const declaration = node.childForFieldName("declaration");
       if (declaration?.type === "function_declaration") {
         const localName = functionName(declaration);
@@ -437,7 +445,7 @@ export class TypeScriptExtractor implements LanguageExtractor {
       const clause = node.children.find((c) => c.type === "export_clause");
       if (clause && !node.childForFieldName("source") && !node.children.some((c) => c.type === "string")) {
         for (const spec of clause.children) {
-          if (spec.type !== "export_specifier") continue;
+          if (spec.type !== "export_specifier" || spec.children.some((child) => child.type === "type")) continue;
           const local = spec.childForFieldName("name");
           const alias = spec.childForFieldName("alias");
           if (local) addCallableExport((alias ?? local).text, local.text);
@@ -445,6 +453,41 @@ export class TypeScriptExtractor implements LanguageExtractor {
       }
     }
     return { localNames, blockedLocalNames, imports, callableExports };
+  }
+
+  private extractReExports(root: TreeSitterNode, context: BindingContext): NonNullable<StructuralAnalysis["reExports"]> {
+    const entries: NonNullable<StructuralAnalysis["reExports"]> = [];
+    for (const node of root.children) {
+      if (node.type !== "export_statement" || node.children.some((child) => child.type === "type")) continue;
+      const sourceNode = node.childForFieldName("source");
+      const source = sourceNode?.type === "string" ? sourceNode.text.slice(1, -1) : undefined;
+      const lineNumber = node.startPosition.row + 1;
+      const clause = node.children.find((child) => child.type === "export_clause");
+      if (clause) {
+        for (const spec of clause.children) {
+          if (spec.type !== "export_specifier" || spec.children.some((child) => child.type === "type")) continue;
+          const local = spec.childForFieldName("name");
+          const alias = spec.childForFieldName("alias");
+          if (!local || (local.type !== "identifier" && local.type !== "default")) continue;
+          const name = (alias ?? local).text;
+          if (source) entries.push({ source, name, importedName: local.text, lineNumber });
+          else {
+            const imported = context.imports.get(local.text);
+            if (imported && !context.blockedLocalNames.has(local.text)) {
+              entries.push({ source: imported.source, name, importedName: imported.name, lineNumber });
+            }
+          }
+        }
+      } else if (source) {
+        const namespace = node.children.find((child) => child.type === "namespace_export");
+        const name = namespace?.children.find((child) => child.type === "identifier")?.text;
+        if (name) entries.push({ source, name, importedName: "*", lineNumber });
+        else if (node.children.some((child) => child.type === "*")) {
+          entries.push({ source, name: "*", importedName: "*", lineNumber });
+        }
+      }
+    }
+    return entries;
   }
 
   private resolveStaticBinding(
@@ -720,6 +763,29 @@ export class TypeScriptExtractor implements LanguageExtractor {
           break;
         }
 
+        case "enum_declaration":
+        case "internal_module":
+        case "module": {
+          // Runtime enum/namespace/module bindings shadow a star export just
+          // like a non-callable const. Keep them in the explicit export set so
+          // the call resolver does not invent a callable target behind them.
+          const nameNode =
+            child.childForFieldName("name") ??
+            child.children.find((c) => c.type === "identifier");
+          if (!nameNode) break;
+          const isDefault = node.children.some((c) => c.type === "default");
+          const exportName = isDefault ? "default" : nameNode.text;
+          if (!exportedNames.has(exportName)) {
+            exports.push({
+              name: exportName,
+              lineNumber: node.startPosition.row + 1,
+              ...(isDefault ? { isDefault: true } : {}),
+            });
+            exportedNames.add(exportName);
+          }
+          break;
+        }
+
         case "lexical_declaration":
         case "variable_declaration": {
           this.extractVariableDeclarations(child, functions);
@@ -757,12 +823,18 @@ export class TypeScriptExtractor implements LanguageExtractor {
                 : name
                   ? name.text
                   : spec.text;
+              const isTypeOnly = node.children.some((c) => c.type === "type") || spec.children.some((c) => c.type === "type");
+              // TypeScript permits a type and a value to share an export name.
+              // Keep a type-only record for diagnostics, but do not let it mark
+              // the runtime name as already exported; a later value export must
+              // remain visible to the call resolver.
               if (!exportedNames.has(exportName)) {
                 exports.push({
                   name: exportName,
                   lineNumber: node.startPosition.row + 1,
+                  ...(isTypeOnly ? { isTypeOnly: true } : {}),
                 });
-                exportedNames.add(exportName);
+                if (!isTypeOnly) exportedNames.add(exportName);
               }
             }
           }

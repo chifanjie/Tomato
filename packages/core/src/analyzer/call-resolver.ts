@@ -15,6 +15,9 @@ export interface CallResolverFile {
   }>;
   functions: Array<{ name: string; startLine: number; endLine: number }>;
   callableExports?: StructuralAnalysis["callableExports"];
+  /** Explicit names also include non-callable declarations that shadow star exports. */
+  exportNames?: readonly string[];
+  reExports?: Array<NonNullable<StructuralAnalysis["reExports"]>[number] & { resolvedPaths?: readonly string[] }>;
   callGraph: CallGraphEntry[];
 }
 
@@ -62,11 +65,55 @@ export function resolveCalls(files: CallResolverFile[]): ResolveCallsResult {
   }
   const uniqueFunction = (file: CallResolverFile, name: string) => functionsByFile.get(file.path)?.get(name);
 
+  type ExportTargets = { targets: Map<string, { file: string; name: string }>; uncertain: boolean };
+  const resolveExport = (
+    file: CallResolverFile, name: string, seen: ReadonlySet<string>, budget: { remaining: number },
+  ): ExportTargets => {
+    const result: ExportTargets = { targets: new Map(), uncertain: false };
+    const key = `${file.path}\0${name}`;
+    // A cyclic branch contributes no export. Bound both depth and branching work.
+    if (seen.has(key)) return result;
+    if (seen.size >= 64 || budget.remaining-- <= 0) return { ...result, uncertain: true };
+    const next = new Set(seen).add(key);
+    const local = (file.callableExports ?? []).filter((item) => item.name === name);
+    const named = (file.reExports ?? []).filter((item) => item.name === name);
+    if (local.length + named.length > 1) return { ...result, uncertain: true };
+    if (local.length === 1) {
+      if (!uniqueFunction(file, local[0].localName)) return { ...result, uncertain: true };
+      const target = { file: file.path, name: local[0].localName };
+      result.targets.set(`${target.file}\0${target.name}`, target);
+      return result;
+    }
+    if (named.length === 0 && file.exportNames?.includes(name)) return { ...result, uncertain: true };
+    const forwarded = named.length > 0 ? named
+      : name === "default" ? [] : (file.reExports ?? []).filter((item) => item.name === "*");
+    for (const item of forwarded) {
+      const paths = item.resolvedPaths ?? [];
+      if (paths.length !== 1 || (item.name !== "*" && item.importedName === "*")) {
+        result.uncertain = true;
+        continue;
+      }
+      const target = filesByPath.get(paths[0]);
+      if (!target || !/\.(?:[cm]?[jt]s|[jt]sx)$/u.test(target.path)) {
+        result.uncertain = true;
+        continue;
+      }
+      const resolved = resolveExport(target, item.name === "*" ? name : item.importedName, next, budget);
+      result.uncertain ||= resolved.uncertain;
+      for (const [id, candidate] of resolved.targets) result.targets.set(id, candidate);
+      if (budget.remaining <= 0) return { ...result, uncertain: true };
+    }
+    return result;
+  };
+  // Only cache complete top-level queries: recursive results depend on cycle context.
+  const exportsByBinding = new Map<string, ExportTargets>();
+
   for (const file of files) {
     for (const entry of file.callGraph) {
       const caller = uniqueFunction(file, entry.caller);
       const binding = entry.binding;
       const candidates = new Map<string, { file: string; name: string }>();
+      let uncertainExport = false;
       if (caller && !/(?:^|\/)[._][^/]*\.go$/u.test(file.path) && Number.isSafeInteger(entry.lineNumber) &&
           entry.lineNumber >= caller.startLine && entry.lineNumber <= caller.endLine) {
         if (binding?.kind === "local" && uniqueFunction(file, binding.name)) {
@@ -88,6 +135,17 @@ export function resolveCalls(files: CallResolverFile[]): ResolveCallsResult {
               if (!target || (binding.packageName !== undefined && target.packageName !== binding.packageName)) continue;
               if (/\.(?:[cm]?[jt]s|[jt]sx)$/u.test(file.path) && !/\.(?:[cm]?[jt]s|[jt]sx)$/u.test(target.path)) continue;
               if (file.path.endsWith(".go") && !target.path.endsWith(".go")) continue;
+              if (!file.path.endsWith(".go")) {
+                const key = `${target.path}\0${binding.name}`;
+                let resolved = exportsByBinding.get(key);
+                if (!resolved) {
+                  resolved = resolveExport(target, binding.name, new Set(), { remaining: 4096 });
+                  exportsByBinding.set(key, resolved);
+                }
+                uncertainExport ||= resolved.uncertain;
+                for (const [id, candidate] of resolved.targets) candidates.set(id, candidate);
+                continue;
+              }
               const exports = (target.callableExports ?? []).filter((item) => item.name === binding.name);
               if (exports.length !== 1 || !uniqueFunction(target, exports[0].localName)) continue;
               const name = exports[0].localName;
@@ -96,7 +154,7 @@ export function resolveCalls(files: CallResolverFile[]): ResolveCallsResult {
           }
         }
       }
-      if (candidates.size === 1) {
+      if (candidates.size === 1 && !uncertainExport) {
         const target = candidates.values().next().value!;
         calls.push({ callerFile: file.path, callerFunc: entry.caller,
           calleeFile: target.file, calleeFunc: target.name,

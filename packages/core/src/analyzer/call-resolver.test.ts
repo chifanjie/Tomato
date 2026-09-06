@@ -18,6 +18,74 @@ function files(): CallResolverFile[] {
 }
 
 describe("resolveCalls", () => {
+  it("follows named and wildcard re-exports to the defining function", () => {
+    const input = files();
+    input[0].callGraph = [input[0].callGraph[1]];
+    input[0].imports[0].resolvedPaths = ["src/barrel.ts"];
+    input.push({ path: "src/barrel.ts", imports: [], functions: [], callGraph: [],
+      reExports: [{ source: "./middle.js", name: "helper", importedName: "renamed", lineNumber: 1, resolvedPaths: ["src/middle.ts"] }],
+    }, { path: "src/middle.ts", imports: [], functions: [], callGraph: [],
+      reExports: [{ source: "./helper.js", name: "*", importedName: "*", lineNumber: 1, resolvedPaths: ["src/helper.ts"] }],
+    });
+    input[1].callableExports = [{ name: "renamed", localName: "implementation" }];
+    expect(resolveCalls(input).calls).toEqual([expect.objectContaining({
+      callerFile: "src/main.ts", calleeFile: "src/helper.ts", calleeFunc: "implementation",
+    })]);
+  });
+
+  it("keeps ambiguous, unknown, and default wildcard exports unresolved", () => {
+    const input = files();
+    input[0].callGraph = [input[0].callGraph[1]];
+    input[0].imports[0].resolvedPaths = ["src/barrel.ts"];
+    const barrel: CallResolverFile = { path: "src/barrel.ts", imports: [], functions: [], callGraph: [],
+      reExports: [{ source: "./helper.js", name: "*", importedName: "*", lineNumber: 1, resolvedPaths: ["src/helper.ts"] }],
+    };
+    input.push(barrel);
+    expect(resolveCalls(input).calls).toHaveLength(1);
+    barrel.reExports!.push({ source: "external", name: "*", importedName: "*", lineNumber: 2, resolvedPaths: [] });
+    expect(resolveCalls(input).calls).toEqual([]);
+    barrel.reExports![1].resolvedPaths = ["src/other.ts"];
+    input.push({ ...input[1], path: "src/other.ts" });
+    expect(resolveCalls(input).calls).toEqual([]);
+    barrel.reExports!.pop();
+    input[0].callGraph[0].binding = { kind: "import", source: "./helper.js", name: "default" };
+    input[1].callableExports = [{ name: "default", localName: "implementation" }];
+    expect(resolveCalls(input).calls).toEqual([]);
+  });
+
+  it("honors explicit export shadowing and terminates cyclic barrels", () => {
+    const input = files();
+    input[0].callGraph = [input[0].callGraph[1]];
+    input[0].imports[0].resolvedPaths = ["src/barrel.ts"];
+    const barrel: CallResolverFile = { path: "src/barrel.ts", imports: [], functions: [], callGraph: [],
+      exportNames: ["helper"],
+      reExports: [{ source: "./helper.js", name: "*", importedName: "*", lineNumber: 1, resolvedPaths: ["src/helper.ts"] }],
+    };
+    input.push(barrel);
+    // An explicit non-callable declaration shadows the callable star export.
+    expect(resolveCalls(input).calls).toEqual([]);
+    barrel.exportNames = [];
+    barrel.reExports!.push({ source: "./barrel.js", name: "*", importedName: "*", lineNumber: 2, resolvedPaths: [barrel.path] });
+    expect(resolveCalls(input).calls).toHaveLength(1);
+    barrel.reExports!.shift();
+    expect(resolveCalls(input).calls).toEqual([]);
+  });
+
+  it("bounds repeated barrel branches without asserting an incomplete resolution", () => {
+    const input = files();
+    input[0].callGraph = [input[0].callGraph[1]];
+    input[0].imports[0].resolvedPaths = ["src/barrel-0.ts"];
+    for (let index = 0; index < 16; index++) {
+      const target = index === 15 ? "src/helper.ts" : `src/barrel-${index + 1}.ts`;
+      input.push({ path: `src/barrel-${index}.ts`, imports: [], functions: [], callGraph: [],
+        reExports: [1, 2].map((lineNumber) => ({
+          source: target, name: "*", importedName: "*", lineNumber, resolvedPaths: [target],
+        })),
+      });
+    }
+    expect(resolveCalls(input)).toMatchObject({ calls: [], unresolved: [{ callee: "renamed" }] });
+  });
+
   it("resolves AST-bound local and aliased imported calls with source lines", () => {
     expect(resolveCalls(files())).toEqual({ calls: [
       { callerFile: "src/main.ts", callerFunc: "main", calleeFile: "src/main.ts",

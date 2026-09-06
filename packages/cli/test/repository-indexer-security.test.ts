@@ -174,6 +174,60 @@ describe("repository index strong preflight", () => {
     await expectNoManagedWrite(root);
   });
 
+  it("keeps barrel dependencies and traces calls to the actual implementation", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await writeFile(path.join(root, "impl.ts"), "export function original() { return 2; }\n");
+    await writeFile(path.join(root, "exports.ts"), 'export { original as helper } from "./impl.js";\n');
+    await writeFile(path.join(root, "index.ts"), 'export * from "./exports.js";\n');
+    await writeFile(path.join(root, "main.ts"), 'import { helper } from "./index.js";\nexport function run() { return helper(); }\n');
+    const built = await buildRepositoryIndex({
+      canonicalRoot: root, canonicalInstallationRoot: installationRoot, operationId: "6".repeat(32),
+      snapshot: { schemaVersion: 1, snapshotId: "snapshot:barrel", repositoryId: "repository:fixture",
+        worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
+        createdAt: "2026-09-06T00:00:00.000Z" } as any,
+    });
+    expect(built.graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "imports", source: "file:main.ts", target: "file:index.ts" }),
+      expect.objectContaining({ type: "imports", source: "file:index.ts", target: "file:exports.ts" }),
+      expect.objectContaining({ type: "imports", source: "file:exports.ts", target: "file:impl.ts" }),
+      expect.objectContaining({ type: "calls", source: "function:main.ts:run", target: "function:impl.ts:original",
+        provenance: [{ filePath: "main.ts", lineNumber: 2, confidence: "imported-package", source: "static-analysis" }] }),
+    ]));
+    const impact = traceImpact({ graph: built.graph, startNodeIds: ["function:impl.ts:original"],
+      repoPulse: { status: "fresh", artifactFreshness: { graph: "fresh" } }, options: { direction: "upstream" } });
+    expect(impact.paths).toContainEqual(expect.objectContaining({ endNodeId: "function:main.ts:run" }));
+    await expectNoManagedWrite(root);
+  });
+
+  it("keeps type/value exports distinct and blocks runtime enum shadowing of star exports", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await writeFile(path.join(root, "impl.ts"), "export function helper() { return 2; }\n");
+    await writeFile(path.join(root, "types.ts"), "export type helper = string;\n");
+    await writeFile(path.join(root, "type-barrel.ts"),
+      'export type { helper } from "./types.js";\nexport * from "./impl.js";\n');
+    await writeFile(path.join(root, "type-main.ts"),
+      'import { helper } from "./type-barrel.js";\nexport function runType() { return helper(); }\n');
+    await writeFile(path.join(root, "enum-barrel.ts"),
+      'export enum helper { A }\nexport * from "./impl.js";\n');
+    await writeFile(path.join(root, "enum-main.ts"),
+      'import { helper } from "./enum-barrel.js";\nexport function runEnum() { return helper(); }\n');
+    const built = await buildRepositoryIndex({
+      canonicalRoot: root, canonicalInstallationRoot: installationRoot, operationId: "7".repeat(32),
+      snapshot: { schemaVersion: 1, snapshotId: "snapshot:type-value-exports", repositoryId: "repository:fixture",
+        worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
+        createdAt: "2026-09-06T00:00:00.000Z" } as any,
+    });
+    expect(built.graph.edges).toContainEqual(expect.objectContaining({
+      type: "calls", source: "function:type-main.ts:runType", target: "function:impl.ts:helper",
+    }));
+    expect(built.graph.edges).not.toContainEqual(expect.objectContaining({
+      type: "calls", source: "function:enum-main.ts:runEnum", target: "function:impl.ts:helper",
+    }));
+    await expectNoManagedWrite(root);
+  });
+
   it("stages outside the repository and publishes only on an explicit commit", async () => {
     const root = await repositoryRoot();
     const installationRoot = await repositoryRoot();

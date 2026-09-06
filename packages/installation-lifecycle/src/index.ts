@@ -196,6 +196,14 @@ export type DoctorResultV1 = Readonly<{
   version?: string;
   files: readonly InstallationFileCheckV1[];
   reason?: string;
+  /** Effective runtime profile of a healthy managed installation. */
+  capabilityProfile?: "provider_bound" | "read_only";
+  /** Whether Task/Check/Verification operations have a configured selector. */
+  taskWorkflow?: "requires_provider_check" | "unavailable";
+  /** Stable remediation for a Host installed without a Provider selector. */
+  remediation?: "bind_provider_installation";
+  /** Human-readable next step without exposing any local path or credential. */
+  remediationHint?: string;
 }>;
 
 export type InstallStatusV1 =
@@ -2828,10 +2836,16 @@ async function inspectInstallation(
     );
     let providerRootMatches = false;
     try {
-      providerRootMatches =
-        (await resolveProviderInstallationRootV1(
-          manifest.providerInstallationRoot,
-        )) === manifest.providerInstallationRoot;
+      const canonicalProviderRoot = await resolveProviderInstallationRootV1(
+        manifest.providerInstallationRoot,
+      );
+      if (canonicalProviderRoot === manifest.providerInstallationRoot) {
+        const providerMetadata = await lstat(canonicalProviderRoot);
+        providerRootMatches =
+          manifest.providerInstallationIdentity !== undefined &&
+          String(providerMetadata.dev) === manifest.providerInstallationIdentity.dev &&
+          String(providerMetadata.ino) === manifest.providerInstallationIdentity.ino;
+      }
     } catch {
       providerRootMatches = false;
     }
@@ -2953,6 +2967,24 @@ async function inspectInstallation(
               : "rollback_snapshot_invalid",
         }
       : {}),
+    ...(manifest.host !== undefined &&
+      manifest.providerInstallationRoot === undefined &&
+      !hasModified
+      ? {
+          capabilityProfile: "read_only" as const,
+          taskWorkflow: "unavailable" as const,
+          remediation: "bind_provider_installation" as const,
+          remediationHint:
+            "Install or validate the Provider service, then run understand-code install --host codex|claude --root <install-root> --provider-installation-root <provider-installation-root>.",
+        }
+      : manifest.host !== undefined &&
+          manifest.providerInstallationRoot !== undefined &&
+          !hasModified
+        ? {
+            capabilityProfile: "provider_bound" as const,
+            taskWorkflow: "requires_provider_check" as const,
+          }
+        : {}),
   };
 }
 

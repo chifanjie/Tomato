@@ -304,7 +304,13 @@ describe("installation lifecycle", () => {
       command: path.join(installed.root, INSTALLATION_WRAPPER_FILE),
       args: ["--root", "${CLAUDE_PROJECT_DIR}"],
     });
-    expect((await doctorInstallationV1({ root })).status).toBe("healthy");
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      capabilityProfile: "read_only",
+      taskWorkflow: "unavailable",
+      remediation: "bind_provider_installation",
+      remediationHint: expect.stringContaining("--provider-installation-root"),
+    });
 
     await execFile(
       path.join(installed.root, INSTALLATION_WRAPPER_FILE),
@@ -363,6 +369,11 @@ describe("installation lifecycle", () => {
     await expect(
       resolveTrustedProviderInstallationRootV1({ root }),
     ).resolves.toBe(canonicalProviderRoot);
+    await expect(doctorInstallationV1({ root })).resolves.toMatchObject({
+      status: "healthy",
+      capabilityProfile: "provider_bound",
+      taskWorkflow: "requires_provider_check",
+    });
 
     await execFile(
       path.join(root, INSTALLATION_WRAPPER_FILE),
@@ -416,6 +427,10 @@ describe("installation lifecycle", () => {
     });
     await rename(providerRoot, `${providerRoot}-old`);
     await mkdir(providerRoot);
+    const doctor = await doctorInstallationV1({ root });
+    expect(doctor.status).toBe("tampered");
+    expect(doctor).not.toHaveProperty("capabilityProfile", "provider_bound");
+    expect(doctor).not.toHaveProperty("taskWorkflow", "requires_provider_check");
     await expect(resolveTrustedProviderInstallationRootV1({ root }))
       .rejects.toMatchObject({ code: "installation_tampered" });
   });

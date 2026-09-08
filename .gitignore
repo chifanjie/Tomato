@@ -20,3 +20,11 @@ coverage/
 .idea/
 .codebase-memory/
 .understand-code/
+site/
+
+# Local documentation/rendering and provider proof outputs
+.pnpm-store/
+docs/prd/.qa/
+docs/prd/__pycache__/
+packages/durable-object-provider-contracts/.topology-proof-source-emit-*/
+understand-code-preview-*.tgz

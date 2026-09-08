@@ -73,6 +73,12 @@ describe("onboard-builder", () => {
     expect(guide).toContain("## File Map");
   });
 
+  it("links generated guides to the current project repository", () => {
+    const guide = buildOnboardingGuide(sampleGraph);
+    expect(guide).toContain("https://github.com/Lum1104/Understand-Code");
+    expect(guide).not.toContain("https://github.com/Lum1104/Understand-Anything");
+  });
+
   it("handles graph with no layers gracefully", () => {
     const noLayers = { ...sampleGraph, layers: [] };
     const guide = buildOnboardingGuide(noLayers);

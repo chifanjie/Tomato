@@ -1,5 +1,7 @@
 # Understand Code CLI
 
+如果你是第一次使用 Understand Code，请先看源码仓库根目录的 `README.zh-CN.md`；本文件只描述低层 stdio MCP server、工具契约和开发者检查。
+
 This package builds the self-contained Understand Code CLI and stdio MCP
 server. The executable has no runtime npm dependencies and is shared by the
 Codex CLI and Claude Code Host installations.

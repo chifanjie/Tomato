@@ -2,6 +2,13 @@
 
 本文件只记录实际实现断点，不新增验收项，不代替真实运行证据。范围仍以 `151b106` 冻结基线及目标附件为准。
 
+## 2026-09-01 迁移续跑与截止线
+
+- 原会话目标已迁移到当前任务，截止线为 2026-09-02 11:00（Asia/Shanghai）。不重做已关闭的第15步、历史知识浏览、待审知识后端闭环或插件生命周期。
+- 本轮主线重新验证：Preview build 通过；根 `pnpm run typecheck` 通过；Preview runtime `8/8` 通过；Dashboard `56` 个测试文件、`612/612` 通过；打包 Workbench 浏览器 `1/1` 通过；独立 Surface Release gate `7` 通过、`2` 个平台专项按条件跳过并以 exit 0 结束。
+- 当前仍未关闭：真实隔离 Codex/Claude 登录后的模型任务与 Task Verified→knowledge publish 晋级、正式 Step17（签名/SBOM/provenance/24 Gold Task）以及 CI 运行环境失败。最新 Actions run `33489386414` 已实际启动但失败：macOS SafeGit canonical binding、Ubuntu Workspace native FD/ACL 临时文件能力与 Provider/C09 长门；不可写作 CI green。无需用户凭证的本地门禁已收口，不以本地结果替代上述外部证据。
+- 并行测试进程必须由启动者持有 session 并按完整 argv/父 PID/工作目录管理；其他代理只读观察，不得终止未知进程。
+
 ## 2026-09-01 当前续跑游标
 
 - 本会话已接过旧会话 `019ff55b-a532-7952-b656-aae468eebc54` 的目标；以下结果是当前工作树上的继续执行，不重做第15步、已发布知识历史浏览、后端待审知识闭环或原生插件生命周期。

@@ -6,6 +6,8 @@ argument-hint: ["[path] [--full|--auto-update|--no-auto-update|--review|--langua
 
 # /understand
 
+面向第一次使用者的中文入口、场景教程和排错说明见源码仓库根目录的 `README.zh-CN.md`；本文件保留运行时执行规范。若此技能已被单独安装，请从安装包或项目主页打开对应手册。
+
 Analyze the current codebase and produce a `knowledge-graph.json` file in `.understand-code/`. This file powers the interactive dashboard for exploring the project's architecture.
 
 ## Options

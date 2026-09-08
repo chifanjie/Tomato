@@ -6,6 +6,8 @@ argument-hint: "[project-path] [--full] [--review] [--language <lang>] [--parall
 
 # /understand-full
 
+面向用户的快速开始和参数选择见源码仓库根目录的 `README.zh-CN.md`；本文件保留完整流程的执行契约。若此技能已被单独安装，请从安装包或项目主页打开对应手册。
+
 Run the complete Understand Code workflow for a repository:
 
 1. analyze the codebase and write `.understand-code/knowledge-graph.json`;

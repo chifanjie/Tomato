@@ -1,5 +1,7 @@
 # Understand Code Alpha Preview
 
+第一次使用 slash skills 的用户请先阅读源码仓库根目录的 `README.zh-CN.md`。本文件是 Preview tarball、MCP 和 Host lifecycle 的低层参考；Preview 不会自动提供 `/understand-*` skills。
+
 One installable tarball provides the current Understand Code Alpha vertical: a
 local Graph/Wiki viewer, the full stdio MCP tool surface, and the managed
 install/Doctor/uninstall lifecycle. Runtime npm dependencies are bundled; Node.js

@@ -1,3 +1,6 @@
+import type { CountSummaryV2 } from "@understand-code/core/knowledge-base";
+import type { KnowledgeGraph } from "@understand-code/core/types";
+import { describeCoverageGaps } from "../../wiki/coverageGaps";
 import type { WikiRuntimeIndex } from "../../wiki/wikiIndex";
 
 const MAIN_LABEL = {
@@ -14,11 +17,48 @@ const REFERENCE_LABEL = {
 export interface KnowledgeStatusViewProps {
   index: WikiRuntimeIndex;
   orphanReferencePageIds: readonly string[];
+  /** Names the uncovered nodes; a count alone does not say what to fix. */
+  graph: KnowledgeGraph | null;
+}
+
+function CoverageGap({
+  kind,
+  summary,
+  graph,
+}: {
+  kind: string;
+  summary: CountSummaryV2 | undefined;
+  graph: KnowledgeGraph | null;
+}) {
+  const gaps = describeCoverageGaps(summary, graph);
+  if (gaps.total === 0) return null;
+
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer text-sm text-text-secondary">
+        未覆盖的 {gaps.total} 个{kind}
+      </summary>
+      <ul className="mt-2 space-y-1 pl-4">
+        {gaps.entries.map((entry) => (
+          <li key={entry.nodeId} className="text-sm leading-6 text-text-secondary">
+            {entry.label}
+            {entry.location === null ? null : (
+              <span className="ml-2 text-xs text-text-muted">{entry.location}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {gaps.remaining > 0 && (
+        <p className="mt-2 pl-4 text-xs text-text-muted">另有 {gaps.remaining} 个未列出。</p>
+      )}
+    </details>
+  );
 }
 
 export default function KnowledgeStatusView({
   index,
   orphanReferencePageIds,
+  graph,
 }: KnowledgeStatusViewProps) {
   const main = index.payload?.mainReadiness;
   const reference = index.payload?.referenceCoverage;
@@ -47,6 +87,9 @@ export default function KnowledgeStatusView({
           <p>函数 {reference?.functions.covered ?? 0}/{reference?.functions.total ?? 0}</p>
           <p>类型 {reference?.types.covered ?? 0}/{reference?.types.total ?? 0}</p>
         </div>
+        <CoverageGap kind="文件" summary={reference?.files} graph={graph} />
+        <CoverageGap kind="函数" summary={reference?.functions} graph={graph} />
+        <CoverageGap kind="类型" summary={reference?.types} graph={graph} />
         {orphanReferencePageIds.length > 0 && (
           <p className="mt-4 text-sm leading-6 text-text-muted">
             有 {orphanReferencePageIds.length} 篇文件文档缺少有效文件节点映射。

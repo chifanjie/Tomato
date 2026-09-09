@@ -63,6 +63,40 @@ describe("featured planning", () => {
     expect(plan.warnings).toContain("孤立入口没有至少三个可验证行为阶段，已移入待分析状态");
   });
 
+  it.each(["scripts/audit-active-surface.mjs", "scripts\\audit-active-surface.mjs"])(
+    "ranks product flows ahead of repository tooling at %s even when tooling has a stronger entry type", (toolPath) => {
+    const productFile = { id: "file:src/product.ts", type: "file" as const, name: "product.ts", filePath: "src/product.ts", summary: "产品入口", tags: [], complexity: "moderate" as const };
+    const productEntry = { id: "function:src/product.ts:main", type: "function" as const, name: "main", filePath: "src/product.ts", lineRange: [1, 3] as [number, number], summary: "产品主流程", tags: ["entry"], complexity: "complex" as const };
+    const productStep = { id: "function:src/product.ts:serve", type: "function" as const, name: "serve", filePath: "src/product.ts", lineRange: [4, 6] as [number, number], summary: "提供产品服务", tags: [], complexity: "moderate" as const };
+    const productConfig = { id: "config:config/product.json", type: "config" as const, name: "product.json", filePath: "config/product.json", summary: "产品配置", tags: [], complexity: "simple" as const };
+    const toolFile = { id: "file:scripts/audit-active-surface.mjs", type: "file" as const, name: "audit-active-surface.mjs", filePath: toolPath, summary: "构建工具", tags: [], complexity: "moderate" as const };
+    const toolEntry = { id: "function:scripts/audit-active-surface.mjs:runCli", type: "function" as const, name: "runCli", filePath: toolPath, lineRange: [1, 3] as [number, number], summary: "CLI 构建入口", tags: ["entry"], complexity: "complex" as const };
+    const toolStep = { id: "function:scripts/audit-active-surface.mjs:parse", type: "function" as const, name: "parse", filePath: toolPath, lineRange: [4, 6] as [number, number], summary: "解析构建结果", tags: [], complexity: "moderate" as const };
+    const toolConfig = { id: "config:config/audit.json", type: "config" as const, name: "audit.json", filePath: "config/audit.json", summary: "构建配置", tags: [], complexity: "simple" as const };
+    const routingGraph: KnowledgeGraph = {
+      ...graph,
+      nodes: [...graph.nodes, productFile, productEntry, productStep, productConfig, toolFile, toolEntry, toolStep, toolConfig],
+      edges: [...graph.edges,
+        { source: productFile.id, target: productEntry.id, type: "contains", direction: "forward", weight: 1 },
+        { source: productFile.id, target: productStep.id, type: "contains", direction: "forward", weight: 1 },
+        { source: productEntry.id, target: productStep.id, type: "calls", direction: "forward", weight: 1 },
+        { source: productStep.id, target: productConfig.id, type: "reads_from", direction: "forward", weight: 1 },
+        { source: toolFile.id, target: toolEntry.id, type: "contains", direction: "forward", weight: 1 },
+        { source: toolFile.id, target: toolStep.id, type: "contains", direction: "forward", weight: 1 },
+        { source: toolEntry.id, target: toolStep.id, type: "calls", direction: "forward", weight: 1 },
+        { source: toolStep.id, target: toolConfig.id, type: "reads_from", direction: "forward", weight: 1 },
+      ],
+    };
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(routingGraph), businessProfile, fileDocPlan, topicPlan,
+      config: { entryNodeIds: [productEntry.id, toolEntry.id] },
+    });
+
+    const flowDocuments = plan.documents.filter((document) => document.category === "flow");
+    expect(flowDocuments[0]?.directNodeIds).toContain(productEntry.id);
+    expect(flowDocuments.find((document) => document.directNodeIds.includes(toolEntry.id))).toBeDefined();
+  });
+
   it("keeps the guided route concise while retaining every required topic as searchable reference", () => {
     const requiredTopics: TopicPlan = {
       topics: ["run", "helper", "apply", "isolated"].map((name, index) => ({

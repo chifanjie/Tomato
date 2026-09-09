@@ -13,7 +13,7 @@ afterEach(async () => {
   }
 });
 
-async function project({ graph, meta, wikiIndex } = {}) {
+async function project({ graph, meta, wikiIndex, report } = {}) {
   const root = await mkdtemp(join(tmpdir(), "uc-doctor-"));
   temporaryDirectories.push(root);
   const stateDir = join(root, ".understand-code");
@@ -23,6 +23,10 @@ async function project({ graph, meta, wikiIndex } = {}) {
   if (wikiIndex !== undefined) {
     await mkdir(join(stateDir, "knowledge-base"), { recursive: true });
     await writeFile(join(stateDir, "knowledge-base", "wiki-index.json"), wikiIndex);
+  }
+  if (report !== undefined) {
+    await mkdir(join(stateDir, "knowledge-base", ".trace"), { recursive: true });
+    await writeFile(join(stateDir, "knowledge-base", ".trace", "generation-report.json"), report);
   }
   return root;
 }
@@ -101,5 +105,56 @@ describe("understand-doctor", () => {
     }));
 
     expect(output).toContain("无法比较");
+  });
+
+  it("names generation warnings that otherwise stay in an unread report file", async () => {
+    const { output } = runDoctor(await project({
+      graph: JSON.stringify({ nodes: [], edges: [] }),
+      wikiIndex: JSON.stringify({ version: 2, pages: [] }),
+      report: JSON.stringify({
+        version: 2,
+        warnings: ["跳过 src/huge.ts：超出解析上限", "第二条"],
+        errors: [],
+      }),
+    }));
+
+    expect(output).toContain("生成警告");
+    expect(output).toContain("2 条，首条：跳过 src/huge.ts：超出解析上限");
+    expect(output).toContain("generation-report.json");
+  });
+
+  it("quantifies partial reference coverage instead of only labelling it", async () => {
+    const { output } = runDoctor(await project({
+      graph: JSON.stringify({ nodes: [], edges: [] }),
+      wikiIndex: JSON.stringify({ version: 2, pages: [] }),
+      report: JSON.stringify({
+        version: 2,
+        referenceCoverage: {
+          status: "partial",
+          files: { covered: 315, total: 325, missingIds: Array.from({ length: 10 }, (_, i) => `file:${i}`) },
+          functions: { covered: 783, total: 795, missingIds: Array.from({ length: 12 }, (_, i) => `fn:${i}`) },
+          types: { covered: 3, total: 3, missingIds: [] },
+        },
+        warnings: [],
+        errors: [],
+      }),
+    }));
+
+    expect(output).toContain("参考覆盖");
+    expect(output).toContain("文件 315/325");
+    expect(output).toContain("函数 783/795");
+    expect(output).toContain("22 项未覆盖");
+  });
+
+  it("reports generation errors as blocking", async () => {
+    const { output, failed } = runDoctor(await project({
+      graph: JSON.stringify({ nodes: [], edges: [] }),
+      wikiIndex: JSON.stringify({ version: 2, pages: [] }),
+      report: JSON.stringify({ version: 2, warnings: [], errors: ["证据锚点缺失"] }),
+    }));
+
+    expect(output).toContain("生成错误");
+    expect(output).toContain("1 条，首条：证据锚点缺失");
+    expect(failed).toBe(true);
   });
 });

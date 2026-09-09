@@ -508,6 +508,16 @@ describe("GraphExplorer progressive navigation integration", () => {
     });
   }
 
+  it("opens Quick Jump from the overview object count", async () => {
+    await renderExplorer();
+    const browseAll = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("浏览全部对象"));
+    if (!browseAll) throw new Error("概览缺少浏览全部对象入口");
+
+    await act(async () => browseAll.click());
+    expect(container.querySelector<HTMLInputElement>("[aria-label=\"搜索图谱对象\"]")).not.toBeNull();
+  });
+
   function latestCanvasProps(): {
     baseGraph: { nodes: Array<{ id: string; scopeId?: string }> };
     semanticGraph: { nodes: Array<{ id: string }> };

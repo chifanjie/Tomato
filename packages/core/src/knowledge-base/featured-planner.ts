@@ -41,6 +41,35 @@ const ENTRY_TYPE_RANK = new Map([
   "generic",
 ].map((entryType, index) => [entryType, index]));
 
+/**
+ * Directories that hold a repository's own maintenance and build tooling.
+ *
+ * Deliberately narrow: "bin", "cmd" and "cli" are excluded because those
+ * usually are the product's entry points, not tooling around it.
+ */
+const TOOLING_PATH_SEGMENTS = new Set([
+  ".github",
+  "build",
+  "config",
+  "scripts",
+  "tools",
+]);
+
+/**
+ * Whether a flow starts in the repository's own tooling rather than in the
+ * product.
+ *
+ * A reader opening the knowledge base wants the system's main flows first. A
+ * build script satisfies every structural test a real entry point does — it is
+ * a CLI with a traversable call chain — so without this it can outrank the
+ * product purely on entry type and id ordering.
+ */
+function startsInRepositoryTooling(node: GraphNode): boolean {
+  if (node.filePath === undefined) return false;
+  return node.filePath.replace(/\\/g, "/").split("/")
+    .some((segment) => TOOLING_PATH_SEGMENTS.has(segment));
+}
+
 const ROUTE_STAGE_ORDER: Array<DocumentRoute["stage"]> = [
   "purpose",
   "flow",
@@ -451,9 +480,15 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     publishableFlows.push({ ...entry, ...traversal, node });
   }
 
+  // Product before tooling, then entry type, then the flow that actually
+  // covers more of the system. The id comparison stays last so the whole
+  // ordering remains deterministic for identical inputs.
   publishableFlows.sort((left, right) =>
-    (ENTRY_TYPE_RANK.get(left.entryType) ?? Number.MAX_SAFE_INTEGER)
+    Number(startsInRepositoryTooling(left.node)) - Number(startsInRepositoryTooling(right.node))
+    || (ENTRY_TYPE_RANK.get(left.entryType) ?? Number.MAX_SAFE_INTEGER)
       - (ENTRY_TYPE_RANK.get(right.entryType) ?? Number.MAX_SAFE_INTEGER)
+    || right.nodeIds.length - left.nodeIds.length
+    || right.edgeIds.length - left.edgeIds.length
     || left.nodeId.localeCompare(right.nodeId));
   publishableFlows.splice(12);
 

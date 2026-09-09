@@ -127,6 +127,15 @@ if (recordedCommit === null || headCommit === null) {
 
 // Knowledge base format and alignment.
 const wikiIndexPath = join(kbDir, "wiki-index.json");
+const relativeReportPath = ".understand-code/knowledge-base/.trace/generation-report.json";
+const reportPath = join(kbDir, ".trace", "generation-report.json");
+
+/** One line of a report entry, short enough to sit in an aligned column. */
+function firstLine(text, limit = 72) {
+  const line = String(text ?? "").split("\n")[0].trim();
+  return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+}
+
 if (!existsSync(kbDir)) {
   record("warn", "知识库", "未生成 .understand-code/knowledge-base/");
   nextSteps.push("运行 /understand-kb 生成知识库");
@@ -148,6 +157,31 @@ if (!existsSync(kbDir)) {
   if (wikiCommit !== null && recordedCommit !== null && wikiCommit !== recordedCommit) {
     record("warn", "知识库与图谱一致性", "知识库基于另一份图谱快照生成，内容可能与图谱矛盾");
     nextSteps.push("运行 /understand-kb 让知识库与当前图谱对齐");
+  }
+
+  // The generation report records why a run came out incomplete. Nothing reads
+  // it today, so "参考覆盖不完整" reached the reader with no way to act on it.
+  const report = readJson(reportPath);
+  const coverage = report?.referenceCoverage;
+  if (coverage?.status === "partial") {
+    const buckets = [["文件", coverage.files], ["函数", coverage.functions], ["类型", coverage.types]]
+      .filter(([, bucket]) => bucket && bucket.total > 0)
+      .map(([label, bucket]) => `${label} ${bucket.covered}/${bucket.total}`);
+    const uncovered = [coverage.files, coverage.functions, coverage.types]
+      .reduce((sum, bucket) => sum + (bucket?.missingIds?.length ?? 0), 0);
+    record("warn", "参考覆盖", `${buckets.join("、")}；${uncovered} 项未覆盖，Dashboard 的「知识库状态」会逐条列出`);
+  }
+
+  const warnings = Array.isArray(report?.warnings) ? report.warnings : [];
+  if (warnings.length > 0) {
+    record("warn", "生成警告", `${warnings.length} 条，首条：${firstLine(warnings[0])}`);
+    nextSteps.push(`查看 ${relativeReportPath} 中的完整警告`);
+  }
+
+  const errors = Array.isArray(report?.errors) ? report.errors : [];
+  if (errors.length > 0) {
+    record("fail", "生成错误", `${errors.length} 条，首条：${firstLine(errors[0])}`);
+    nextSteps.push(`修复 ${relativeReportPath} 报告的生成错误后重新运行 /understand-kb`);
   }
 }
 

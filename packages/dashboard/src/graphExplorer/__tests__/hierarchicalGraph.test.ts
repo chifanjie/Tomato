@@ -2453,6 +2453,48 @@ describe("hierarchicalGraph", () => {
       ]));
   });
 
+  it("reports filtered documents separately from aggregate scope content", () => {
+    const files = Array.from({ length: 9 }, (_, index) =>
+      hierarchyNode(`file:scope-${index}`, "file", `scope-${index}/index.ts`));
+    const documents = Array.from({ length: 98 }, (_, index) =>
+      hierarchyNode(`document:scope-${index}`, "document"));
+    const service = hierarchyNode("service:overview", "service");
+    const layers = files.map((file, index) => ({
+      id: `layer:${index}`,
+      name: `范围 ${index}`,
+      description: "测试范围。",
+      nodeIds: [
+        file.id,
+        ...(index === 0 ? [service.id] : []),
+        ...documents
+          .filter((_, documentIndex) => documentIndex % files.length === index)
+          .map((node) => node.id),
+      ],
+    }));
+    const graph = {
+      ...hierarchyGraph([service, ...files, ...documents], [], []),
+      layers,
+    };
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const overview = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+
+    expect(overview.nodes.filter((node) => node.kind === "scope")).toHaveLength(9);
+    expect(overview.nodes.filter((node) => node.kind === "node")).toEqual([
+      expect.objectContaining({ id: service.id }),
+    ]);
+    expect(overview.presentation.graphNodeCount).toBe(108);
+    expect(overview.presentation.filteredNodeCount).toBe(98);
+    expect(overview.presentation.truncatedNodeCount).toBe(0);
+    expect(overview.presentation.hiddenNodeCount).toBe(98);
+    expect(overview.presentation.aggregatedNodeCount).toBe(107);
+  });
+
   it("shows every architecture-context type at overview and keeps capped scope types reachable", () => {
     const architectureTypes = [
       "module", "concept", "document", "service", "table", "endpoint", "pipeline", "schema",

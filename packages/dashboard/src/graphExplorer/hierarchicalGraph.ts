@@ -99,6 +99,14 @@ export interface HierarchicalGraphPresentation {
   breadcrumbs: GraphBreadcrumbItem[];
   totalNodeCount: number;
   hiddenNodeCount: number;
+  /** Total raw graph nodes, including nodes represented by aggregates. */
+  graphNodeCount?: number;
+  /** Raw nodes represented by visible scope/cluster/boundary aggregates. */
+  aggregatedNodeCount?: number;
+  /** Nodes omitted by the active display mode (for example documents in architecture mode). */
+  filteredNodeCount?: number;
+  /** Nodes omitted by a progressive level cap. */
+  truncatedNodeCount?: number;
   focusApplied: boolean;
   notice: string | null;
 }
@@ -1970,6 +1978,7 @@ function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraph
   const scope = navigation.scopeId ? hierarchyIndex.scopeById.get(navigation.scopeId) : undefined;
   const cluster = navigation.clusterId ? hierarchyIndex.clusterById.get(navigation.clusterId) : undefined;
 
+  let result: HierarchicalSemanticGraph | null = null;
   if (navigation.level === "file" && scope && cluster && cluster.scopeId === scope.id && navigation.fileId) {
     const file = progressiveFile({
       hierarchyIndex,
@@ -1983,10 +1992,10 @@ function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraph
       options,
       materializedNodeId,
     });
-    if (file) return file;
+    if (file) result = file;
   }
-  if (navigation.level === "cluster" && scope && cluster && cluster.scopeId === scope.id) {
-    return progressiveCluster({
+  if (!result && navigation.level === "cluster" && scope && cluster && cluster.scopeId === scope.id) {
+    result = progressiveCluster({
       hierarchyIndex,
       scope,
       cluster,
@@ -1998,8 +2007,8 @@ function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraph
       materializedNodeId,
     });
   }
-  if ((navigation.level === "scope" || navigation.level === "cluster" || navigation.level === "file") && scope) {
-    return progressiveScope({
+  if (!result && (navigation.level === "scope" || navigation.level === "cluster" || navigation.level === "file") && scope) {
+    result = progressiveScope({
       hierarchyIndex,
       scope,
       rawNodes: raw.nodes,
@@ -2010,15 +2019,19 @@ function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraph
       materializedNodeId,
     });
   }
-  return progressiveOverview({
-    hierarchyIndex,
-    rawNodes: raw.nodes,
-    members,
-    displayMode,
-    relationshipSource,
-    options,
-    materializedNodeId,
-  });
+  if (!result) {
+    result = progressiveOverview({
+      hierarchyIndex,
+      rawNodes: raw.nodes,
+      members,
+      displayMode,
+      relationshipSource,
+      options,
+      materializedNodeId,
+    });
+  }
+  if (!result) throw new Error("Failed to build hierarchical graph view");
+  return annotatePresentationCounts({ graph, raw, displayMode, result });
 }
 
 export function buildHierarchicalSemanticGraph({
@@ -2057,6 +2070,39 @@ function resolveHierarchicalGraphProjection(input: {
     throw new Error("Hierarchical graph projection context belongs to a different wiki index snapshot.");
   }
   return projectionContext.projection;
+}
+
+function annotatePresentationCounts(input: {
+  graph: KnowledgeGraph;
+  raw: SemanticGraph;
+  displayMode: GraphExplorerDisplayMode;
+  result: HierarchicalSemanticGraph;
+}): HierarchicalSemanticGraph {
+  const { graph, raw, displayMode, result } = input;
+  const aggregateNodeIds = new Set(
+    result.nodes.flatMap((node) => node.containedNodeIds ?? []),
+  );
+  for (const node of result.nodes) {
+    if (node.kind === "node") aggregateNodeIds.delete(node.id);
+  }
+  const visibleDocumentIds = new Set(
+    result.nodes
+      .filter((node) => node.kind === "node" && node.rawType === "document")
+      .map((node) => node.id),
+  );
+  const filteredNodeCount = displayMode === "coverage"
+    ? 0
+    : raw.nodes.filter((node) => node.group === "document" && !visibleDocumentIds.has(node.id)).length;
+  return {
+    ...result,
+    presentation: {
+      ...result.presentation,
+      graphNodeCount: graph.nodes.length,
+      aggregatedNodeCount: aggregateNodeIds.size,
+      filteredNodeCount,
+      truncatedNodeCount: Math.max(0, result.presentation.hiddenNodeCount - filteredNodeCount),
+    },
+  };
 }
 
 function semanticMemberIdentity(member: SemanticGraphEdgeMember): string {

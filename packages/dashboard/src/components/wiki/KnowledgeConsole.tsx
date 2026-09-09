@@ -30,6 +30,7 @@ export default function KnowledgeConsole({
   wikiNavigationRevision = 0,
 }: KnowledgeConsoleProps = {}) {
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
+  const consoleGraph = useDashboardStore((state) => state.graph);
   const activeWikiPageId = useDashboardStore((state) => state.activeWikiPageId);
   const selectWikiPage = useDashboardStore((state) => state.selectWikiPage);
   const setDashboardSurface = useDashboardStore((state) => state.setDashboardSurface);
@@ -134,6 +135,7 @@ export default function KnowledgeConsole({
     <KnowledgeStatusView
       index={wikiIndex}
       orphanReferencePageIds={view.navigation.reference.orphanPageIds}
+      graph={consoleGraph}
     />
   ) : (
     <GuidedWikiHome

@@ -886,10 +886,27 @@ export default function GraphExplorer({
             );
           })}
         </nav>
-        <p className="text-xs text-text-muted">
-          当前显示 {view.semanticGraph.nodes.length} 个元素
-          {presentation.hiddenNodeCount > 0 ? `，另有 ${presentation.hiddenNodeCount} 个未展开` : ""}
-        </p>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+          <p>
+            全图 {presentation.graphNodeCount ?? graph.nodes.length} 个节点；当前层级显示 {view.semanticGraph.nodes.length} 个对象
+          </p>
+          {presentation.aggregatedNodeCount !== undefined && presentation.aggregatedNodeCount > 0 && (
+            <span>{presentation.aggregatedNodeCount} 个已聚合，可下钻</span>
+          )}
+          {presentation.filteredNodeCount !== undefined && presentation.filteredNodeCount > 0 && (
+            <span>{presentation.filteredNodeCount} 个因当前模式隐藏</span>
+          )}
+          {presentation.truncatedNodeCount !== undefined && presentation.truncatedNodeCount > 0 && (
+            <span>{presentation.truncatedNodeCount} 个受画布上限限制</span>
+          )}
+          <button
+            type="button"
+            onClick={requestGraphQuickJump}
+            className="rounded border border-border-subtle px-2 py-1 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent"
+          >
+            浏览全部对象
+          </button>
+        </div>
       </div>
 
       {notice && view.semanticGraph.nodes.length > 0 && (

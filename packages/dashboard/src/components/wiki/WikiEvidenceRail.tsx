@@ -10,7 +10,12 @@ interface WikiEvidenceRailProps {
   headings: readonly WikiOutlineHeading[];
   onOpenPage: (pageId: string) => void;
   onOpenGraph: (pageId: string) => void;
+  /** Excerpts resolved from the shard store; absent while they load. */
+  excerpts?: ReadonlyMap<string, string>;
+  excerptsLoading?: boolean;
 }
+
+const EMPTY_EXCERPTS: ReadonlyMap<string, string> = new Map();
 
 const EVIDENCE_TYPE_LABELS: Record<WikiEvidenceV2["evidenceType"], string> = {
   production: "生产代码",
@@ -25,6 +30,21 @@ function evidenceLocation(item: WikiEvidenceV2): string {
     ? `第 ${startLine} 行`
     : `第 ${startLine}–${endLine} 行`;
   return `${item.filePath} · ${lineRange}`;
+}
+
+/**
+ * Excerpts are published in shards outside the index, so a rail may render
+ * before the shard arrives. Any inline excerpt still wins, for older knowledge
+ * bases that kept excerpts in the index.
+ */
+function excerptText(
+  item: WikiEvidenceV2,
+  excerpts: ReadonlyMap<string, string>,
+  loading: boolean,
+): string {
+  return excerpts.get(item.id)
+    ?? item.excerpt
+    ?? (loading ? "正在读取代码片段…" : "未提供代码片段");
 }
 
 function PageRows({
@@ -66,6 +86,8 @@ export default function WikiEvidenceRail({
   headings,
   onOpenPage,
   onOpenGraph,
+  excerpts = EMPTY_EXCERPTS,
+  excerptsLoading = false,
 }: WikiEvidenceRailProps) {
   const hasGraphNodes = directGraphNodeIds.length > 0;
 
@@ -140,7 +162,7 @@ export default function WikiEvidenceRail({
                 <summary>{evidenceLocation(item)}</summary>
                 <div>
                   <p>{EVIDENCE_TYPE_LABELS[item.evidenceType]}</p>
-                  <pre>{item.excerpt ?? "未提供代码片段"}</pre>
+                  <pre>{excerptText(item, excerpts, excerptsLoading)}</pre>
                 </div>
               </details>
             ))}

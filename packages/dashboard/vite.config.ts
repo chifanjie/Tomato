@@ -6,6 +6,8 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { graphFileCandidates, knowledgeBaseRootCandidates } from "./vite.paths";
+import { computeGraphStaleness } from "./graphStaleness";
+import { classifyKnowledgeBaseAt } from "./knowledgeBaseState";
 
 // Generate a one-time token when the server process starts.
 // This token is printed to the terminal and must be in the URL
@@ -161,8 +163,31 @@ function serveKnowledgeBaseFile(pathname: string, res: import("http").ServerResp
     return true;
   }
 
-  sendJson(res, 404, { error: "Knowledge base file not found" });
+  // A missing wiki-index.json has two very different causes: no knowledge base
+  // at all, or one written in a pre-V2 layout that this dashboard cannot read.
+  // Saying "尚未生成知识库" for the second is wrong and sends the reader looking
+  // for a file that is already there.
+  sendJson(res, 404, {
+    error: "Knowledge base file not found",
+    ...(relativePath === "wiki-index.json"
+      ? { knowledgeBase: classifyKnowledgeBase() }
+      : {}),
+  });
   return true;
+}
+
+function classifyKnowledgeBase(): "absent" | "legacy" {
+  return classifyKnowledgeBaseAt(
+    knowledgeBaseRootCandidates(),
+    (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isDirectory(),
+    (candidate) => {
+      try {
+        return fs.readdirSync(candidate).some((entry) => !entry.startsWith("."));
+      } catch {
+        return false;
+      }
+    },
+  );
 }
 
 function rejectFileRequest(message: string, statusCode = 400) {
@@ -387,6 +412,12 @@ export default defineConfig({
                     : abs;              // already relative — keep as-is
                   return { ...node, filePath: rel };
                 });
+              }
+
+              // Attach live staleness so the client can tell the reader that the
+              // graph describes an older commit than the one checked out.
+              if (pathname === "/meta.json") {
+                raw.staleness = computeGraphStaleness(raw, projectRoot);
               }
 
               res.setHeader("Content-Type", "application/json");

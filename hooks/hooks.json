@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "printf '%s' \"$TOOL_INPUT\" | grep -qE 'git\\s+(commit|merge|cherry-pick|rebase)' && [ -f .understand-code/config.json ] && grep -q '\"autoUpdate\".*true' .understand-code/config.json && [ -f .understand-code/knowledge-graph.json ] && echo \"[understand-code] Commit detected with auto-update enabled. You MUST read the file at ${CLAUDE_PLUGIN_ROOT}/hooks/auto-update-prompt.md and execute its instructions to incrementally update the knowledge graph. Do not ask the user for confirmation — just do it.\" || true"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/understand-code-hook.mjs\" post-tool-use 2>/dev/null || true"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f .understand-code/config.json ] && grep -q '\"autoUpdate\".*true' .understand-code/config.json && [ -f .understand-code/meta.json ] && [ -f .understand-code/knowledge-graph.json ] && [ \"$(node -p \"JSON.parse(require('fs').readFileSync('.understand-code/meta.json','utf8')).gitCommitHash\")\" != \"$(git rev-parse HEAD 2>/dev/null)\" ] && echo \"[understand-code] Knowledge graph is stale. You MUST read the file at ${CLAUDE_PLUGIN_ROOT}/hooks/auto-update-prompt.md and execute its instructions to check for structural changes and update the graph. Do not ask the user for confirmation — just do it.\" || true"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/understand-code-hook.mjs\" session-start 2>/dev/null || true"
           }
         ]
       }

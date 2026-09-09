@@ -18,6 +18,8 @@ import KnowledgeConsole from "./components/wiki/KnowledgeConsole";
 import { GLOBAL_WIKI_SEARCH_REQUEST_EVENT } from "./components/wiki/WikiResponsiveShell";
 import DashboardHeader, { type ProductSurface } from "./components/DashboardHeader";
 import TokenGate from "./components/TokenGate";
+import StalenessBanner from "./components/StalenessBanner";
+import { ExcerptLoaderProvider } from "./wiki/ExcerptContext";
 import WarningBanner from "./components/WarningBanner";
 import TaskFirstWorkbench, {
   type TaskFirstRoute,
@@ -85,6 +87,7 @@ export type WikiAvailabilityStatus =
   | "ready"
   | "empty"
   | "missing"
+  | "legacy"
   | "invalid"
   | "error";
 
@@ -101,6 +104,10 @@ export const WIKI_AVAILABILITY_COPY: Record<
   missing: {
     title: "尚未生成知识库",
     description: "没有找到 wiki-index.json；关系图谱仍可使用。请运行知识库生成命令后刷新。",
+  },
+  legacy: {
+    title: "知识库格式已过期",
+    description: "已找到知识库目录，但它使用的是旧版格式，缺少本界面需要的 wiki-index.json；关系图谱仍可使用。请重新运行知识库生成命令覆盖旧产物。",
   },
   invalid: {
     title: "知识库索引无效",
@@ -490,6 +497,23 @@ function resolveInitialToken(): string | null {
   return urlToken;
 }
 
+/**
+ * Decides whether a URL that carries no explicit task route should still open
+ * the Task surface.
+ *
+ * A bare "/" is how `/understand-dashboard` opens the workbench, and what the
+ * user generated there is the graph and the wiki — not a task. Task deep links
+ * minted by `open_workbench` always carry an explicit route, so only an
+ * explicit "#tasks" lands on the otherwise-empty Task surface.
+ */
+export function defaultTaskLocationFor(
+  location: { readonly pathname: string; readonly hash: string },
+): TaskFirstLocationState | null {
+  if (location.pathname !== "/") return null;
+  if (location.hash !== "#tasks") return null;
+  return { route: { view: "tasks", section: "summary" }, surface: "task" };
+}
+
 function taskLocationState(): TaskFirstLocationState | null {
   return taskFirstLocationStateFromLocation({
     pathname: window.location.pathname,
@@ -809,11 +833,10 @@ function App() {
   }, []);
 
   const taskLocation = useMemo(taskLocationState, [locationRevision]);
-  const defaultTaskLocation = useMemo<TaskFirstLocationState | null>(() => {
-    if (window.location.pathname !== "/") return null;
-    if (window.location.hash && window.location.hash !== "#tasks") return null;
-    return { route: { view: "tasks", section: "summary" }, surface: "task" };
-  }, [locationRevision]);
+  const defaultTaskLocation = useMemo<TaskFirstLocationState | null>(
+    () => defaultTaskLocationFor(window.location),
+    [locationRevision],
+  );
   const activeTaskLocation = taskLocation ?? defaultTaskLocation;
 
   if (DEMO_MODE) {
@@ -871,6 +894,7 @@ function Dashboard({
   const [versionError, setVersionError] = useState<string | null>(null);
   const versionRequestRef = useRef<AbortController | null>(null);
   const knowledgeEpochRef = useRef(0);
+  const wikiLoadRef = useRef<Promise<DashboardKnowledge> | null>(null);
   const pendingKnowledgeGenerationId = selectedPendingKnowledgeGenerationId(taskContext);
   const knowledgeFetcher = useMemo(() => pendingKnowledgeGenerationId
     ? createPendingKnowledgeFetcher(pendingKnowledgeGenerationId)
@@ -938,7 +962,18 @@ function Dashboard({
     async function loadWiki(): Promise<void> {
       if (cancelled || epoch !== knowledgeEpochRef.current || inFlight) return;
       inFlight = true;
-      const result = await loadDashboardKnowledge(accessToken, knowledgeFetcher);
+      // StrictMode runs this effect twice in development and the dashboard is
+      // always served by the Vite dev server, so the second pass must join the
+      // request the first one started rather than download the index again.
+      // The pending request is held on a ref, not in module scope: a request
+      // that never settles cannot then outlive this component and starve the
+      // next one of its own fetch.
+      const pending = wikiLoadRef.current
+        ?? loadDashboardKnowledge(accessToken, knowledgeFetcher);
+      wikiLoadRef.current = pending;
+      const result = await pending.finally(() => {
+        if (wikiLoadRef.current === pending) wikiLoadRef.current = null;
+      });
       inFlight = false;
       if (cancelled || epoch !== knowledgeEpochRef.current) return;
       const availability = applyDashboardKnowledgeResult(result, {
@@ -1266,6 +1301,7 @@ function DashboardContent({
   );
 
   return (
+    <ExcerptLoaderProvider accessToken={accessToken}>
     <div className="h-screen w-screen flex flex-col bg-root text-text-primary">
       <DashboardHeader
         projectName={graph?.project.name ?? "代码知识库"}
@@ -1316,6 +1352,7 @@ function DashboardContent({
         </div>
       )}
 
+      <StalenessBanner accessToken={accessToken} />
       {graphIssues.length > 0 && !loadError && <WarningBanner issues={graphIssues} />}
       {loadError && (
         <div className="uc-status-banner" data-severity="problem" role="alert">
@@ -1382,6 +1419,7 @@ function DashboardContent({
         onSelectTarget={selectSearchTarget}
       />
     </div>
+    </ExcerptLoaderProvider>
   );
 }
 

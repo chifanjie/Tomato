@@ -1,4 +1,5 @@
 import type { GraphEdge, GraphNode, KnowledgeBaseProjectConfig } from "../types.js";
+import { buildUniqueLabels } from "./display-label.js";
 import { edgeId } from "./file-doc-planner.js";
 import {
   KB_PATHS,
@@ -526,11 +527,18 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     const key = slugPath(flow.node.name);
     flowNameCounts.set(key, (flowNameCounts.get(key) ?? 0) + 1);
   }
+  // The document path was already disambiguated here, but the title was not, so
+  // two flows named `main` produced two sidebar entries reading "main 业务流程".
+  const flowLabels = buildUniqueLabels(publishableFlows.slice(0, 3).map((flow) => ({
+    id: flow.nodeId,
+    name: flow.node.name,
+    filePath: flow.node.filePath ?? flow.node.id,
+  })));
   for (const flow of publishableFlows.slice(0, 3)) {
     const disambiguator = (flowNameCounts.get(slugPath(flow.node.name)) ?? 0) > 1
       ? flow.node.filePath ?? flow.node.id
       : undefined;
-    const title = `${flow.node.name} 业务流程`;
+    const title = `${flowLabels.get(flow.nodeId) ?? flow.node.name} 业务流程`;
     documents.push(plannedDocument({
       path: allocateGeneratedPath(
         businessFlowDocumentPath(flow.node.name, disambiguator),
@@ -637,10 +645,18 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     reason: "主阅读路径必须提供从业务结论返回源码的证据入口",
   }));
 
+  // Ten `index.ts` files would otherwise all be titled "index.ts 文件参考".
+  const fileLabels = buildUniqueLabels(fileDocPlan.tasks.map((task) => ({
+    id: task.fileNodeId,
+    name: profile.indexes.nodesById.get(task.fileNodeId)?.name ?? task.filePath,
+    filePath: task.filePath,
+  })));
+
   for (const task of fileDocPlan.tasks) {
     const directNodeIds = sortedUnique([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
     const owner = profile.indexes.nodesById.get(task.fileNodeId);
-    const title = owner?.name ? `${owner.name} 文件参考` : `${task.filePath} 文件参考`;
+    const label = fileLabels.get(task.fileNodeId) ?? owner?.name ?? task.filePath;
+    const title = `${label} 文件参考`;
     documents.push(plannedDocument({
       path: task.documentPath,
       title,

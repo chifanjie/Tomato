@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { ExcerptStoreDescriptor } from "./excerpt-store.js";
+
 export type WikiDocumentRole = "featured" | "reference" | "maintenance";
 export type WikiDocumentCategory = "overview" | "capability" | "flow" | "module" | "topic" | "file" | "quality" | "coverage" | "other";
 export type DocumentationRelation = "direct" | "context" | "none";
@@ -85,6 +87,12 @@ export interface WikiIndexV2 {
   pages: WikiPageV2[];
   nodeDocumentation: WikiNodeDocumentationV2[];
   evidence: WikiEvidenceV2[];
+  /**
+   * Present when source excerpts are published outside this index, in shards.
+   * `evidence[].excerpt` is then absent and fetched per page. See
+   * `excerpt-store.ts` for why, and for the shard assignment both sides use.
+   */
+  excerptStore?: ExcerptStoreDescriptor;
 }
 
 export interface WikiSearchRecordV2 {
@@ -252,6 +260,12 @@ export const WikiEvidenceLineRangeV2Schema = WikiEvidenceStructuralLineRangeV2Sc
   },
 );
 
+const ExcerptStoreDescriptorSchema = z.strictObject({
+  mode: z.literal("external"),
+  shardCount: z.number().int().positive(),
+  pathPrefix: z.string().min(1),
+}) satisfies z.ZodType<ExcerptStoreDescriptor>;
+
 const WikiEvidenceStructuralV2Schema = z.strictObject({
   id: z.string(),
   nodeIds: StringArraySchema,
@@ -283,6 +297,7 @@ const WikiIndexInvariantInputV2Schema = z.strictObject({
   pages: z.array(WikiPageV2Schema),
   nodeDocumentation: z.array(WikiNodeDocumentationV2Schema),
   evidence: z.array(WikiEvidenceStructuralV2Schema),
+  excerptStore: ExcerptStoreDescriptorSchema.optional(),
 }) satisfies z.ZodType<WikiIndexV2>;
 
 export const WikiIndexV2Schema = WikiIndexInvariantInputV2Schema.extend({
@@ -593,12 +608,15 @@ function validateNodeEvidence(
     });
 
     if (record.evidenceHealth === "source-linked") {
+      // With an external excerpt store the index carries evidence structure
+      // only; excerpt content is validated when the shards are built.
+      const excerptsAreExternal = index.excerptStore !== undefined;
       const hasSourceLinkedEvidence = record.evidenceIds.some((evidenceId) => {
         const evidence = evidenceById.get(evidenceId);
         return evidence !== undefined
           && evidence.nodeIds.includes(record.nodeId)
-          && evidence.excerpt !== undefined
-          && evidence.excerpt.trim().length > 0;
+          && (excerptsAreExternal
+            || (evidence.excerpt !== undefined && evidence.excerpt.trim().length > 0));
       });
       if (!hasSourceLinkedEvidence) {
         addInvariantError(

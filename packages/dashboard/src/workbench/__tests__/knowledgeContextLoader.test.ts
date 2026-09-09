@@ -302,3 +302,22 @@ describe("dashboard knowledge loader", () => {
   });
 
 });
+
+describe("wiki index requests", () => {
+  // Coalescing StrictMode's duplicate load lives on the App component, which
+  // owns the request lifetime; see the StrictMode case in
+  // src/__tests__/taskHost.integration.test.tsx.
+  it("performs a real fetch again after the first settled", async () => {
+    // The missing-index retry must not be served a stale cached failure.
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      return new Response(null, { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await loadDashboardKnowledge("token", fetcher);
+    await loadDashboardKnowledge("token", fetcher);
+
+    expect(calls).toBe(2);
+  });
+});

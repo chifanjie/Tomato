@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useEvidenceExcerpts } from "../../wiki/ExcerptContext";
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WikiTarget } from "../../wiki/wikiContent";
@@ -163,6 +164,11 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
   evidence: WikiEvidenceV2[];
   onRequestGlobalSearch: () => void;
 }) {
+  // Excerpts ship in shards outside the wiki index; request only the ones the
+  // previewed evidence needs.
+  const shown = evidence.slice(0, EVIDENCE_PREVIEW_LIMIT);
+  const { excerpts } = useEvidenceExcerpts(shown.map((item) => item.id));
+
   return (
     <section className="uc-graph-inspector__section">
       <h3 className="text-xs font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
@@ -170,7 +176,7 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无精确证据记录</p>
       ) : (
         <ul className="mt-2 space-y-3">
-          {evidence.slice(0, EVIDENCE_PREVIEW_LIMIT).map((item) => (
+          {shown.map((item) => (
             <li key={item.id}>
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-medium text-text-primary">{item.filePath}</p>
@@ -179,9 +185,9 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
                 </span>
               </div>
               <p className="uc-code-ref mt-1">{item.filePath}:{item.lineRange[0]}-{item.lineRange[1]}</p>
-              {item.excerpt && (
+              {(excerpts.get(item.id) ?? item.excerpt) && (
                 <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-root/70 px-2 py-1.5 text-[13px] leading-5 text-text-secondary">
-                  {item.excerpt}
+                  {excerpts.get(item.id) ?? item.excerpt}
                 </pre>
               )}
             </li>

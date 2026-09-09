@@ -9,6 +9,7 @@ import type {
   TopicCandidate,
   TopicTier,
 } from "./types.js";
+import { buildUniqueLabels } from "./display-label.js";
 import { topicDocumentPath } from "./paths.js";
 
 function addReason(map: Map<string, Set<string>>, nodeId: string, reason: string): void {
@@ -186,6 +187,21 @@ export function buildTopicPlan(
       linkedFileDocumentPath: fileTask?.documentPath ?? acceptedFileDocsById.get(sourceFileNodeId)?.documentPath ?? "",
       tier,
     });
+  }
+
+  // Nine functions named `main` would otherwise share one topic title. Qualify
+  // only the names that actually collide, once the full set is known.
+  const topicLabels = buildUniqueLabels(pendingTopics.map((topic) => {
+    const topicNode = profile.indexes.nodesById.get(topic.topicNodeId);
+    return {
+      id: topic.topicNodeId,
+      name: topicNode?.name ?? topic.topicNodeId,
+      filePath: topicNode?.filePath ?? topic.sourceFileNodeId,
+    };
+  }));
+  for (const topic of pendingTopics) {
+    const label = topicLabels.get(topic.topicNodeId);
+    if (label) topic.title = `${label} 关键函数专题`;
   }
 
   const batches: TopicBatch[] = pendingTopics

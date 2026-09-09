@@ -30,6 +30,33 @@ Use this when the user wants the whole experience automated instead of running `
    - Pass `--parallel 1|2`, `--resume`, `--include-extended-topics`, and `--max-source-mb <n>` to `/understand-kb`.
    - If `--deterministic-kb` is present, run the deterministic knowledge-base generator path described in Phase 3 instead of the phased `/understand-kb` writer workflow.
    - If `--no-dashboard` is present, skip Phase 2 and only report the commands needed to launch later.
+3. If `--deterministic-kb` is present, resolve `PLUGIN_ROOT` now — Phase 3 runs a
+   script from the plugin checkout and cannot rely on the current directory.
+
+   ```bash
+   # Locate the shared resolver, then let it validate and print the plugin root.
+   # The resolution order and diagnostics live in scripts/resolve-plugin-root.sh.
+   PLUGIN_ROOT=""
+   for base in "${CLAUDE_PLUGIN_ROOT:-}" \
+     "$HOME/.understand-code-plugin" \
+     "$(realpath "$HOME/.agents/skills/understand-full/../.." 2>/dev/null)" \
+     "$(realpath "$HOME/.copilot/skills/understand-full/../.." 2>/dev/null)" \
+     "$HOME/.codex/understand-code/understand-code-plugin" \
+     "$HOME/.opencode/understand-code/understand-code-plugin" \
+     "$HOME/.pi/understand-code/understand-code-plugin" \
+     "$HOME/understand-code/understand-code-plugin"; do
+     if [ -n "$base" ] && [ -f "$base/scripts/resolve-plugin-root.sh" ]; then
+       PLUGIN_ROOT=$(bash "$base/scripts/resolve-plugin-root.sh") || exit 1
+       break
+     fi
+   done
+
+   if [ -z "$PLUGIN_ROOT" ]; then
+     echo "Error: Cannot find the understand-code plugin root." >&2
+     echo "Set CLAUDE_PLUGIN_ROOT, or reinstall the plugin for your host." >&2
+     exit 1
+   fi
+   ```
 
 ### Phase 1 - Generate graph
 

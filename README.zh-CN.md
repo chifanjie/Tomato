@@ -4,6 +4,8 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 这份手册解决的是“安装后下一步怎么做”。内部实现规范仍以各技能文件为准：[`skills/understand/SKILL.md`](skills/understand/SKILL.md)、[`skills/understand-full/SKILL.md`](skills/understand-full/SKILL.md) 等。文档结构参考了 [ECC 中文手册](https://github.com/affaan-m/ECC/blob/main/README.zh-CN.md) 的读者路径、快速开始、能力地图、场景配方和排错章节，但命令和行为全部以本项目实际实现为准。
 
+> **Codex Alpha 入口说明：** 目前 `understand-code@understand-code-alpha` Preview 插件只打包 MCP server，没有打包 `skills/` 目录。因此安装并启用它后，不会出现 `/understand-full`，也不会出现 `$understand-full`。Codex 的 skill 显式调用语法是 `$skill-name`；本手册中带 `/understand-*` 的章节只适用于另行安装了这些源码 skill 的宿主（例如 Claude Code），不适用于当前 Alpha MCP 插件。Codex Alpha 请按 [Preview MCP 路线](#preview-cli可选) 使用 `get_repo_pulse`、`refresh_index`、`search_context` 和 `trace_impact` 等工具。
+
 > 当前仓库的技能版本来自 `.claude-plugin/plugin.json`（2.7.5）。可安装 Preview CLI 的版本是独立的 `@understand-code/preview` 包；两者不是同一个入口，见[安装与版本路线](#安装与版本路线)。
 
 ## 先看哪一段
@@ -59,7 +61,7 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 | 入口 | 当前载体 | 你会看到什么 | 适合谁 |
 | --- | --- | --- | --- |
-| 技能版 | 根目录 `.claude-plugin/plugin.json` 和 `skills/*/SKILL.md` | `/understand`、`/understand-chat`、`/understand-full` 等 slash skill（具体命名空间由宿主决定） | 在聊天宿主里分析源码、看图谱和生成 Wiki |
+| 技能版 | 根目录 `.claude-plugin/marketplace.json`、`.claude-plugin/plugin.json` 和 `skills/*/SKILL.md` | `/understand`、`/understand-chat`、`/understand-full` 等 slash skill（具体命名空间由宿主决定） | 在聊天宿主里分析源码、看图谱和生成 Wiki |
 | Preview Alpha | `@understand-code/preview` tarball | `understand-code-preview`、stdio MCP、可选 Codex/Claude Host wrapper | 查看已有发布 Graph/Wiki，或验证本地 MCP/Host 发布生命周期 |
 
 这两种载体共享部分底层模型，但不是同一套用户入口。Preview Alpha 的 MCP 工具名称不能替代本手册的 slash skill；反过来，能看到 `/understand` 也不代表已经安装了 Preview CLI。
@@ -92,7 +94,29 @@ pnpm --filter @understand-code/core build
 
 源码 checkout 本身不等于已经安装到宿主。构建完成后，使用宿主官方的本地插件/技能安装方式把仓库加入会话；不要把“在仓库根目录执行 `pnpm install`”误认为已经注册了 `/understand`。
 
-当前 checkout 没有一个跨 Codex/Claude 通用的一键注册命令：根目录提供的是 Claude 风格的 `.claude-plugin/plugin.json`，而 `packages/host-adapters/plugin-roots/` 下的 Codex/Claude marketplace 文件属于 Preview Alpha 打包产物。若你没有现成的宿主安装流程，最稳妥的选择是使用已发布/已打包的技能，或按 [`packages/preview/README.md`](packages/preview/README.md) 走 Preview CLI；不要根据目录名猜测一个不存在的 `/plugin install` 命令。
+#### 安装到 Claude Code
+
+根目录同时提供 `.claude-plugin/marketplace.json` 和 `.claude-plugin/plugin.json`，因此这个仓库本身就是一个可安装的 Claude Code 插件市场。在 Claude Code 会话里执行：
+
+```
+/plugin marketplace add Lum1104/Understand-Code
+```
+
+```
+/plugin install understand-code@understand-code
+```
+
+本地开发时把仓库路径替换成 checkout 目录即可（`/plugin marketplace add /absolute/path/to/understand-code`）。安装后重开一个会话，`/` 自动补全里会出现 `/understand`、`/understand-full`、`/understand-doctor` 等条目，`skills/`、`agents/`、`hooks/hooks.json` 由 Claude Code 自动发现。
+
+安装前可以先校验清单：
+
+```bash
+claude plugin validate /absolute/path/to/understand-code
+```
+
+装完不确定是否可用时，运行 `/understand-doctor`：它会检查插件根目录、Node/pnpm 版本、`core` 构建产物、图谱与知识库是否存在及是否过期，并直接给出下一步命令。
+
+Codex 仍走 `packages/host-adapters/plugin-roots/codex` 下的 marketplace 与 Preview CLI 路线；那条路线提供 MCP tools，不会增加 `/understand-*` slash skill。
 
 内置的语言和框架提示覆盖常见的 TypeScript、JavaScript、Python、Go、Java、Rust、C/C++、C#、Ruby、PHP、Kotlin、Swift、SQL、GraphQL、Protobuf、Shell、HTML、CSS、YAML、JSON、Terraform、Dockerfile 和 Markdown 项目；框架提示包括 React、Next.js、Vue、Express、Django、FastAPI、Flask、Gin、Rails 和 Spring。这里的“支持”表示有相应的扫描/摘要指导，动态代码、生成代码和未列出的框架仍应人工复核。
 

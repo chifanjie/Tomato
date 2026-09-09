@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from "react";
+import { StrictMode, act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -228,8 +228,60 @@ describe("Task-first Preview host bridge", () => {
     }
   });
 
-  it("opens the unified shell on Tasks by default", async () => {
+  it("opens the unified shell on the knowledge surfaces by default", async () => {
+    // "/" is how `/understand-dashboard` opens the workbench: the user came to
+    // read the graph and wiki they just generated, not an empty Task home.
     window.history.replaceState(null, "", "/?token=preview-token");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(createElement(App)));
+    await act(async () => Promise.resolve());
+
+    // The knowledge shell is behind React.lazy, so assert the routing decision
+    // rather than racing its chunk: the empty Task workbench must not mount.
+    expect(container.querySelector('[data-testid="task-first-workbench"]')).toBeNull();
+    expect(container.textContent).not.toContain("尚未选择任务");
+    await act(async () => root.unmount());
+  });
+
+  it("downloads the wiki index once even though StrictMode runs effects twice", async () => {
+    // `/understand-dashboard` always serves the workbench from the Vite dev
+    // server, so every reader pays StrictMode's double effect — on an index
+    // that is megabytes on a real repository.
+    window.history.replaceState(null, "", "/?token=preview-token");
+    let wikiReads = 0;
+    let graphReads = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const pathname = new URL(String(input), window.location.origin).pathname;
+      if (pathname.endsWith("/wiki-index.json")) {
+        wikiReads += 1;
+        await Promise.resolve();
+        return response(200, wikiV2Fixture());
+      }
+      if (pathname.endsWith("knowledge-graph.json")) graphReads += 1;
+      return response(404, {});
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(
+      createElement(StrictMode, null, createElement(App)),
+    ));
+    await act(async () => Promise.resolve());
+
+    expect(wikiReads).toBe(1);
+    // The graph load has no coalescing, so its count is the control that
+    // proves StrictMode really did invoke the effects twice.
+    expect(graphReads).toBe(2);
+    await act(async () => root.unmount());
+  });
+
+  it("still opens the Task home for an explicit #tasks entry point", async () => {
+    window.history.replaceState(null, "", "/?token=preview-token#tasks");
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -242,8 +294,6 @@ describe("Task-first Preview host bridge", () => {
       'nav[aria-label="主要界面"] button[aria-current="page"]',
     );
     expect(current?.textContent).toBe("任务");
-    expect(container.textContent).toContain("知识库");
-    expect(container.textContent).toContain("关系图谱");
     await act(async () => root.unmount());
   });
 
@@ -251,7 +301,8 @@ describe("Task-first Preview host bridge", () => {
     ["知识库", "wiki"],
     ["关系图谱", "graph"],
   ] as const)("opens %s from the empty Task home without inventing Task context", async (label, hash) => {
-    window.history.replaceState(null, "", "/?token=preview-token");
+    // The empty Task home is now reached explicitly rather than as the default.
+    window.history.replaceState(null, "", "/?token=preview-token#tasks");
     vi.stubGlobal("fetch", vi.fn(async () => response(404, {})));
     const container = document.createElement("div");
     document.body.append(container);

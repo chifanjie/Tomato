@@ -47,39 +47,26 @@ Use `$PROJECT_ROOT` (not the bare CWD) for every reference to "the current proje
 Resolve the plugin root like this:
 
 ```bash
-SKILL_REAL=$(realpath ~/.agents/skills/understand-domain 2>/dev/null || readlink -f ~/.agents/skills/understand-domain 2>/dev/null || echo "")
-SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/understand-domain 2>/dev/null || readlink -f ~/.copilot/skills/understand-domain 2>/dev/null || echo "")
-COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-
+# Locate the shared resolver, then let it validate and print the plugin root.
+# The resolution order and diagnostics live in scripts/resolve-plugin-root.sh.
 PLUGIN_ROOT=""
-for candidate in \
-  "${CLAUDE_PLUGIN_ROOT}" \
+for base in "${CLAUDE_PLUGIN_ROOT:-}" \
   "$HOME/.understand-code-plugin" \
-  "$SELF_RELATIVE" \
-  "$COPILOT_SELF_RELATIVE" \
+  "$(realpath "$HOME/.agents/skills/understand-domain/../.." 2>/dev/null)" \
+  "$(realpath "$HOME/.copilot/skills/understand-domain/../.." 2>/dev/null)" \
   "$HOME/.codex/understand-code/understand-code-plugin" \
   "$HOME/.opencode/understand-code/understand-code-plugin" \
   "$HOME/.pi/understand-code/understand-code-plugin" \
   "$HOME/understand-code/understand-code-plugin"; do
-  if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
-    PLUGIN_ROOT="$candidate"
+  if [ -n "$base" ] && [ -f "$base/scripts/resolve-plugin-root.sh" ]; then
+    PLUGIN_ROOT=$(bash "$base/scripts/resolve-plugin-root.sh") || exit 1
     break
   fi
 done
 
 if [ -z "$PLUGIN_ROOT" ]; then
-  echo "Error: Cannot find the understand-code plugin root."
-  echo "Checked:"
-  echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
-  echo "  - $HOME/.understand-code-plugin"
-  echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/understand-domain>}"
-  echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/understand-domain>}"
-  echo "  - $HOME/.codex/understand-code/understand-code-plugin"
-  echo "  - $HOME/.opencode/understand-code/understand-code-plugin"
-  echo "  - $HOME/.pi/understand-code/understand-code-plugin"
-  echo "  - $HOME/understand-code/understand-code-plugin"
-  echo "Make sure the plugin is installed correctly."
+  echo "Error: Cannot find the understand-code plugin root." >&2
+  echo "Set CLAUDE_PLUGIN_ROOT, or reinstall the plugin for your host." >&2
   exit 1
 fi
 ```

@@ -7,6 +7,7 @@ export * from "./file-doc-planner.js";
 export * from "./business-facts.js";
 export * from "./writer-contracts.js";
 export * from "./wiki-contract.js";
+export * from "./excerpt-store.js";
 export * from "./wiki-v1-adapter.js";
 export * from "./artifacts.js";
 export * from "./artifact-verifier.js";

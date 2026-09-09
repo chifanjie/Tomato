@@ -32,54 +32,52 @@ Start the Understand Code dashboard to visualize the knowledge graph for the cur
 
    Use the Bash tool to resolve:
    ```bash
-   SKILL_REAL=$(realpath ~/.agents/skills/understand-dashboard 2>/dev/null || readlink -f ~/.agents/skills/understand-dashboard 2>/dev/null || echo "")
-   SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-   COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/understand-dashboard 2>/dev/null || readlink -f ~/.copilot/skills/understand-dashboard 2>/dev/null || echo "")
-   COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-
+   # Locate the shared resolver, then let it validate and print the plugin root.
+   # The resolution order and diagnostics live in scripts/resolve-plugin-root.sh.
    PLUGIN_ROOT=""
-   for candidate in \
-     "${CLAUDE_PLUGIN_ROOT}" \
+   for base in "${CLAUDE_PLUGIN_ROOT:-}" \
      "$HOME/.understand-code-plugin" \
-     "$SELF_RELATIVE" \
-     "$COPILOT_SELF_RELATIVE" \
+     "$(realpath "$HOME/.agents/skills/understand-dashboard/../.." 2>/dev/null)" \
+     "$(realpath "$HOME/.copilot/skills/understand-dashboard/../.." 2>/dev/null)" \
      "$HOME/.codex/understand-code/understand-code-plugin" \
      "$HOME/.opencode/understand-code/understand-code-plugin" \
      "$HOME/.pi/understand-code/understand-code-plugin" \
      "$HOME/understand-code/understand-code-plugin"; do
-     if [ -n "$candidate" ] && [ -d "$candidate/packages/dashboard" ]; then
-       PLUGIN_ROOT="$candidate"; break
+     if [ -n "$base" ] && [ -f "$base/scripts/resolve-plugin-root.sh" ]; then
+       PLUGIN_ROOT=$(bash "$base/scripts/resolve-plugin-root.sh") || exit 1
+       break
      fi
    done
-
+   
    if [ -z "$PLUGIN_ROOT" ]; then
-     echo "Error: Cannot find the understand-code plugin root."
-     echo "Checked:"
-     echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
-     echo "  - $HOME/.understand-code-plugin"
-     echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/understand-dashboard>}"
-     echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/understand-dashboard>}"
-     echo "  - $HOME/.codex/understand-code/understand-code-plugin"
-     echo "  - $HOME/.opencode/understand-code/understand-code-plugin"
-     echo "  - $HOME/.pi/understand-code/understand-code-plugin"
-     echo "  - $HOME/understand-code/understand-code-plugin"
-     echo "Make sure you followed the installation instructions for your platform."
+     echo "Error: Cannot find the understand-code plugin root." >&2
+     echo "Set CLAUDE_PLUGIN_ROOT, or reinstall the plugin for your host." >&2
+     exit 1
+   fi
+
+   # The dashboard needs its own package, which a skills-only install may omit.
+   DASHBOARD_DIR="$PLUGIN_ROOT/packages/dashboard"
+   if [ ! -d "$DASHBOARD_DIR" ]; then
+     echo "Error: $DASHBOARD_DIR is missing from this install." >&2
+     echo "Install the full plugin (not skills only) to use the dashboard." >&2
      exit 1
    fi
    ```
 
-4. Install dependencies and build if needed:
+4. Install dependencies and build if needed. `DASHBOARD_DIR` and `PLUGIN_ROOT`
+   are already set by step 3 — use them literally, do not substitute paths by hand:
    ```bash
-   cd <dashboard-dir> && pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+   cd "$DASHBOARD_DIR" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
    ```
    Then ensure the core package is built (the dashboard depends on it):
    ```bash
-   cd <plugin-root> && pnpm --filter @understand-code/core build
+   cd "$PLUGIN_ROOT" && pnpm --filter @understand-code/core build
    ```
 
-5. Start the Vite dev server pointing at the project's knowledge graph:
+5. Start the Vite dev server pointing at the project's knowledge graph. Set
+   `PROJECT_DIR` to the project directory resolved in step 1:
    ```bash
-   cd <dashboard-dir> && GRAPH_DIR=<project-dir> npx vite --host 127.0.0.1
+   cd "$DASHBOARD_DIR" && GRAPH_DIR="$PROJECT_DIR" npx vite --host 127.0.0.1
    ```
    Run this in the background so the user can continue working.
 
@@ -100,6 +98,6 @@ Start the Understand Code dashboard to visualize the knowledge graph for the cur
 
 ## Notes
 
-- The dashboard auto-opens in the default browser via `--open`
+- Vite is configured to open the tokenized URL in the default browser on start
 - If port 5173 is already in use, Vite will pick the next available port
 - The `GRAPH_DIR` environment variable tells the dashboard where to find the knowledge graph

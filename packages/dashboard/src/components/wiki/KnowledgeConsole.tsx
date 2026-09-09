@@ -5,6 +5,7 @@ import { buildKnowledgeConsoleView } from "./knowledgeConsoleModel";
 import GuidedWikiHome from "./GuidedWikiHome";
 import KnowledgeStatusView from "./KnowledgeStatusView";
 import WikiEvidenceRail from "./WikiEvidenceRail";
+import { useEvidenceExcerpts } from "../../wiki/ExcerptContext";
 import WikiNavigation from "./WikiNavigation";
 import WikiPageView, { type WikiOutlineHeading } from "./WikiPageView";
 import WikiResponsiveShell from "./WikiResponsiveShell";
@@ -34,6 +35,9 @@ export default function KnowledgeConsole({
   const setDashboardSurface = useDashboardStore((state) => state.setDashboardSurface);
   const openGraphForWikiPage = useDashboardStore((state) => state.openGraphForWikiPage);
   const view = buildKnowledgeConsoleView(wikiIndex, activeWikiPageId);
+  // Only the open page's evidence is requested, so a page view costs the same
+  // on a large repository as on a small one.
+  const pageExcerpts = useEvidenceExcerpts(view.exactEvidence.map((item) => item.id));
   const [outlineHeadings, setOutlineHeadings] = useState<WikiOutlineHeading[]>([]);
   const [activeAuxView, setActiveAuxView] = useState<"home" | "status" | null>("home");
   const visibleAuxView = view.activePage ? null : activeAuxView ?? "home";
@@ -151,6 +155,8 @@ export default function KnowledgeConsole({
       headings={outlineHeadings}
       onOpenPage={openPage}
       onOpenGraph={openGraphForPage}
+      excerpts={pageExcerpts.excerpts}
+      excerptsLoading={pageExcerpts.loading}
     />
   ) : undefined;
 

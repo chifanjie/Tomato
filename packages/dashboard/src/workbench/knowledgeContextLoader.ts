@@ -16,16 +16,16 @@ export type DashboardKnowledge =
     }
   | {
       wikiIndex: WikiRuntimeIndex;
-      wikiStatus: "missing" | "invalid" | "forbidden" | "error";
+      wikiStatus: "missing" | "legacy" | "invalid" | "forbidden" | "error";
       sourceVersion: null;
     };
 
 interface JsonLoadResult {
-  status: "ok" | "missing" | "invalid" | "forbidden" | "error";
+  status: "ok" | "missing" | "legacy" | "invalid" | "forbidden" | "error";
   value: unknown;
 }
 
-function optionalDataUrl(path: string, token: string | null): string {
+export function optionalDataUrl(path: string, token: string | null): string {
   const normalizedPath = path.replace(/^\/+/, "");
   const base = import.meta.env.BASE_URL || "/";
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
@@ -41,7 +41,13 @@ async function fetchJsonWithStatus(
 ): Promise<JsonLoadResult> {
   try {
     const response = await fetcher(url, dashboardFetchInit(accessToken));
-    if (response.status === 404) return { status: "missing", value: null };
+    if (response.status === 404) {
+      // The server tells us whether a knowledge base exists in an older layout,
+      // so the reader is not told to generate one that is already on disk.
+      const body: unknown = await response.json().catch(() => null);
+      const kind = (body as { knowledgeBase?: unknown } | null)?.knowledgeBase;
+      return { status: kind === "legacy" ? "legacy" : "missing", value: null };
+    }
     if (response.status === 401 || response.status === 403) return { status: "forbidden", value: null };
     if (!response.ok) return { status: "error", value: null };
     try {

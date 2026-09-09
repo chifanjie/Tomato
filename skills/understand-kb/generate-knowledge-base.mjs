@@ -509,10 +509,60 @@ function assertDeterministicAllowed(graph, args) {
   if (args.allowLargeDeterministic) return;
   const stats = graphStats(graph);
   if (stats.nodes <= 5000 && stats.fileNodes <= 500) return;
-  console.error('当前图谱较大，已跳过 deterministic-only 全量内存生成以保护本机内存。');
-  console.error(`图谱节点: ${stats.nodes}；文件节点: ${stats.fileNodes}`);
-  console.error('请使用 phased 模式运行 /understand-kb，或显式传入 --allow-large-deterministic。');
-  process.exit(1);
+  console.warn('当前图谱较大，deterministic-only 将自动使用文件级安全投影，避免一次性展开符号文档导致内存峰值过高。');
+  console.warn(`完整图谱节点: ${stats.nodes}；文件节点: ${stats.fileNodes}`);
+}
+
+function isLargeGraph(graph) {
+  const stats = graphStats(graph);
+  return stats.nodes > 5000 || stats.fileNodes > 500;
+}
+
+/**
+ * Build the bounded graph used to materialize the deterministic Wiki.
+ *
+ * The full graph remains the source of truth on disk and is addressed by the
+ * digest written into the Wiki artifacts.  The projection contains every
+ * source/document/config node and only edges between those nodes.  This keeps
+ * the Wiki useful for repository navigation while preventing the artifact
+ * builder from duplicating tens of thousands of symbol records in memory.
+ */
+function projectLargeGraph(graph) {
+  const sourceTypes = new Set(['file', 'config', 'schema', 'document']);
+  const sourceNodes = graph.nodes.filter((node) => sourceTypes.has(node.type));
+  // Keep a bounded set of high-value symbols so the deterministic Wiki can
+  // still explain real service entry points without materializing every
+  // symbol in a very large repository.
+  const symbolPriority = (node) => {
+    const path = (node.filePath ?? '').replace(/\\/gu, '/');
+    const name = node.name ?? '';
+    if (/(^|\/)(?:tests?|__tests__|fixtures?|vendor|thirdparty|generated)(\/|$)/iu.test(path)
+      || /(?:_test\.go|\.(?:test|spec)\.[^.]+|ttypes\.go)$/iu.test(path)) return 99;
+    if (/(^|\/)(?:main|__main__)\.[^.]+$/iu.test(path)) return 0;
+    if (/^(?:main|bootstrap|start|serve|run|init.*server)$/iu.test(name)) return 1;
+    if (/(^|\/)(?:server|servers|api|routes?|controllers?|cmd|cli)(\/|$)/iu.test(path)) return 2;
+    if (/(?:handler|controller|router|registry|manager)/iu.test(path)
+      && /^(?:init|new|get|handle|serve|process|execute|register)/iu.test(name)) return 3;
+    if (/(^|\/)(?:logic|strategy|strategies|services?)(\/|$)/iu.test(path)
+      && /^(?:init|handle|process|execute|recommend|recall|genresp)/iu.test(name)) return 4;
+    return 99;
+  };
+  const symbolNodes = graph.nodes
+    .filter((node) => (node.type === 'function' || node.type === 'class') && symbolPriority(node) < 99)
+    .sort((left, right) => symbolPriority(left) - symbolPriority(right) || left.id.localeCompare(right.id))
+    .slice(0, 400);
+  const nodes = [...sourceNodes, ...symbolNodes];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  const layers = (graph.layers ?? []).map((layer) => ({
+    ...layer,
+    nodeIds: (layer.nodeIds ?? []).filter((nodeId) => nodeIds.has(nodeId)),
+  }));
+  const tour = (graph.tour ?? []).map((step) => ({
+    ...step,
+    nodeIds: (step.nodeIds ?? []).filter((nodeId) => nodeIds.has(nodeId)),
+  }));
+  return { ...graph, nodes, edges, layers, tour };
 }
 
 function writeDocument(outputRoot, doc) {
@@ -575,6 +625,7 @@ function loadGraph(core, sourceRoot) {
 function buildArtifacts(core, {
   sourceRoot,
   graph,
+  graphDigestOverride,
   config,
   sourceStats,
   generationMode,
@@ -589,7 +640,7 @@ function buildArtifacts(core, {
     generatedAt: new Date().toISOString(),
     outputLanguage: knowledgeBaseOutputLanguage(config),
     generationMode,
-    graphDigest: createHash('sha256').update(JSON.stringify(graph)).digest('hex'),
+    graphDigest: graphDigestOverride ?? createHash('sha256').update(JSON.stringify(graph)).digest('hex'),
     gitCommitHash: graph.project.gitCommitHash,
     sourceRootIdentity: resolve(sourceRoot),
     sourceRead: {
@@ -615,13 +666,40 @@ function buildArtifacts(core, {
   });
 }
 
+/**
+ * Publishes source excerpts as shards next to the index and returns the index
+ * with excerpts removed.
+ *
+ * Excerpts are the bulk of the index (8.4 MB of 11.7 MB for this repository)
+ * and grow with total source size, so keeping them inline makes first paint
+ * scale with the repository rather than with the navigation model. The reader
+ * fetches only the shards for the page it shows.
+ */
+function publishExcerptShards(core, outputRoot, wikiIndex) {
+  const { descriptor, shards } = core.buildExcerptShards(wikiIndex.evidence);
+  const shardDir = join(outputRoot, descriptor.pathPrefix);
+
+  // Drop shards from an earlier run so a shrunken store leaves nothing stale.
+  rmSync(shardDir, { recursive: true, force: true });
+  mkdirSync(shardDir, { recursive: true });
+  shards.forEach((shard, index) => {
+    writeJsonAtomic(join(shardDir, core.shardFileName(index)), shard);
+  });
+
+  return {
+    ...wikiIndex,
+    evidence: wikiIndex.evidence.map(({ excerpt: _excerpt, ...rest }) => rest),
+    excerptStore: descriptor,
+  };
+}
+
 function publishZeroSourceReport(outputRoot, artifacts) {
   writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
   console.error('未读取到任何源码，正式知识库未发布。');
   process.exitCode = 1;
 }
 
-function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true) {
+function publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate = true) {
   const payloads = [
     artifacts.wikiIndex,
     artifacts.searchIndex,
@@ -637,7 +715,7 @@ function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true
 
   cleanOutputDocuments(outputRoot);
   for (const doc of kb.documents) writeDocument(outputRoot, doc);
-  writeJsonAtomic(join(outputRoot, 'wiki-index.json'), artifacts.wikiIndex);
+  writeJsonAtomic(join(outputRoot, 'wiki-index.json'), publishExcerptShards(core, outputRoot, artifacts.wikiIndex));
   writeJsonAtomic(join(outputRoot, 'search-index.json'), artifacts.searchIndex);
   writeJsonAtomic(join(outputRoot, '.trace/document-traces.json'), artifacts.documentTraces);
   writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
@@ -646,8 +724,14 @@ function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true
 }
 
 function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, args) {
-  const graph = loadGraph(core, sourceRoot);
-  assertDeterministicAllowed(graph, args);
+  const fullGraph = loadGraph(core, sourceRoot);
+  assertDeterministicAllowed(fullGraph, args);
+  const largeGraph = isLargeGraph(fullGraph);
+  const graph = largeGraph ? projectLargeGraph(fullGraph) : fullGraph;
+  if (largeGraph) {
+    const projected = graphStats(graph);
+    console.warn(`Wiki 安全投影: ${projected.nodes} 个文件/文档节点；完整符号图谱仍保留在 knowledge-graph.json。`);
+  }
   const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, args.maxSourceBytes);
   printGraphStats(graph, stats);
   const config = core.loadConfig(sourceRoot);
@@ -660,16 +744,25 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
   const artifacts = buildArtifacts(core, {
     sourceRoot,
     graph: kb.profile.graph,
+    graphDigestOverride: largeGraph
+      ? createHash('sha256').update(JSON.stringify(fullGraph)).digest('hex')
+      : undefined,
     config,
     sourceStats: stats,
     generationMode: 'deterministic',
     fileDocPlan: kb.fileDocPlan,
     requiredRouteStages: kb.plan.requiredRouteStages,
     documents: kb.documents,
-    warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
+    warnings: [
+      ...kb.validation.warnings,
+      ...kb.coverageReport.warnings,
+      ...(largeGraph ? [
+        '大图谱安全模式：Wiki 使用文件/文档级投影生成；完整符号图谱保留在 knowledge-graph.json。',
+      ] : []),
+    ],
     errors: [...kb.validation.errors, ...kb.coverageReport.errors],
   });
-  if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
+  if (publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
   }
 }
@@ -939,7 +1032,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
     errors: [...kb.validation.errors, ...kb.coverageReport.errors],
   });
-  if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
+  if (publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
   }
 }

@@ -196,6 +196,12 @@ describe("App Wiki availability", () => {
         title: "尚未生成知识库",
         description: "没有找到 wiki-index.json；关系图谱仍可使用。请运行知识库生成命令后刷新。",
       },
+      // A knowledge base that exists in an older layout is a different problem
+      // from one that was never generated, and needs a different recovery.
+      legacy: {
+        title: "知识库格式已过期",
+        description: "已找到知识库目录，但它使用的是旧版格式，缺少本界面需要的 wiki-index.json；关系图谱仍可使用。请重新运行知识库生成命令覆盖旧产物。",
+      },
       invalid: {
         title: "知识库索引无效",
         description: "索引无法通过 V2 校验，因此未展示可能错误的映射；关系图谱仍可使用。请重新生成知识库。",
@@ -677,5 +683,28 @@ describe("App peer shell contracts", () => {
 
   it("does not mount the legacy onboarding overlay", () => {
     expect(APP_SOURCE).not.toContain("<OnboardingOverlay");
+  });
+});
+
+describe("default landing surface", () => {
+  it("opens the knowledge surfaces for a bare root URL", () => {
+    // `/understand-dashboard` opens "/" — the user came to read the graph and
+    // the wiki they just generated, not an empty Task workbench.
+    expect(AppModule.defaultTaskLocationFor({ pathname: "/", hash: "" })).toBeNull();
+  });
+
+  it("opens the Task surface only for an explicit #tasks hash", () => {
+    expect(AppModule.defaultTaskLocationFor({ pathname: "/", hash: "#tasks" })).toEqual({
+      route: { view: "tasks", section: "summary" },
+      surface: "task",
+    });
+  });
+
+  it("leaves a wiki hash target on the knowledge surfaces", () => {
+    expect(AppModule.defaultTaskLocationFor({ pathname: "/", hash: "#page:overview" })).toBeNull();
+  });
+
+  it("ignores non-root paths", () => {
+    expect(AppModule.defaultTaskLocationFor({ pathname: "/tasks", hash: "#tasks" })).toBeNull();
   });
 });

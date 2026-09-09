@@ -89,6 +89,8 @@ const TECHNICAL_TOKEN_ALLOWLIST = new Set([
   "index",
   "json",
   "knowledge",
+  // Slash-command names the user must type verbatim to recover.
+  "understand",
   "wiki",
 ]);
 const TRADITIONAL_COPY = /[這個裡為於與後臺資檔圖譜關開載點擊錯誤頁總證說體項數態庫動擇劃讀寫網絡線節]/u;

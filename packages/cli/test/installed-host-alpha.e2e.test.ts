@@ -13,7 +13,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { McpToolErrorResultV1Schema } from "@understand-code/contracts/mcp";
+import { McpToolErrorResultV1Schema, BuildTaskBriefOutputV1Schema, GetTaskBriefOutputV1Schema } from "@understand-code/contracts/mcp";
 import {
   INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_CONFIG_FILE,
@@ -141,122 +141,45 @@ async function stopInstalledHost(
   expect(stderr.join("")).toBe("");
 }
 
-function expectStrongWriterLocked(result: unknown): void {
-  expect(McpToolErrorResultV1Schema.parse(result)).toEqual({
-    isError: true,
-    content: [{
-      type: "text",
-      text: "The strong Store is unavailable. Run Doctor for details.",
-    }],
-    structuredContent: {
-      error: {
-        schemaVersion: 1,
-        code: "provider_unavailable",
-        details: { reason: "unavailable" },
-      },
-    },
-  });
-}
-
 async function expectLegacyStoreAbsent(repositoryRoot: string): Promise<void> {
   await expect(
     lstat(path.join(repositoryRoot, ".understand-code")),
   ).rejects.toMatchObject({ code: "ENOENT" });
 }
 
-async function exerciseInstalledMutationLock(
+async function exerciseInstalledLocalRuntime(
   host: ReturnType<typeof startInstalledHost>,
   repositoryRoot: string,
   actor: string,
   keyPrefix: string,
-): Promise<void> {
+  resumedTaskId?: string,
+): Promise<string> {
   const sourcePath = path.join(repositoryRoot, "src/task.ts");
   const indexPath = path.join(repositoryRoot, ".git/index");
   const before = await Promise.all([readFile(sourcePath), readFile(indexPath)]);
-  const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-  const calls = [
-    ["build_task_brief", {
-      task: "Capability lock fixture.",
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-build`,
-      actor,
-      scope: ["src/task.ts"],
-    }],
-    ["update_task", {
-      taskId,
-      action: { type: "transition_status", to: "planned" },
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-update`,
-      actor,
-    }],
-    ["update_task", {
-      taskId,
-      action: {
-        type: "refresh_task_context",
-        targetSnapshotId: "snapshot:locked",
-      },
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-context-refresh`,
-      actor,
-    }],
-    ["update_task", {
-      taskId,
-      action: {
-        type: "rebase_task",
-        targetSnapshotId: "snapshot:locked",
-        newBaselineSnapshotId: "snapshot:locked",
-        reason: "Strong Store authority is unavailable.",
-      },
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-context-rebase`,
-      actor,
-    }],
-    ["check_change", {
-      taskId,
-      actualSnapshotId: "snapshot:locked",
-      includeWorktree: true,
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-check`,
-      actor,
-    }],
-    ["record_verification", {
-      taskId,
-      record: {
-        verificationPlanEntryId: "verification-plan:locked",
-        kind: "test",
-        status: "passed",
-        command: "pnpm test",
-        exitCode: 0,
-        summary: "Capability lock fixture.",
-        claimIds: [],
-        snapshotId: "snapshot:locked",
-      },
-      expectedRevision: 0,
-      idempotencyKey: `${keyPrefix}-verification`,
-      actor,
-    }],
-    ["refresh_index", {
-      mode: "full",
-      idempotencyKey: `${keyPrefix}-refresh`,
-      actor,
-    }],
-  ] as const;
-  for (const [index, [name, argumentsValue]] of calls.entries()) {
-    const id = 2 + index;
-    writeMessage(host.child as any, {
-      jsonrpc: "2.0",
-      id,
-      method: "tools/call",
-      params: { name, arguments: argumentsValue },
-    });
-    expectStrongWriterLocked(
-      (await host.output.waitFor((message) => message.id === id)).result,
-    );
-    await expectLegacyStoreAbsent(repositoryRoot);
-    expect(await Promise.all([readFile(sourcePath), readFile(indexPath)])).toEqual(
-      before,
-    );
+  let id = 2;
+  const call = async (name: string, argumentsValue: unknown) => {
+    const requestId = id++;
+    writeMessage(host.child as any, { jsonrpc: "2.0", id: requestId, method: "tools/call", params: { name, arguments: argumentsValue } });
+    return (await host.output.waitFor((message) => message.id === requestId)).result;
+  };
+  if (resumedTaskId !== undefined) {
+    const resumed = GetTaskBriefOutputV1Schema.parse(await call("get_task_brief", { taskId: resumedTaskId, section: "summary" }));
+    expect(resumed.structuredContent.result.task.taskId).toBe(resumedTaskId);
   }
+  const input = { task: "Explain the actual task function using source evidence.", expectedRevision: 0, actor, idempotencyKey: `${keyPrefix}-build`, scope: ["src/task.ts"] };
+  const built = BuildTaskBriefOutputV1Schema.parse(await call("build_task_brief", input));
+  const taskId = built.structuredContent.result.task.taskId;
+  expect(built.structuredContent.result.evidenceIds.length).toBeGreaterThan(0);
+  const replay = BuildTaskBriefOutputV1Schema.parse(await call("build_task_brief", input));
+  expect(replay.structuredContent.result.task.taskId).toBe(taskId);
+  expect(replay.structuredContent.result.mutation.idempotentReplay).toBe(true);
+  const read = GetTaskBriefOutputV1Schema.parse(await call("get_task_brief", { taskId, section: "summary" }));
+  expect(read.structuredContent.result.task.revision).toBe(built.structuredContent.result.task.revision);
+  const rejected = McpToolErrorResultV1Schema.parse(await call("update_task", { taskId, expectedRevision: built.structuredContent.result.task.revision, actor, idempotencyKey: `${keyPrefix}-unconfirmed-plan`, action: { type: "transition_status", to: "planned" } }));
+  expect(rejected.structuredContent.error.code).toBe("task_gate_unsatisfied");
+  expect(await Promise.all([readFile(sourcePath), readFile(indexPath)])).toEqual(before);
+  return taskId;
 }
 
 describe("installed dual-host alpha", () => {
@@ -355,7 +278,7 @@ describe("installed dual-host alpha", () => {
   });
 
   it(
-    "preserves the strong-writer lock across bundled hosts and lifecycle operations",
+    "persists local Tasks across bundled hosts and installation lifecycle operations",
     async () => {
       const repositoryRoot = await createGitRepository({ seedArtifacts: false });
       const releases = await makeReleaseCopies();
@@ -427,27 +350,28 @@ describe("installed dual-host alpha", () => {
       const codex = startInstalledHost(codexRoot, repositoryRoot);
       const codexInitialization = await codex.output.waitFor((message) => message.id === 1);
       expect(codexInitialization.result.instructions).toContain("knowledge.action=stage");
-      expect(codexInitialization.result.instructions).toContain("provider_unavailable");
-      await exerciseInstalledMutationLock(
+      expect(codexInitialization.result.instructions).toContain("local_durable_v1");
+      const sharedTaskId = await exerciseInstalledLocalRuntime(
         codex,
         repositoryRoot,
         "agent:codex-alpha",
         "installed-codex",
       );
       await stopInstalledHost(codex.child, codex.output.stderr);
-      await expectLegacyStoreAbsent(repositoryRoot);
+      await expect(lstat(path.join(repositoryRoot, ".understand-code"))).resolves.toBeDefined();
 
       const claude = startInstalledHost(claudeRoot, repositoryRoot);
       const claudeInitialization = await claude.output.waitFor((message) => message.id === 1);
       expect(claudeInitialization.result.instructions).toBe(codexInitialization.result.instructions);
-      await exerciseInstalledMutationLock(
+      await exerciseInstalledLocalRuntime(
         claude,
         repositoryRoot,
         "agent:claude-alpha",
         "installed-claude",
+        sharedTaskId,
       );
       await stopInstalledHost(claude.child, claude.output.stderr);
-      await expectLegacyStoreAbsent(repositoryRoot);
+      await expect(lstat(path.join(repositoryRoot, ".understand-code"))).resolves.toBeDefined();
 
       const initialInstalledBundle = await readFile(
         path.join(codexRoot, INSTALLATION_CLI_BUNDLE_FILE),
@@ -475,17 +399,18 @@ describe("installed dual-host alpha", () => {
 
       const rolledBackCodex = startInstalledHost(codexRoot, repositoryRoot);
       await rolledBackCodex.output.waitFor((message) => message.id === 1);
-      await exerciseInstalledMutationLock(
+      await exerciseInstalledLocalRuntime(
         rolledBackCodex,
         repositoryRoot,
         "agent:codex-alpha",
         "rolled-back-codex",
+        sharedTaskId,
       );
       await stopInstalledHost(
         rolledBackCodex.child,
         rolledBackCodex.output.stderr,
       );
-      await expectLegacyStoreAbsent(repositoryRoot);
+      await expect(lstat(path.join(repositoryRoot, ".understand-code"))).resolves.toBeDefined();
 
       await expect(
         runLifecycle(

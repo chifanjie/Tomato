@@ -40,6 +40,8 @@ export interface KnowledgeArtifactInput {
   businessTerms: string[];
   nodes: KnowledgeArtifactNode[];
   referenceFileNodeIds: string[];
+  /** Nodes considered for semantic writing; coverage always uses the full nodes array. */
+  generationNodeCount?: number;
   documents: GeneratedDocument[];
   warnings: string[];
   errors: string[];
@@ -316,22 +318,16 @@ function pagePriority(left: WikiPageV2, right: WikiPageV2): number {
   return roleDifference !== 0 ? roleDifference : compareStable(left.id, right.id);
 }
 
-function pageHasExactEvidence(
-  page: WikiPageV2,
-  nodeId: string,
-  evidenceById: ReadonlyMap<string, WikiEvidenceV2>,
-): boolean {
-  return page.evidenceIds.some((id) => evidenceById.get(id)?.nodeIds.includes(nodeId) === true);
-}
-
 function isUsableDirectPage(
   page: WikiPageV2,
   evidenceById: ReadonlyMap<string, WikiEvidenceV2>,
 ): boolean {
-  return page.directNodeIds.length > 0
-    && (page.quality === "generated" || page.quality === "verified")
-    && page.generationStatus === "complete"
-    && page.directNodeIds.every((nodeId) => pageHasExactEvidence(page, nodeId, evidenceById));
+  if (page.directNodeIds.length === 0 || !isCompleteGeneratedPage(page)) return false;
+  const evidencedNodeIds = new Set<string>();
+  for (const id of page.evidenceIds) {
+    for (const nodeId of evidenceById.get(id)?.nodeIds ?? []) evidencedNodeIds.add(nodeId);
+  }
+  return page.directNodeIds.every((nodeId) => evidencedNodeIds.has(nodeId));
 }
 
 function isCompleteGeneratedPage(page: WikiPageV2): boolean {
@@ -368,22 +364,30 @@ function buildReferenceCoverage(
     .filter((node) => node.type.toLowerCase() === "class")
     .map((node) => node.id));
 
-  const coveredFiles = new Set(referenceFileIds.filter((nodeId) =>
-    completeFileDocuments.some(({ page }) => page.directNodeIds.includes(nodeId))));
-  const coveredFunctions = new Set(functionIds.filter((nodeId) =>
-    completeFileDocuments.some(({ document, page }) =>
-      page.directNodeIds.includes(nodeId)
-      && document.symbolAnchors.some((anchor) => anchor.nodeId === nodeId))));
-  const coveredTypes = new Set(typeIds.filter((nodeId) =>
-    completeFileDocuments.some(({ document, page }) =>
-      page.directNodeIds.includes(nodeId)
-      && document.symbolAnchors.some((anchor) => anchor.nodeId === nodeId))));
+  const completeDirectIds = new Set<string>();
+  const completeAnchoredIds = new Set<string>();
+  for (const { document, page } of completeFileDocuments) {
+    const anchoredIds = new Set(document.symbolAnchors.map((anchor) => anchor.nodeId));
+    for (const nodeId of page.directNodeIds) {
+      completeDirectIds.add(nodeId);
+      if (anchoredIds.has(nodeId)) completeAnchoredIds.add(nodeId);
+    }
+  }
+  const coveredFiles = new Set(referenceFileIds.filter((nodeId) => completeDirectIds.has(nodeId)));
+  const coveredFunctions = new Set(functionIds.filter((nodeId) => completeAnchoredIds.has(nodeId)));
+  const coveredTypes = new Set(typeIds.filter((nodeId) => completeAnchoredIds.has(nodeId)));
 
   const files = countCoverage(referenceFileIds, coveredFiles);
   const functions = countCoverage(functionIds, coveredFunctions);
   const types = countCoverage(typeIds, coveredTypes);
   return {
     summary: {
+      ...(input.generationNodeCount === undefined ? {} : { scope: {
+        basis: "full-graph" as const,
+        totalGraphNodes: input.nodes.length,
+        generationNodes: input.generationNodeCount,
+        documentedNodes: new Set(builtDocuments.filter(({ page }) => isCompleteGeneratedPage(page)).flatMap(({ page }) => page.directNodeIds)).size,
+      } }),
       status: files.missingIds.length === 0 && functions.missingIds.length === 0 && types.missingIds.length === 0
         ? "complete"
         : "partial",
@@ -490,21 +494,48 @@ function buildNodeDocumentation(
   evidenceById: ReadonlyMap<string, WikiEvidenceV2>,
   coverage: ReturnType<typeof buildReferenceCoverage>,
 ): WikiNodeDocumentationV2[] {
-  const documentByPage = new Map(builtDocuments.map((item) => [item.page, item.document]));
   const referenceFileIds = new Set(input.referenceFileNodeIds);
+  const directPagesByNode = new Map<string, WikiPageV2[]>();
+  const contextPagesByNode = new Map<string, WikiPageV2[]>();
+  const evidenceIdsByNode = new Map<string, string[]>();
+  const usablePages = new Set<WikiPageV2>();
+  const anchorsByPage = new Map<WikiPageV2, Map<string, string>>();
+  // Index each membership once. A repeated node ID in one page must still
+  // select that page once, matching the previous Array.filter/includes scan.
+  for (const page of pages) {
+    for (const [ids, byNode] of [[page.directNodeIds, directPagesByNode], [page.contextNodeIds, contextPagesByNode]] as const) {
+      for (const nodeId of new Set(ids)) {
+        const matches = byNode.get(nodeId) ?? [];
+        matches.push(page);
+        byNode.set(nodeId, matches);
+      }
+    }
+    if (isUsableDirectPage(page, evidenceById)) usablePages.add(page);
+  }
+  for (const evidence of evidenceById.values()) {
+    for (const nodeId of new Set(evidence.nodeIds)) {
+      const ids = evidenceIdsByNode.get(nodeId) ?? [];
+      ids.push(evidence.id);
+      evidenceIdsByNode.set(nodeId, ids);
+    }
+  }
+  for (const { page, document } of builtDocuments) {
+    const anchors = new Map<string, string>();
+    for (const { nodeId, anchor } of document.symbolAnchors) {
+      const previous = anchors.get(nodeId);
+      if (previous === undefined || compareStable(anchor, previous) < 0) anchors.set(nodeId, anchor);
+    }
+    anchorsByPage.set(page, anchors);
+  }
 
   return input.nodes.map((node) => {
-    const directPages = pages.filter((page) => page.directNodeIds.includes(node.id)).sort(pagePriority);
-    const contextPageIds = pages
-      .filter((page) => page.contextNodeIds.includes(node.id))
+    const directPages = [...(directPagesByNode.get(node.id) ?? [])].sort(pagePriority);
+    const contextPageIds = (contextPagesByNode.get(node.id) ?? [])
       .map((page) => page.id)
       .sort(compareStable);
     const directPageIds = directPages.map((page) => page.id).sort(compareStable);
-    const evidenceIds = [...evidenceById.values()]
-      .filter((evidence) => evidence.nodeIds.includes(node.id))
-      .map((evidence) => evidence.id)
-      .sort(compareStable);
-    const primaryPage = directPages.filter((page) => isUsableDirectPage(page, evidenceById))[0];
+    const evidenceIds = [...(evidenceIdsByNode.get(node.id) ?? [])].sort(compareStable);
+    const primaryPage = directPages.find((page) => usablePages.has(page));
     const statePage = primaryPage ?? directPages[0];
     const relation: DocumentationRelation = directPageIds.length > 0
       ? "direct"
@@ -512,10 +543,7 @@ function buildNodeDocumentation(
         ? "context"
         : "none";
     const anchor = primaryPage?.category === "file"
-      ? documentByPage.get(primaryPage)?.symbolAnchors
-        .filter((item) => item.nodeId === node.id)
-        .map((item) => item.anchor)
-        .sort(compareStable)[0]
+      ? anchorsByPage.get(primaryPage)?.get(node.id)
       : undefined;
 
     return {
@@ -583,14 +611,28 @@ function buildSearchIndex(
     input.businessTerms.filter((term) => normalizeSearchText(term).length > 0),
   );
   const records = new Map<string, WikiSearchRecordV2>();
+  // Keep small legacy indexes inline; large repositories share raw lines without
+  // dropping repetitions, source tokens, or phrase ordering from any page.
+  const sharedContent = builtDocuments.reduce((size, item) => size + item.document.content.length, 0) > 1024 * 1024;
+  const contentLines: string[] = [];
+  const contentLineIds = new Map<string, number>();
+  const internContent = (content: string): number[] => content.split("\n").map((line) => {
+    let id = contentLineIds.get(line);
+    if (id === undefined) {
+      id = contentLines.length;
+      contentLines.push(line);
+      contentLineIds.set(line, id);
+    }
+    return id;
+  });
 
-  builtDocuments.forEach(({ document, page }) => {
+  [...builtDocuments].sort((left, right) => compareStable(left.page.id, right.page.id)).forEach(({ document, page }) => {
     const pageRecord: WikiSearchRecordV2 = {
       id: `page:${encodeURIComponent(page.id)}`,
       kind: "page",
       title: page.title,
       summary: page.summary,
-      content: document.content,
+      ...(sharedContent ? { contentLineIds: internContent(document.content) } : { content: document.content }),
       pageId: page.id,
       role: page.role,
       category: page.category,
@@ -615,7 +657,7 @@ function buildSearchIndex(
         role: page.role,
         category: page.category,
         relation: symbolRelation(page, symbolAnchor.nodeId),
-        terms: uniqueSorted([...(page.searchTerms), node?.name ?? symbolAnchor.nodeId, symbolAnchor.anchor]),
+        terms: uniqueSorted([node?.name ?? symbolAnchor.nodeId, symbolAnchor.nodeId, symbolAnchor.anchor, ...(node?.filePath === undefined ? [] : [node.filePath])]),
         businessTerms: [],
         ...(node?.filePath === undefined ? {} : { filePath: node.filePath }),
       };
@@ -627,6 +669,7 @@ function buildSearchIndex(
     version: 2,
     generatedAt: input.generatedAt,
     records: [...records.values()].sort((left, right) => compareStable(left.id, right.id)),
+    ...(sharedContent ? { contentLines } : {}),
   };
 }
 

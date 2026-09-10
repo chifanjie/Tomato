@@ -39,6 +39,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(__dirname, '../..');
 const require = createRequire(resolve(pluginRoot, 'package.json'));
 
+let selectedGraphPath;
+
 function parseArgs(argv) {
   const args = {
     projectRoot: process.cwd(),
@@ -57,7 +59,8 @@ function parseArgs(argv) {
   };
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--prepare-file-docs') args.phase = 'prepare-file-docs';
+    if (arg === '--regenerate' || arg === '--migrate-legacy') { args.phase = 'deterministic'; args.deterministicOnly = true; }
+    else if (arg === '--prepare-file-docs') args.phase = 'prepare-file-docs';
     else if (arg === '--merge-file-docs') args.phase = 'merge-file-docs';
     else if (arg === '--prepare-topics') args.phase = 'prepare-topics';
     else if (arg === '--finalize') args.phase = 'finalize';
@@ -73,6 +76,10 @@ function parseArgs(argv) {
     else if (arg === '--include-extended-topics') args.includeExtendedTopics = true;
     else if (arg === '--worker-id') {
       args.workerId = argv[index + 1] ?? '';
+      index += 1;
+    }
+    else if (arg === '--graph-path') {
+      args.graphPath = resolve(argv[index + 1] ?? '');
       index += 1;
     }
     else if (arg === '--source-root') {
@@ -110,7 +117,7 @@ function parseArgs(argv) {
 function pathsFor(sourceRoot, outputRoot) {
   const knowledgeRoot = outputRoot || join(sourceRoot, '.understand-code', 'knowledge-base');
   return {
-    graphPath: join(sourceRoot, '.understand-code', 'knowledge-graph.json'),
+    graphPath: selectedGraphPath ?? join(sourceRoot, '.understand-code', 'knowledge-graph.json'),
     configPath: join(sourceRoot, '.understand-code', 'config.json'),
     sourceRoot,
     outputRoot: knowledgeRoot,
@@ -328,11 +335,11 @@ function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2), 'utf-8');
 }
 
-function writeJsonAtomic(path, value) {
+function writeJsonAtomic(path, value, compact = false) {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.tmp`;
   try {
-    writeFileSync(temporary, JSON.stringify(value, null, 2), 'utf-8');
+    writeFileSync(temporary, JSON.stringify(value, null, compact ? undefined : 2), 'utf-8');
     renameSync(temporary, path);
   } finally {
     rmSync(temporary, { force: true });
@@ -626,6 +633,7 @@ function buildArtifacts(core, {
   sourceRoot,
   graph,
   graphDigestOverride,
+  generationNodeCount,
   config,
   sourceStats,
   generationMode,
@@ -659,7 +667,8 @@ function buildArtifacts(core, {
       name: node.name,
       ...(node.filePath ? { filePath: node.filePath } : {}),
     })),
-    referenceFileNodeIds: fileDocPlan.tasks.map((task) => task.fileNodeId).sort(),
+    referenceFileNodeIds: core.referenceFileNodeIdsForGraph(graph),
+    generationNodeCount: generationNodeCount ?? graph.nodes.length,
     documents,
     warnings,
     errors,
@@ -713,12 +722,25 @@ function publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate 
     return false;
   }
 
+  let previous;
+  try { previous = readJson(join(outputRoot, 'wiki-index.json')); } catch { /* Legacy Markdown may have no index. */ }
+  const regeneration = {
+    schemaVersion: 1,
+    previousFormat: previous?.version ?? (existsSync(outputRoot) && readdirSync(outputRoot).some((name) => name.endsWith('.md')) ? 'legacy-markdown' : 'none'),
+    previousGraphDigest: previous?.source?.graphDigest ?? null,
+    graphDigest: artifacts.wikiIndex.source.graphDigest,
+    sameGraphSnapshot: previous?.source?.graphDigest === artifacts.wikiIndex.source.graphDigest,
+    generatedAt: artifacts.wikiIndex.generatedAt,
+    mainReadiness: artifacts.wikiIndex.mainReadiness.status,
+    note: '格式迁移与同快照重建不会自动认证业务语义；正式主干仍需通过 writer 与源码证据校验。',
+  };
   cleanOutputDocuments(outputRoot);
   for (const doc of kb.documents) writeDocument(outputRoot, doc);
   writeJsonAtomic(join(outputRoot, 'wiki-index.json'), publishExcerptShards(core, outputRoot, artifacts.wikiIndex));
-  writeJsonAtomic(join(outputRoot, 'search-index.json'), artifacts.searchIndex);
+  writeJsonAtomic(join(outputRoot, 'search-index.json'), artifacts.searchIndex, true);
   writeJsonAtomic(join(outputRoot, '.trace/document-traces.json'), artifacts.documentTraces);
   writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
+  writeJsonAtomic(join(outputRoot, '.trace/regeneration.json'), regeneration);
   if (!keepIntermediate) rmSync(join(outputRoot, '.intermediate'), { recursive: true, force: true });
   return true;
 }
@@ -730,7 +752,7 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
   const graph = largeGraph ? projectLargeGraph(fullGraph) : fullGraph;
   if (largeGraph) {
     const projected = graphStats(graph);
-    console.warn(`Wiki 安全投影: ${projected.nodes} 个文件/文档节点；完整符号图谱仍保留在 knowledge-graph.json。`);
+    console.warn(`Wiki 语义规划投影: ${projected.nodes} 个节点；源码引用与覆盖分母使用完整图谱。`);
   }
   const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, args.maxSourceBytes);
   printGraphStats(graph, stats);
@@ -741,9 +763,11 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'deterministic',
   });
+  kb.documents = core.withSourceReferenceDocuments(fullGraph, sourceFiles, kb.documents);
   const artifacts = buildArtifacts(core, {
     sourceRoot,
-    graph: kb.profile.graph,
+    graph: fullGraph,
+    generationNodeCount: graph.nodes.length,
     graphDigestOverride: largeGraph
       ? createHash('sha256').update(JSON.stringify(fullGraph)).digest('hex')
       : undefined,
@@ -757,13 +781,32 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
       ...kb.validation.warnings,
       ...kb.coverageReport.warnings,
       ...(largeGraph ? [
-        '大图谱安全模式：Wiki 使用文件/文档级投影生成；完整符号图谱保留在 knowledge-graph.json。',
+        '大图谱安全模式：主干规划采用有限投影；源码引用、符号搜索与覆盖分母使用完整图谱。',
       ] : []),
     ],
     errors: [...kb.validation.errors, ...kb.coverageReport.errors],
   });
   if (publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
+    console.log(`全图引用覆盖: 文件 ${artifacts.wikiIndex.referenceCoverage.files.covered}/${artifacts.wikiIndex.referenceCoverage.files.total}，函数 ${artifacts.wikiIndex.referenceCoverage.functions.covered}/${artifacts.wikiIndex.referenceCoverage.functions.total}，类型 ${artifacts.wikiIndex.referenceCoverage.types.covered}/${artifacts.wikiIndex.referenceCoverage.types.total}`);
+    console.log(`主干质量: ${artifacts.wikiIndex.mainReadiness.status}`);
+  }
+}
+
+function sourceBinding(graph, sourceFiles) {
+  return {
+    schemaVersion: 1,
+    graphDigest: createHash('sha256').update(JSON.stringify(graph)).digest('hex'),
+    sourceInventoryDigest: createHash('sha256').update(JSON.stringify(Object.entries(sourceFiles)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([path, content]) => [path, createHash('sha256').update(content).digest('hex')]))).digest('hex'),
+  };
+}
+
+function assertPreparedSourceBinding(outputRoot, graph, sourceFiles) {
+  const bindingPath = join(outputRoot, '.intermediate/source-binding.json');
+  if (!existsSync(bindingPath) || JSON.stringify(readJson(bindingPath)) !== JSON.stringify(sourceBinding(graph, sourceFiles))) {
+    throw new Error('writer 上下文已过期或为旧格式；请运行 --prepare-file-docs 在当前源码快照重新准备，再由宿主生成 writer 输出。');
   }
 }
 
@@ -804,6 +847,7 @@ function prepareFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
     layerProfiles: profile.layerProfiles,
     entryCandidates: profile.entryCandidates,
   });
+  writeJson(join(intermediateRoot, 'source-binding.json'), sourceBinding(graph, sourceFiles));
   writeJson(join(intermediateRoot, 'file-doc-plan.json'), fileDocPlan);
   writeJson(join(intermediateRoot, 'file-doc-batches.json'), fileDocPlan.batches);
   writeJson(join(intermediateRoot, 'file-doc-queue.json'), core.buildFileDocQueue(fileDocPlan, new Date().toISOString()));
@@ -832,7 +876,7 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
   return outputs.sort((a, b) => a.batchIndex - b.batchIndex);
 }
 
-function loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes) {
+function loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot) {
   const graph = loadGraph(core, sourceRoot);
   const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, maxSourceBytes);
   printGraphStats(graph, stats);
@@ -844,6 +888,7 @@ function loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes) {
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'writer',
   });
+  assertPreparedSourceBinding(outputRoot, graph, sourceFiles);
   return { graph, profile, fileDocPlan, sourceFiles, sourceStats: stats, config };
 }
 
@@ -891,7 +936,7 @@ function completeBatch(core, outputRoot, queueFileName, args) {
 }
 
 function mergeFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
   const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
   const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
@@ -914,7 +959,7 @@ function mergeFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
 }
 
 function prepareTopics(core, sourceRoot, outputRoot, maxSourceBytes, args) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
   const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
   if (!existsSync(acceptedPath)) {
@@ -952,7 +997,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     sourceFiles,
     sourceStats,
     config,
-  } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
   const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
   const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
@@ -1054,6 +1099,7 @@ function printRetryPlan(outputRoot) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  selectedGraphPath = args.graphPath;
   assertSafeOutputRoot(args.sourceRoot, args.outputRoot);
   const core = await loadCore();
 

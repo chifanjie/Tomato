@@ -14,6 +14,11 @@ import { gunzipSync } from "node:zlib";
 import { ArtifactStore, sha256CanonicalJson } from "../../artifact-store/dist/index.js";
 import {
   GetRepoPulseOutputV1Schema,
+  RefreshIndexOutputV1Schema,
+  BuildTaskBriefOutputV1Schema,
+  GetTaskBriefOutputV1Schema,
+  SearchContextOutputV1Schema,
+  OpenWorkbenchOutputV1Schema,
   McpToolErrorResultV1Schema,
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
@@ -40,20 +45,7 @@ const EXPECTED_PACKED_FILE_COUNT = 91;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const PRODUCT_VERSION_PATTERN =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
-const EXPECTED_PUBLIC_MUTATION_FAILURE = {
-  isError: true,
-  content: [{
-    type: "text",
-    text: "The strong Store is unavailable. Run Doctor for details.",
-  }],
-  structuredContent: {
-    error: {
-      schemaVersion: 1,
-      code: "provider_unavailable",
-      details: { reason: "unavailable" },
-    },
-  },
-};
+
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
@@ -1076,6 +1068,10 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
     const claudeConfig = JSON.parse(
       await readFile(path.join(installedPackageRoot, "dist/host-adapters/claude/.mcp.json"), "utf8"),
     );
+    assert.equal(
+      (await readFile(path.join(installedPackageRoot, "dist/host-adapters/codex/config.toml"), "utf8")).trim(),
+      '[mcp_servers.understand-code]\ncommand = "understand-code-codex"\nargs = ["--root", "${WORKSPACE_ROOT}"]\ntool_timeout_sec = 900',
+    );
     assert.deepEqual(codexConfig.mcpServers["understand-code"], {
       command: "understand-code-codex",
       args: ["--root", "${WORKSPACE_ROOT}"],
@@ -1245,15 +1241,8 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
     });
     assert.equal(typeof initialized.result.instructions, "string");
     for (const phrase of [
-      "provider_unavailable",
-      "knowledge.action=stage",
-      "candidateGenerationId",
-      "not current Task evidence",
-      "knowledge.action=publish",
-      "expectedSourceSnapshotId",
-      "KnowledgeCandidateReview",
-      "planned-changes",
-      "not a publish control",
+      "local_durable_v1", "build_task_brief", "record_analysis", "check_required",
+      "knowledge.action=stage", "verified Task", "sourceSnapshotId", "evidenceIds",
     ]) {
       assert.ok(
         initialized.result.instructions.includes(phrase),
@@ -1289,6 +1278,11 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       "get_repo_pulse",
       {},
       GetRepoPulseOutputV1Schema,
+  RefreshIndexOutputV1Schema,
+  BuildTaskBriefOutputV1Schema,
+  GetTaskBriefOutputV1Schema,
+  SearchContextOutputV1Schema,
+  OpenWorkbenchOutputV1Schema,
     );
     assert.deepEqual(
       Object.keys(pulse.structuredContent.meta).sort(),
@@ -1409,7 +1403,27 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       },
     ];
     let nextMutationRequestId = 4;
-    for (const mutation of publicMutations) {
+    const refreshed = await callTool(mcp, output, nextMutationRequestId++, "refresh_index", publicMutations[0].arguments, RefreshIndexOutputV1Schema);
+    assert.equal(refreshed.structuredContent.result.operation.status, "completed");
+    const created = await callTool(mcp, output, nextMutationRequestId++, "build_task_brief", publicMutations[1].arguments, BuildTaskBriefOutputV1Schema);
+    const persistedTaskId = created.structuredContent.result.task.taskId;
+    assert.ok(created.structuredContent.result.evidenceIds.length > 0, "installed local Task requires source evidence");
+    const replayed = await callTool(mcp, output, nextMutationRequestId++, "build_task_brief", publicMutations[1].arguments, BuildTaskBriefOutputV1Schema);
+    assert.equal(replayed.structuredContent.result.task.taskId, persistedTaskId);
+    assert.equal(replayed.structuredContent.result.mutation.idempotentReplay, true);
+    const taskPage = await callTool(mcp, output, nextMutationRequestId++, "get_task_brief", { taskId: persistedTaskId, section: "summary" }, GetTaskBriefOutputV1Schema);
+    assert.equal(taskPage.structuredContent.result.task.taskId, persistedTaskId);
+    const context = await callTool(mcp, output, nextMutationRequestId++, "search_context", { taskId: persistedTaskId, query: "task" }, SearchContextOutputV1Schema);
+    assert.ok(context.structuredContent.result.results.length > 0);
+    const workbench = await callTool(mcp, output, nextMutationRequestId++, "open_workbench", { route: { view: "tasks", taskId: persistedTaskId, section: "summary" } }, OpenWorkbenchOutputV1Schema);
+    const taskUrl = new URL(workbench.structuredContent.result.deepLink);
+    const launched = await fetch(new URL("/__workbench/launch", taskUrl), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: taskUrl.hash.slice(1) }) });
+    assert.equal(launched.status, 200);
+    const taskCookie = launched.headers.get("set-cookie").split(";", 1)[0];
+    const taskData = await fetch(new URL(`/tasks/${persistedTaskId}/brief.json?section=summary`, taskUrl), { headers: { cookie: taskCookie } });
+    assert.equal(taskData.status, 200);
+    assert.ok((await taskData.json()).claims.length > 0);
+    for (const mutation of publicMutations.slice(2)) {
       const mutationLabel = mutation.label ?? mutation.name;
       const [mutationSourceBefore, mutationIndexBefore, mutationStoreBefore] =
         await Promise.all([
@@ -1425,11 +1439,8 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         mutation.arguments,
         McpToolErrorResultV1Schema,
       );
-      assert.deepEqual(
-        failure,
-        EXPECTED_PUBLIC_MUTATION_FAILURE,
-        `${mutationLabel} must fail closed behind the unavailable strong Store`,
-      );
+      assert.equal(failure.isError, true, `${mutationLabel} must reject a missing task`);
+      assert.notEqual(failure.structuredContent.error.code, "provider_unavailable", "local task validation must not pretend the Provider is required");
       assert.deepEqual(
         await readFile(sourcePath),
         mutationSourceBefore,
@@ -1447,12 +1458,7 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       );
     }
 
-    const releaseDoctor = await runCliJsonFailure(
-      mcpBin,
-      ["doctor"],
-      mcpRoot,
-      1,
-    );
+    const releaseDoctor = await runCliJson(mcpBin, ["doctor"], mcpRoot);
     assert.deepEqual(
       {
         schemaVersion: releaseDoctor.schemaVersion,
@@ -1473,8 +1479,8 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         releaseReady: false,
         strongWrites: "locked",
         hostRegistration: "not_checked",
-        ok: false,
-        status: "unhealthy",
+        ok: true,
+        status: "healthy",
       },
     );
     const releaseDoctorById = new Map(
@@ -1515,8 +1521,8 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         code: releaseDoctorById.get("artifact_schema")?.code,
       },
       {
-        status: "fail",
-        code: "artifact_schema_incompatible",
+        status: "pass",
+        code: "ok",
       },
     );
     assert.deepEqual(
@@ -1553,6 +1559,19 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
     assert.deepEqual(await waitForExit(mcp, "MCP clean exit"), [0, null]);
     mcpChild = null;
     assert.equal(output.stderr.join(""), "");
+
+    const resumedMcp = spawn(codexBin, ["--root", mcpRoot], { cwd: installDirectory, env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined }, stdio: ["pipe", "pipe", "pipe"] });
+    mcpChild = resumedMcp;
+    const resumedOutput = collectMessages(resumedMcp);
+    writeMessage(resumedMcp, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "preview-restarted-host", version: "1.0.0" } } });
+    await resumedOutput.waitFor((message) => message.id === 1, "restarted MCP initialize");
+    writeMessage(resumedMcp, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    const recoveredTask = await callTool(resumedMcp, resumedOutput, 2, "get_task_brief", { taskId: persistedTaskId, section: "summary" }, GetTaskBriefOutputV1Schema);
+    assert.equal(recoveredTask.structuredContent.result.task.taskId, persistedTaskId, "Task must survive the actual installed MCP process restart");
+    resumedMcp.stdin.end();
+    assert.deepEqual(await waitForExit(resumedMcp, "restarted MCP clean exit"), [0, null]);
+    mcpChild = null;
+    assert.equal(resumedOutput.stderr.join(""), "");
 
     const finalDoctor = await runCliJson(
       installedBundle,

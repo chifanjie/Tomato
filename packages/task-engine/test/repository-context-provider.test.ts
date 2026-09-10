@@ -2258,6 +2258,85 @@ describe("RepositoryTaskContextProvider", () => {
     expect(changed.sourceEvidence).toBeUndefined();
   });
 
+  it("prioritizes Task intent and scope before the bounded local source budget", async () => {
+    const graph = graphFixture();
+    const pinned = new Map<string, Buffer>();
+    for (let index = 0; index < 260; index += 1) {
+      const name = `filler${index}`;
+      const filePath = `src/a${String(index).padStart(3, "0")}.ts`;
+      graph.nodes.push({ id: `function:${name}`, type: "function", name, filePath, lineRange: [1, 1], summary: "Unrelated source", tags: [], complexity: "simple" });
+      pinned.set(filePath, Buffer.from(`export function ${name}() { return false; }\n`));
+    }
+    const { root, source } = await fixtureRoot(graph);
+    pinned.set("src/task.ts", Buffer.from(source));
+    await Promise.all([...pinned].map(([filePath, bytes]) => writeFile(path.join(root, filePath), bytes)));
+    const repositorySnapshot = snapshot(digest(source), "snapshot:clean-large-repository", { changes: [] });
+    const reads: string[] = [];
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+      readLocalSnapshotSource: async ({ sourceSnapshotId, filePath }) => {
+        expect(sourceSnapshotId).toBe(repositorySnapshot.snapshotId);
+        reads.push(filePath);
+        return pinned.get(filePath);
+      },
+    });
+    const input = { intent: "task", sourceSnapshotId: repositorySnapshot.snapshotId, repositorySnapshot };
+    const context = await provider.loadTaskContext(input);
+    expect(reads[0]).toBe("src/task.ts");
+    expect(reads.length).toBeLessThanOrEqual(256);
+    expect(context.sourceEvidence).toEqual(expect.arrayContaining([expect.objectContaining({ nodeId: "function:task", filePath: "src/task.ts", contentHash: digest(source) })]));
+    reads.length = 0;
+    const scoped = await provider.loadTaskContext({ ...input, scope: ["src/task.ts"] });
+    expect(reads).toEqual(["src/task.ts"]);
+    expect(scoped.sourceEvidence).toHaveLength(1);
+    await writeFile(path.join(root, "src/task.ts"), source.replace("true", "false"));
+    const drifted = await provider.loadTaskContext({ ...input, scope: ["src/task.ts"] });
+    expect(drifted.sourceEvidence).toBeUndefined();
+  });
+
+  it("retains shared Wiki lines without expanding content and rejects dangling line IDs", async () => {
+    const { root, source } = await fixtureRoot();
+    const searchPath = path.join(root, ".understand-code/knowledge-base/search-index.json");
+    const search = JSON.parse(await readFile(searchPath, "utf8"));
+    search.contentLines = ["premiumForbidden", "source boundary"];
+    delete search.records[0].content;
+    search.records[0].contentLineIds = [0, 1, 0];
+    await writeFile(searchPath, JSON.stringify(search));
+    const repositorySnapshot = snapshot(digest(source));
+    const provider = await RepositoryTaskContextProvider.open({ canonicalRoot: root });
+    const input = { intent: "premiumForbidden", sourceSnapshotId: repositorySnapshot.snapshotId, repositorySnapshot };
+    const context = await provider.loadTaskContext(input);
+    expect(context.wiki).toMatchObject({ valid: true, contentLines: search.contentLines,
+      records: [{ contentLineIds: [0, 1, 0] }],
+    });
+    expect(context.wiki?.records[0]?.content).toBeUndefined();
+    search.records[0].contentLineIds = [2];
+    await writeFile(searchPath, JSON.stringify(search));
+    expect((await provider.loadTaskContext(input)).wiki).toEqual({ freshness: "error", valid: false, records: [] });
+  });
+
+  it("bounds search separately while preserving the default Wiki budget fallback", async () => {
+    const { root, source } = await fixtureRoot();
+    const wikiPath = path.join(root, ".understand-code/knowledge-base/wiki-index.json");
+    const searchPath = path.join(root, ".understand-code/knowledge-base/search-index.json");
+    const search = JSON.parse(await readFile(searchPath, "utf8"));
+    search.contentLines = ["source guard ".repeat(10_000)];
+    delete search.records[0].content;
+    search.records[0].contentLineIds = [0];
+    const bytes = Buffer.from(JSON.stringify(search));
+    await writeFile(searchPath, bytes);
+    const maxWikiBytes = (await readFile(wikiPath)).length;
+    expect(bytes.length).toBeGreaterThan(maxWikiBytes);
+    const repositorySnapshot = snapshot(digest(source));
+    const input = { intent: "source guard", sourceSnapshotId: repositorySnapshot.snapshotId, repositorySnapshot };
+    const inherited = await RepositoryTaskContextProvider.open({ canonicalRoot: root, maxWikiBytes });
+    await expect(inherited.loadTaskContext(input)).rejects.toMatchObject({ code: "repository_file_too_large" });
+    const separate = await RepositoryTaskContextProvider.open({ canonicalRoot: root, maxWikiBytes, maxSearchBytes: bytes.length });
+    expect((await separate.loadTaskContext(input)).wiki?.valid).toBe(true);
+    const tooSmall = await RepositoryTaskContextProvider.open({ canonicalRoot: root, maxWikiBytes, maxSearchBytes: bytes.length - 1 });
+    await expect(tooSmall.loadTaskContext(input)).rejects.toMatchObject({ code: "repository_file_too_large" });
+  });
+
   it("keeps valid Graph context while marking malformed optional Wiki invalid", async () => {
     const { root, source } = await fixtureRoot();
     await writeFile(

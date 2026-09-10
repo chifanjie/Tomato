@@ -650,6 +650,52 @@ function applyAction(
     );
   }
   switch (action.type) {
+    case "record_analysis": {
+      if (data.manifest.taskProfile === "agent_task_v1") {
+        throw new TaskEngineError("capability_unavailable", "Host analysis recording requires the local Task runtime.");
+      }
+      if (data.brief === undefined || action.sourceSnapshotId !== data.manifest.latestSnapshotId) {
+        gateUnsatisfied(data.manifest, data.manifest.status, [{ code: "analysis_snapshot_mismatch" }]);
+      }
+      const evidenceById = new Map(data.evidence.map((item) => [item.id, item]));
+      for (const [index, conclusion] of action.conclusions.entries()) {
+        const evidenceIds = [...new Set(conclusion.evidenceIds)];
+        for (const evidenceId of evidenceIds) {
+          const evidence = evidenceById.get(evidenceId);
+          if (evidence === undefined || evidence.freshness !== "current" || evidence.observedAtSnapshotId !== action.sourceSnapshotId) {
+            gateUnsatisfied(data.manifest, data.manifest.status, [{ code: "analysis_evidence_unavailable", resourceId: evidenceId }]);
+          }
+        }
+        if (conclusion.kind !== "unknown" && evidenceIds.length === 0) {
+          gateUnsatisfied(data.manifest, data.manifest.status, [{ code: "analysis_evidence_required" }]);
+        }
+        const unknown = conclusion.kind === "unknown";
+        const claim = ClaimV1Schema.parse({
+          id: stableId("claim", { taskId: input.taskId, eventId, index }),
+          taskId: input.taskId,
+          kind: conclusion.kind,
+          statement: conclusion.statement,
+          epistemicStatus: unknown ? "unknown" : "inferred",
+          lifecycleStatus: unknown ? "draft" : "supported",
+          freshness: "current",
+          sourceSnapshotId: action.sourceSnapshotId,
+          evidenceIds,
+          findingIds: [],
+          verificationRecordIds: [],
+          ...(unknown ? { boundaryReason: conclusion.reasoning } : {
+            derivationPath: evidenceIds.map((evidenceId) => ({ kind: "evidence", evidenceId, description: conclusion.reasoning })),
+          }),
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        });
+        data.claims.push(claim);
+        for (const evidenceId of evidenceIds) evidenceById.get(evidenceId)!.claimIds.push(claim.id);
+        if (claim.kind === "assumption") data.brief.assumptionClaimIds.push(claim.id);
+        if (claim.kind === "risk") data.brief.riskClaimIds.push(claim.id);
+        if (claim.kind === "unknown") data.brief.unknownClaimIds.push(claim.id);
+      }
+      return;
+    }
     case "confirm_goal":
       requireClaim(data, action.claimId, "goal");
       humanConfirmClaims(
@@ -1100,16 +1146,34 @@ export async function rebuildTaskContext(
   }
   const targetSnapshotId = input.action.targetSnapshotId;
   const requestDigest = sha256CanonicalJson(input);
-  const current = await store.readTaskBundle(input.taskId);
+  let current = await store.readTaskBundle(input.taskId);
   const replay = existingReceipt(current, input, requestDigest);
   if (replay !== undefined) return replay;
-  if (current.bundle.manifest.revision !== input.expectedRevision) {
+  // Recover directly after index publication. The drift Event is a durable,
+  // idempotent first phase; a failed context load can retry the original request.
+  const preparationInput: UpdateTaskInputV1 = {
+    ...input,
+    idempotencyKey: stableId("context-recovery-prepare", { taskId: input.taskId, idempotencyKey: input.idempotencyKey }),
+  };
+  const preparation = existingReceipt(current, preparationInput, sha256CanonicalJson(preparationInput));
+  let expectedRevision = preparation?.task.revision ?? input.expectedRevision;
+  if (preparation === undefined && current.bundle.manifest.revision === input.expectedRevision &&
+      current.bundle.manifest.status !== "stale" && current.bundle.manifest.status !== "verified" && current.bundle.manifest.status !== "superseded" &&
+      current.latestSnapshotId === targetSnapshotId && current.latestSnapshotId !== current.bundle.manifest.latestSnapshotId &&
+      (input.action.type !== "rebase_task" || input.action.newBaselineSnapshotId === targetSnapshotId)) {
+    const prepared = await applyTaskUpdate(store, preparationInput, clock);
+    expectedRevision = prepared.task.revision;
+    current = await store.readTaskBundle(input.taskId);
+    const completed = existingReceipt(current, input, requestDigest);
+    if (completed !== undefined) return completed;
+  }
+  if (current.bundle.manifest.revision !== expectedRevision) {
     throw new TaskEngineError(
       "revision_conflict",
       "Task revision does not match expectedRevision.",
       {
         taskId: input.taskId,
-        expectedRevision: input.expectedRevision,
+        expectedRevision,
         currentRevision: current.bundle.manifest.revision,
       },
     );
@@ -1123,7 +1187,7 @@ export async function rebuildTaskContext(
       "transition_not_allowed",
     );
   }
-  if (data.manifest.latestSnapshotId !== targetSnapshotId) {
+  if ((current.latestSnapshotId ?? data.manifest.latestSnapshotId) !== targetSnapshotId) {
     gateUnsatisfied(data.manifest, "context_ready", [
       {
         code: "target_snapshot_mismatch",
@@ -1264,7 +1328,7 @@ export async function rebuildTaskContext(
         idempotencyRecords: records,
       },
       {
-        expectedRevision: input.expectedRevision,
+        expectedRevision,
         idempotencyKey: input.idempotencyKey,
         requestDigest,
       },

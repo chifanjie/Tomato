@@ -1,3 +1,4 @@
+import { localRuntimeCapabilitiesV1 } from "./runtime/capabilities.js";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
@@ -62,6 +63,7 @@ export type ReleaseDoctorResultV1 = Readonly<{
   readiness: "alpha";
   releaseReady: false;
   strongWrites: "locked";
+  capabilities: ReturnType<typeof localRuntimeCapabilitiesV1>;
   hostRegistration: "not_checked";
   ok: boolean;
   status: "healthy" | "unhealthy";
@@ -1217,7 +1219,7 @@ async function inspectBundleIntegrity(
           release.dashboard.inventorySha256,
         ) ||
         codexToml !==
-          '[mcp_servers.understand-code]\ncommand = "understand-code-codex"\nargs = ["--root", "${WORKSPACE_ROOT}"]'
+          '[mcp_servers.understand-code]\ncommand = "understand-code-codex"\nargs = ["--root", "${WORKSPACE_ROOT}"]\ntool_timeout_sec = 900'
       ) {
         throw new Error("bundle_integrity_invalid");
       }
@@ -1490,6 +1492,7 @@ export async function runReleaseDoctorV1(
     readiness: "alpha",
     releaseReady: false,
     strongWrites: "locked",
+    capabilities: localRuntimeCapabilitiesV1(checks.find((check) => check.id === "artifact_schema")?.status === "pass" ? "ready" : "not_ready"),
     hostRegistration: "not_checked",
     ok,
     status: ok ? "healthy" : "unhealthy",

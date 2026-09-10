@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
+import { openActiveRepositoryIndexV1, openRepositoryIndexSourcesV1 } from "./repository-indexer.js";
+import { LOCAL_INDEX_READ_BUDGETS_V1, withLocalIndexReadBudgetsV1 } from "./local-read-budgets.js";
 import type { Stats } from "node:fs";
 import { lstat, readFile, statfs } from "node:fs/promises";
 
@@ -52,6 +55,7 @@ export class RuntimeBindingError extends Error {
 }
 
 export interface RuntimeContext {
+  readonly runtimeProfile?: "local_durable_v1" | "production_provider_v1";
   readonly store: ArtifactStore;
   readonly taskEngine: TaskEngine;
   readonly close?: () => Promise<void>;
@@ -200,6 +204,12 @@ async function openProductionSafeGitReadSessionV1(canonicalRoot: string) {
  * boundary as read-only runtime opening; ambient GIT_* variables are never
  * allowed to redirect a capture.
  */
+/** Fixed repository-only capture for the local profile; installed Provider
+ * executables and cgroup state never select this runtime's Git authority. */
+export async function captureLocalRepositorySnapshot(canonicalRoot: string) {
+  return withoutAmbientGitAuthority(() => getRepositorySnapshotDetailed(canonicalRoot));
+}
+
 export async function captureBoundRepositorySnapshot(
   canonicalRoot: string,
 ) {
@@ -229,7 +239,7 @@ export async function captureBoundRepositorySnapshot(
 
 export async function openRuntime(
   canonicalRoot: string,
-  options: Readonly<{ canonicalInstallationRoot?: string }> = {},
+  options: Readonly<{ canonicalInstallationRoot?: string; runtimeProfile?: "local_durable_v1" }> = {},
 ): Promise<RuntimeContext> {
   // The explicit, frozen root and production-pinned Git executable are the
   // only repository read authorities; no cwd, PATH, env, or raw argv enters
@@ -243,7 +253,7 @@ export async function openRuntime(
   let providerClientOwnedByRuntime = false;
   try {
     const bound = strongSelector === undefined
-      ? { capture: await captureBoundRepositorySnapshot(canonicalRoot) }
+      ? { capture: await (options.runtimeProfile === "local_durable_v1" ? captureLocalRepositorySnapshot(canonicalRoot) : captureBoundRepositorySnapshot(canonicalRoot)) }
       : await (async () => {
           const candidate =
             await bootstrapSafeGitDescriptorBoundCandidateV1(canonicalRoot);
@@ -317,8 +327,33 @@ export async function openRuntime(
     let strongChangeAuthority:
       | ArtifactStoreStrongChangeAuthorityV1
       | undefined;
+    let localIndexPaths = {};
+    if (strongSelector === undefined) {
+      try {
+        const index = withLocalIndexReadBudgetsV1(await openActiveRepositoryIndexV1(canonicalRoot));
+        const manifest = await store.readManifest({ verifyArtifacts: false });
+        if (index.authority.runtimeProfile === "local_durable_v1" && index.authority.sourceSnapshotId === manifest.latestSnapshotId) {
+          await Promise.all([index.read("knowledge-graph.json"), index.read("knowledge-base/wiki-index.json"), index.read("knowledge-base/search-index.json")]);
+          const prefix = path.relative(canonicalRoot, index.generationRoot);
+          const sourceReader = await openRepositoryIndexSourcesV1({ canonicalRoot, sourceSnapshotId: index.authority.sourceSnapshotId });
+          localIndexPaths = {
+            maxGraphBytes: LOCAL_INDEX_READ_BUDGETS_V1.graphBytes,
+            maxWikiBytes: LOCAL_INDEX_READ_BUDGETS_V1.wikiBytes,
+            maxSearchBytes: LOCAL_INDEX_READ_BUDGETS_V1.searchBytes,
+            graphPath: `${prefix}/knowledge-graph.json`,
+            wikiIndexPath: `${prefix}/knowledge-base/wiki-index.json`,
+            wikiSearchPath: `${prefix}/knowledge-base/search-index.json`,
+            readLocalSnapshotSource: ({ sourceSnapshotId, filePath }: { sourceSnapshotId: string; filePath: string }) =>
+              sourceSnapshotId === index.authority.sourceSnapshotId ? sourceReader.read(filePath) : Promise.resolve(undefined),
+          };
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
     const contextProvider = await RepositoryTaskContextProvider.open({
       canonicalRoot,
+      ...localIndexPaths,
       ...(strongSelector === undefined
         ? {}
         : {
@@ -382,6 +417,7 @@ export async function openRuntime(
       });
     }
     const runtime: RuntimeContext = {
+      runtimeProfile: providerClient === undefined ? "local_durable_v1" : "production_provider_v1",
       store,
       taskEngine: new TaskEngine(store, {
         contextProvider,

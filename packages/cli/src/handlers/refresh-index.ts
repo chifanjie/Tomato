@@ -5,6 +5,7 @@ import {
   invalidArgumentsFailure,
   strongStoreUnavailableFailure,
 } from "../errors/tool-errors.js";
+import { localRefreshIndexV1 } from "./local-refresh-index.js";
 import { strongRefreshIndexV1 } from "./strong-refresh-index.js";
 
 /**
@@ -16,11 +17,13 @@ export async function refreshIndex(
   canonicalRoot: string,
   canonicalInstallationRoot?: string,
   canonicalHostInstallationRoot?: string,
+  runtimeProfile?: "local_durable_v1",
 ): Promise<unknown> {
   const parsed = RefreshIndexInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) {
     throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   }
+  if (canonicalInstallationRoot === undefined && runtimeProfile === "local_durable_v1") return localRefreshIndexV1(parsed.data, canonicalRoot);
   if (canonicalInstallationRoot === undefined) failStrongStoreUnavailableV1();
   if (canonicalHostInstallationRoot === undefined) failStrongStoreUnavailableV1();
   return strongRefreshIndexV1(

@@ -1,6 +1,6 @@
 {
   "name": "@understand-code/preview",
-  "version": "0.1.0-preview.1",
+  "version": "0.1.0-preview.2",
   "description": "Installable Understand Code Preview: local Graph/Wiki snapshot and stdio MCP tools",
   "type": "module",
   "exports": {},
@@ -26,6 +26,7 @@
     "test:plugins": "node --test test/plugin-clean-install.test.mjs",
     "test:cold": "node --test test/cold-packed.test.mjs",
     "test:workbench-browser": "node --test test/workbench-browser-packed.test.mjs",
+    "test:workbench-local-browser": "node --test test/workbench-local-browser.test.mjs",
     "test:surface-release": "node scripts/surface-release-gate.mjs",
     "candidate:alpha": "node scripts/alpha-candidate.mjs assemble",
     "candidate:verify": "node scripts/alpha-candidate.mjs verify",

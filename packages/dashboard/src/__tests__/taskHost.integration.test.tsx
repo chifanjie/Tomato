@@ -282,6 +282,7 @@ describe("Task-first Preview host bridge", () => {
 
   it("still opens the Task home for an explicit #tasks entry point", async () => {
     window.history.replaceState(null, "", "/?token=preview-token#tasks");
+    vi.stubGlobal("fetch", vi.fn(async () => response(404, {})));
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -289,7 +290,7 @@ describe("Task-first Preview host bridge", () => {
     await act(async () => root.render(createElement(App)));
     await act(async () => Promise.resolve());
 
-    expect(container.querySelector('[data-testid="task-first-workbench"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-home"]')).not.toBeNull();
     const current = container.querySelector<HTMLButtonElement>(
       'nav[aria-label="主要界面"] button[aria-current="page"]',
     );
@@ -353,6 +354,39 @@ describe("Task-first Preview host bridge", () => {
     expect(new URLSearchParams(window.location.search).get("surface")).toBe("wiki");
     expect(container.querySelector('[data-testid="task-context-overlay"]')).not.toBeNull();
     await act(async () => root.unmount());
+  });
+
+  it("refreshes the task revision without dropping the selected section or visible content", async () => {
+    vi.useFakeTimers();
+    const deepLink = `/workbench?view=tasks&taskId=${taskId}&section=goals`;
+    window.history.replaceState(null, "", deepLink);
+    let reads = 0;
+    let release!: (value: Response) => void;
+    const next = { ...projection, section: "goals", items: [], task: { ...projection.task, revision: 13 } };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/brief.json")) {
+        reads += 1;
+        if (reads === 1) return response(200, { ...next, task: projection.task });
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return response(404, {});
+    }));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(App)));
+      expect(container.textContent).toContain("修订版 12");
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(reads).toBe(2);
+      expect(container.querySelector('[data-testid="task-first-workbench"]')?.getAttribute("data-state")).toBe("ready");
+      expect(container.textContent).toContain(projection.task.title);
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(reads).toBe(2);
+      await act(async () => release(response(200, next)));
+      expect(container.textContent).toContain("修订版 13");
+      expect(window.location.pathname + window.location.search).toBe(deepLink);
+      expect(container.querySelector('button[aria-current="page"][aria-pressed="true"]')?.textContent).toContain("目标");
+    } finally { await act(async () => root.unmount()); }
   });
 
   it("keeps an unavailable persisted Task in the explicit failure state", async () => {

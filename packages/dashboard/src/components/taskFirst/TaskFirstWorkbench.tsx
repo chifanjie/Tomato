@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { classifyChangeCheckV1 } from "@understand-code/contracts";
+import { ClaimV1Schema, classifyChangeCheckV1 } from "@understand-code/contracts";
 import type {
   CandidateLevelV1,
+  ClaimV1,
   ChangeCheckV1,
   PlannedChangeExpectationV1,
   ImpactPayloadV1,
@@ -54,6 +55,7 @@ export interface TaskBriefPageResult {
   readonly section?: TaskBriefSectionV1;
   readonly items?: readonly TaskBriefPageItemV1[];
   readonly brief?: TaskBriefV1;
+  readonly claims?: readonly ClaimV1[];
   readonly total?: number;
   readonly hasMore?: boolean;
 }
@@ -104,6 +106,10 @@ export interface TaskFirstWorkbenchProps {
   readonly knowledgeCandidatesLoading?: boolean;
   readonly onRetryKnowledgeCandidates?: () => void;
   readonly onRetry?: () => void;
+  readonly refreshing?: boolean;
+  readonly lastRefreshedAt?: string;
+  readonly refreshError?: string | null;
+  readonly onTaskHome?: () => void;
   readonly onSelectSection?: (section: TaskFirstSection) => void;
   readonly onSelectFinding?: (findingId: string) => void;
   readonly onSelectImpactPath?: (impactPathId: string) => void;
@@ -152,6 +158,8 @@ const TASK_LABELS: Record<TaskStatusV1, string> = {
   stale: "已过期",
   superseded: "已替代",
 };
+
+export function taskStatusLabel(status: TaskStatusV1): string { return TASK_LABELS[status]; }
 
 const PASSED_VERIFICATION_STATUS: VerificationRecordV1["status"] = "passed";
 
@@ -218,7 +226,7 @@ function itemText(item: TaskBriefPageItemV1): { title: string; detail?: string; 
         meta: `${item.acceptanceClaimCount} 条验收主张 · ${item.plannedChangeCount} 项计划变更`,
       };
     case "claim_reference":
-      return { title: item.claimId, meta: item.role.replace(/_/g, " ") };
+      return { title: "此主张正文尚未提供", detail: `请让宿主重新读取任务上下文。标识：${item.claimId}`, meta: item.role.replace(/_/g, " ") };
     case "reading_path":
       return {
         title: item.entry.filePath ?? item.entry.symbolId ?? item.entry.impactPathId ?? item.entry.id,
@@ -245,12 +253,39 @@ function itemText(item: TaskBriefPageItemV1): { title: string; detail?: string; 
   }
 }
 
+const CLAIM_KIND_LABELS: Record<ClaimV1["kind"], string> = {
+  goal: "目标", non_goal: "范围之外", acceptance: "验收条件", assumption: "假设",
+  recommendation: "建议", risk: "风险", unknown: "未知项", finding: "发现", conclusion: "结论",
+};
+const CLAIM_STATUS_LABELS = { observed: "已观察事实", inferred: "推断", unknown: "未知", human_confirmed: "人工确认" };
+const CLAIM_LIFECYCLE_LABELS = { draft: "待证实", supported: "有支撑", contested: "有争议", invalidated: "已失效" };
+
+function ClaimCard({ claim, currentSnapshotId, onOpenEvidence }: {
+  readonly claim: ClaimV1;
+  readonly currentSnapshotId: string;
+  readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
+}) {
+  return <article className="rounded-md border border-border-subtle bg-elevated/30 p-3" data-testid="task-claim" id={`claim-${claim.id}`}>
+    <p className="text-xs text-text-muted">{CLAIM_KIND_LABELS[claim.kind]} · {CLAIM_STATUS_LABELS[claim.epistemicStatus]} · {CLAIM_LIFECYCLE_LABELS[claim.lifecycleStatus]} · {claim.sourceSnapshotId !== currentSnapshotId ? "源自先前快照／待复核" : claim.freshness === "current" ? "当前快照" : "来源已变化"}</p>
+    <p className="mt-2 text-sm leading-6 text-text-primary">{claim.statement}</p>
+    {claim.boundaryReason && <p className="mt-2 text-xs leading-5 text-warning">未知边界：{claim.boundaryReason}</p>}
+    {claim.derivationPath && <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-text-secondary" aria-label="推断理由">{claim.derivationPath.map((step, index) => <li key={index}>{step.description}</li>)}</ol>}
+    <div className="mt-2 flex flex-wrap gap-2" aria-label="主张证据">
+      {claim.evidenceIds.map((id, index) => <button key={id} type="button" disabled={!onOpenEvidence} title={id} onClick={() => onOpenEvidence?.(undefined, id)} className="min-h-11 rounded border border-border-medium px-3 py-2 text-xs text-accent disabled:opacity-50" data-evidence-id={id}>查看证据 {index + 1}</button>)}
+      {claim.evidenceIds.length === 0 && <p className="text-xs text-text-muted">尚无支撑证据</p>}
+    </div>
+    <details className="mt-2 text-xs text-text-muted"><summary>来源与标识</summary><p className="mt-1 break-all font-mono">{claim.id} · {claim.sourceSnapshotId}</p></details>
+  </article>;
+}
+
 function BriefItems({
   page,
   section,
+  onOpenEvidence,
 }: {
   readonly page: TaskBriefPageResult;
   readonly section: TaskFirstSection;
+  readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
 }) {
   const items = page.items ?? [];
   if (items.length === 0) {
@@ -263,6 +298,9 @@ function BriefItems({
   return (
     <ol className="space-y-2" aria-label={`${SECTION_ITEMS.find((item) => item.id === section)?.label ?? "任务简报"}条目`}>
       {items.map((item, index) => {
+        const resolved = item.kind === "claim_reference" && "claim" in item && item.claim ? ClaimV1Schema.safeParse(item.claim) : undefined;
+        const claim = resolved?.success ? resolved.data : item.kind === "claim_reference" ? page.claims?.find((claim) => claim.id === item.claimId) : undefined;
+        if (claim) return <li key={claim.id}><ClaimCard claim={claim} currentSnapshotId={page.task.latestSnapshotId} onOpenEvidence={onOpenEvidence} /></li>;
         const text = itemText(item);
         return (
           <li
@@ -281,11 +319,12 @@ function BriefItems({
   );
 }
 
-function BriefSummary({ page }: { readonly page: TaskBriefPageResult }) {
+function BriefSummary({ page, onOpenEvidence }: { readonly page: TaskBriefPageResult; readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void }) {
   const brief = page.brief;
   if (!brief) return <BriefItems page={page} section="summary" />;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
+      {(page.claims ?? []).filter((claim) => ["conclusion", "recommendation", "assumption", "risk", "unknown"].includes(claim.kind)).map((claim) => <div key={claim.id} className="sm:col-span-2"><ClaimCard claim={claim} currentSnapshotId={page.task.latestSnapshotId} onOpenEvidence={onOpenEvidence} /></div>)}
       <div className="rounded-md border border-border-subtle bg-elevated/30 px-3 py-3 sm:col-span-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">任务意图</p>
         <p className="mt-1 text-sm leading-6 text-text-primary">{brief.originalIntent}</p>
@@ -441,7 +480,15 @@ function VerificationCard({
   records,
   status = "missing",
   message,
+  claims = [],
+  brief,
+  currentSnapshotId,
+  onOpenEvidence,
 }: {
+  readonly claims?: readonly ClaimV1[];
+  readonly brief?: TaskBriefV1;
+  readonly currentSnapshotId: string;
+  readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
   readonly records?: readonly VerificationRecordV1[] | null;
   readonly status?: TaskArtifactSurfaceStatus;
   readonly message?: string | null;
@@ -477,7 +524,14 @@ function VerificationCard({
                     <p className="text-sm font-medium text-text-primary">{record.summary}</p>
                     <span className="text-xs text-text-muted">{VERIFICATION_STATUS_LABELS[record.status] ?? record.status}</span>
                   </div>
-                  <p className="mt-1 text-xs text-text-muted">{record.kind} · 第 {record.attempt} 次 · {record.verificationPlanEntryId}</p>
+                  <p className="mt-1 text-xs text-text-muted">{record.kind} · 第 {record.attempt} 次 · {brief?.verificationPlan.find((entry) => entry.id === record.verificationPlanEntryId)?.description ?? record.verificationPlanEntryId}</p>
+                  {record.command && <pre className="mt-2 overflow-auto rounded bg-root p-2 text-xs"><code>{record.command}</code></pre>}
+                  <p className="mt-2 break-all text-xs text-text-muted">快照 {record.snapshotId}{record.exitCode === undefined ? "" : ` · 退出码 ${record.exitCode}`}{record.durationMs === undefined ? "" : ` · ${record.durationMs} 毫秒`}</p>
+                  {record.outputDigest && <p className="mt-1 break-all font-mono text-xs text-text-muted">输出摘要 {record.outputDigest}</p>}
+                  <div className="mt-3 space-y-2" aria-label="验证对应验收条件">{record.claimIds.map((id) => {
+                    const claim = claims.find((item) => item.id === id);
+                    return claim ? <ClaimCard key={id} claim={claim} currentSnapshotId={currentSnapshotId} onOpenEvidence={onOpenEvidence} /> : <p key={id} className="text-xs text-warning">验收正文尚未提供：{id}</p>;
+                  })}</div>
                 </li>
               ))}
             </ul>
@@ -685,6 +739,10 @@ export function TaskFirstWorkbench({
   knowledgeCandidatesLoading = false,
   onRetryKnowledgeCandidates,
   onRetry,
+  refreshing = false,
+  lastRefreshedAt,
+  refreshError,
+  onTaskHome,
   onSelectSection,
   onSelectFinding,
   onSelectImpactPath,
@@ -800,7 +858,7 @@ export function TaskFirstWorkbench({
     if (loading) return <StatePanel state="loading" />;
     if (failure) return <StatePanel state="error" message={failure} onRetry={onRetry} />;
     if (!page || !task) return <StatePanel state="empty" />;
-    if (activeSection.id === "summary") return <BriefSummary page={page} />;
+    if (activeSection.id === "summary") return <BriefSummary page={page} onOpenEvidence={onOpenEvidence} />;
     if (activeSection.id === "changes") {
       return (
         <>
@@ -830,28 +888,20 @@ export function TaskFirstWorkbench({
             onOpenKnowledge={onOpenKnowledge}
             onOpenGraph={onOpenGraph}
           />
-          {route.evidenceId && (
-            <TaskEvidencePanel
-              evidenceId={route.evidenceId}
-              result={evidence}
-              relationValid={selectedEvidenceIsRelated}
-              stale={staleCopy !== null}
-              onOpenGraph={onOpenEvidenceGraph}
-            />
-          )}
-          <BriefItems page={page} section={activeSection.id} />
+
+          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />
         </>
       );
     }
     if (activeSection.id === "verification") {
       return (
         <>
-          <VerificationCard records={verificationRecords} status={verificationStatus} message={verificationMessage} />
-          <BriefItems page={page} section={activeSection.id} />
+          <VerificationCard records={verificationRecords} status={verificationStatus} message={verificationMessage} claims={page.claims} brief={page.brief} currentSnapshotId={task.latestSnapshotId} onOpenEvidence={onOpenEvidence} />
+          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />
         </>
       );
     }
-    return <BriefItems page={page} section={activeSection.id} />;
+    return <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />;
   };
 
   return (
@@ -881,6 +931,8 @@ export function TaskFirstWorkbench({
             <span className="uc-status-badge" data-severity={status === "fresh" ? "ok" : status === "error" ? "problem" : "warning"}>
               {PULSE_LABELS[status]}
             </span>
+            {onTaskHome && <button type="button" onClick={onTaskHome} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm text-text-secondary">任务历史</button>}
+            {onRetry && <button type="button" onClick={onRetry} disabled={refreshing || loading} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm text-text-secondary disabled:opacity-50">{refreshing ? "正在刷新…" : "刷新任务"}</button>}
             {showSurfaceActions && (
               <>
                 <button type="button" disabled={!onOpenKnowledge} className="min-h-11 rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary hover:border-accent/35 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50" onClick={() => onOpenKnowledge?.(routeFor("knowledge", route))}>知识库</button>
@@ -890,6 +942,8 @@ export function TaskFirstWorkbench({
           </div>
         </div>
       </header>
+
+      {task && <p className="mx-auto mt-3 w-full max-w-[1600px] px-4 text-xs text-text-muted sm:px-6" role="status">修订版 {task.revision} · 任务更新 {new Date(task.updatedAt).toLocaleString()} · {lastRefreshedAt ? `最近读取 ${new Date(lastRefreshedAt).toLocaleTimeString()} · 页面可见时每 10 秒刷新` : "已读取持久化任务"}{refreshError && <span className="ml-2 text-warning">刷新失败，保留上次内容：{refreshError}</span>}</p>}
 
       {staleCopy && (
         <div
@@ -991,6 +1045,8 @@ export function TaskFirstWorkbench({
                   type="button"
                   aria-current={selected ? "page" : undefined}
                   aria-pressed={selected}
+                  disabled={!task}
+                  title={!task ? "请先从任务首页选择或创建任务" : undefined}
                   onClick={() => {
                     setLocalSection(item.id);
                     onSelectSection?.(item.id);
@@ -1018,7 +1074,7 @@ export function TaskFirstWorkbench({
               </div>
               {task && <span className="uc-status-badge" data-severity={task.status === "blocked" || task.status === "stale" ? "problem" : task.status === "verified" ? "ok" : "warning"}>{TASK_LABELS[task.status]}</span>}
             </div>
-            <div className="mt-5">{renderPage()}</div>
+            <div className="mt-5">{route.evidenceId && <TaskEvidencePanel evidenceId={route.evidenceId} result={evidence} relationValid={selectedEvidenceIsRelated} stale={staleCopy !== null} onOpenGraph={onOpenEvidenceGraph} />}{renderPage()}</div>
             {children && <div className="mt-6 border-t border-border-subtle pt-5">{children}</div>}
           </div>
         </section>

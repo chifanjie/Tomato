@@ -66,6 +66,11 @@ describe("schema validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  it("preserves static call-site totals without implying runtime completeness", () => {
+    const callResolution = { totalCallSites: 5, resolvedCallSites: 3, unresolvedCallSites: 2, limitations: ["Static binding only"] };
+    expect(validateGraph({ ...validGraph, callResolution }).data?.callResolution).toEqual(callResolution);
+  });
+
   it("preserves optional call edge provenance", () => {
     const graph = structuredClone(validGraph);
     graph.edges[0] = {

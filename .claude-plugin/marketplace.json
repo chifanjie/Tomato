@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "understand-code",
   "description": "Understand Code — turn any repository into a knowledge graph, an interactive dashboard, and a linked Markdown wiki.",
-  "version": "2.7.5",
+  "version": "2.7.6",
   "owner": {
     "name": "Lum1104",
     "url": "https://github.com/Lum1104"
@@ -13,7 +13,7 @@
       "displayName": "Understand Code",
       "source": "./",
       "description": "Scan a repository into a traceable knowledge graph, explore it in an interactive dashboard, generate a graph-linked Markdown knowledge base, and answer code questions from that evidence.",
-      "version": "2.7.5",
+      "version": "2.7.6",
       "author": {
         "name": "Lum1104"
       },

@@ -21,6 +21,7 @@ import TokenGate from "./components/TokenGate";
 import StalenessBanner from "./components/StalenessBanner";
 import { ExcerptLoaderProvider } from "./wiki/ExcerptContext";
 import WarningBanner from "./components/WarningBanner";
+import TaskHome from "./components/taskFirst/TaskHome";
 import TaskFirstWorkbench, {
   type TaskFirstRoute,
   type TaskFirstSection,
@@ -582,6 +583,10 @@ function TaskFirstDashboard({
   readonly surface: TaskLocalSurface;
 }) {
   const taskSearchButtonRef = useRef<HTMLButtonElement>(null);
+  const taskRequestRevision = useRef(0);
+  const taskRequestPending = useRef(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<{
     readonly loading: boolean;
     readonly result: TaskWorkbenchLoadResult | null;
@@ -597,21 +602,37 @@ function TaskFirstDashboard({
       return () => undefined;
     }
     let cancelled = false;
-    setLoadState({ loading: true, result: null });
+    const requestRevision = ++taskRequestRevision.current;
+    taskRequestPending.current = true;
+    setLoadState((previous) => ({ loading: true, result: previous.result?.payload?.task.taskId === route.taskId && previous.result?.payload?.section === (route.section ?? "summary") && (!route.evidenceId || previous.result?.payload?.evidence.value?.evidenceId === route.evidenceId) ? previous.result : null }));
     void loadTaskWorkbench(route, accessToken).then((result) => {
-      if (cancelled) return;
+      if (cancelled || requestRevision !== taskRequestRevision.current) return;
+      taskRequestPending.current = false;
       if (result.status === "forbidden") {
         onTokenInvalid();
         return;
       }
-      setLoadState({ loading: false, result });
+      setLastRefreshedAt(new Date().toISOString());
+      setRefreshError(result.status === "error" ? result.message ?? "服务读取失败" : null);
+      setLoadState((previous) => ({ loading: false, result: result.status === "error" && previous.result?.status === "ready" ? previous.result : result }));
     });
     return () => {
       cancelled = true;
+      if (requestRevision === taskRequestRevision.current) taskRequestPending.current = false;
     };
   }, [accessToken, onTokenInvalid, route.evidenceId, route.section, route.taskId]);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => {
+    let cancel = load();
+    const refresh = () => {
+      if (document.visibilityState === "hidden" || taskRequestPending.current) return;
+      cancel();
+      cancel = load();
+    };
+    const timer = window.setInterval(refresh, 10_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { cancel(); window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+  }, [load]);
 
   const loadKnowledgeCandidates = useCallback(() => {
     if (!route.taskId || route.section !== "planned_changes") {
@@ -633,7 +654,7 @@ function TaskFirstDashboard({
     };
   }, [accessToken, onTokenInvalid, route.section, route.taskId]);
 
-  useEffect(() => loadKnowledgeCandidates(), [loadKnowledgeCandidates]);
+  useEffect(() => loadKnowledgeCandidates(), [loadKnowledgeCandidates, loadState.result?.payload?.task.revision]);
 
   const cookieMode = isCookieWorkbenchAccess(accessToken);
   const navigate = useCallback((nextRoute: TaskFirstRoute, nextSurface: TaskLocalSurface) => {
@@ -687,7 +708,7 @@ function TaskFirstDashboard({
 
   const openEvidence = useCallback((findingId: string | undefined, evidenceId: string) => {
     if (!route.taskId) return;
-    navigate(taskFirstEvidenceRoute(route, evidenceId, findingId), "task");
+    navigate({ ...taskFirstEvidenceRoute(route, evidenceId, findingId), ...(findingId === undefined && route.impactPathId === undefined ? { section: route.section ?? "summary" } : {}) }, "task");
   }, [navigate, route]);
 
   const result = loadState.result;
@@ -717,11 +738,11 @@ function TaskFirstDashboard({
     navigate({
       view: "tasks",
       taskId: route.taskId,
-      section: "planned_changes",
+      section: route.findingId || route.impactPathId ? "planned_changes" : route.section ?? "summary",
       ...(route.findingId ? { findingId: route.findingId } : {}),
       ...(route.impactPathId ? { impactPathId: route.impactPathId } : {}),
     }, "task");
-  }, [navigate, route.findingId, route.impactPathId, route.taskId]);
+  }, [navigate, route.findingId, route.impactPathId, route.section, route.taskId]);
 
   const selectProductSurface = useCallback((nextSurface: ProductSurface) => {
     if (nextSurface === "tasks") return;
@@ -769,12 +790,16 @@ function TaskFirstDashboard({
         onSelectSurface={selectProductSurface}
         onRequestSearch={requestTaskSearch}
       />
-      <TaskFirstWorkbench
+      {!route.taskId ? <TaskHome accessToken={accessToken} onTokenInvalid={onTokenInvalid} onOpenGraph={() => navigateToSurface("graph", route)} onOpenKnowledge={() => navigateToSurface("wiki", route)} /> : <TaskFirstWorkbench
         route={route}
         page={payload}
         pulse={payload?.pulse}
         pulseStatus={pulseStatus}
-        loading={loadState.loading}
+        loading={loadState.loading && !payload}
+        refreshing={loadState.loading && Boolean(payload)}
+        lastRefreshedAt={lastRefreshedAt}
+        refreshError={refreshError}
+        onTaskHome={() => navigate({ view: "tasks", section: "summary" }, "task")}
         error={error}
         stale={stale}
         sourceSnapshotId={payload?.freshness.sourceSnapshotId}
@@ -800,7 +825,7 @@ function TaskFirstDashboard({
         onOpenKnowledge={(nextRoute) => navigateToSurface("wiki", nextRoute)}
         onOpenGraph={(nextRoute) => navigateToSurface("graph", nextRoute)}
         showSurfaceActions={false}
-      />
+      />}
     </div>
   );
 }
@@ -1130,6 +1155,7 @@ function DashboardContent({
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const searchControllerRef = useRef(createSearchArtifactRequestController(knowledgeFetcher));
   const fullSearchRecordsRef = useRef<Parameters<typeof buildWikiSearchRuntime>[0]>([]);
+  const fullSearchContentLinesRef = useRef<readonly string[] | undefined>(undefined);
   const recentWikiTargetRef = useRef<WikiTarget | null>(null);
   const noteWikiLocationApplied = useCallback(() => {
     setWikiNavigationRevision((revision) => revision + 1);
@@ -1177,13 +1203,14 @@ function DashboardContent({
   useEffect(() => {
     searchControllerRef.current.reset(accessToken);
     fullSearchRecordsRef.current = [];
+    fullSearchContentLinesRef.current = undefined;
     setSearchLoadStatus("idle");
     setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
   }, [accessToken]);
 
   useEffect(() => {
     if (searchLoadStatus === "ready") {
-      setSearchRuntime(buildWikiSearchRuntime(fullSearchRecordsRef.current, wikiIndex, "full"));
+      setSearchRuntime(buildWikiSearchRuntime(fullSearchRecordsRef.current, wikiIndex, "full", fullSearchContentLinesRef.current));
     } else if (searchLoadStatus === "fallback" || searchLoadStatus === "idle") {
       setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
     }
@@ -1203,10 +1230,12 @@ function DashboardContent({
       }
       if (result.status === "ready") {
         fullSearchRecordsRef.current = result.records;
-        setSearchRuntime(buildWikiSearchRuntime(result.records, wikiIndex, "full"));
+        fullSearchContentLinesRef.current = result.contentLines;
+        setSearchRuntime(buildWikiSearchRuntime(result.records, wikiIndex, "full", result.contentLines));
         setSearchLoadStatus("ready");
       } else {
         fullSearchRecordsRef.current = [];
+        fullSearchContentLinesRef.current = undefined;
         setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
         setSearchLoadStatus("fallback");
       }

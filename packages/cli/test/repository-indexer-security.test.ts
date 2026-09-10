@@ -46,6 +46,45 @@ afterEach(async () => {
 });
 
 describe("repository index strong preflight", () => {
+  it("publishes and reloads a canonical manifest for mixed case, punctuation and Unicode paths", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src/a.go"), "package example\nfunc alpha() {}\nfunc Beta() {}\n");
+    await writeFile(path.join(root, "src/a_b.go"), "package example\nfunc Punctuated() {}\n");
+    await writeFile(path.join(root, "src/源.go"), "package example\nfunc UnicodePath() {}\n");
+    const scope = { canonicalRoot: root, canonicalInstallationRoot: installationRoot, operationId: "a".repeat(32) };
+    const built = await buildRepositoryIndex({ ...scope, snapshot: {
+      schemaVersion: 1, snapshotId: "snapshot:manifest-order", repositoryId: "repository:fixture",
+      worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
+      createdAt: "2026-09-11T00:00:00.000Z",
+    } as any });
+    const paths = built.publication.files.map((file) => file.relativePath);
+    expect(paths).toEqual([...paths].sort());
+    expect(paths).not.toEqual([...paths].sort((left, right) => left.localeCompare(right)));
+    const manifest = JSON.parse(built.publication.manifestBytes.toString("utf8"));
+    expect(manifest.files.map((file: { path: string }) => file.path)).toEqual(paths);
+    let committed = false;
+    await publishStagedRepositoryIndex({ ...scope, ...built,
+      authority: { sourceSnapshotId: "snapshot:manifest-order", finalizedProviderRevision: 1, runtimeProfile: "local_durable_v1" },
+      publishStoreCut: async () => { committed = true; },
+    });
+    expect(committed).toBe(true);
+    const active = await openActiveRepositoryIndexV1(root);
+    expect(active.generation).toEqual(built.generation);
+    await expect(active.read("knowledge-base/search-index.json")).resolves.toEqual(
+      built.publication.files.find((file) => file.relativePath === "knowledge-base/search-index.json")!.bytes,
+    );
+  });
+  it("excludes linked-worktree git metadata files without following their gitdir target", async () => {
+    const root = await repositoryRoot();
+    await writeFile(path.join(root, ".git"), "gitdir: /unrelated/private/repository/.git/worktrees/linked\n");
+    await writeFile(path.join(root, "safe.ts"), "export const safe = true;\n");
+    const inventory = await preflightRepositoryIndex(root);
+    expect(inventory.sourceFileCount).toBe(1);
+    await expectNoManagedWrite(root);
+  });
+
   it("returns a stable inventory without creating managed output", async () => {
     const root = await repositoryRoot();
     await writeFile(path.join(root, "safe.ts"), "export const safe = true;\n");
@@ -56,6 +95,28 @@ describe("repository index strong preflight", () => {
     expect(first).toEqual(second);
     expect(first.sourceFileCount).toBe(1);
     expect(first.sourceInventoryDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    await expectNoManagedWrite(root);
+  });
+
+  it("excludes nested Finder metadata while still rejecting invalid source bytes", async () => {
+    const root = await repositoryRoot();
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src/.DS_Store"), Buffer.from([0xff, 0x00]));
+    await writeFile(path.join(root, "src/safe.ts"), "export const safe = true;\n");
+    expect((await preflightRepositoryIndex(root)).sourceFileCount).toBe(1);
+    await writeFile(path.join(root, "src/invalid.ts"), Buffer.from([0xff, 0x00]));
+    await expect(preflightRepositoryIndex(root)).rejects.toThrow(/not valid UTF-8/u);
+    await expectNoManagedWrite(root);
+  });
+
+  it("excludes native libraries without bypassing the source size limit", async () => {
+    const root = await repositoryRoot();
+    const largeBinary = Buffer.alloc(2 * 1024 * 1024 + 1, 0xff);
+    await writeFile(path.join(root, "libthirdparty.so"), largeBinary);
+    await writeFile(path.join(root, "safe.go"), "package example\nfunc Safe() {}\n");
+    expect((await preflightRepositoryIndex(root)).sourceFileCount).toBe(1);
+    await writeFile(path.join(root, "oversized.go"), largeBinary);
+    await expect(preflightRepositoryIndex(root)).rejects.toThrow(/exceeds the analysis limit/u);
     await expectNoManagedWrite(root);
   });
 
@@ -111,7 +172,7 @@ describe("repository index strong preflight", () => {
     await writeFile(path.join(root, "src/offset.go"),
       'package worker\nfunc offset(value int) int { return value + 1 }\n');
     await writeFile(path.join(root, "src/worker.go"),
-      'package worker\nimport ( "fmt"; calc "example.test/work/lib" )\ntype Config struct { Count int }\nfunc Calculate(value int) int { fmt.Println(value); return offset(calc.Double(value)) }\n');
+      'package worker\nimport ( "fmt"; calc "example.test/work/lib" )\ntype Config struct { Count int }\nfunc Calculate(value int) int { fmt.Println(value); return offset(calc.Double(value)) }\nfunc (c Config) Run(value int) int { return offset(value) }\n');
     const snapshot = {
       schemaVersion: 1, snapshotId: "snapshot:parser-fixture", repositoryId: "repository:fixture",
       worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40),
@@ -152,8 +213,27 @@ describe("repository index strong preflight", () => {
         target: "function:lib/calc.go:Double" }),
       expect.objectContaining({ type: "calls", source: "function:src/worker.go:Calculate",
         target: "function:src/offset.go:offset" }),
+      expect.objectContaining({ type: "calls", source: "function:src/worker.go:Config.Run",
+        target: "function:src/offset.go:offset" }),
     ]));
+    const nodeIds = new Set(first.graph.nodes.map((node) => node.id));
+    expect(first.graph.edges.every((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))).toBe(true);
     expect(first.graph.edges.some((edge) => edge.target.includes("Println"))).toBe(false);
+    expect(first.graph.callResolution).toMatchObject({ unresolvedCallSites: 1 });
+    expect(first.graph.callResolution!.totalCallSites).toBe(first.graph.callResolution!.resolvedCallSites + 1);
+    const artifact = (name: string) => JSON.parse(first.publication.files.find((file) => file.relativePath === name)!.bytes.toString("utf8"));
+    expect(artifact("knowledge-base/.trace/call-resolution.json")).toMatchObject({
+      sourceSnapshotId: snapshot.snapshotId, graphDigest: first.graphDigest,
+      unresolved: [{ file: "src/worker.go", caller: "Calculate", callee: "fmt.Println", lineNumber: 4 }],
+    });
+    expect(artifact("knowledge-base/wiki-index.json")).toMatchObject({
+      source: { generationMode: "deterministic" }, mainReadiness: { status: "blocked" },
+      referenceCoverage: { scope: { basis: "full-graph", totalGraphNodes: first.graph.nodes.length } },
+    });
+    expect(artifact("knowledge-base/.trace/host-analysis-context.json")).toMatchObject({
+      sourceSnapshotId: snapshot.snapshotId, semanticStatus: "awaiting-host-analysis", graphDigest: first.graphDigest,
+    });
+    expect(first.graph.nodes.find((node) => node.id === "function:src/main.ts:main")?.summary).toContain("业务语义待宿主分析");
     const impact = traceImpact({
       graph: first.graph, startNodeIds: ["function:src/helper.ts:twice"],
       repoPulse: { status: "fresh", artifactFreshness: { graph: "fresh" },

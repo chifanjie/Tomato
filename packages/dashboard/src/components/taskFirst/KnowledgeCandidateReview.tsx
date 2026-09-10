@@ -89,7 +89,7 @@ function CandidateCard({
         )}
       </dl>
       <p className="mt-3 text-xs leading-5 text-text-muted">
-        只读预览，不是当前任务证据；需要先确认来源快照与任务修订版。
+        只读预览，不是当前任务证据；需要先确认来源快照与任务修订版。审核源码与内容后，请在宿主中显式确认发布。候选须通过真实正文和来源证据的质量门禁；任务通过验证不会自动发布知识。
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button

@@ -18,6 +18,7 @@ import {
 import {
   ChangeCheckV1Schema,
   ClaimV1Schema,
+  GetTaskBriefResultV1Schema,
   EvidenceV1Schema,
   IdempotencyRecordV1Schema,
   InternalTaskBaselineV1Schema,
@@ -57,6 +58,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 
 import {
@@ -824,6 +826,7 @@ async function publishPulseForSnapshot(
   store: ArtifactStore,
   snapshotId: string,
   headCommit: string,
+  revision = 1,
 ): Promise<void> {
   const current = RepoPulseArtifactV1Schema.parse(
     await loadFixture("repo-pulse.json"),
@@ -841,14 +844,14 @@ async function publishPulseForSnapshot(
   await store.persistArtifact(
     RepoPulseArtifactV1Schema.parse({
       ...current,
-      revision: 1,
+      revision,
       sourceSnapshotId: snapshotId,
       createdAt: evaluatedAt,
       contentDigest: sha256CanonicalJson(payload),
       payload,
     }),
     {
-      expectedRevision: 0,
+      expectedRevision: revision - 1,
       idempotencyKey: `pulse-for-${snapshotId}`,
       requestDigest: sha256CanonicalJson({
         operation: "publish_test_pulse",
@@ -2965,62 +2968,14 @@ describe("TaskEngine persistent integration", () => {
     }
 
     const capabilities = taskEngine.getCapabilities();
-    expect(capabilities).toEqual({
-      schemaVersion: 1,
-      actions: {
-        refresh_task_context: {
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
-        },
-        rebase_task: {
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
-        },
-      },
+    expect(capabilities.actions.refresh_task_context).toEqual({
+      available: true,
+      reasonCode: "task_context_rebuild_available",
+      owner: "task-engine",
     });
+    expect(capabilities.actions.rebase_task.available).toBe(true);
     expect(Object.isFrozen(capabilities)).toBe(true);
     expect(Object.isFrozen(capabilities.actions)).toBe(true);
-    const recoveryCase = cases[0]!;
-    const beforeRecovery = await store.readTaskBundle(recoveryCase.taskId);
-    for (const action of [
-      {
-        type: "refresh_task_context" as const,
-        targetSnapshotId: advancedSnapshotId,
-      },
-      {
-        type: "rebase_task" as const,
-        targetSnapshotId: advancedSnapshotId,
-        newBaselineSnapshotId: advancedSnapshotId,
-        reason: "Capability lock fixture.",
-      },
-    ]) {
-      await expect(
-        taskEngine.updateTask(
-          {
-            taskId: recoveryCase.taskId,
-            action,
-            expectedRevision: beforeRecovery.bundle.manifest.revision,
-            idempotencyKey: `capability-lock-${action.type}`,
-            actor: ACTOR,
-          },
-          auth(),
-        ),
-      ).rejects.toMatchObject({
-        code: "capability_unavailable",
-        details: {
-          taskId: recoveryCase.taskId,
-          capability: action.type,
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
-        },
-      });
-    }
-    expect(await store.readTaskBundle(recoveryCase.taskId)).toEqual(
-      beforeRecovery,
-    );
   }, 30_000);
 
   it("rebuilds one stale Task on the exact current Snapshot and replays without reloading context", async () => {
@@ -3034,12 +2989,7 @@ describe("TaskEngine persistent integration", () => {
         },
       },
     });
-    const recoveryHarness = legacyContextRecoveryIntegrityHarness(
-      store,
-      () => {
-        contextLoads += 1;
-      },
-    );
+    const recoveryHarness = taskEngine;
     const built = await taskEngine.buildTaskBrief(
       buildInput("refresh-stale-task-context"),
       auth(),
@@ -3165,12 +3115,7 @@ describe("TaskEngine persistent integration", () => {
         },
       },
     });
-    const recoveryHarness = legacyContextRecoveryIntegrityHarness(
-      store,
-      () => {
-        contextLoads += 1;
-      },
-    );
+    const recoveryHarness = taskEngine;
     const built = await taskEngine.buildTaskBrief(
       buildInput("rebase-stale-task-context"),
       auth(),
@@ -3282,6 +3227,285 @@ describe("TaskEngine persistent integration", () => {
     ).toBe(true);
     expect(persisted.bundle.changeChecks).toEqual([]);
     expect(persisted.bundle.verificationRecords).toEqual([]);
+  });
+
+  it("keeps failed recovery retryable and preserves the original context scope across restart", async () => {
+    const { root, store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief({
+      ...buildInput("recovery-scope-and-failure"), scope: ["src/task.ts"], maxCandidates: 2,
+    }, auth());
+    const snapshotId = "snapshot:recovery-failure";
+    await store.persistArtifact(await repositorySnapshot(snapshotId, "2026-07-29T09:00:00.000Z", "e".repeat(40)));
+    await publishPulseForSnapshot(store, snapshotId, "e".repeat(40));
+    const input = {
+      taskId: built.task.taskId,
+      action: { type: "refresh_task_context" as const, targetSnapshotId: snapshotId },
+      expectedRevision: built.task.revision, idempotencyKey: "retry-recovery", actor: ACTOR,
+    };
+    const before = await store.readTaskBundle(built.task.taskId);
+    let fail = true;
+    const reopened = await reopenStore(root);
+    const recovery = engine(reopened, { contextProvider: {
+      async loadTaskContext(request) {
+        expect(request.scope).toEqual(["src/task.ts"]);
+        if (fail) throw new Error("Context temporarily unavailable");
+        return contextProvider.loadTaskContext(request);
+      },
+    } });
+    await expect(recovery.updateTask(input, auth())).rejects.toMatchObject({ code: "context_build_failed" });
+    const interrupted = await reopened.readTaskBundle(built.task.taskId);
+    expect(interrupted.bundle.manifest).toMatchObject({ status: "stale", revision: built.task.revision + 1, latestSnapshotId: snapshotId });
+    expect(interrupted.bundle.events).toHaveLength(before.bundle.events.length + 1);
+    fail = false;
+    const refreshed = await recovery.updateTask(input, auth());
+    expect(refreshed.task.status).toBe("context_ready");
+    expect(refreshed.task.localContextBuildSpec).toMatchObject({ scope: ["src/task.ts"], maxCandidates: 2 });
+    await expect(recovery.updateTask({ ...input, idempotencyKey: "conflicting-recovery" }, auth())).rejects.toMatchObject({ code: "revision_conflict" });
+    expect((await reopened.readTaskBundle(built.task.taskId)).bundle.events).toHaveLength(before.bundle.events.length + 2);
+    expect((await recovery.updateTask(input, auth())).mutation.idempotentReplay).toBe(true);
+  });
+
+  it("rebases directly after index publication and keeps the two-phase request idempotent", async () => {
+    const { store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief(buildInput("direct-rebase"), auth());
+    const targetSnapshotId = "snapshot:direct-rebase";
+    await store.persistArtifact(await repositorySnapshot(targetSnapshotId, "2026-07-29T09:00:00.000Z", "f".repeat(40)));
+    await publishPulseForSnapshot(store, targetSnapshotId, "f".repeat(40));
+    const input = {
+      taskId: built.task.taskId,
+      action: { type: "rebase_task" as const, targetSnapshotId, newBaselineSnapshotId: targetSnapshotId, reason: "Adopt current code" },
+      expectedRevision: built.task.revision, idempotencyKey: "direct-rebase", actor: ACTOR,
+    };
+    const rebased = await taskEngine.updateTask(input, auth());
+    expect(rebased.task).toMatchObject({ status: "context_ready", revision: built.task.revision + 2, baselineSnapshotId: targetSnapshotId });
+    expect((await taskEngine.updateTask(input, auth())).mutation.idempotentReplay).toBe(true);
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    expect(persisted.bundle.events.slice(-2).map((event) => event.action.type)).toEqual(["task_context_staled", "rebase_task"]);
+    await expect(taskEngine.updateTask({ ...input, action: { ...input.action, reason: "Different request" } }, auth())).rejects.toMatchObject({ code: "idempotency_conflict" });
+  });
+
+  it("recovers a stale Task when the repository advances again after a failed rebuild", async () => {
+    const { store } = await openStore();
+    let failRecovery = false;
+    const taskEngine = engine(store, { contextProvider: {
+      async loadTaskContext(input) {
+        if (failRecovery) throw new Error("Temporary context failure");
+        return contextProvider.loadTaskContext(input);
+      },
+    } });
+    const built = await taskEngine.buildTaskBrief(buildInput("recovery-second-drift"), auth());
+    const firstSnapshotId = "snapshot:recovery-first-drift";
+    await store.persistArtifact(await repositorySnapshot(firstSnapshotId, "2026-07-29T09:00:00.000Z", "a".repeat(40)));
+    await publishPulseForSnapshot(store, firstSnapshotId, "a".repeat(40));
+    failRecovery = true;
+    await expect(taskEngine.updateTask({
+      taskId: built.task.taskId,
+      action: { type: "refresh_task_context", targetSnapshotId: firstSnapshotId },
+      expectedRevision: built.task.revision, idempotencyKey: "failed-first-drift", actor: ACTOR,
+    }, auth())).rejects.toMatchObject({ code: "context_build_failed" });
+    const interrupted = await store.readTaskBundle(built.task.taskId);
+    expect(interrupted.bundle.manifest).toMatchObject({ status: "stale", latestSnapshotId: firstSnapshotId });
+
+    const currentSnapshotId = "snapshot:recovery-second-drift";
+    await store.persistArtifact(await repositorySnapshot(currentSnapshotId, "2026-07-29T10:00:00.000Z", "b".repeat(40)));
+    await publishPulseForSnapshot(store, currentSnapshotId, "b".repeat(40), 2);
+    failRecovery = false;
+    const input = {
+      taskId: built.task.taskId,
+      action: { type: "refresh_task_context" as const, targetSnapshotId: currentSnapshotId },
+      expectedRevision: interrupted.bundle.manifest.revision, idempotencyKey: "recover-latest-drift", actor: ACTOR,
+    };
+    const recovered = await taskEngine.updateTask(input, auth());
+    expect(recovered.task).toMatchObject({ status: "context_ready", latestSnapshotId: currentSnapshotId, baselineSnapshotId: built.task.baselineSnapshotId, revision: interrupted.bundle.manifest.revision + 1 });
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    expect(persisted.bundle.events.at(-1)?.action).toEqual(input.action);
+    expect(persisted.bundle.events).toHaveLength(interrupted.bundle.events.length + 1);
+    expect((await taskEngine.updateTask(input, auth())).mutation.idempotentReplay).toBe(true);
+  }, 30_000);
+
+  it("replays concurrent recovery when the other request commits before the preparation reread", async () => {
+    const { store } = await openStore();
+    let releaseContext!: () => void;
+    let contextReached!: () => void;
+    const contextGate = new Promise<void>((resolve) => { releaseContext = resolve; });
+    const contextStarted = new Promise<void>((resolve) => { contextReached = resolve; });
+    let contextLoads = 0;
+    const taskEngine = engine(store, { contextProvider: {
+      async loadTaskContext(input) {
+        contextLoads += 1;
+        if (contextLoads > 1) { contextReached(); await contextGate; }
+        return contextProvider.loadTaskContext(input);
+      },
+    } });
+    const built = await taskEngine.buildTaskBrief(buildInput("recovery-concurrent-reread"), auth());
+    const targetSnapshotId = "snapshot:recovery-concurrent-reread";
+    await store.persistArtifact(await repositorySnapshot(targetSnapshotId, "2026-07-29T09:00:00.000Z", "c".repeat(40)));
+    await publishPulseForSnapshot(store, targetSnapshotId, "c".repeat(40));
+    const input = {
+      taskId: built.task.taskId,
+      action: { type: "refresh_task_context" as const, targetSnapshotId },
+      expectedRevision: built.task.revision, idempotencyKey: "concurrent-recovery", actor: ACTOR,
+    };
+    let releaseReread!: () => void;
+    let rereadReached!: () => void;
+    const rereadGate = new Promise<void>((resolve) => { releaseReread = resolve; });
+    const rereadStarted = new Promise<void>((resolve) => { rereadReached = resolve; });
+    const read = store.readTaskBundle.bind(store);
+    let holdFirstStaleRead = true;
+    const readSpy = vi.spyOn(store, "readTaskBundle").mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (holdFirstStaleRead && result.bundle.manifest.status === "stale") {
+        holdFirstStaleRead = false;
+        rereadReached();
+        await rereadGate;
+        return read(...args);
+      }
+      return result;
+    });
+    const first = taskEngine.updateTask(input, auth());
+    let second: ReturnType<TaskEngine["updateTask"]> | undefined;
+    try {
+      await rereadStarted;
+      second = taskEngine.updateTask(input, auth());
+      await contextStarted;
+      releaseContext();
+      const completed = await second;
+      releaseReread();
+      const replayed = await first;
+      expect(completed.mutation.idempotentReplay).toBe(false);
+      expect(replayed.mutation.idempotentReplay).toBe(true);
+      expect(replayed.task.revision).toBe(completed.task.revision);
+      expect(contextLoads).toBe(2);
+      const persisted = await read(built.task.taskId);
+      expect(persisted.bundle.events.slice(-2).map((event) => event.action.type)).toEqual(["task_context_staled", "refresh_task_context"]);
+      expect(persisted.bundle.events).toHaveLength(built.task.revision + 2);
+    } finally {
+      releaseContext();
+      releaseReread();
+      await Promise.allSettled([first, ...(second ? [second] : [])]);
+      readSpy.mockRestore();
+    }
+  }, 30_000);
+
+  it("persists host analysis as evidence-backed inference and rejects unsupported or stale conclusions", async () => {
+    const { root, store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief(buildInput("record-host-analysis"), auth());
+    const before = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in before.bundle)) throw new Error("Expected context");
+    const evidence = before.bundle.evidence.find((item) => item.kind === "source")!;
+    expect(evidence).toBeDefined();
+    const input = {
+      taskId: built.task.taskId,
+      action: {
+        type: "record_analysis" as const, sourceSnapshotId: built.task.latestSnapshotId,
+        conclusions: [
+          { kind: "conclusion" as const, statement: "TaskHandler is the task entry point.", evidenceIds: [evidence.id], reasoning: "The source declaration identifies the handler." },
+          { kind: "unknown" as const, statement: "External callers are outside this scope.", evidenceIds: [], reasoning: "No external repository was indexed." },
+        ],
+      },
+      expectedRevision: built.task.revision, idempotencyKey: "host-analysis", actor: ACTOR,
+    };
+    for (const action of [
+      { ...input.action, sourceSnapshotId: "snapshot:wrong" },
+      { ...input.action, conclusions: [{ ...input.action.conclusions[0]!, evidenceIds: ["evidence:missing"] }] },
+      { ...input.action, conclusions: [{ ...input.action.conclusions[0]!, evidenceIds: [] }] },
+    ]) {
+      await expect(taskEngine.updateTask({ ...input, action }, auth())).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
+      expect(await store.readTaskBundle(built.task.taskId)).toEqual(before);
+    }
+    const result = await taskEngine.updateTask(input, auth());
+    expect(result.task.revision).toBe(built.task.revision + 1);
+    const reopened = await reopenStore(root);
+    const persisted = await reopened.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle)) throw new Error("Expected context");
+    expect(persisted.bundle.claims.find((claim) => claim.statement === input.action.conclusions[0]!.statement)).toMatchObject({
+      epistemicStatus: "inferred", sourceSnapshotId: built.task.latestSnapshotId, evidenceIds: [evidence.id],
+      derivationPath: [{ kind: "evidence", evidenceId: evidence.id, description: input.action.conclusions[0]!.reasoning }],
+    });
+    const unknown = persisted.bundle.claims.find((claim) => claim.statement === input.action.conclusions[1]!.statement)!;
+    expect(unknown.epistemicStatus).toBe("unknown");
+    expect(persisted.bundle.brief.unknownClaimIds).toContain(unknown.id);
+    expect((await engine(reopened).updateTask(input, auth())).mutation.idempotentReplay).toBe(true);
+    expect((await reopened.readTaskBundle(built.task.taskId)).bundle.events).toHaveLength(persisted.bundle.events.length);
+  });
+
+  it("reads all ten persisted host analysis Claims in bounded pages after reopening the Store", async () => {
+    const { root, store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief(buildInput("analysis-handoff"), auth());
+    const before = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in before.bundle)) throw new Error("Expected context");
+    const evidence = before.bundle.evidence.find((item) => item.kind === "source")!;
+    const summaryBefore = await taskEngine.getTaskBrief({ taskId: built.task.taskId, section: "summary" });
+    const kinds = ["conclusion", "recommendation", "assumption", "risk", "unknown"] as const;
+    const conclusions = Array.from({ length: 10 }, (_, index) => ({
+      kind: kinds[index % kinds.length]!,
+      // A long statement must survive paging without being replaced by a summary.
+      statement: `Host analysis ${index}: ${index === 0 ? "x".repeat(16_000) : "TaskHandler requires evidence-aware review."}`,
+      evidenceIds: [evidence.id],
+      reasoning: `Supporting source declaration for analysis ${index}.`,
+    }));
+    const updated = await taskEngine.updateTask({
+      taskId: built.task.taskId,
+      expectedRevision: built.task.revision,
+      actor: ACTOR,
+      idempotencyKey: "analysis-handoff-ten",
+      action: { type: "record_analysis", sourceSnapshotId: built.task.latestSnapshotId, conclusions },
+    }, auth());
+    const reopened = await reopenStore(root);
+    const restartedEngine = engine(reopened);
+    const persisted = await reopened.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle)) throw new Error("Expected context");
+    const analyticalKinds = new Set<string>(kinds);
+    const expected = persisted.bundle.claims.filter((claim) => analyticalKinds.has(claim.kind));
+    const items: Awaited<ReturnType<TaskEngine["getTaskBrief"]>>["result"]["items"] = [];
+    let cursor: string | undefined;
+    let firstCursor: string | undefined;
+    let pageCount = 0;
+    do {
+      const page = await restartedEngine.getTaskBrief({
+        taskId: built.task.taskId, section: "analysis", pageSize: 3,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      expect(GetTaskBriefResultV1Schema.safeParse(page.result).success).toBe(true);
+      expect(page.result.task.revision).toBe(updated.task.revision);
+      expect(page.total).toBe(expected.length);
+      expect(page.result.items.length).toBeGreaterThan(0);
+      expect(page.result.items.length).toBeLessThanOrEqual(3);
+      items.push(...page.result.items);
+      firstCursor ??= page.nextCursor;
+      cursor = page.nextCursor;
+      pageCount += 1;
+      expect(pageCount).toBeLessThanOrEqual(Math.ceil(expected.length / 3));
+    } while (cursor !== undefined);
+    const returnedClaims = items.map((item) => item.kind === "claim_reference" ? item.claim : undefined);
+    expect(returnedClaims).toEqual(expected);
+    const hostClaims = returnedClaims.filter((claim) => conclusions.some((input) => input.statement === claim?.statement));
+    expect(hostClaims).toHaveLength(10);
+    for (const claim of hostClaims) {
+      expect(claim?.evidenceIds).toEqual([evidence.id]);
+      expect(claim?.epistemicStatus).toBe(claim?.kind === "unknown" ? "unknown" : "inferred");
+    }
+    // No persisted analysis projection is required, including for conclusions
+    // that old Brief schemas never referenced.
+    expect(persisted.bundle.brief).not.toHaveProperty("analysis");
+    expect(persisted.bundle.brief).not.toHaveProperty("conclusionClaimIds");
+    expect((await restartedEngine.getTaskBrief({ taskId: built.task.taskId, section: "summary" })).result.items)
+      .toEqual(summaryBefore.result.items);
+    await expect(restartedEngine.getTaskBrief({
+      taskId: built.task.taskId, section: "goals", cursor: firstCursor, pageSize: 3,
+    })).rejects.toMatchObject({ code: "invalid_cursor" });
+    await restartedEngine.updateTask({
+      taskId: built.task.taskId, expectedRevision: updated.task.revision,
+      actor: ACTOR, idempotencyKey: "analysis-cursor-revision",
+      action: { type: "confirm_goal", claimId: built.brief.goalClaimId },
+    }, auth());
+    await expect(restartedEngine.getTaskBrief({
+      taskId: built.task.taskId, section: "analysis", cursor: firstCursor, pageSize: 3,
+    })).rejects.toMatchObject({ code: "invalid_cursor" });
   });
 
   it("uses host time monotonically and rejects ordinary actions while blocked", async () => {

@@ -259,6 +259,29 @@ function sampleGraph(extraEntry = false): KnowledgeGraph {
 }
 
 describe("graph-to-knowledge-base", () => {
+  it("keeps indexed incident-edge coverage identical to a full graph scan", () => {
+    const graph = sampleGraph();
+    graph.edges.reverse();
+    const profile = buildKnowledgeBaseProfile(graph);
+    const plan = buildFileDocPlan(profile, { sourceFiles: {} });
+    for (const task of plan.tasks) {
+      const local = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
+      const scanned = graph.edges.filter((edge) => local.has(edge.source) || local.has(edge.target));
+      const expected = [...new Set(scanned.map((edge) => `${edge.type}:${edge.source}->${edge.target}`))].sort();
+      const document = renderDeterministicFileWriterDocument(profile, task);
+      expect(document.representedEdgeIds).toEqual(expected);
+      const nodeLabels: Record<string, string> = { file: "文件", function: "函数", class: "类", config: "配置" };
+      const edgeLabels: Record<string, string> = { contains: "包含", imports: "导入", calls: "调用", reads_from: "读取", writes_to: "写入", configures: "配置" };
+      const label = (nodeId: string) => {
+        const node = profile.indexes.nodesById.get(nodeId);
+        return node ? `${node.name} (${nodeLabels[node.type]})` : nodeId;
+      };
+      const outgoing = scanned.filter((edge) => local.has(edge.source)).slice(0, 12);
+      if (outgoing.length > 0) {
+        expect(document.markdown.split("\n").find((line) => line.startsWith("- 处理顺序:"))).toBe(`- 处理顺序: ${outgoing.map((edge) => `${label(edge.source)} --[${edgeLabels[edge.type] ?? edge.type}]--> ${label(edge.target)}`).join("；")}`);
+      }
+    }
+  });
   it("materializes non-status pages once and never substitutes prose for missing writers", () => {
     const profile = buildKnowledgeBaseProfile(sampleGraph());
     const fileDocPlan = buildFileDocPlan(profile, { sourceFiles: {

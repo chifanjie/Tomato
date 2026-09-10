@@ -19,6 +19,15 @@ generic configuration error; the wrapper never falls back to its current
 directory. `UNDERSTAND_CODE_CLI` may point at a development CLI executable,
 otherwise the published `understand-code` binary is used.
 
+The ordinary Codex `config.toml` template sets `tool_timeout_sec = 900` because
+the first full index of a large repository can exceed two minutes. This is a
+per-server Host setting; the JSON command projection does not apply it. Replace
+the root placeholder and use the TOML setting when registering that server.
+The plugin `.mcp.json` templates do not declare an unverified timeout field.
+Plugin tool-timeout behavior and Claude's default timeout have not been
+confirmed here. A test runner with a longer timeout does not establish that a
+default plugin installation can finish cold indexing of a large repository.
+
 The host-specific manifests carry the same placeholder as their config
 (`${WORKSPACE_ROOT}` for Codex and `${CLAUDE_PROJECT_DIR}` for Claude), so
 an installer can validate that it did not accidentally cross-wire the hosts.

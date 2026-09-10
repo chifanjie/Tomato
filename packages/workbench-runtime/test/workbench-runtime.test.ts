@@ -10,6 +10,7 @@ import {
   LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1,
   WorkbenchSessionError,
   openWorkbenchSessionV1,
+  WORKBENCH_SESSION_DEFAULTS_V1,
   type WorkbenchDashboardReadRequestV1,
 } from "../src/index.js";
 
@@ -72,6 +73,28 @@ afterEach(async () => {
 });
 
 describe("workbench runtime session", () => {
+  it("enforces trusted response budgets while retaining the default and static asset limits", async () => {
+    const root = await runtimeRoot("workbench-response-budget-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    expect(WORKBENCH_SESSION_DEFAULTS_V1.maxDashboardResponseBytes).toBe(32 * 1024 * 1024);
+    for (const [budget, expectedStatus] of [[16, 422], [128, 200], [384 * 1024 * 1024, 200], [undefined, 200]] as const) {
+      const session = await openWorkbenchSessionV1({ route: { view: "tasks", taskId } }, {
+        ...binding(root), ...(budget === undefined ? {} : { maxDashboardResponseBytes: budget }),
+        dashboardReader: async () => ({ status: "ready", json: { padding: "x".repeat(64) } }),
+      });
+      try {
+        const base = `http://127.0.0.1:${session.port}`;
+        const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+        const launch = await fetch(`${base}/__workbench/launch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+        const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+        expect((await fetch(`${base}/knowledge-graph.json`, { headers: { cookie } })).status).toBe(expectedStatus);
+        expect((await fetch(`${base}/assets/index-test.js`, { headers: { cookie } })).status).toBe(200);
+      } finally { await session.close(); }
+    }
+    for (const budget of [0, -1, 1.5, NaN, Infinity, 384 * 1024 * 1024 + 1]) {
+      await expect(openWorkbenchSessionV1({ route: { view: "tasks", taskId } }, { ...binding(root), maxDashboardResponseBytes: budget })).rejects.toMatchObject({ code: "invalid_input" });
+    }
+  });
   it("starts a loopback session, emits a fragment token, and reuses identity", async () => {
     const root = await runtimeRoot("workbench-runtime-");
     const first = await openWorkbenchSessionV1(
@@ -766,6 +789,22 @@ describe("workbench runtime session", () => {
       expect(denied.status, route).toBe(409);
       await expect(denied.json()).resolves.toEqual({ error: "route_mismatch" });
     }
+    const nextTaskId = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    const next = await openWorkbenchSessionV1({ route: { view: "tasks", taskId: nextTaskId } }, binding(root));
+    expect(next.port).toBe(session.port);
+    const nextRoute = `${base}/workbench?view=tasks&taskId=${nextTaskId}`;
+    const shell = await fetch(nextRoute, { headers: { cookie, accept: "text/html" } });
+    expect(shell.status).toBe(200);
+    const shellText = await shell.text();
+    expect(shellText).toContain("/__workbench/bootstrap.js");
+    expect(shellText).not.toContain(DASHBOARD_INDEX);
+    expect(shellText).not.toContain(nextTaskId);
+    expect((await fetch(nextRoute, { headers: { cookie, accept: "application/json" } })).status).toBe(409);
+    expect((await fetch(nextRoute, { headers: { cookie, accept: "application/json, text/html" } })).status).toBe(409);
+    expect((await fetch(`${base}/tasks/${nextTaskId}/brief.json`, { headers })).status).toBe(409);
+    const nextLaunch = await fetch(`${base}/__workbench/launch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: next.output.structuredContent.result.deepLink.split("#")[1] }) });
+    const nextCookie = nextLaunch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    expect((await fetch(nextRoute, { headers: { cookie: nextCookie, accept: "text/html" } })).status).toBe(200);
     await session.close();
   });
 

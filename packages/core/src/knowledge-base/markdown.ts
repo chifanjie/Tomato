@@ -1,4 +1,4 @@
-import type { EdgeType, GraphNode, NodeType } from "../types.js";
+import type { EdgeType, GraphEdge, GraphNode, NodeType } from "../types.js";
 import type {
   CoverageReport,
   CoverageRatio,
@@ -284,13 +284,36 @@ function lineRef(node: { filePath?: string; lineRange?: [number, number] }, fall
   return `\`${node.filePath ?? fallbackFilePath}\`${node.lineRange ? `:${node.lineRange.join("-")}` : ""}`;
 }
 
+const edgeOrderByProfile = new WeakMap<ProjectProfile, Map<GraphEdge, number[]>>();
+
+function relatedEdgesForNodes(profile: ProjectProfile, nodeIds: ReadonlySet<string>): GraphEdge[] {
+  let order = edgeOrderByProfile.get(profile);
+  if (order === undefined) {
+    order = new Map();
+    profile.graph.edges.forEach((edge, index) => {
+      const positions = order!.get(edge) ?? [];
+      positions.push(index);
+      order!.set(edge, positions);
+    });
+    edgeOrderByProfile.set(profile, order);
+  }
+  const related = new Set<GraphEdge>();
+  for (const nodeId of nodeIds) {
+    for (const edge of profile.indexes.incomingEdgesByNode.get(nodeId) ?? []) related.add(edge);
+    for (const edge of profile.indexes.outgoingEdgesByNode.get(nodeId) ?? []) related.add(edge);
+  }
+  // Both endpoint indexes contain internal edges. Deduplicate those lookups,
+  // then restore every occurrence in original Graph order for stable Markdown.
+  return [...related].flatMap((edge) => (order!.get(edge) ?? []).map((index) => ({ edge, index })))
+    .sort((left, right) => left.index - right.index).map(({ edge }) => edge);
+}
+
 function representedEdgesForTask(profile: ProjectProfile, task: FileDocTask): string[] {
   const localNodeIds = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
   const represented = new Set<string>();
-  for (const edge of profile.graph.edges) {
-    if (localNodeIds.has(edge.source) || localNodeIds.has(edge.target)) {
-      represented.add(edgeId(edge));
-    }
+  for (const nodeId of localNodeIds) {
+    for (const edge of profile.indexes.incomingEdgesByNode.get(nodeId) ?? []) represented.add(edgeId(edge));
+    for (const edge of profile.indexes.outgoingEdgesByNode.get(nodeId) ?? []) represented.add(edgeId(edge));
   }
   return [...represented].sort();
 }
@@ -411,7 +434,7 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
   );
   const representedEdgeIds = representedEdgesForTask(profile, task);
   const localNodeIds = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
-  const relatedEdges = profile.graph.edges.filter((edge) => localNodeIds.has(edge.source) || localNodeIds.has(edge.target));
+  const relatedEdges = relatedEdgesForNodes(profile, localNodeIds);
   const incomingRelations = relatedEdges.filter((edge) => !localNodeIds.has(edge.source) && localNodeIds.has(edge.target));
   const outgoingRelations = relatedEdges.filter((edge) => localNodeIds.has(edge.source));
   const readRelations = outgoingRelations.filter((edge) => edge.type === "reads_from");

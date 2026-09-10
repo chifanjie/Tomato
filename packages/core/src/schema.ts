@@ -424,7 +424,16 @@ export const ProjectMetaSchema = z.object({
   gitCommitHash: z.string(),
 });
 
+export const CallResolutionSummarySchema = z.object({
+  totalCallSites: z.number().int().nonnegative(),
+  resolvedCallSites: z.number().int().nonnegative(),
+  unresolvedCallSites: z.number().int().nonnegative(),
+  limitations: z.array(z.string()),
+}).refine((summary) => summary.totalCallSites === summary.resolvedCallSites + summary.unresolvedCallSites,
+  "call-site counts must reconcile");
+
 export const KnowledgeGraphSchema = z.object({
+  callResolution: CallResolutionSummarySchema.optional(),
   version: z.string(),
   kind: z.enum(["codebase", "knowledge"]).optional(),
   project: ProjectMetaSchema,
@@ -656,7 +665,9 @@ export function validateGraph(data: unknown): ValidationResult {
     }
   }
 
+  const callResolution = CallResolutionSummarySchema.safeParse(fixed.callResolution);
   const graph = {
+    ...(callResolution.success ? { callResolution: callResolution.data } : {}),
     version: typeof fixed.version === "string" ? fixed.version : "1.0.0",
     project: projectResult.data,
     nodes: validNodes,

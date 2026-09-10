@@ -35,6 +35,8 @@ export interface UnresolvedCall {
   caller: string;
   callee: string;
   lineNumber: number;
+  /** Optional downstream graph binding limitation; unresolved calls never mint graph edges. */
+  reason?: string;
 }
 
 export interface ResolveCallsResult {

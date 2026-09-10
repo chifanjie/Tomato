@@ -374,3 +374,33 @@ export function normalizeLegacySearchRecordsBranding(
     };
   });
 }
+
+/** Preserve shared bodies; only pages with historical prose need Markdown rewriting. */
+export function normalizeLegacySearchArtifactBranding(
+  records: readonly WikiSearchRecordV2[],
+  contentLines?: readonly string[],
+): { records: WikiSearchRecordV2[]; contentLines?: readonly string[] } {
+  const normalized = normalizeLegacySearchRecordsBranding(records);
+  if (contentLines === undefined) return { records: normalized };
+  const legacyLineIds = new Set<number>();
+  contentLines.forEach((line, id) => { if (HAS_LEGACY_BRAND_SOURCE_PATTERN.test(line)) legacyLineIds.add(id); });
+  if (legacyLineIds.size === 0) return { records: normalized, contentLines };
+  let updatedLines: string[] | undefined;
+  let lineIds: Map<string, number> | undefined;
+  const rewritten = normalized.map((record) => {
+    if (record.contentLineIds === undefined || !record.contentLineIds.some((id) => legacyLineIds.has(id))) return record;
+    // Markdown context (including code fences) belongs to a page, not a shared
+    // line. Materialize only this historical page and immediately re-intern it.
+    const original = record.contentLineIds.map((id) => contentLines[id]!).join("\n");
+    const content = normalizeLegacyMarkdownBranding(original);
+    if (content === original) return record;
+    updatedLines ??= [...contentLines];
+    lineIds ??= new Map(updatedLines.map((line, id) => [line, id]));
+    return { ...record, contentLineIds: content.split("\n").map((line) => {
+      let id = lineIds!.get(line);
+      if (id === undefined) { id = updatedLines!.length; updatedLines!.push(line); lineIds!.set(line, id); }
+      return id;
+    }) };
+  });
+  return { records: rewritten, contentLines: updatedLines ?? contentLines };
+}

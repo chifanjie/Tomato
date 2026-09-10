@@ -222,8 +222,8 @@ export type TaskEngineCapabilityState =
     }
   | {
       readonly available: false;
-      readonly reasonCode: "task_context_rebuild_not_implemented";
-      readonly owner: "WP5";
+      readonly reasonCode: "strong_context_rebuild_unavailable";
+      readonly owner: "task-engine";
     };
 
 export interface TaskEngineCapabilities {

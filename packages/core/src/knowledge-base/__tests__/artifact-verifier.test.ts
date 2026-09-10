@@ -71,6 +71,19 @@ function validSet() {
 }
 
 describe("validateKnowledgeArtifactSetV2", () => {
+  it("checks shared search bodies against exact published Markdown", () => {
+    const set = validSet();
+    const page = set.wikiIndex.pages[0]!;
+    const record = set.searchIndex.records.find((item) => item.kind === "page" && item.pageId === page.id)!;
+    delete record.content;
+    set.searchIndex.contentLines = set.markdownByPath.get(page.markdownPath)!.split("\n");
+    record.contentLineIds = set.searchIndex.contentLines.map((_, index) => index);
+    expect(validateKnowledgeArtifactSetV2(set)).toEqual({ ok: true, errors: [] });
+    set.searchIndex.contentLines[0] = "# altered body";
+    expect(validateKnowledgeArtifactSetV2(set)).toMatchObject({ ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("共享正文与 Markdown 不一致")]),
+    });
+  });
   it("accepts a complete writer artifact set with rich Chinese content", () => {
     expect(validateKnowledgeArtifactSetV2(validSet())).toEqual({ ok: true, errors: [] });
   });

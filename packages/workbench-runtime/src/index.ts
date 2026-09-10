@@ -337,7 +337,14 @@ interface WorkbenchEvidenceResultBaseV1 {
 export interface WorkbenchEvidenceReadyV1 extends WorkbenchEvidenceResultBaseV1 {
   readonly status: "ready";
   readonly evidence: WorkbenchEvidenceRecordV1;
-  readonly source: WorkbenchSourceProjectionV1;
+  readonly source?: WorkbenchSourceProjectionV1;
+  readonly diff?: {
+    readonly oldPath: string | null;
+    readonly newPath: string | null;
+    readonly baselineSnapshotId: string;
+    readonly currentSnapshotId: string;
+    readonly unifiedDiff: string;
+  };
 }
 
 export interface WorkbenchEvidenceNotReadyV1 extends WorkbenchEvidenceResultBaseV1 {
@@ -392,6 +399,8 @@ export type WorkbenchDashboardReadRequestV1 = WorkbenchDashboardRequestBindingV1
   | ({ readonly kind: "wiki_index" } & WorkbenchDashboardIndexSelectionV1)
   | ({ readonly kind: "wiki_search" } & WorkbenchDashboardIndexSelectionV1)
   | ({ readonly kind: "wiki_page"; readonly relativePath: string } & WorkbenchDashboardIndexSelectionV1)
+  | { readonly kind: "task_list" }
+  | { readonly kind: "task_launch"; readonly taskId: string }
   | { readonly kind: "task_brief"; readonly taskId: string; readonly section: TaskBriefSectionV1 }
   | { readonly kind: "task_change_check"; readonly taskId: string }
   | { readonly kind: "task_verification"; readonly taskId: string }
@@ -423,6 +432,8 @@ interface OpenWorkbenchSessionBaseOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to an ephemeral loopback port. Non-loopback hosts are rejected. */
   readonly host?: typeof LOOPBACK_HOST;
   readonly port?: number;
+  /** Trusted composition only. Defaults to 32 MiB and cannot exceed 384 MiB. */
+  readonly maxDashboardResponseBytes?: number;
   /** Read-only callback bound by the Host to its persisted Task Engine. */
   readonly taskBriefReader?: WorkbenchTaskBriefReaderV1;
   /** Optional read-only callback for the published Graph projection. */
@@ -556,6 +567,7 @@ interface StoredSessionV1 {
   readonly launches: Map<string, PendingLaunchV1>;
   readonly now: () => number;
   readonly workbenchUi: WorkbenchUiModeV1;
+  readonly maxDashboardResponseBytes: number;
   readonly dashboardBundle?: ValidatedWorkbenchDashboardBundleV1;
   dashboardReader?: WorkbenchDashboardReaderV1;
   taskBriefReader?: WorkbenchTaskBriefReaderV1;
@@ -1031,21 +1043,34 @@ function parseEvidenceResult(
   }
   const status = value.status as WorkbenchEvidenceStatusV1;
   if (status === "ready") {
-    if (!hasExactKeys(value, ["schemaVersion", "surface", "taskId", "evidenceId", "repositoryId", "worktreeId", "snapshotId", "headCommit", "status", "evidence", "source"])) {
+    if (!hasOnlyKeys(value, ["schemaVersion", "surface", "taskId", "evidenceId", "repositoryId", "worktreeId", "snapshotId", "headCommit", "status", "evidence", "source", "diff"])) {
       throw new WorkbenchSessionError("session_invalid", "evidence ready projection is invalid");
     }
     const evidence = parseEvidenceRecord(value.evidence);
-    const source = parseSourceProjection(value.source);
-    if (evidence === undefined || source === undefined || evidence.id !== input.evidenceId ||
-        evidence.freshness !== "current" || evidence.observedAtSnapshotId !== input.snapshotId ||
-        evidence.filePath !== source.filePath || evidence.lineRange[0] !== source.lineRange[0] ||
-        evidence.lineRange[1] !== source.lineRange[1]) {
+    const source = value.source === undefined ? undefined : parseSourceProjection(value.source);
+    let diff: WorkbenchEvidenceReadyV1["diff"];
+    if (value.diff !== undefined) {
+      const candidate = value.diff;
+      if (!isRecord(candidate) || !hasExactKeys(candidate, ["oldPath", "newPath", "baselineSnapshotId", "currentSnapshotId", "unifiedDiff"]) ||
+          candidate.currentSnapshotId !== input.snapshotId || !SnapshotIdSchema.safeParse(candidate.baselineSnapshotId).success ||
+          typeof candidate.unifiedDiff !== "string" || candidate.unifiedDiff.trim() === "" || candidate.unifiedDiff.includes("\u0000") || Buffer.byteLength(candidate.unifiedDiff) > 128 * 1024 ||
+          ![candidate.oldPath, candidate.newPath].every((path) => path === null || RepositoryRelativePathSchema.safeParse(path).success) ||
+          (candidate.oldPath === null && candidate.newPath === null)) {
+        throw new WorkbenchSessionError("session_invalid", "evidence Diff projection is invalid");
+      }
+      if ([candidate.oldPath, candidate.newPath].some((path) => typeof path === "string" && isSensitiveEvidencePath(path))) return unavailableEvidence(input, "redacted", "sensitive");
+      diff = candidate as unknown as NonNullable<WorkbenchEvidenceReadyV1["diff"]>;
+    }
+    const currentEvidence = evidence?.freshness === "current" && evidence.observedAtSnapshotId === input.snapshotId;
+    const deletedEvidence = diff?.newPath === null && evidence?.freshness === "changed" && evidence.observedAtSnapshotId === diff.baselineSnapshotId;
+    if (evidence === undefined || (value.source !== undefined && source === undefined) || (!source && !diff) || evidence.id !== input.evidenceId ||
+        (!currentEvidence && !deletedEvidence) ||
+        (source !== undefined && (evidence.filePath !== source.filePath || evidence.lineRange[0] !== source.lineRange[0] || evidence.lineRange[1] !== source.lineRange[1])) ||
+        (diff !== undefined && evidence.filePath !== (diff.newPath ?? diff.oldPath))) {
       throw new WorkbenchSessionError("session_invalid", "evidence ready projection is invalid");
     }
-    if (isSensitiveEvidencePath(evidence.filePath) || isSensitiveEvidencePath(source.filePath)) {
-      return unavailableEvidence(input, "redacted", "sensitive");
-    }
-    return { ...evidenceBase(input), status: "ready", evidence, source };
+    if (isSensitiveEvidencePath(evidence.filePath)) return unavailableEvidence(input, "redacted", "sensitive");
+    return { ...evidenceBase(input), status: "ready", evidence, ...(source === undefined ? {} : { source }), ...(diff === undefined ? {} : { diff }) };
   }
   if (!hasOnlyKeys(value, ["schemaVersion", "surface", "taskId", "evidenceId", "repositoryId", "worktreeId", "snapshotId", "headCommit", "status", "reason", "observedSnapshotId", "evidence"]) ||
       typeof value.reason !== "string" || !EVIDENCE_REASONS.has(value.reason)) {
@@ -1176,7 +1201,7 @@ function dashboardStaticRelativePath(pathname: string): string | undefined {
   return decoded;
 }
 
-const BOOTSTRAP_SCRIPT = `const token=location.hash.slice(1);if(token){fetch('/__workbench/launch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})}).then(r=>{if(!r.ok)throw new Error('launch failed');return r.json()}).then(()=>{history.replaceState(null,'',location.pathname+location.search);location.reload()}).catch(()=>location.hash='');}`;
+const BOOTSTRAP_SCRIPT = `const token=location.hash.slice(1);if(token){fetch('/__workbench/launch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})}).then(r=>{if(!r.ok)throw new Error('launch failed');return r.json()}).then(()=>{history.replaceState(null,'',location.pathname+location.search);location.reload()}).catch(()=>{history.replaceState(null,'',location.pathname+location.search);document.querySelector('p').textContent='工作台链接已失效，请从宿主重新打开任务。';});}else{document.querySelector('p').textContent='请从宿主重新打开工作台链接。';}`;
 
 const WORKBENCH_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
@@ -2016,6 +2041,15 @@ function dashboardRequestBinding(browser: BrowserSessionV1): WorkbenchDashboardR
 
 function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): DashboardRequestMappingV1 {
   const binding = dashboardRequestBinding(browser);
+  const taskLaunch = /^\/__workbench\/tasks\/([^/]+)\/open$/u.exec(url.pathname);
+  if (taskLaunch !== null) {
+    let taskId: string;
+    try { taskId = decodeURIComponent(taskLaunch[1]!); } catch { return { status: "invalid" }; }
+    return TaskIdSchema.safeParse(taskId).success && hasOnlySingleQueryValues(url, new Set())
+      ? { status: "matched", request: { ...binding, kind: "task_launch", taskId } }
+      : { status: "invalid" };
+  }
+  if (url.pathname === "/__workbench/tasks") return hasOnlySingleQueryValues(url, new Set()) ? { status: "matched", request: { ...binding, kind: "task_list" } } : { status: "invalid" };
   const fixedJsonKinds = new Map<string, "graph" | "meta" | "config" | "wiki_index" | "wiki_search">([
     ["/knowledge-graph.json", "graph"],
     ["/meta.json", "meta"],
@@ -2090,6 +2124,7 @@ function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): Dashboard
 }
 
 const MAX_DASHBOARD_RESPONSE_BYTES = 32 * 1024 * 1024;
+const MAX_CONFIGURABLE_DASHBOARD_RESPONSE_BYTES = 384 * 1024 * 1024;
 
 function writeDashboardJson(response: ServerResponse, status: number, value: unknown): void {
   const body = JSON.stringify(value);
@@ -2160,7 +2195,7 @@ async function serveDashboardRead(
       !hasExactKeys(result, ["status", "text", "contentType"]) ||
       typeof textResult.text !== "string" || textResult.text.includes("\u0000") ||
       textResult.contentType !== "text/markdown; charset=utf-8" ||
-      Buffer.byteLength(textResult.text, "utf8") > MAX_DASHBOARD_RESPONSE_BYTES ||
+      Buffer.byteLength(textResult.text, "utf8") > stored.maxDashboardResponseBytes ||
       textResult.text.includes(stored.session.canonicalRoot)
     ) {
       writeDashboardReadFailure(response, "invalid");
@@ -2185,7 +2220,7 @@ async function serveDashboardRead(
     body = undefined;
   }
   if (
-    body === undefined || Buffer.byteLength(body, "utf8") > MAX_DASHBOARD_RESPONSE_BYTES ||
+    body === undefined || Buffer.byteLength(body, "utf8") > stored.maxDashboardResponseBytes ||
     body.includes(stored.session.canonicalRoot)
   ) {
     writeDashboardReadFailure(response, "invalid");
@@ -2193,6 +2228,14 @@ async function serveDashboardRead(
   }
   response.writeHead(200, dashboardSecurityHeaders("application/json; charset=utf-8"));
   response.end(body);
+}
+
+function writeWorkbenchLaunchHtml(response: ServerResponse): void {
+  response.writeHead(200, {
+    "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": WORKBENCH_CSP,
+    "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+  });
+  response.end('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>连接工作台</title></head><body><p>正在连接当前任务会话…</p><script src="/__workbench/bootstrap.js" defer></script></body></html>');
 }
 
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
@@ -2291,14 +2334,7 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
         }
       }
       if (!currentRuntimeSession) {
-        response.writeHead(200, {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": "no-store",
-          "content-security-policy": WORKBENCH_CSP,
-          "x-content-type-options": "nosniff",
-          "referrer-policy": "no-referrer",
-        });
-        response.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workbench launch</title></head><body><p>Establishing the local Workbench session…</p><script src="/__workbench/bootstrap.js" defer></script></body></html>');
+        writeWorkbenchLaunchHtml(response);
         return;
       }
     }
@@ -2341,6 +2377,12 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
         const grant = getBrowserSession(stored.session, sessionToken, stored.now);
         const requested = routeFromQuery(parsedUrl.searchParams);
         if (requested !== undefined && !routeCompatible(requested, grant.route)) {
+          // A new Task's fragment is invisible to HTTP. Let only an HTML
+          // navigation redeem it; the empty shell contains no Task data.
+          if (request.headers.accept?.includes("text/html") === true && request.headers.accept?.includes("application/json") !== true) {
+            writeWorkbenchLaunchHtml(response);
+            return;
+          }
           writeJson(response, 409, { error: "route_mismatch" });
           return;
         }
@@ -2716,6 +2758,10 @@ export async function openWorkbenchSessionV1(
   const parsedInput = OpenWorkbenchInputV1Schema.safeParse(input);
   if (!parsedInput.success) throw new WorkbenchSessionError("invalid_input", "invalid open_workbench input");
   validateBinding(options);
+  const maxDashboardResponseBytes = options.maxDashboardResponseBytes ?? MAX_DASHBOARD_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxDashboardResponseBytes) || maxDashboardResponseBytes <= 0 || maxDashboardResponseBytes > MAX_CONFIGURABLE_DASHBOARD_RESPONSE_BYTES) {
+    throw new WorkbenchSessionError("invalid_input", "Workbench response byte budget is invalid");
+  }
   const canonicalRoot = await canonicalizeRoot(options.canonicalRoot);
   const workbenchUi = await validateWorkbenchUi(options);
   const host = options.host ?? LOOPBACK_HOST;
@@ -2731,6 +2777,7 @@ export async function openWorkbenchSessionV1(
   if (existing !== undefined) {
     if (
       existing.workbenchUi !== workbenchUi.mode ||
+      existing.maxDashboardResponseBytes !== maxDashboardResponseBytes ||
       (workbenchUi.mode === "react_dashboard_v1" && (
         existing.dashboardBundle === undefined ||
         existing.dashboardBundle.productVersion !== workbenchUi.dashboardBundle.productVersion ||
@@ -2783,6 +2830,7 @@ export async function openWorkbenchSessionV1(
     launches,
     now,
     workbenchUi: workbenchUi.mode,
+    maxDashboardResponseBytes,
     ...(workbenchUi.mode === "react_dashboard_v1"
       ? { dashboardBundle: workbenchUi.dashboardBundle }
       : {}),
@@ -2911,6 +2959,7 @@ function makeOutput(
 }
 
 export const WORKBENCH_SESSION_DEFAULTS_V1 = Object.freeze({
+  maxDashboardResponseBytes: MAX_DASHBOARD_RESPONSE_BYTES,
   launchTokenTtlMs: DEFAULT_LAUNCH_TTL_MS,
   sessionTtlMs: SESSION_TTL_MS,
   sessionIdleTtlMs: SESSION_IDLE_TTL_MS,

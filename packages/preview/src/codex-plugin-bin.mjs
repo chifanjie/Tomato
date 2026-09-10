@@ -8,12 +8,9 @@ import path from "node:path";
 const MAX_ROOT_BYTES = 4_096;
 const HOSTS = new Set(["codex", "claude"]);
 const HOST_ACTIVATION_DIRECTORY = ".understand-code-host";
-const FIXED_GIT_EXECUTABLE = process.platform === "linux"
-  ? "/opt/understand-code/bin/git"
-  : "/usr/bin/git";
+const FIXED_GIT_EXECUTABLE = "/usr/bin/git";
 const FIXED_CHILD_PATH = [
   path.dirname(realpathSync(process.execPath)),
-  ...(process.platform === "linux" ? ["/opt/understand-code/bin"] : []),
   "/usr/bin",
   "/bin",
 ].join(path.delimiter);
@@ -163,21 +160,12 @@ async function run() {
   }
 
   const cliPath = fileURLToPath(new URL("./understand-code.mjs", import.meta.url));
-  let hostInstallationRoot;
-  try {
-    hostInstallationRoot = selectHostInstallationRoot(
-      fileURLToPath(import.meta.url),
-    );
-  } catch {
-    process.stderr.write("provider_installation_root_unavailable\n");
-    process.exitCode = 1;
-    return;
-  }
+  // Preview ships the supported single-user local runtime. The separate
+  // explicit CLI installation selector retains the verified Provider profile.
   let child;
   try {
     const childArguments = [cliPath, "mcp", "--stdio"];
     if (root !== undefined) childArguments.push("--root", root);
-    childArguments.push("--installation-root", hostInstallationRoot);
     if (process.platform === "linux" && typeof process.execve === "function") {
       // Keep the MCP CLI as the sole process in its SafeGit supervisor leaf.
       process.execve(

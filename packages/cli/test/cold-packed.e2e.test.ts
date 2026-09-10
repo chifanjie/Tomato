@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   GetRepoPulseOutputV1Schema,
+  BuildTaskBriefOutputV1Schema,
+  GetTaskBriefOutputV1Schema,
+  RefreshIndexOutputV1Schema,
   McpToolErrorResultV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
@@ -194,7 +197,7 @@ function initialize(child: ReturnType<typeof spawn>): void {
 
 describe("cold packed CLI", () => {
   it(
-    "installs outside the monorepo and runs the strict Pulse/locked refresh/Task slice",
+    "installs outside the monorepo and runs the local Task slice with lifecycle and corruption guards",
     async () => {
       const root = await createGitRepository();
       const built = await seedLegacyTask(root, {
@@ -293,8 +296,7 @@ describe("cold packed CLI", () => {
       expect(publicPulseJson).not.toContain(root);
       expect(publicPulseJson).not.toContain("src/task.ts");
 
-      const managedStoreBeforeMutation = await snapshotManagedStoreTree(root);
-      const taskId = built.task.taskId;
+      const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
       const actor = "agent:cold-e2e";
       const mutationCalls = [
         ["build_task_brief", {
@@ -363,21 +365,17 @@ describe("cold packed CLI", () => {
           actor,
         }],
       ] as const;
-      const expectedMutationFailure = {
-        isError: true,
-        content: [{
-          type: "text",
-          text: "The strong Store is unavailable. Run Doctor for details.",
-        }],
-        structuredContent: {
-          error: {
-            schemaVersion: 1,
-            code: "provider_unavailable",
-            details: { reason: "unavailable" },
-          },
-        },
-      };
-      for (const [index, [name, argumentsValue]] of mutationCalls.entries()) {
+      writeMessage(child, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "build_task_brief", arguments: mutationCalls[0][1] } });
+      const createdResponse = await collected.waitFor((message) => message.id === 4);
+      const created = BuildTaskBriefOutputV1Schema.parse(createdResponse.result);
+      expect(created.structuredContent.result.evidenceIds.length).toBeGreaterThan(0);
+      writeMessage(child, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "build_task_brief", arguments: mutationCalls[0][1] } });
+      const replayResponse = await collected.waitFor((message) => message.id === 5);
+      const replay = BuildTaskBriefOutputV1Schema.parse(replayResponse.result);
+      expect(replay.structuredContent.result.task.taskId).toBe(created.structuredContent.result.task.taskId);
+      expect(replay.structuredContent.result.mutation.idempotentReplay).toBe(true);
+      const managedStoreBeforeMutation = await snapshotManagedStoreTree(root);
+      for (const [index, [name, argumentsValue]] of mutationCalls.slice(1, -1).entries()) {
         const id = 6 + index;
         writeMessage(child, {
           jsonrpc: "2.0",
@@ -386,13 +384,18 @@ describe("cold packed CLI", () => {
           params: { name, arguments: argumentsValue },
         });
         const response = await collected.waitFor((message) => message.id === id);
-        expect(McpToolErrorResultV1Schema.parse(response.result)).toEqual(
-          expectedMutationFailure,
-        );
+        const failure = McpToolErrorResultV1Schema.parse(response.result);
+        expect(failure.structuredContent.error.code).not.toBe("provider_unavailable");
+        expect(failure.isError).toBe(true);
         expect(await snapshotManagedStoreTree(root)).toEqual(
           managedStoreBeforeMutation,
         );
       }
+
+      writeMessage(child, { jsonrpc: "2.0", id: 13, method: "tools/call", params: { name: "refresh_index", arguments: mutationCalls.at(-1)![1] } });
+      const refreshedResponse = await collected.waitFor((message) => message.id === 13);
+      expect(refreshedResponse.result, JSON.stringify(refreshedResponse.result)).toMatchObject({ isError: false });
+      expect(RefreshIndexOutputV1Schema.parse(refreshedResponse.result).structuredContent.result.operation.status).toBe("completed");
 
       writeMessage(child, {
         jsonrpc: "2.0",
@@ -401,18 +404,13 @@ describe("cold packed CLI", () => {
         params: {
           name: "get_task_brief",
           arguments: {
-            taskId,
+            taskId: built.task.taskId,
             section: "summary",
           },
         },
       });
       const getResponse = await collected.waitFor((message) => message.id === 14);
-      expect(McpToolErrorResultV1Schema.parse(getResponse.result)).toEqual(
-        expectedMutationFailure,
-      );
-      expect(await snapshotManagedStoreTree(root)).toEqual(
-        managedStoreBeforeMutation,
-      );
+      expect(GetTaskBriefOutputV1Schema.parse(getResponse.result).structuredContent.result.task.taskId).toBe(built.task.taskId);
       child.stdin.end();
       const [exitCode] = await once(child, "close");
       expect(exitCode).toBe(0);

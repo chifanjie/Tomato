@@ -1,5 +1,7 @@
 import {
   ChangeCheckArtifactV1Schema,
+  ClaimV1Schema,
+  type ClaimV1,
   ImpactArtifactV1Schema,
   RepoPulseSurfaceResponseV1Schema,
   TaskBriefPageItemV1Schema,
@@ -85,13 +87,22 @@ export interface TaskEvidenceSource {
   readonly truncated: false;
 }
 
+export interface TaskEvidenceDiff {
+  readonly oldPath?: string | null;
+  readonly newPath?: string | null;
+  readonly baselineSnapshotId?: string;
+  readonly currentSnapshotId: string;
+  readonly unifiedDiff: string;
+}
+
 export type TaskEvidenceProjection =
   | {
       readonly status: "ready";
       readonly taskId: string;
       readonly evidenceId: string;
       readonly evidence: TaskEvidenceRecord;
-      readonly source: TaskEvidenceSource;
+      readonly source?: TaskEvidenceSource;
+      readonly diff?: TaskEvidenceDiff;
     }
   | {
       readonly status: "stale" | "invalid" | "unavailable" | "redacted";
@@ -105,6 +116,7 @@ export type TaskEvidenceProjection =
 export interface TaskWorkbenchPayload {
   readonly task: TaskManifestV1;
   readonly brief: TaskBriefV1;
+  readonly claims: readonly ClaimV1[];
   readonly section: TaskBriefSectionV1;
   readonly items: readonly TaskBriefPageItemV1[];
   readonly pulse: RepoPulseSurfaceResponseV1 | null;
@@ -357,6 +369,9 @@ function parsePayload(value: unknown): TaskWorkbenchPayload | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const taskResult = TaskManifestV1Schema.safeParse(record.task);
+  const claims = Array.isArray(record.claims) ? record.claims.map((claim) => ClaimV1Schema.safeParse(claim)) : [];
+  if (record.claims !== undefined && !Array.isArray(record.claims)) return null;
+  if (claims.some((claim) => !claim.success || claim.data.taskId !== (record.task as { taskId?: string })?.taskId)) return null;
   const briefResult = TaskBriefV1Schema.safeParse(record.brief);
   const sectionResult = TaskBriefSectionV1Schema.safeParse(record.section);
   const itemsValue = Array.isArray(record.items) ? record.items : null;
@@ -376,11 +391,13 @@ function parsePayload(value: unknown): TaskWorkbenchPayload | null {
   const parsedItems: TaskBriefPageItemV1[] = [];
   for (const item of items) {
     if (!item.success) return null;
+    if (item.data.kind === "claim_reference" && "claim" in item.data && item.data.claim && item.data.claim.taskId !== taskResult.data.taskId) return null;
     parsedItems.push(item.data);
   }
   return {
     task: taskResult.data,
     brief: briefResult.data,
+    claims: claims.flatMap((claim) => claim.success ? [claim.data] : []),
     section: sectionResult.data,
     items: parsedItems,
     pulse: pulseResult === null ? null : pulseResult.data,
@@ -439,28 +456,33 @@ function parseEvidenceProjection(
   if (record.taskId !== route.taskId || record.evidenceId !== route.evidenceId || !nonEmptyString(record.status)) return null;
   if (record.status === "ready") {
     const evidence = parseEvidenceRecord(record.evidence);
-    const sourceValue = record.source;
-    if (!evidence || sourceValue === null || typeof sourceValue !== "object" || Array.isArray(sourceValue)) return null;
-    const source = sourceValue as Record<string, unknown>;
-    if (source.filePath !== evidence.filePath || !lineRange(source.lineRange)
-      || source.lineRange[0] !== evidence.lineRange[0] || source.lineRange[1] !== evidence.lineRange[1]
-      || typeof source.content !== "string" || !Number.isInteger(source.sizeBytes)
-      || !Number.isInteger(source.lineCount) || source.truncated !== false) return null;
-    return {
-      status: "ready",
-      taskId: route.taskId,
-      evidenceId: route.evidenceId,
-      evidence,
-      source: {
-        filePath: evidence.filePath,
-        lineRange: evidence.lineRange,
-        content: source.content,
-        sizeBytes: source.sizeBytes as number,
-        lineCount: source.lineCount as number,
-        truncated: false,
-      },
-    };
+    if (!evidence || evidence.id !== route.evidenceId) return null;
+    let source: TaskEvidenceSource | undefined;
+    if (record.source !== undefined) {
+      if (record.source === null || typeof record.source !== "object" || Array.isArray(record.source)) return null;
+      const value = record.source as Record<string, unknown>;
+      if (value.filePath !== evidence.filePath || !lineRange(value.lineRange)
+        || value.lineRange[0] !== evidence.lineRange[0] || value.lineRange[1] !== evidence.lineRange[1]
+        || typeof value.content !== "string" || !Number.isInteger(value.sizeBytes) || (value.sizeBytes as number) < 0
+        || !Number.isInteger(value.lineCount) || (value.lineCount as number) < 0 || value.truncated !== false) return null;
+      source = { filePath: evidence.filePath, lineRange: value.lineRange, content: value.content, sizeBytes: value.sizeBytes as number, lineCount: value.lineCount as number, truncated: false };
+    }
+    let diff: TaskEvidenceDiff | undefined;
+    if (record.diff !== undefined) {
+      if (!record.diff || typeof record.diff !== "object" || Array.isArray(record.diff)) return null;
+      const value = record.diff as Record<string, unknown>;
+      if (!nonEmptyString(value.currentSnapshotId) || typeof value.unifiedDiff !== "string" || !value.unifiedDiff.trim()
+        || (value.baselineSnapshotId !== undefined && !nonEmptyString(value.baselineSnapshotId))
+        || ![value.oldPath, value.newPath].every((path) => path === undefined || path === null || nonEmptyString(path))) return null;
+      diff = { currentSnapshotId: value.currentSnapshotId, unifiedDiff: value.unifiedDiff,
+        ...(value.oldPath === undefined ? {} : { oldPath: value.oldPath as string | null }),
+        ...(value.newPath === undefined ? {} : { newPath: value.newPath as string | null }),
+        ...(value.baselineSnapshotId === undefined ? {} : { baselineSnapshotId: value.baselineSnapshotId as string }) };
+    }
+    if (!source && !diff) return null;
+    return { status: "ready", taskId: route.taskId, evidenceId: route.evidenceId, evidence, ...(source ? { source } : {}), ...(diff ? { diff } : {}) };
   }
+
   if (!["stale", "invalid", "unavailable", "redacted"].includes(record.status) || !nonEmptyString(record.reason)) return null;
   const evidence = record.evidence === undefined ? undefined : parseEvidenceRecord(record.evidence);
   if (record.evidence !== undefined && !evidence) return null;

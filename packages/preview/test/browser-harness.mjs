@@ -327,6 +327,11 @@ export async function launchBrowser({ executable, userDataDir, timeoutMs = DEFAU
     if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) socket.close();
   }
 
+  async function screenshot() {
+    const result = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }, sessionId);
+    return Buffer.from(result.data, "base64");
+  }
+
   return {
     child,
     stderr,
@@ -338,6 +343,7 @@ export async function launchBrowser({ executable, userDataDir, timeoutMs = DEFAU
     getCookies,
     click,
     clickText,
+    screenshot,
     close,
   };
 }

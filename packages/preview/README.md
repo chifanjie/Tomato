@@ -8,7 +8,7 @@ install/Doctor/uninstall lifecycle. Runtime npm dependencies are bundled; Node.j
 22 or newer and Git on `PATH` are required.
 
 ```sh
-npm install -g ./understand-code-preview-0.1.0-preview.1.tgz
+npm install -g ./understand-code-preview-0.1.0-preview.2.tgz
 understand-code-preview --demo
 ```
 
@@ -40,6 +40,15 @@ It also contains self-contained Codex and Claude Code plugin marketplaces. The
 installed plugins carry their own exact-version MCP executable, so Host plugin
 caches do not depend on the monorepo, a globally installed Understand Code
 command, or the original tarball location.
+
+Cold indexing of a large repository can exceed two minutes. `build_task_brief`
+waits for that first full index in the same tool call. The packaged ordinary
+Codex TOML template includes `tool_timeout_sec = 900` for this case, with an
+explicit repository root. Plugin timeout support and Claude's default timeout
+have not been confirmed; the plugin `.mcp.json` files therefore contain no
+unverified timeout setting. Acceptance with a runner configured for 300 or 900
+seconds does not establish cold large-repository success for a default plugin
+installation. Installing the package does not change global Host timeouts.
 
 ## Packaged Host lifecycle
 
@@ -220,10 +229,10 @@ understand-code-claude --root /absolute/path/to/worktree
 
 Both entrypoints launch the bundled MCP executable and require one explicit absolute
 worktree root. They do not fall back to the process working directory or to an
-`UNDERSTAND_CODE_CLI` override. When a Provider-backed strong Store is installed,
-Codex and Claude can resume the same persisted Task even when their working
-directories differ. This unsigned Alpha keeps that Store locked; legacy Task
-resume therefore fails closed with `provider_unavailable`. Missing, relative, or
+`UNDERSTAND_CODE_CLI` override. Their local runtime persists the same Task for
+Codex and Claude when both bind the same repository root. The marketplace wrapper
+does not require a Provider activation; explicit production CLI selectors still
+require their verified Provider installation. Missing, relative, or
 unexpanded placeholder roots fail with `workspace_root_required`; ending stdin
 stops the Host and MCP processes cleanly.
 
@@ -245,22 +254,23 @@ The MCP server advertises `get_repo_pulse`, `build_task_brief`, `get_task_brief`
 `update_task`, `check_change`, `record_verification`, `open_workbench`,
 `get_evidence`, `search_context`, `trace_impact`, and `refresh_index`. A full
 refresh can create the managed Graph/Wiki/Pulse artifacts for a real repository.
-The public read-only Pulse and refresh surfaces remain available; Task, Change
-Check, Verification, Evidence, Search, Impact, and Workbench operations require
-the accepted Provider-backed strong Store. Until that gate is installed, the
-legacy routes return the redacted `provider_unavailable` failure before reading
-private Task/Pulse state. Source changes remain external: Understand Code records
-and checks a change, but does not edit repository source files or unlock strong
-writes.
+On macOS and Linux, the ordinary MCP entry point selects the supported
+`local_durable_v1` runtime. It initializes a real source index, persists Tasks,
+reads Evidence/Search/Impact, checks changes and records host verification using
+local atomic writes, fsync, cross-process locks, digests and revision checks.
+`build_task_brief` initializes missing local index data. Explicit Provider
+selection remains gated by the existing verified Linux runtime; local operation
+does not claim its stronger isolation or rollback guarantees. Source edits and
+verification commands run in the host.
 Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
 
 Both installed Host wrappers expose the same Task workflow guidance through MCP
-`initialize.instructions`. For a Provider-authorized Task, checked knowledge is
+`initialize.instructions`. For a local or Provider-authorized Task, checked knowledge is
 first saved with `refresh_index` / `knowledge.action=stage`; the returned
 candidate remains read-only and is not current Task evidence. Only after the
-actual verification and the Provider-backed Task transition to `verified` may
+actual verification, the Task transition to `verified`, and source-verified writer readiness may
 `knowledge.action=publish` use that candidate ID, its source Snapshot and the
 current Task revision. These instructions do not unlock the Alpha or authorize
 extra tool calls. Candidate discovery/preview HTTP is implemented, and the
@@ -268,16 +278,20 @@ Task-first Dashboard now exposes a read-only `KnowledgeCandidateReview` card.
 Its Graph/Wiki links are enabled only when the candidate's source Snapshot
 matches the current Snapshot; stage success is not a completed review, and the
 candidate remains ineligible as current Task evidence until the verification
-and Provider-backed publish gates pass.
+and snapshot/revision/readiness publish gates pass.
 
-`open_workbench` is present in the public contract but remains Provider-gated in
-this Alpha. Without an accepted strong Store it returns `provider_unavailable`,
-and the Preview Task endpoints return the same redacted 503 before reading any
-legacy Task, Change Check, Verification, or private Pulse payload. The
-same-tarball browser gate verifies this fail-closed state, absence of canary data,
-and clean process shutdown. The successful Finding → Evidence/Source → Graph →
-Wiki → Task interaction is reserved for the post-gate Workbench slice; it is not
-claimed by this locked Alpha.
+`open_workbench` supports the local profile and returns a private one-time
+Task deep link. The authenticated Task home shows repository/runtime state and
+recent persisted Tasks; Task pages resolve claim statements and source evidence.
+Reference Wiki generated by the static indexer is a diagnostic draft, with
+explicit coverage and unresolved-call gaps. It must not be presented as reviewed
+business documentation or a complete runtime call graph.
+
+Doctor's `strongWrites: "locked"` describes the Provider profile only. The
+`capabilities` block separately reports local Task support, repository artifact
+readiness, backend initialization and `sessionConnection: "not_checked"`.
+Successful registration is not evidence that the active Codex/Claude conversation
+has called a tool; open a new host session and verify an actual `tools/call`.
 
 After `refresh_index` has published Graph, Wiki, Search, and Repo Pulse artifacts,
 run the installed-package Doctor from any directory inside that Git worktree:
@@ -329,11 +343,10 @@ writes therefore remain locked. The bundled CLI may contain internal Provider
 lifecycle candidates, but this Alpha does not claim that they are ready for
 production use or that a live Provider execution path has been established.
 
-The Alpha's UI evidence includes a same-tarball, monorepo-external real-browser
-gate that drives the locked Task surface, proves `provider_unavailable` is
-redacted, checks legacy/strong canaries do not leak, and verifies clean process
-shutdown. It does **not** claim a successful Finding → Evidence/Source → Graph →
-Wiki → Task interaction until the Provider projection gate is closed. It also
+The older same-tarball gate proved only the historical Provider lock and canary
+redaction. It is not evidence of local Task success. The local runtime has a
+separate real-repository integration gate; credentialed Codex Desktop and Claude
+session acceptance must still record actual task IDs and deep links. It also
 does not close the formal Release, signed distribution, cross-platform, or Gold
 gates. The officially active Claude cache has been shown to keep its bundled MCP
 alive while the browser gate runs, but this is not yet a credentialed,

@@ -23,7 +23,7 @@ import {
   RecordVerificationInputV1Schema,
   VerificationRecordV1Schema,
 } from "./change.js";
-import { EvidenceV1Schema } from "./evidence.js";
+import { EvidenceV1Schema, PersistedClaimV1Schema } from "./evidence.js";
 import {
   ActorSchema,
   ClaimIdSchema,
@@ -707,6 +707,7 @@ export const TaskBriefSectionV1Schema = z.enum([
   "risks",
   "unknowns",
   "verification_plan",
+  "analysis",
 ]);
 
 export type TaskBriefSectionV1 = z.infer<
@@ -722,8 +723,15 @@ const TaskBriefClaimReferenceV1Schema = z.strictObject({
     "assumption",
     "risk",
     "unknown",
+    "conclusion",
+    "recommendation",
   ]),
   claimId: ClaimIdSchema,
+  claim: PersistedClaimV1Schema.optional(),
+}).superRefine((item, context) => {
+  if (item.claim !== undefined && (item.claim.id !== item.claimId || item.claim.kind !== item.role)) {
+    context.addIssue({ code: "custom", path: ["claim"], message: "resolved Claim must match its reference and role" });
+  }
 });
 
 const TaskBriefReadingPathItemV1Schema = z.strictObject({
@@ -785,6 +793,7 @@ export const GetTaskBriefResultV1Schema = z.strictObject({
     risks: ["claim_reference"],
     unknowns: ["claim_reference"],
     verification_plan: ["verification_plan"],
+    analysis: ["claim_reference"],
   };
   result.items.forEach((item, index) => {
     if (!allowedKinds[result.section].includes(item.kind)) {
@@ -795,6 +804,16 @@ export const GetTaskBriefResultV1Schema = z.strictObject({
       });
     }
     if (item.kind === "claim_reference") {
+      if (
+        (result.section === "analysis" && item.claim === undefined) ||
+        (item.claim !== undefined && item.claim.taskId !== result.task.taskId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "claim"],
+          message: "resolved Claims must belong to this Task and analysis items require a complete Claim",
+        });
+      }
       const expectedRoles: Partial<
         Record<
           z.infer<typeof TaskBriefSectionV1Schema>,
@@ -805,6 +824,7 @@ export const GetTaskBriefResultV1Schema = z.strictObject({
         assumptions: ["assumption"],
         risks: ["risk"],
         unknowns: ["unknown"],
+        analysis: ["conclusion", "recommendation", "assumption", "risk", "unknown"],
       };
       if (!(expectedRoles[result.section] ?? []).includes(item.role)) {
         context.addIssue({

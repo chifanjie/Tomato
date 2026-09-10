@@ -415,6 +415,7 @@ export const TaskManifestV1Schema = z.strictObject({
   taskProfile: z.literal("agent_task_v1").optional(),
   taskBaselineArtifactId: TaskBaselineArtifactIdV1Schema.optional(),
   contextBuildSpec: ResolvedContextBuildSpecV1Schema.optional(),
+  localContextBuildSpec: ResolvedContextBuildSpecV1Schema.optional(),
   contextGenerationId: ContextGenerationIdV1Schema.optional(),
   currentChangeCheckId: OpaqueIdentifierSchema.optional(),
   currentChangeCheckRevision: RevisionSchema.optional(),
@@ -432,6 +433,9 @@ export const TaskManifestV1Schema = z.strictObject({
     task.contextGenerationId,
   ];
   if (task.taskProfile === "agent_task_v1") {
+    if (task.localContextBuildSpec !== undefined) {
+      context.addIssue({ code: "custom", path: ["localContextBuildSpec"], message: "local context specifications cannot be used by strong Tasks" });
+    }
     if (task.taskBaselineArtifactId === undefined) {
       context.addIssue({
         code: "custom",
@@ -812,6 +816,17 @@ const RecordAssumptionActionV1Schema = z.strictObject({
   claimId: ClaimIdSchema,
 });
 
+const RecordAnalysisActionV1Schema = z.strictObject({
+  type: z.literal("record_analysis"),
+  sourceSnapshotId: SnapshotIdSchema,
+  conclusions: z.array(z.strictObject({
+    kind: z.enum(["conclusion", "recommendation", "assumption", "risk", "unknown"]),
+    statement: NonEmptyStringSchema.max(16_384),
+    evidenceIds: z.array(EvidenceIdSchema).max(100),
+    reasoning: NonEmptyStringSchema.max(16_384),
+  })).min(1).max(50),
+});
+
 const ConfirmUnknownActionV1Schema = z.strictObject({
   type: z.literal("confirm_unknown"),
   claimId: ClaimIdSchema,
@@ -868,6 +883,7 @@ export const UpdateTaskActionV1Schema = z.discriminatedUnion("type", [
   ConfirmAcceptanceCriteriaActionV1Schema,
   ConfirmPlanActionV1Schema,
   RecordAssumptionActionV1Schema,
+  RecordAnalysisActionV1Schema,
   ConfirmUnknownActionV1Schema,
   TransitionStatusActionV1Schema,
   AcceptFindingActionV1Schema,

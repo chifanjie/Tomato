@@ -383,6 +383,11 @@ function taskPayloadMutationPolicy(
       removable.add("change_check");
       removable.add("verification");
       break;
+    case "record_analysis":
+      mutable.add("evidence_ledger");
+      mutable.add("claim_ledger");
+      mutable.add("task_brief");
+      break;
     case "confirm_goal":
     case "confirm_acceptance_criteria":
     case "record_assumption":
@@ -587,6 +592,7 @@ const UPDATE_TASK_ACTION_TYPES = new Set<TaskEventV1["action"]["type"]>([
   "confirm_acceptance_criteria",
   "confirm_plan",
   "record_assumption",
+  "record_analysis",
   "confirm_unknown",
   "transition_status",
   "accept_finding",
@@ -812,6 +818,7 @@ function taskSnapshotChangeAllowed(
     case "confirm_acceptance_criteria":
     case "confirm_plan":
     case "record_assumption":
+    case "record_analysis":
     case "confirm_unknown":
     case "accept_finding":
     case "accept_verification_skip":
@@ -834,6 +841,7 @@ function taskManifestTransitionIssue(
     next.worktreeId !== previous.worktreeId ||
     next.title !== previous.title ||
     next.originalIntent !== previous.originalIntent ||
+    canonicalizeJson(next.localContextBuildSpec ?? null) !== canonicalizeJson(previous.localContextBuildSpec ?? null) ||
     next.parentTaskId !== previous.parentTaskId ||
     next.createdAt !== previous.createdAt ||
     next.producerVersion !== previous.producerVersion
@@ -957,6 +965,7 @@ function taskManifestTransitionIssue(
     case "confirm_acceptance_criteria":
     case "confirm_plan":
     case "record_assumption":
+    case "record_analysis":
     case "confirm_unknown":
     case "accept_finding":
     case "accept_verification_skip":
@@ -1037,6 +1046,23 @@ export class ArtifactStore {
   ): Promise<ArtifactStore> {
     const layout = await createArtifactStoreLayout(worktreeRoot);
     return new ArtifactStore(layout, options);
+  }
+
+  /** Serialize a local index/knowledge publication using fixed managed locks.
+   * Callers cannot select arbitrary lock paths or weaken lock ownership rules.
+   * Task-scoped publication follows the same task-before-repository order as Task writes.
+   */
+  async withLocalPublication<T>(operation: () => Promise<T>, taskIdInput?: string): Promise<T> {
+    const taskId = taskIdInput === undefined ? undefined : TaskIdSchema.parse(taskIdInput);
+    return withStoreLock(
+      this.layout.worktreeRoot,
+      path.join(this.layout.storeRoot, ".local-refresh.lock"),
+      () => taskId === undefined ? operation() : withStoreLock(
+        this.layout.worktreeRoot, this.layout.taskLock(taskId), operation,
+        { ...this.#lockOptions, timeoutMs: 120_000 },
+      ),
+      { ...this.#lockOptions, timeoutMs: 120_000 },
+    );
   }
 
   #now(): string {
@@ -2921,6 +2947,46 @@ export class ArtifactStore {
     return artifact;
   }
 
+  async #assertAnalysisPayloadDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    event: TaskEventV1,
+  ): Promise<void> {
+    const action = event.action;
+    if (action.type !== "record_analysis") return;
+    const reject = () => { throw new ArtifactStoreError("reference_integrity_failed", "Host analysis must append the exact declared conclusions without changing existing Task facts.", { taskId: prepared.taskId }); };
+    const beforeClaims = await this.#publishedTaskArtifact(manifest, prepared.taskId, "claim_ledger");
+    const beforeBrief = await this.#publishedTaskArtifact(manifest, prepared.taskId, "task_brief");
+    const afterClaims = prepared.artifacts.find((item) => item.artifactType === "claim_ledger");
+    const afterBrief = prepared.artifacts.find((item) => item.artifactType === "task_brief");
+    if (beforeClaims?.artifactType !== "claim_ledger" || afterClaims?.artifactType !== "claim_ledger" || beforeBrief?.artifactType !== "task_brief" || afterBrief?.artifactType !== "task_brief") return reject();
+    const previous = beforeClaims.payload.claims;
+    const added = afterClaims.payload.claims.slice(previous.length);
+    if (added.length !== action.conclusions.length || canonicalizeJson(afterClaims.payload.claims.slice(0, previous.length)) !== canonicalizeJson(previous) || action.sourceSnapshotId !== event.sourceSnapshotId) return reject();
+    const beforeEvidence = await this.#publishedTaskArtifact(manifest, prepared.taskId, "evidence_ledger");
+    const afterEvidence = prepared.artifacts.find((item) => item.artifactType === "evidence_ledger");
+    if (beforeEvidence?.artifactType !== "evidence_ledger" || afterEvidence?.artifactType !== "evidence_ledger") return reject();
+    const expectedEvidence = structuredClone(beforeEvidence.payload);
+    const evidenceById = new Map(expectedEvidence.evidence.map((item) => [item.id, item]));
+    const expectedBrief = structuredClone(beforeBrief.payload);
+    for (const [index, claim] of added.entries()) {
+      const declared = action.conclusions[index]!;
+      const unknown = declared.kind === "unknown";
+      const evidenceIds = [...new Set(declared.evidenceIds)];
+      if (claim.kind !== declared.kind || claim.statement !== declared.statement || claim.sourceSnapshotId !== action.sourceSnapshotId || claim.epistemicStatus !== (unknown ? "unknown" : "inferred") || claim.freshness !== "current" || claim.createdAt !== event.occurredAt || claim.updatedAt !== event.occurredAt || canonicalizeJson(claim.evidenceIds) !== canonicalizeJson(evidenceIds) || claim.findingIds.length !== 0 || claim.verificationRecordIds.length !== 0) return reject();
+      if (unknown ? claim.boundaryReason !== declared.reasoning : canonicalizeJson(claim.derivationPath) !== canonicalizeJson(evidenceIds.map((evidenceId) => ({ kind: "evidence", evidenceId, description: declared.reasoning })))) return reject();
+      for (const evidenceId of evidenceIds) {
+        const evidence = evidenceById.get(evidenceId);
+        if (evidence === undefined || evidence.freshness !== "current" || evidence.observedAtSnapshotId !== action.sourceSnapshotId) return reject();
+        evidence.claimIds.push(claim.id);
+      }
+      if (claim.kind === "assumption") expectedBrief.assumptionClaimIds.push(claim.id);
+      if (claim.kind === "risk") expectedBrief.riskClaimIds.push(claim.id);
+      if (claim.kind === "unknown") expectedBrief.unknownClaimIds.push(claim.id);
+    }
+    if (canonicalizeJson(expectedBrief) !== canonicalizeJson(afterBrief.payload) || canonicalizeJson(expectedEvidence) !== canonicalizeJson(afterEvidence.payload)) return reject();
+  }
+
   async #assertConfirmPayloadDelta(
     manifest: ArtifactManifestV1,
     prepared: PreparedTaskBundle,
@@ -3686,6 +3752,7 @@ export class ArtifactStore {
     previousTask: TaskManifestV1,
     event: TaskEventV1,
   ): Promise<void> {
+    await this.#assertAnalysisPayloadDelta(manifest, prepared, event);
     await this.#assertConfirmPayloadDelta(
       manifest,
       prepared,

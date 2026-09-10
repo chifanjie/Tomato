@@ -72,6 +72,7 @@ import {
   graphSymbolClustersForRange,
 } from "./change-analysis.js";
 import { compareUnicodeCodeUnits } from "./stable-order.js";
+import { rankCandidates } from "./ranking.js";
 import type {
   WikiIndexLike,
   WikiRecordLike,
@@ -220,7 +221,13 @@ export interface RepositoryTaskContextProviderOptions {
   wikiSearchPath?: string;
   maxGraphBytes?: number;
   maxWikiBytes?: number;
+  maxSearchBytes?: number;
   maxSourceFileBytes?: number;
+  /** Local adapter only: immutable source bytes verified against the requested Snapshot. */
+  readLocalSnapshotSource?: (input: {
+    sourceSnapshotId: string;
+    filePath: string;
+  }) => Promise<Uint8Array | undefined>;
   /** Required by the strong analyzer. Every operation owns and closes a fresh capability. */
   openStrongSafeGitReadSession?: () => Promise<Readonly<{
     executor: SafeGitReadExecutorV1;
@@ -242,7 +249,9 @@ interface NormalizedOptions {
   wikiSearchPath: string;
   maxGraphBytes: number;
   maxWikiBytes: number;
+  maxSearchBytes: number;
   maxSourceFileBytes: number;
+  readLocalSnapshotSource?: RepositoryTaskContextProviderOptions["readLocalSnapshotSource"];
 }
 
 interface VerifiedFile {
@@ -1389,6 +1398,7 @@ function adaptWikiRecord(
     title: record.title,
     ...(record.summary === undefined ? {} : { summary: record.summary }),
     ...(record.content === undefined ? {} : { content: record.content }),
+    ...(record.contentLineIds === undefined ? {} : { contentLineIds: [...record.contentLineIds] }),
     ...(verifiedFilePath === undefined
       ? {}
       : { filePath: verifiedFilePath }),
@@ -1467,6 +1477,7 @@ function adaptWiki(
       : { generatedAt: index.generatedAt }),
     freshness: wikiFreshness(index, search, graph),
     valid: true,
+    ...(search?.contentLines === undefined ? {} : { contentLines: search.contentLines }),
     records,
   };
 }
@@ -1533,8 +1544,45 @@ async function snapshotBoundSourceEvidence(
   existingPaths: ReadonlySet<string>,
   input: TaskContextLoadInput,
   maxSourceFileBytes: number,
+  readLocalSnapshotSource?: RepositoryTaskContextProviderOptions["readLocalSnapshotSource"],
+  wiki?: WikiIndexLike,
 ): Promise<SourceEvidenceRecord[]> {
-  const trustedDigests = trustedSnapshotDigests(input);
+  const trustedDigests = new Map(trustedSnapshotDigests(input));
+  // Clean committed files do not appear in Snapshot.changes. The local adapter
+  // can supply independently verified immutable bytes; never derive their
+  // authority from a Graph node's hash or from the current worktree alone.
+  if (readLocalSnapshotSource !== undefined) {
+    const nodePaths = new Map(graph.nodes.flatMap((node) =>
+      node.filePath !== undefined && existingPaths.has(node.filePath) ? [[node.id, node.filePath] as const] : []));
+    const ranked = rankCandidates({
+      query: input.intent,
+      graph,
+      repositorySnapshot: input.repositorySnapshot,
+      wiki,
+      options: {
+        scope: { nodeIds: [...nodePaths.keys()], ...(input.scope === undefined ? {} : { pathPrefixes: input.scope }) },
+        maxCandidates: 256,
+        tokenBudget: 64_000,
+      },
+    });
+    // Spend the bounded byte-read budget on the same intent/scope candidates
+    // used for the Task Brief, rather than an arbitrary alphabetical prefix.
+    const selectedPaths = new Set(ranked.candidates.flatMap((candidate) => {
+      const filePath = nodePaths.get(candidate.nodeId);
+      return filePath === undefined ? [] : [filePath];
+    }));
+    for (const filePath of [...existingPaths].sort(compareUnicodeCodeUnits)) selectedPaths.add(filePath);
+    let bytesRead = 0;
+    for (const filePath of [...selectedPaths].slice(0, 256)) {
+      const pinned = await readLocalSnapshotSource({ sourceSnapshotId: input.sourceSnapshotId, filePath });
+      if (pinned === undefined || pinned.byteLength > maxSourceFileBytes) continue;
+      bytesRead += pinned.byteLength;
+      if (bytesRead > 32 * 1024 * 1024) break;
+      const digest = `sha256:${createHash("sha256").update(pinned).digest("hex")}`;
+      const changedDigest = trustedDigests.get(filePath);
+      if (changedDigest === undefined || changedDigest === digest) trustedDigests.set(filePath, digest);
+    }
+  }
   const actualFiles = new Map<
     string,
     { digest: string; bytes: Buffer }
@@ -1852,11 +1900,19 @@ implements TaskContextProvider {
         DEFAULT_MAX_WIKI_BYTES,
         "maxWikiBytes",
       ),
+      maxSearchBytes: positiveSafeInteger(
+        options.maxSearchBytes ?? options.maxWikiBytes,
+        DEFAULT_MAX_WIKI_BYTES,
+        "maxSearchBytes",
+      ),
       maxSourceFileBytes: positiveSafeInteger(
         options.maxSourceFileBytes,
         DEFAULT_MAX_SOURCE_BYTES,
         "maxSourceFileBytes",
       ),
+      ...(options.openStrongSafeGitReadSession === undefined && options.readLocalSnapshotSource !== undefined
+        ? { readLocalSnapshotSource: options.readLocalSnapshotSource }
+        : {}),
     }, options.openStrongSafeGitReadSession);
   }
 
@@ -3486,7 +3542,7 @@ implements TaskContextProvider {
       readOptionalJson(
         this.#canonicalRoot,
         this.#options.wikiSearchPath,
-        this.#options.maxWikiBytes,
+        this.#options.maxSearchBytes,
       ),
     ]);
     const wiki = adaptWiki(
@@ -3501,6 +3557,8 @@ implements TaskContextProvider {
       existingPaths,
       { ...input, repositorySnapshot: snapshot.data },
       this.#options.maxSourceFileBytes,
+      this.#options.readLocalSnapshotSource,
+      wiki,
     );
     return {
       graph,

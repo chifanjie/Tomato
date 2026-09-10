@@ -58,12 +58,24 @@ export default function TaskEvidencePanel({
       ) : ready ? (
         <>
           <dl className="mt-4 grid gap-2 text-xs text-text-secondary sm:grid-cols-2">
-            <div><dt>文件</dt><dd className="mt-1 break-all font-mono text-text-primary">{ready.source.filePath}</dd></div>
-            <div><dt>行号</dt><dd className="mt-1 font-mono text-text-primary">{ready.source.lineRange[0]}–{ready.source.lineRange[1]}</dd></div>
+            <div><dt>文件</dt><dd className="mt-1 break-all font-mono text-text-primary">{ready.evidence.filePath}</dd></div>
+            <div><dt>行号</dt><dd className="mt-1 font-mono text-text-primary">{ready.evidence.lineRange[0]}–{ready.evidence.lineRange[1]}</dd></div>
+            <div><dt>证据性质</dt><dd className="mt-1 text-text-primary">{ready.evidence.epistemicStatus === "observed" ? "已观察事实" : "推断"} · {ready.evidence.kind}</dd></div>
+            <div><dt>新鲜度</dt><dd className="mt-1 text-text-primary">{ready.evidence.freshness === "current" ? "当前" : ready.evidence.freshness}</dd></div>
+            <div><dt>来源快照</dt><dd className="mt-1 break-all font-mono text-text-primary">{ready.evidence.observedAtSnapshotId}</dd></div>
+            <div><dt>内容摘要</dt><dd className="mt-1 break-all font-mono text-text-primary">{ready.evidence.contentHash}</dd></div>
           </dl>
+          {ready.diff && <section className="mt-4" aria-label="基线与当前完整差异">
+            <h4 className="text-sm font-semibold">基线 → 当前差异</h4>
+            <p className="mt-2 break-all font-mono text-xs text-text-secondary">{ready.diff.oldPath ?? "新增文件"} → {ready.diff.newPath ?? "已删除"}</p>
+            <p className="mt-1 break-all font-mono text-xs text-text-muted">{ready.diff.baselineSnapshotId ?? "基线快照未提供"} → {ready.diff.currentSnapshotId}</p>
+            <pre className="mt-3 max-h-96 overflow-auto rounded border border-border-subtle bg-root p-3 text-xs leading-5">{ready.diff.unifiedDiff.split("\n").map((line, index) => <span key={index} className={`block ${line.startsWith("+") ? "text-success" : line.startsWith("-") ? "text-danger" : "text-text-secondary"}`}>{line || " "}</span>)}</pre>
+          </section>}
+          {!ready.source && <p className="mt-3 text-xs text-text-muted">此变更没有当前源码片段（如纯删除）。请查看上方基线差异。</p>}
+          {ready.source && <>
           <div className="mt-4 max-h-80 overflow-auto rounded-md border border-border-subtle bg-root" role="region" aria-label="证据源码行">
             <pre className="min-w-max p-3 text-xs leading-5 text-text-secondary">
-              {sourceLines(ready.source.content, ready.source.lineRange[0]).map((line) => (
+              {sourceLines(ready.source.content, ready.evidence.lineRange[0]).map((line) => (
                 <span key={line.number} className="block" data-source-line={line.number}>
                   <span aria-hidden="true" className="mr-4 inline-block w-8 select-none text-right text-text-muted">{line.number}</span>
                   <code>{line.text || " "}</code>
@@ -71,6 +83,7 @@ export default function TaskEvidencePanel({
               ))}
             </pre>
           </div>
+          </>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {ready.evidence.nodeIds.map((nodeId) => (
               <button

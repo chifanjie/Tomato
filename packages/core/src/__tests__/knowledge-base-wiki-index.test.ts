@@ -83,6 +83,42 @@ function readJson(path: string): any {
 }
 
 describe("knowledge base wiki V2 artifact generation", () => {
+  it("regenerates legacy and same-graph artifacts without claiming semantic readiness", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-regenerate-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-regenerate-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      mkdirSync(join(outputRoot, ".intermediate"));
+      writeFileSync(join(outputRoot, "旧知识.md"), "# 旧知识\n");
+      const first = runGenerator(sourceRoot, outputRoot, "--migrate-legacy");
+      expect(first.status, first.stderr).toBe(0);
+      expect(readJson(join(outputRoot, ".trace/regeneration.json"))).toMatchObject({ previousFormat: "legacy-markdown", sameGraphSnapshot: false, mainReadiness: "blocked" });
+      const second = runGenerator(sourceRoot, outputRoot, "--regenerate");
+      expect(second.status, second.stderr).toBe(0);
+      expect(readJson(join(outputRoot, ".trace/regeneration.json"))).toMatchObject({ previousFormat: 2, sameGraphSnapshot: true, mainReadiness: "blocked" });
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("rejects writer output preparation bound to source that changed without a graph commit", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-writer-snapshot-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-writer-snapshot-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      expect(runGenerator(sourceRoot, outputRoot, "--prepare-file-docs").status).toBe(0);
+      writeFileSync(join(sourceRoot, "src/a.ts"), "export function run() { throw Error('changed'); }\n");
+      const stale = runGenerator(sourceRoot, outputRoot, "--merge-file-docs");
+      expect(stale.status).not.toBe(0);
+      expect(stale.stderr).toContain("writer 上下文已过期");
+      expect(existsSync(join(outputRoot, "wiki-index.json"))).toBe(false);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("preserves the published knowledge base while preparing phased intermediate state", () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-source-"));
     const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-output-"));

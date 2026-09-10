@@ -1,4 +1,5 @@
 import type { WikiSearchRecordV2 } from "@understand-code/core/knowledge-base";
+import { createWikiSearchContentMatcher } from "@understand-code/core/knowledge-base";
 import type { WikiRuntimeIndex } from "./wikiIndex";
 import { canonicalReferenceOwnerPath } from "./navigationModel";
 
@@ -26,6 +27,7 @@ export interface WikiSearchRuntime {
   records: readonly WikiSearchRecordV2[];
   preparedRecords: readonly PreparedWikiSearchRecord[];
   mode: "full" | "fallback";
+  contentMatcher: ReturnType<typeof createWikiSearchContentMatcher>;
 }
 
 export interface WikiSearchResults {
@@ -84,11 +86,16 @@ function prepareSearchRecord(record: WikiSearchRecordV2): PreparedWikiSearchReco
 function createRuntime(
   records: readonly WikiSearchRecordV2[],
   mode: WikiSearchRuntime["mode"],
+  contentLines?: readonly string[],
 ): WikiSearchRuntime {
   return {
     records,
     preparedRecords: records.map(prepareSearchRecord),
     mode,
+    contentMatcher: createWikiSearchContentMatcher(contentLines, {
+      normalizeLine: (line) => line.normalize("NFKC").toLocaleLowerCase("zh-CN"),
+      separator: "\n",
+    }),
   };
 }
 
@@ -96,8 +103,11 @@ function score(
   prepared: PreparedWikiSearchRecord,
   query: string,
   tokens: readonly string[],
+  contentMatcher: WikiSearchRuntime["contentMatcher"],
 ): number | null {
-  if (!tokens.every((token) => prepared.haystack.includes(token))) return null;
+  const contentIncludes = (value: string) => prepared.record.contentLineIds === undefined
+    ? prepared.content.includes(value) : contentMatcher.includes(prepared.record, value);
+  if (!tokens.every((token) => prepared.haystack.includes(token) || contentIncludes(token))) return null;
 
   let result = prepared.title === query
     ? 500
@@ -113,7 +123,7 @@ function score(
   if (prepared.terms.some((term) => term === query)) result += 150;
   else if (prepared.terms.some((term) => term.includes(query))) result += 100;
   if (prepared.summary.includes(query)) result += 40;
-  if (prepared.content.includes(query)) result += 30;
+  if (contentIncludes(query)) result += 30;
   return result;
 }
 
@@ -183,6 +193,7 @@ export function buildWikiSearchRuntime(
   records: readonly WikiSearchRecordV2[],
   wikiIndex: WikiRuntimeIndex,
   mode: WikiSearchRuntime["mode"],
+  contentLines?: readonly string[],
 ): WikiSearchRuntime {
   if (mode === "fallback") {
     return createRuntime(buildFallbackSearchRecords(wikiIndex), mode);
@@ -191,19 +202,22 @@ export function buildWikiSearchRuntime(
   const seen = new Set<string>();
   const validRecords = records.filter((record) => {
     if (seen.has(record.id) || !wikiIndex.pagesById.has(record.pageId)) return false;
+    if (record.contentLineIds !== undefined && (record.content !== undefined || contentLines === undefined
+      || !Array.isArray(record.contentLineIds) || record.contentLineIds.some((id) => !Number.isInteger(id) || id < 0 || typeof contentLines[id] !== "string"))) return false;
     if (
       record.kind === "symbol"
       && (
         !record.anchor?.trim()
         || !record.nodeId?.trim()
         || record.content !== undefined
+        || record.contentLineIds !== undefined
         || record.businessTerms.length > 0
       )
     ) return false;
     seen.add(record.id);
     return true;
   });
-  return createRuntime(validRecords, mode);
+  return createRuntime(validRecords, mode, contentLines);
 }
 
 function emptyCounts(): Record<WikiSearchGroupKind, number> {
@@ -244,7 +258,7 @@ export function searchWiki(
   }>>(GROUP_ORDER.map((kind) => [kind, []]));
 
   for (const prepared of runtime.preparedRecords) {
-    const recordScore = score(prepared, query, tokens);
+    const recordScore = score(prepared, query, tokens, runtime.contentMatcher);
     if (recordScore !== null) matches.get(prepared.group)!.push({ prepared, score: recordScore });
   }
   for (const items of matches.values()) {

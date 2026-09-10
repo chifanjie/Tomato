@@ -189,6 +189,30 @@ export function buildTopicPlan(
     });
   }
 
+  // Filesystems can alias case and canonically equivalent Unicode spellings.
+  // Reserve portable natural-path keys, without changing collision-free URLs.
+  const portablePathKey = (documentPath: string): string => documentPath.normalize("NFC").toLowerCase().normalize("NFC");
+  const pathCounts = new Map<string, number>();
+  for (const topic of pendingTopics) {
+    const key = portablePathKey(topic.documentPath);
+    pathCounts.set(key, (pathCounts.get(key) ?? 0) + 1);
+  }
+  const reservedPaths = new Set(pathCounts.keys());
+  for (const topic of [...pendingTopics].sort((a, b) => a.topicNodeId.localeCompare(b.topicNodeId))) {
+    if (pathCounts.get(portablePathKey(topic.documentPath)) === 1) continue;
+    const stem = topic.documentPath.slice(0, -3);
+    // A portable suffix for filenames, not an integrity digest. The reserved
+    // path set below also resolves collisions in this non-cryptographic hash.
+    let identity = 2166136261;
+    for (let i = 0; i < topic.topicNodeId.length; i++) identity = Math.imul(identity ^ topic.topicNodeId.charCodeAt(i), 16777619) >>> 0;
+    const suffix = identity.toString(16).padStart(8, "0");
+    let qualified = `${stem}-${suffix}.md`;
+    let attempt = 1;
+    while (reservedPaths.has(portablePathKey(qualified))) qualified = `${stem}-${suffix}-${++attempt}.md`;
+    reservedPaths.add(portablePathKey(qualified));
+    topic.documentPath = qualified;
+  }
+
   // Nine functions named `main` would otherwise share one topic title. Qualify
   // only the names that actually collide, once the full set is known.
   const topicLabels = buildUniqueLabels(pendingTopics.map((topic) => {

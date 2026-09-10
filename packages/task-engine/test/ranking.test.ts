@@ -114,6 +114,39 @@ function authInput(): RankCandidatesInput {
 }
 
 describe("rankCandidates", () => {
+  it.each(["premiumForbidden", "premium", "mium", "全角 abc", "source boundary", "repeat tail", "missing"]) (
+    "keeps shared-line Wiki scores and candidate ordering equivalent for %s", (query) => {
+      const contentLines = ["premiumForbidden = true", "全角 ＡＢＣ", "source", "", "boundary", "repeat tail"];
+      const ids = [0, 1, 2, 3, 4, 5, 5];
+      const records = [
+        { id: "wiki:a", nodeId: "auth-service", title: "Implementation", content: ids.map((id) => contentLines[id]).join("\n") },
+        { id: "wiki:b", nodeId: "auth-controller", title: "Entry", content: [contentLines[2], contentLines[4]].join("\n") },
+      ];
+      const input = { ...authInput(), query };
+      const inline = rankCandidates({ ...input, wiki: { valid: true, freshness: "fresh", records } });
+      const shared = rankCandidates({ ...input, wiki: { valid: true, freshness: "fresh", contentLines,
+        records: records.map(({ content: _content, ...record }, index) => ({ ...record, contentLineIds: index === 0 ? ids : [2, 4] })),
+      } });
+      expect(shared.candidates).toEqual(inline.candidates);
+      expect(shared.freshness).toEqual(inline.freshness);
+      expect(shared.diagnostics).toEqual(inline.diagnostics);
+    },
+  );
+
+  it("invalidates a paging cursor when a shared Wiki line changes without changing its ID", () => {
+    const input: RankCandidatesInput = { ...authInput(), query: "unique guard", options: { maxCandidates: 1, tokenBudget: 20_000 },
+      wiki: { valid: true, freshness: "fresh", contentLines: ["unique guard"], records: [
+        { id: "wiki:a", nodeId: "auth-service", title: "Implementation", contentLineIds: [0] },
+        { id: "wiki:b", nodeId: "auth-controller", title: "Entry", contentLineIds: [0] },
+      ] },
+    };
+    const first = rankCandidates(input);
+    expect(first.nextCursor).toBeDefined();
+    expect(() => rankCandidates({ ...input, wiki: { ...input.wiki!, contentLines: ["changed guard"] },
+      options: { ...input.options, cursor: first.nextCursor },
+    })).toThrowError(CandidateCursorError);
+  });
+
   it("combines exact, lexical, Graph, entry, and test signals without embeddings", () => {
     const input = authInput();
     const result = rankCandidates(input);

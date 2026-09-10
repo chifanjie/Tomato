@@ -80,17 +80,17 @@ import { renderTaskBriefMarkdown } from "./renderer.js";
 
 const DEFAULT_CREATE_SCOPE = "build_task_brief";
 
-const LOCKED_CONTEXT_RECOVERY = Object.freeze({
-  available: false,
-  reasonCode: "task_context_rebuild_not_implemented",
-  owner: "WP5",
+const LOCAL_CONTEXT_RECOVERY = Object.freeze({
+  available: true,
+  reasonCode: "task_context_rebuild_available",
+  owner: "task-engine",
 } as const);
 
 export const TASK_ENGINE_CAPABILITIES: TaskEngineCapabilities = Object.freeze({
   schemaVersion: 1,
   actions: Object.freeze({
-    refresh_task_context: LOCKED_CONTEXT_RECOVERY,
-    rebase_task: LOCKED_CONTEXT_RECOVERY,
+    refresh_task_context: LOCAL_CONTEXT_RECOVERY,
+    rebase_task: LOCAL_CONTEXT_RECOVERY,
   }),
 });
 
@@ -299,6 +299,10 @@ export class TaskEngine {
   }
 
   getCapabilities(): TaskEngineCapabilities {
+    if (this.#strongChangeAuthority !== undefined) {
+      const locked = Object.freeze({ available: false, reasonCode: "strong_context_rebuild_unavailable", owner: "task-engine" } as const);
+      return Object.freeze({ schemaVersion: 1, actions: Object.freeze({ refresh_task_context: locked, rebase_task: locked }) });
+    }
     return TASK_ENGINE_CAPABILITIES;
   }
 
@@ -549,7 +553,7 @@ export class TaskEngine {
       producerVersion: this.#store.producerVersion,
       revision: 1,
       ...(strongCreation === undefined
-        ? {}
+        ? { localContextBuildSpec: resolvedContextBuildSpec(input) }
         : {
             taskProfile: "agent_task_v1",
             taskBaselineArtifactId:
@@ -1270,6 +1274,22 @@ export class TaskEngine {
           })),
         );
         break;
+      case "analysis":
+        // Read the ledger so existing Tasks need no migration: older Briefs
+        // never stored conclusion IDs. Include analytical kinds from both the
+        // initial context and host analysis, preserving their explicit status.
+        for (const claim of read.bundle.claims) {
+          const role = (["conclusion", "recommendation", "assumption", "risk", "unknown"] as const)
+            .find((kind) => kind === claim.kind);
+          if (role !== undefined) allItems.push({ kind: "claim_reference", role, claimId: claim.id });
+        }
+        break;
+    }
+    const claimsById = new Map(read.bundle.claims.map((claim) => [claim.id, claim]));
+    for (const item of allItems) {
+      if (item.kind === "claim_reference") {
+        item.claim = claimsById.get(item.claimId);
+      }
     }
     const cursorIdentity = {
       version: 1 as const,
@@ -1331,8 +1351,9 @@ export class TaskEngine {
       input.action.type === "refresh_task_context" ||
       input.action.type === "rebase_task"
     ) {
-      const capability = TASK_ENGINE_CAPABILITIES.actions[input.action.type];
-      if (!capability.available) {
+      const capability = this.getCapabilities().actions[input.action.type];
+      const recoveryRead = await this.#store.readTaskBundle(input.taskId);
+      if (!capability.available || recoveryRead.bundle.manifest.taskProfile === "agent_task_v1") {
         throw new TaskEngineError(
           "capability_unavailable",
           "Task context recovery is not available.",
@@ -1340,6 +1361,8 @@ export class TaskEngine {
             taskId: input.taskId,
             capability: input.action.type,
             ...capability,
+            available: false,
+            reasonCode: "strong_context_rebuild_unavailable",
           },
         );
       }
@@ -1410,6 +1433,10 @@ export class TaskEngine {
               intent: current.bundle.manifest.originalIntent,
               sourceSnapshotId: repository.snapshot.snapshotId,
               repositorySnapshot: repository.snapshot,
+              ...(current.bundle.manifest.localContextBuildSpec === undefined ? {} : {
+                scope: current.bundle.manifest.localContextBuildSpec.scope,
+                baseRef: current.bundle.manifest.localContextBuildSpec.baseRef,
+              }),
             });
           } catch (error) {
             throw new TaskEngineError(
@@ -1429,6 +1456,12 @@ export class TaskEngine {
               pulse,
               repositorySnapshot: repository.snapshot,
               context,
+              ...(current.bundle.manifest.localContextBuildSpec === undefined ? {} : {
+                scope: current.bundle.manifest.localContextBuildSpec.scope,
+                tokenBudget: current.bundle.manifest.localContextBuildSpec.tokenBudget,
+                maxCandidates: current.bundle.manifest.localContextBuildSpec.maxCandidates,
+                maxImpactDepth: current.bundle.manifest.localContextBuildSpec.maxImpactDepth,
+              }),
             });
           } catch (error) {
             throw new TaskEngineError(

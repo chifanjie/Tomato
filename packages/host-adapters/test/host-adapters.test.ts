@@ -80,6 +80,16 @@ describe("host adapter contract", () => {
     );
   });
 
+  it("budgets cold repository indexing only in the supported Codex TOML template", async () => {
+    const codexToml = await readFile(path.join(packageRoot, "integrations/codex/config.toml"), "utf8");
+    expect(codexToml.trim()).toBe('[mcp_servers.understand-code]\ncommand = "understand-code-codex"\nargs = ["--root", "${WORKSPACE_ROOT}"]\ntool_timeout_sec = 900');
+    for (const host of ["codex", "claude"]) {
+      const plugin = JSON.parse(await readFile(path.join(packageRoot, `plugin-roots/${host}/plugins/understand-code/.mcp.json`), "utf8"));
+      expect(plugin["understand-code"]).not.toHaveProperty("tool_timeout_sec");
+      expect(plugin["understand-code"]).not.toHaveProperty("startup_timeout_sec");
+    }
+  });
+
   const invalidArguments: readonly (readonly string[])[] = [
     [],
     ["--root"],

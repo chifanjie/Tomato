@@ -10,6 +10,7 @@ import {
   KnowledgeGraphSchema,
 } from "@understand-code/core/schema";
 import { canonicalizeJson } from "@understand-code/contracts";
+import { createWikiSearchContentMatcher } from "@understand-code/core/knowledge-base";
 import { compareUnicodeCodeUnits } from "./stable-order.js";
 import type {
   ArtifactFreshnessLike,
@@ -515,19 +516,20 @@ function textMatchQuality(
   queryTokens: readonly string[],
   queryPhrase: string,
   fields: readonly string[],
+  sharedContent?: { hasToken(token: string): boolean; includes(query: string): boolean },
 ): number {
   if (queryTokens.length === 0) return 0;
   const normalizedFields = fields.map(normalizeText);
   const allTokens = new Set(normalizedFields.flatMap(tokens));
   let matches = 0;
   for (const token of queryTokens) {
-    if (allTokens.has(token)) {
+    if (allTokens.has(token) || sharedContent?.hasToken(token)) {
       matches += 1;
-    } else if (normalizedFields.some((field) => field.includes(token))) {
+    } else if (normalizedFields.some((field) => field.includes(token)) || sharedContent?.includes(token)) {
       matches += 0.7;
     }
   }
-  const phrase = normalizedFields.some((field) => field.includes(queryPhrase))
+  const phrase = (normalizedFields.some((field) => field.includes(queryPhrase)) || sharedContent?.includes(queryPhrase))
     ? 0.15
     : 0;
   return Math.min(1, matches / queryTokens.length + phrase);
@@ -542,6 +544,13 @@ function buildWikiMatches(
 ): Map<string, WikiMatch> {
   const matches = new Map<string, WikiMatch>();
   if (!usable || wiki === undefined) return matches;
+  const contentMatcher = createWikiSearchContentMatcher(wiki.contentLines, {
+    normalizeLine: normalizeText, separator: " ", skipEmptyLines: true,
+  });
+  const tokenMatcher = createWikiSearchContentMatcher(wiki.contentLines, {
+    normalizeLine: (line) => { const value = normalizeText(line); return value ? ` ${value} ` : ""; },
+    separator: " ", skipEmptyLines: true,
+  });
 
   const nodeIds = new Set(nodes.map((node) => node.id));
   const nodesByPath = new Map<string, string[]>();
@@ -563,7 +572,10 @@ function buildWikiMatches(
       record.content ?? "",
       ...(record.terms ?? []),
       ...(record.businessTerms ?? []),
-    ]);
+    ], record.contentLineIds === undefined ? undefined : {
+      hasToken: (token) => tokenMatcher.includes(record, ` ${token} `),
+      includes: (query) => contentMatcher.includes(record, query),
+    });
     if (quality <= 0) continue;
     const targets = new Set<string>();
     if (record.nodeId !== undefined && nodeIds.has(record.nodeId)) {
@@ -761,6 +773,7 @@ function rankingQueryDigest(
             record.title,
             record.summary ?? "",
             record.content ?? "",
+            ...(record.contentLineIds === undefined ? [] : [record.contentLineIds]),
             [...(record.terms ?? [])].sort(compareUnicodeCodeUnits),
             [...(record.businessTerms ?? [])].sort(compareUnicodeCodeUnits),
             [...(record.evidenceIds ?? [])].sort(compareUnicodeCodeUnits),
@@ -768,6 +781,7 @@ function rankingQueryDigest(
   return hash(
     canonicalizeJson({
       query: queryPhrase,
+      ...(wiki?.contentLines === undefined ? {} : { wikiContentDigest: hash(canonicalizeJson(wiki.contentLines)) }),
       scope,
       proximityDepth,
       graph: graphIdentity(view),

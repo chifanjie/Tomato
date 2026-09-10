@@ -21,6 +21,13 @@ import {
 } from "../binding/root-binding.js";
 import { IMPLEMENTED_TOOLS, isImplementedToolName } from "./tool-registry.js";
 
+const LOCAL_TASK_WORKFLOW_INSTRUCTIONS = [
+  "This server uses the supported local_durable_v1 runtime on macOS/Linux. Tasks are persisted in the bound repository with atomic writes, cross-process locks, revision checks and content hashes. Provider strong writes remain unavailable; this local profile does not claim Provider isolation. The CLI cannot attest whether the current Codex/Claude conversation has connected; successful tools/call proves the current session connection.",
+  "For a user goal call build_task_brief with task, expectedRevision:0, actor and idempotencyKey. It initializes the local source index when missing. Read get_repo_pulse for the repository snapshot and search_context/get_evidence for the same taskId. Treat static Graph/Wiki results as bounded source context, including unresolved calls and diagnostic Wiki readiness; never infer business rules merely from symbol names. Analyze actual source conditions in the host and persist supported conclusions, assumptions and unknowns using update_task action record_analysis and its sourceSnapshotId/evidenceIds. When resuming a Task, read get_task_brief section analysis to recover persisted conclusions, recommendations, assumptions, risks and unknowns with their reasoning and evidence IDs; this paginated view also includes initial engine analysis, not only host-authored records.",
+  "Return open_workbench's private one-time deepLink for that taskId. The Task home discovers recent persisted tasks. Read exact revisions before update_task; confirm goal, acceptance and plan before edits. Host tools edit source and run tests. Then refresh_index captures the actual snapshot, update_task transitions in_progress to check_required at that snapshot, and check_change compares actual repository changes to the task plan, and record_verification records the host's actual command/result with claim and snapshot bindings. The MCP server never executes tests. Use refresh_task_context or rebase_task through update_task to recover a stale local Task. Reuse taskId across Codex/Claude sessions and reuse idempotency keys only for identical requests.",
+  "Local knowledge uses refresh_index knowledge.action=stage to persist a reviewed candidate. Publication requires a verified Task, exact candidate/revision/snapshot pins and real writer output passing readiness checks; deterministic diagnostic pages cannot pass the publish gate. A passed verification or generated diagnostic Wiki does not claim formal knowledge publication. On unavailable, stale or invalid evidence, state the reason and rebuild through supported tools rather than editing managed artifacts. Respect user scope and explicit single-call requests.",
+].join("\n\n");
+
 const TASK_WORKFLOW_INSTRUCTIONS = [
   "Understand Code provides a Task-first workflow for this server's bound worktree. These instructions do not authorize extra actions: follow the user's scope and any explicit single-call request. Tool availability does not mean strong writes are unlocked. On provider_unavailable, stop the affected operation and report the Doctor/Provider prerequisite; do not edit managed artifacts or fall back to another root or writer.",
   "For a requested change, read get_repo_pulse and create or resume the same Task with build_task_brief/get_task_brief. Use returned stable IDs, context, exact revisions and Snapshot pins; confirm the goal, acceptance and plan through the existing update_task actions before source changes. Repository edits and verification commands run in the Host, never in this MCP server. After changes, refresh_index in incremental mode captures the actual Snapshot; check_change compares it with the Task plan. Resolve blocking findings through the existing Task rules.",
@@ -50,6 +57,7 @@ export interface StdioServerOptions {
   readonly initialBinding: InitialBinding;
   readonly canonicalInstallationRoot?: string;
   readonly canonicalHostInstallationRoot?: string;
+  readonly runtimeProfile?: "local_durable_v1";
   readonly input?: Readable;
   readonly output?: Writable;
 }
@@ -154,6 +162,7 @@ export class McpStdioServer {
   readonly #output: Writable;
   readonly #canonicalInstallationRoot?: string;
   readonly #canonicalHostInstallationRoot?: string;
+  readonly #runtimeProfile?: "local_durable_v1";
   #lifecycle: "pre_initialize" | "initialize_responded" | "initialized" =
     "pre_initialize";
   #rootsListChanged = false;
@@ -168,11 +177,13 @@ export class McpStdioServer {
     output: Writable,
     canonicalInstallationRoot?: string,
     canonicalHostInstallationRoot?: string,
+    runtimeProfile?: "local_durable_v1",
   ) {
     this.#binding = new RootBindingSession(initialBinding);
     this.#output = output;
     this.#canonicalInstallationRoot = canonicalInstallationRoot;
     this.#canonicalHostInstallationRoot = canonicalHostInstallationRoot;
+    this.#runtimeProfile = runtimeProfile;
     this.#output.on("error", () => {
       if (this.#transportFailed) return;
       this.#transportFailed = true;
@@ -285,7 +296,7 @@ export class McpStdioServer {
         version: PRODUCT_VERSION,
       },
       ...(isImplementedToolName("refresh_index")
-        ? { instructions: TASK_WORKFLOW_INSTRUCTIONS }
+        ? { instructions: this.#runtimeProfile === "local_durable_v1" ? LOCAL_TASK_WORKFLOW_INSTRUCTIONS : TASK_WORKFLOW_INSTRUCTIONS }
         : {}),
     });
   }
@@ -312,7 +323,7 @@ export class McpStdioServer {
         message.params.arguments ?? {},
         binding.canonicalRoot,
         this.#canonicalInstallationRoot === undefined
-          ? {}
+          ? (this.#runtimeProfile === undefined ? {} : { runtimeProfile: this.#runtimeProfile })
           : {
               canonicalInstallationRoot: this.#canonicalInstallationRoot,
               ...(this.#canonicalHostInstallationRoot === undefined ? {} : {
@@ -410,6 +421,7 @@ export async function runStdioServer(options: StdioServerOptions): Promise<void>
     output,
     options.canonicalInstallationRoot,
     options.canonicalHostInstallationRoot,
+    options.canonicalInstallationRoot === undefined ? (options.runtimeProfile ?? "local_durable_v1") : undefined,
   );
   input.setEncoding("utf8");
 

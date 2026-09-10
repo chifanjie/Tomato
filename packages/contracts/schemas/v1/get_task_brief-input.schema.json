@@ -17,7 +17,8 @@
         "assumptions",
         "risks",
         "unknowns",
-        "verification_plan"
+        "verification_plan",
+        "analysis"
       ]
     },
     "cursor": {

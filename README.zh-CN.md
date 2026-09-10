@@ -4,13 +4,39 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 这份手册解决的是“安装后下一步怎么做”。内部实现规范仍以各技能文件为准：[`skills/understand/SKILL.md`](skills/understand/SKILL.md)、[`skills/understand-full/SKILL.md`](skills/understand-full/SKILL.md) 等。文档结构参考了 [ECC 中文手册](https://github.com/affaan-m/ECC/blob/main/README.zh-CN.md) 的读者路径、快速开始、能力地图、场景配方和排错章节，但命令和行为全部以本项目实际实现为准。
 
-> **Codex Alpha 入口说明：** 目前 `understand-code@understand-code-alpha` Preview 插件只打包 MCP server，没有打包 `skills/` 目录。因此安装并启用它后，不会出现 `/understand-full`，也不会出现 `$understand-full`。Codex 的 skill 显式调用语法是 `$skill-name`；本手册中带 `/understand-*` 的章节只适用于另行安装了这些源码 skill 的宿主（例如 Claude Code），不适用于当前 Alpha MCP 插件。Codex Alpha 请按 [Preview MCP 路线](#preview-cli可选) 使用 `get_repo_pulse`、`refresh_index`、`search_context` 和 `trace_impact` 等工具。
+> **先区分入口和版本：** `0.1.0-preview.2` 的 Codex/Claude MCP 安装包新增 macOS/Linux 本地持久任务运行时 `local_durable_v1`，用于自然语言需求 → Task → 证据工作台。旧版 `0.1.0-preview.1` 在 macOS 的任务路径仍受锁定限制，注册 healthy 不能证明它可创建任务。安装包仅含 MCP server，不含 `/understand-full`、`$understand-full` 等源码技能；安装 MCP 后直接在宿主描述需求，按下方“Codex MCP 快速开始”操作。本文 `/understand-*` 命令属于另行安装的源码技能路线。
 
-> 当前仓库的技能版本来自 `.claude-plugin/plugin.json`（2.7.5）。可安装 Preview CLI 的版本是独立的 `@understand-code/preview` 包；两者不是同一个入口，见[安装与版本路线](#安装与版本路线)。
+> 当前仓库的技能版本来自 `.claude-plugin/plugin.json`（2.7.6）。可安装 Preview CLI 的版本是独立的 `@understand-code/preview` 包；两者不是同一个入口，见[安装与版本路线](#安装与版本路线)。
 
-## 先看哪一段
+## Codex MCP 快速开始
 
-如果你只想马上看到结果，从[两分钟快速开始](#两分钟快速开始)开始。如果你已经有图谱，直接看[命令速查](#命令速查)；如果你遇到错误，跳到[排错](#排错)。
+安装 [Preview MCP 插件](#preview-cli可选) 后，在目标 Git 仓库打开一个新 Codex 会话并发送：
+
+```text
+请使用 Understand Code 分析这个需求：<填写需求或业务问题>。
+先确认当前仓库和快照；如果尚未初始化，请通过工具完成初始化。
+创建持久任务，写入目标、验收条件、源码证据和未知项。
+请返回真实 taskId、当前修订版和可打开的 Workbench 链接。
+```
+
+宿主负责调用工具。首次创建任务会初始化缺失的索引；普通使用者不需要在目标仓库安装本工具的 npm 依赖或手工运行分析脚本。任务页能查看历史、从自然语言主张跳到证据与源码、查看变更差异，再进入图谱或 Wiki 并返回原任务。页面可见时每 10 秒读取任务修订版，也可手动刷新。
+
+接着在同一会话说明需要修改的内容。宿主实际修改源码、重新建立当前快照、执行变更检查与测试，再将真实命令、退出码、快照和结果记录到同一个 Task。源码索引不会自动完成业务理解；业务结论由宿主阅读源码后形成，并保留证据、推断理由和未知边界。确定性 Wiki 诊断稿不能充当正式知识发布。
+
+分别确认以下状态，不要用其中一项代替另外三项：
+
+| 状态 | 如何确认 | 未满足时下一步 |
+| --- | --- | --- |
+| 插件已注册 | `understand-code doctor --host codex` | 按诊断修复安装或启用状态 |
+| 当前会话已连接 | 新会话实际获得并调用 Understand Code MCP 工具 | 重开目标仓库会话，核对 Host 插件配置 |
+| 仓库产物有效 | 工具返回当前仓库、快照、新鲜度和范围 | 由宿主初始化或刷新产物；旧格式需迁移 |
+| 任务后端已就绪 | 创建真实 taskId，并在任务页重开仍能读取 | 核对版本、平台、运行时和具体失败原因 |
+
+`local_durable_v1` 是 macOS/Linux 的本地任务路线；显式选择的生产 Provider 仍遵守其 Linux 和安装校验要求。Windows 未列入本次本地运行时支持范围。CLI、Desktop、IDE 和跨宿主接续分别验收；具体已运行证据和未验收项目见[修复验收记录](docs/testing/2026-09-10-audit-remediation.md)，不要把本节操作说明当成已完成真实 Host 验收的证明。
+
+## 源码技能路线：先看哪一段
+
+以下命令表与“技能版两分钟快速开始”适用于已经加载源码技能的宿主。Codex MCP 用户优先使用上面的自然语言任务路线；需要独立生成图谱、Wiki 或技能导览时，再选择本节。
 
 | 你的目标 | 从哪里开始 | 需要的前置 | 主要结果 |
 | --- | --- | --- | --- |
@@ -25,11 +51,11 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 | 一次跑完所有步骤 | `/understand-full` | 插件已启用 | 图谱、Dashboard、知识库及联动检查 |
 | 分析已有 Karpathy 风格 Wiki | `/understand-knowledge path/to/wiki` | Wiki 有 `index.md` 和 wikilinks | Wiki 知识图谱 |
 
-如果宿主里已经能从 `/` 自动补全看到 `understand` 或 `understand-full`，普通使用者可以跳过下面的源码构建和 Preview 安装，直接阅读[两分钟快速开始](#两分钟快速开始)。Preview CLI 是给本地 MCP/发布产物查看准备的另一条路线，不是使用 slash skill 的前置步骤。
+如果宿主里已经能从 `/` 自动补全看到 `understand` 或 `understand-full`，普通使用者可以跳过下面的源码构建和 Preview 安装，直接阅读[两分钟快速开始](#技能版两分钟快速开始)。Preview CLI 是给本地 MCP/发布产物查看准备的另一条路线，不是使用 slash skill 的前置步骤。
 
 ### 已有 slash skill 时的最快路径
 
-1. 在目标仓库打开 Codex/Claude 会话，在聊天框输入 `/understand-full --full --language zh`。
+1. 在目标仓库打开已加载源码技能的 Claude Code 会话，输入 `/understand-full --full --language zh`；其他宿主使用其实际显示的技能调用入口。
 2. 首次运行时审阅并确认 `.understand-code/.understandignore`，等待图谱、知识库和 Dashboard 完成。
 3. 复制终端返回的、带 `?token=` 的完整 Dashboard URL，在浏览器打开。
 4. 回到同一个会话继续输入 `/understand-chat "用户登录请求从入口到数据库经过哪些组件？"`，或用 `/understand-explain path/to/file.ts:functionName` 深入阅读。
@@ -57,12 +83,12 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 ## 安装与版本路线
 
-先选择一条入口。日常使用优先选“已安装技能”；只有需要本地开发或不依赖聊天宿主时，才选择源码或 Preview CLI 路线。
+先按目标选择入口：Codex/Claude 中持续处理需求、修改和验证，使用 Preview MCP 任务路线；独立扫描与文档生成可使用已安装的源码技能。源码构建用于开发维护。
 
 | 入口 | 当前载体 | 你会看到什么 | 适合谁 |
 | --- | --- | --- | --- |
 | 技能版 | 根目录 `.claude-plugin/marketplace.json`、`.claude-plugin/plugin.json` 和 `skills/*/SKILL.md` | `/understand`、`/understand-chat`、`/understand-full` 等 slash skill（具体命名空间由宿主决定） | 在聊天宿主里分析源码、看图谱和生成 Wiki |
-| Preview Alpha | `@understand-code/preview` tarball | `understand-code-preview`、stdio MCP、可选 Codex/Claude Host wrapper | 查看已有发布 Graph/Wiki，或验证本地 MCP/Host 发布生命周期 |
+| Preview MCP `0.1.0-preview.2` | `@understand-code/preview` tarball | stdio MCP、Codex/Claude Host wrapper、本地持久 Task 和证据工作台；另有静态 Preview 查看器 | macOS/Linux 中通过宿主处理真实仓库任务 |
 
 这两种载体共享部分底层模型，但不是同一套用户入口。Preview Alpha 的 MCP 工具名称不能替代本手册的 slash skill；反过来，能看到 `/understand` 也不代表已经安装了 Preview CLI。
 
@@ -122,10 +148,10 @@ Codex 仍走 `packages/host-adapters/plugin-roots/codex` 下的 marketplace 与 
 
 ### Preview CLI（可选）
 
-如果你要在没有聊天宿主的环境里启动本地 Graph/Wiki 查看器或 stdio MCP，可以使用 `packages/preview` 生成的 tarball。它是另一条安装路线，要求 Node.js 22+；查看真实 Git 仓库时还需要 Git。Preview 不是任意源码分析器：`--demo` 只打开内置 Demo，`--root` 需要目标仓库已经有可读取的 Understand Code 发布产物；要从源码首次生成图谱，仍使用本手册前面的技能版流程。
+如果你要在没有聊天宿主的环境里启动本地 Graph/Wiki 查看器或 stdio MCP，可以使用 `packages/preview` 生成的 tarball。它是另一条安装路线，要求 Node.js 22+；查看真实 Git 仓库时还需要 Git。其中 `understand-code-preview --demo` 只打开内置图谱与 Wiki，静态查看器的 `--root` 需要已有发布产物。另一个入口 `understand-code mcp --stdio --root ...` 提供真实任务工作流，首次创建任务可初始化缺失索引。不要把静态查看器限制外推到 MCP 本地任务运行时。
 
 ```sh
-npm install -g ./understand-code-preview-0.1.0-preview.1.tgz
+npm install -g ./understand-code-preview-0.1.0-preview.2.tgz
 understand-code-preview --demo
 ```
 
@@ -135,7 +161,7 @@ understand-code-preview --demo
 understand-code-preview --root /absolute/path/to/worktree
 ```
 
-`--root` 不是通用源码浏览器：它要求传入规范的 Git worktree 根目录、与当前 `HEAD` 匹配的已发布图谱，并且启动快照满足 Preview 的完整性检查。工作树存在 staged、unstaged、untracked、冲突或过期产物时，Preview 会拒绝启动；只想体验界面时使用 `--demo`，要从源码生成图谱则回到技能版流程。
+`--root` 不是通用源码浏览器：它要求传入规范的 Git worktree 根目录、与当前 `HEAD` 匹配的已发布图谱，并且启动快照满足 Preview 的完整性检查。工作树存在 staged、unstaged、untracked、冲突或过期产物时，Preview 会拒绝启动；只想体验图谱与 Wiki 时使用 `--demo`；需要初始化仓库、处理未提交改动和持久任务时使用 MCP 任务路线。
 
 需要完整的 MCP stdio 入口时：
 
@@ -157,9 +183,9 @@ Claude 使用对应的 `dist/plugin-roots/claude` marketplace 和 `claude plugin
 
 Preview 的 Host 注册、Doctor、升级和卸载命令属于发布/集成流程，完整说明在 [`packages/preview/README.md`](packages/preview/README.md)。它的 Alpha Host 插件主要暴露 repo-scoped MCP（Pulse、Task Brief、Graph、Wiki、Check、Verification 等），安装 Preview 后不会自动出现本手册中的 `/understand-*` slash skills。普通用户只想使用技能时，不需要同时安装 Preview CLI；两条路线混用会让你不知道当前命令来自哪一个版本。
 
-Preview MCP 的最小使用顺序是：先让 Host 启动 `understand-code mcp --stdio --root /absolute/path/to/worktree`，再由 Host 调用 `refresh_index` 建立当前仓库快照；随后用 `search_context` 搜索图谱/Wiki，用 `trace_impact` 查看影响路径。它们是 MCP 工具调用，不是要在终端逐行执行的 shell 子命令；参数、分页和强写入前置条件以 [`packages/cli/README.md`](packages/cli/README.md) 为准。Alpha 的 `open_workbench`、Task 和 Verification 操作仍受 Provider/strong Store 门控，工具返回 `provider_unavailable` 时不要把它当成安装失败。
+Preview MCP 使用普通命令 `understand-code mcp --stdio --root /absolute/path/to/worktree`；在 macOS/Linux 且未显式选择生产 Provider 时，服务使用本地持久运行时，无需额外开关。安装的 Host wrapper 会启动它。用户在宿主描述需求，模型按仓库状态调用 `build_task_brief`（首次自动初始化）、`get_task_brief`、`search_context`、`get_evidence`、`update_task` 和 `open_workbench`；修改后调用刷新、`check_change` 与 `record_verification`。这些是 MCP 工具调用，不是 shell 子命令。旧版 Preview `.1` 的 `provider_unavailable` 不能通过重复注册消除；升级后用新会话重新验证。完整参数与能力边界见 [CLI 文档](packages/cli/README.md)。
 
-## 两分钟快速开始
+## 技能版两分钟快速开始
 
 ### 1. 在目标仓库会话中运行完整流程
 
@@ -676,7 +702,7 @@ pnpm --filter @understand-code/cli build
 - [`skills/understand-full/SKILL.md`](skills/understand-full/SKILL.md)：完整编排和 Dashboard 联动；
 - [`skills/understand-kb/SKILL.md`](skills/understand-kb/SKILL.md)：知识库队列和覆盖验证；
 - [`agents/knowledge-graph-guide.md`](agents/knowledge-graph-guide.md)：图谱字段、节点/边类型和 `jq` 查询；
-- [`packages/cli/README.md`](packages/cli/README.md)：低层 stdio MCP 服务和 11 个工具；
+- [`packages/cli/README.md`](packages/cli/README.md)：低层 stdio MCP 服务、工具契约和运行时；
 - [`packages/preview/README.md`](packages/preview/README.md)：Preview tarball、Host lifecycle、Doctor 和发布约束。
 
 仓库元数据中的上游标识是 `Lum1104/Understand-Code`。如果你使用的是公司镜像或 fork，请以实际安装源和版本为准；当前手册中的相对链接只保证在源码仓库内有效。

@@ -80,6 +80,11 @@ const USER_COPY_ATTRIBUTES = new Set(["alt", "aria-label", "placeholder", "title
 const TECHNICAL_TOKEN_ALLOWLIST = new Set([
   "Esc",
   "GitHub",
+  // Host and product names are necessary for the copyable Task start instructions.
+  "Codex",
+  "Claude",
+  "Understand",
+  "Code",
   "ID",
   "JSON",
   "K",

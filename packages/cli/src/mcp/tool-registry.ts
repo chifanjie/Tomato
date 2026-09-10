@@ -137,11 +137,11 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   get_repo_pulse:
     "Read the current repository pulse through its strict redacted public Surface.",
   build_task_brief:
-    "Create or replay an evidence-backed managed Task Brief through the selected strong Store.",
+    "Create or replay a durable local Task Brief, initializing a source index if needed. Analyze returned source evidence in the host before recording conclusions with update_task record_analysis.",
   get_task_brief:
-    "Read a paged section of a managed Task Brief from the selected strong Store.",
+    "Read a paged section of a persisted Task Brief. Use analysis to recover full persisted conclusions and other analysis Claims, including reasoning, evidence IDs and snapshot scope.",
   update_task:
-    "Apply an optimistic, idempotent lifecycle action to a managed Task.",
+    "Apply an optimistic, idempotent lifecycle action. record_analysis stores source-grounded host conclusions; refresh_task_context/rebase_task recover a stale local Task.",
   check_change:
     "Compare a Task plan with an exact actual Snapshot and commit an evidence-backed Change Check.",
   record_verification:

@@ -1,3 +1,5 @@
+import { projectWorkbenchDiffV1 } from "./workbench-diff.js";
+import { assertLocalIndexReadSizeV1, LOCAL_INDEX_READ_BUDGETS_V1, withLocalIndexReadBudgetsV1 } from "../runtime/local-read-budgets.js";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
@@ -10,6 +12,7 @@ import {
 } from "@understand-code/durable-object-provider-client";
 import {
   CheckChangeInputV1Schema,
+  ClaimV1Schema,
   DiffHunkEvidenceV1Schema,
   RecordVerificationInputV1Schema,
   StrongCheckChangesInputV1Schema,
@@ -99,6 +102,7 @@ import {
   openProductionRuntime,
   openRuntime,
   readPublishedPulse,
+  readPublishedSnapshot,
 } from "../runtime/context.js";
 import {
   listPendingRepositoryIndexesV1,
@@ -110,6 +114,7 @@ import {
 } from "../runtime/repository-indexer.js";
 
 export interface ToolRuntimeSelectionV1 {
+  readonly runtimeProfile?: "local_durable_v1";
   readonly canonicalInstallationRoot?: string;
   readonly canonicalHostInstallationRoot?: string;
 }
@@ -132,10 +137,9 @@ async function withProductionRuntimeV1<T>(
   selection: ToolRuntimeSelectionV1,
   operation: (runtime: ProductionRuntimeV1) => Promise<T>,
 ): Promise<T> {
-  const runtime = await openProductionRuntime(
-    canonicalRoot,
-    requireProductionInstallationRootV1(selection),
-  );
+  const runtime = selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined
+    ? await openRuntime(canonicalRoot, { runtimeProfile: "local_durable_v1" })
+    : await openProductionRuntime(canonicalRoot, requireProductionInstallationRootV1(selection));
   try {
     return await operation(runtime);
   } finally {
@@ -147,6 +151,10 @@ async function readStrongPublishedSnapshotV1(
   runtime: ProductionRuntimeV1,
   snapshotId: string,
 ) {
+  if (runtime.runtimeProfile === "local_durable_v1") {
+    const published = await readPublishedSnapshot(runtime.store, snapshotId);
+    return { ...published, snapshot: { ...published.snapshot, headState: published.snapshot.headCommit == null ? { kind: "unborn" as const } : { kind: "commit" as const, commit: published.snapshot.headCommit } } };
+  }
   const read = await runtime.store.readArtifact("repository_snapshot", {
     snapshotId,
   });
@@ -165,6 +173,7 @@ async function readStrongPublishedSnapshotV1(
 }
 
 async function readStrongPublishedPulseV1(runtime: ProductionRuntimeV1) {
+  if (runtime.runtimeProfile === "local_durable_v1") return (await readPublishedPulse(runtime.store)).pulse;
   const read = await runtime.store.readArtifact("repo_pulse");
   if (read.artifact.artifactType !== "repo_pulse") {
     throw new Error("strong Repo Pulse is unavailable");
@@ -222,13 +231,31 @@ async function openStrongBoundActiveIndexV1(
     (published?.generationId !== undefined && published.generationId !== index.generation.generationId)) {
     throw new Error("active repository index is not bound to the requested cut");
   }
-  return index;
+  return runtime.runtimeProfile === "local_durable_v1" ? withLocalIndexReadBudgetsV1(index) : index;
 }
 
 async function assertStrongIndexAuthorityV1(
   runtime: ProductionRuntimeV1,
   index: ActiveRepositoryIndexReaderV1,
 ): Promise<void> {
+  if (runtime.runtimeProfile === "local_durable_v1") {
+    const [manifest, active, pulseRead] = await Promise.all([
+      runtime.store.readManifest({ verifyArtifacts: false }),
+      openActiveRepositoryIndexV1(runtime.store.layout.worktreeRoot),
+      runtime.store.readArtifact("repo_pulse"),
+    ]);
+    if (pulseRead.artifact.artifactType !== "repo_pulse" || "profile" in pulseRead.artifact.payload ||
+      index.authority.runtimeProfile !== "local_durable_v1" || active.authority.runtimeProfile !== "local_durable_v1" ||
+      index.authority.sourceSnapshotId !== manifest.latestSnapshotId || index.authority.sourceSnapshotId !== active.authority.sourceSnapshotId ||
+      pulseRead.artifact.sourceSnapshotId !== index.authority.sourceSnapshotId ||
+      index.authority.finalizedProviderRevision !== pulseRead.artifact.revision + 1 ||
+      index.authority.finalizedProviderRevision !== active.authority.finalizedProviderRevision ||
+      index.generation.generationId !== active.generation.generationId ||
+      index.generation.generationManifestDigest !== active.generation.generationManifestDigest ||
+      index.generation.sourceInventoryDigest !== active.generation.sourceInventoryDigest) throw new Error("local index is not bound to the current publication");
+    return;
+  }
+  if (index.authority.runtimeProfile === "local_durable_v1") throw new Error("local index cannot authorize production reads");
   const providerAuthority = await runtime.providerClient?.inspectIndexPublicationAuthority();
   if (providerAuthority === undefined ||
     index.authority.sourceSnapshotId !== providerAuthority.sourceSnapshotId ||
@@ -809,7 +836,7 @@ async function getRepoPulse(
     });
   };
   if (selection.canonicalInstallationRoot === undefined) {
-    return respond(await openRuntime(canonicalRoot), false);
+    return respond(await openRuntime(canonicalRoot, selection.runtimeProfile === "local_durable_v1" ? { runtimeProfile: "local_durable_v1" } : {}), false);
   }
   return withProductionRuntimeV1(
     canonicalRoot,
@@ -826,10 +853,16 @@ async function buildTaskBrief(
   const parsed = BuildTaskBriefInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   const startedAt = performance.now();
-  const runtime = await openProductionRuntime(
-    canonicalRoot,
-    requireProductionInstallationRootV1(selection),
-  );
+  if (selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined) {
+    try { await openActiveRepositoryIndexV1(canonicalRoot); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await refreshIndex({ mode: "full", actor: parsed.data.actor, idempotencyKey: `initialize:${parsed.data.idempotencyKey}` }, canonicalRoot, undefined, undefined, "local_durable_v1");
+    }
+  }
+  const runtime = selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined
+    ? await openRuntime(canonicalRoot, { runtimeProfile: "local_durable_v1" })
+    : await openProductionRuntime(canonicalRoot, requireProductionInstallationRootV1(selection));
   try {
     await assertStrongPublishedCutV1(runtime);
     const result = await runtime.taskEngine.buildTaskBrief(parsed.data, {
@@ -838,7 +871,7 @@ async function buildTaskBrief(
       worktreeId: runtime.store.worktreeId,
       capabilities: ["task:create"],
     });
-    if (result.task.taskProfile !== "agent_task_v1") {
+    if (runtime.runtimeProfile !== "local_durable_v1" && result.task.taskProfile !== "agent_task_v1") {
       throw new Error("production Task creation did not produce an agent_task_v1 Task");
     }
     return BuildTaskBriefOutputV1Schema.parse({
@@ -949,6 +982,15 @@ async function checkChange(
   canonicalRoot: string,
   selection: ToolRuntimeSelectionV1 = {},
 ) {
+  if (selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined) {
+    const parsed = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
+    if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+    const startedAt = performance.now();
+    return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
+      const result = await runtime.taskEngine.checkChange(parsed.data, { actor: parsed.data.actor, repositoryId: runtime.store.repositoryId, worktreeId: runtime.store.worktreeId, capabilities: ["task:update"] });
+      return CheckChangeOutputV1Schema.parse({ isError: false, content: [{ type: "text", text: "Local Change Check persisted from repository evidence." }], structuredContent: { schemaVersion: 1, meta: await strongSuccessMetaV1(runtime, result.changeCheck.actualSnapshotId, elapsed(startedAt), result.mutation.idempotentReplay), result } });
+    });
+  }
   const parsed = StrongCheckChangesInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) {
     const legacy = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
@@ -956,10 +998,9 @@ async function checkChange(
     throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   }
   const startedAt = performance.now();
-  const runtime = await openProductionRuntime(
-    canonicalRoot,
-    requireProductionInstallationRootV1(selection),
-  );
+  const runtime = selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined
+    ? await openRuntime(canonicalRoot, { runtimeProfile: "local_durable_v1" })
+    : await openProductionRuntime(canonicalRoot, requireProductionInstallationRootV1(selection));
   try {
     await assertStrongPublishedCutV1(runtime);
     const result = await runtime.taskEngine.checkChanges(parsed.data, {
@@ -992,9 +1033,16 @@ async function recordVerification(
   canonicalRoot: string,
   selection: ToolRuntimeSelectionV1 = {},
 ) {
-  const parsed = StrongRecordVerificationInputV1Schema.safeParse(
-    argumentsValue ?? {},
-  );
+  if (selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined) {
+    const parsed = RecordVerificationInputV1Schema.safeParse(argumentsValue ?? {});
+    if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+    const startedAt = performance.now();
+    return withProductionRuntimeV1(canonicalRoot, selection, async (runtime) => {
+      const result = await runtime.taskEngine.recordVerification(parsed.data, { actor: parsed.data.actor, repositoryId: runtime.store.repositoryId, worktreeId: runtime.store.worktreeId, capabilities: ["task:update"] });
+      return RecordVerificationOutputV1Schema.parse({ isError: false, content: [{ type: "text", text: "Host-reported verification persisted; the server did not execute the command." }], structuredContent: { schemaVersion: 1, meta: await strongSuccessMetaV1(runtime, result.verification.snapshotId, elapsed(startedAt), result.mutation.idempotentReplay), result } });
+    });
+  }
+  const parsed = StrongRecordVerificationInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) {
     const legacy = RecordVerificationInputV1Schema.safeParse(
       argumentsValue ?? {},
@@ -1003,10 +1051,9 @@ async function recordVerification(
     throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   }
   const startedAt = performance.now();
-  const runtime = await openProductionRuntime(
-    canonicalRoot,
-    requireProductionInstallationRootV1(selection),
-  );
+  const runtime = selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined
+    ? await openRuntime(canonicalRoot, { runtimeProfile: "local_durable_v1" })
+    : await openProductionRuntime(canonicalRoot, requireProductionInstallationRootV1(selection));
   try {
     await assertStrongPublishedCutV1(runtime);
     const result = await runtime.taskEngine.recordVerification(parsed.data, {
@@ -1395,6 +1442,7 @@ async function taskDashboardProjection(
       json: {
         task: bundle.manifest,
         brief: bundle.brief,
+        claims: "claims" in bundle ? bundle.claims.filter((claim) => ClaimV1Schema.safeParse(claim).success) : [],
         section: input.section,
         items,
         pulse: projectRepoPulseSurface(context.publishedPulse),
@@ -1423,7 +1471,8 @@ async function knowledgeTaskForDashboardV1(
   let context: Awaited<ReturnType<typeof readTaskScopedContext>>;
   try { context = await readTaskScopedContext(runtime, taskId); } catch { return { status: "missing" }; }
   const task = context.read.bundle.manifest;
-  if (task.taskId !== taskId || task.taskProfile !== "agent_task_v1" || task.repositoryId !== input.repositoryId ||
+  const expectedProfile = runtime.runtimeProfile === "local_durable_v1" ? task.taskProfile === undefined : task.taskProfile === "agent_task_v1";
+  if (task.taskId !== taskId || !expectedProfile || task.repositoryId !== input.repositoryId ||
     task.worktreeId !== input.worktreeId || task.latestSnapshotId !== input.sourceSnapshotId) return { status: "stale" };
   return { status: "ready", task: { ...task } };
 }
@@ -1434,6 +1483,20 @@ async function pendingKnowledgeBindingStatusV1(
   input: WorkbenchDashboardReadRequestV1,
 ): Promise<"ready" | "stale" | "invalid" | "unavailable"> {
   try {
+    if (runtime.runtimeProfile === "local_durable_v1") {
+      const binding = await dashboardBindingStatus(runtime, input);
+      if (binding !== "ready") return binding;
+      const [index, pulseRead] = await Promise.all([
+        openStrongBoundActiveIndexV1(runtime),
+        runtime.store.readArtifact("repo_pulse"),
+      ]);
+      if (pulseRead.artifact.artifactType !== "repo_pulse" || "profile" in pulseRead.artifact.payload ||
+        index.authority.runtimeProfile !== "local_durable_v1") return "invalid";
+      if (index.authority.sourceSnapshotId !== input.sourceSnapshotId ||
+        pulseRead.artifact.sourceSnapshotId !== input.sourceSnapshotId ||
+        index.authority.finalizedProviderRevision !== pulseRead.artifact.revision + 1) return "stale";
+      return "ready";
+    }
     const provider = runtime.providerClient;
     if (provider === undefined) return "unavailable";
     const { authority } = await provider.inspectStrongRefreshAuthority(input.repositoryId, input.worktreeId);
@@ -1475,10 +1538,11 @@ async function knowledgeCandidatesForDashboardV1(
   const binding = await pendingKnowledgeBindingStatusV1(runtime, input);
   if (binding !== "ready") return dashboardReadFailure(binding);
   try {
-    const provider = runtime.providerClient!;
-    const pin = await provider.inspectIndexPublicationAuthority();
-    const published = pin === undefined ? undefined
-      : await openStrongBoundActiveIndexV1(runtime, { generationId: pin.generationId });
+    const local = runtime.runtimeProfile === "local_durable_v1";
+    const provider = runtime.providerClient;
+    const pin = local ? undefined : await provider!.inspectIndexPublicationAuthority();
+    const published = local ? await openStrongBoundActiveIndexV1(runtime)
+      : pin === undefined ? undefined : await openStrongBoundActiveIndexV1(runtime, { generationId: pin.generationId });
     if (published?.knowledgeLineage?.status === "pending") return dashboardReadFailure("invalid");
     const lineage = published?.knowledgeLineage;
     const candidates = await listPendingRepositoryIndexesV1({
@@ -1500,8 +1564,15 @@ async function knowledgeCandidatesForDashboardV1(
           lineage.candidateGenerationId === candidate.generation.generationId ? { publishedGenerationId: published.generation.generationId } : {}),
       })),
     };
-    if (published !== undefined) await assertStrongIndexAuthorityV1(runtime, published);
-    else if (await provider.inspectIndexPublicationAuthority() !== undefined) return dashboardReadFailure("unavailable");
+    if (published !== undefined) {
+      await assertStrongIndexAuthorityV1(runtime, published);
+      if (local) {
+        const currentIndex = await openStrongBoundActiveIndexV1(runtime);
+        if (currentIndex.generation.generationId !== published.generation.generationId ||
+          currentIndex.generation.generationManifestDigest !== published.generation.generationManifestDigest ||
+          currentIndex.authority.finalizedProviderRevision !== published.authority.finalizedProviderRevision) return dashboardReadFailure("stale");
+      }
+    } else if (await provider!.inspectIndexPublicationAuthority() !== undefined) return dashboardReadFailure("unavailable");
     const currentBinding = await pendingKnowledgeBindingStatusV1(runtime, input);
     if (currentBinding !== "ready") return dashboardReadFailure(currentBinding);
     const current = await knowledgeTaskForDashboardV1(runtime, input);
@@ -1533,6 +1604,7 @@ async function pendingKnowledgeForDashboardV1(
     const result = await readDashboardIndexV1({ async read(relativePath) {
       const bytes = files.get(relativePath);
       if (bytes === undefined) throw new RepositoryIndexError("candidate index artifact is unavailable");
+      if (runtime.runtimeProfile === "local_durable_v1") assertLocalIndexReadSizeV1(relativePath, bytes.byteLength);
       return Buffer.from(bytes);
     } }, input, false, {
       status: "pending", readOnly: true, evidenceEligible: false, taskId: lineage.taskId,
@@ -1555,6 +1627,23 @@ async function pendingKnowledgeForDashboardV1(
 export const createWorkbenchDashboardReaderInternalV1 = (
   runtime: Awaited<ReturnType<typeof openRuntime>>,
 ): WorkbenchDashboardReaderV1 => async (input) => {
+  if (input.kind === "task_list") {
+    if (input.repositoryId !== runtime.store.repositoryId || input.worktreeId !== runtime.store.worktreeId) return dashboardReadFailure("invalid");
+    const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
+    const tasks = [];
+    for (const descriptor of manifest.artifacts.filter((entry) => entry.artifactType === "task_manifest" && entry.taskId !== undefined).slice(-100)) {
+      const read = await runtime.store.readTaskBundle(descriptor.taskId!);
+      tasks.push(read.bundle.manifest);
+    }
+    tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return { status: "ready", json: { schemaVersion: 1, tasks, repository: { repoId: runtime.store.repositoryId, ...(runtime.runtimeProfile === "local_durable_v1" ? { name: path.basename(runtime.store.layout.worktreeRoot) } : {}), snapshotId: manifest.latestSnapshotId, status: "ready" }, runtime: { kind: runtime.runtimeProfile ?? "production_provider_v1", ready: true, nextAction: "在已连接的 Codex 或 Claude 会话中描述需求，先审阅源码证据与分析结论，再检查变更和知识候选。知识发布需要任务验证通过。" } } };
+  }
+  if (input.kind === "task_launch") {
+    if (input.repositoryId !== runtime.store.repositoryId || input.worktreeId !== runtime.store.worktreeId) return dashboardReadFailure("invalid");
+    if (runtime.runtimeProfile !== "local_durable_v1") return dashboardReadFailure("unavailable");
+    const result = await openWorkbench({ route: { view: "tasks", taskId: input.taskId, section: "summary" } }, runtime.store.layout.worktreeRoot, { runtimeProfile: "local_durable_v1" });
+    return { status: "ready", json: { deepLink: result.structuredContent.result.deepLink } };
+  }
   const binding = await dashboardBindingStatus(runtime, input);
   if (binding !== "ready") return dashboardReadFailure(binding);
   if (input.kind === "task_knowledge_candidates") return knowledgeCandidatesForDashboardV1(runtime, input);
@@ -2146,6 +2235,17 @@ const evidenceReader = (
   if (item === undefined) {
     return workbenchEvidenceNotReady(input, "unavailable", "not_found");
   }
+  const changeCheck = "changeChecks" in bundle ? bundle.changeChecks.find((check) =>
+    check.findings.some((finding) => finding.evidenceIds.includes(item.id))) : undefined;
+  const baselineSnapshotId = item.kind === "diff_hunk" ? item.hunk.baselineSnapshotId : changeCheck?.baselineSnapshotId;
+  if (baselineSnapshotId !== undefined) {
+    try {
+      const projection = await projectWorkbenchDiffV1({ store: runtime.store, canonicalRoot, item, baselineSnapshotId, currentSnapshotId: input.snapshotId });
+      if (projection !== undefined) return { ...base, status: "ready", ...projection };
+    } catch {
+      // Current source can still be shown when exact historical bytes are unavailable.
+    }
+  }
   let enrichNodeIds = true;
   let sourceEvidence: FileEvidenceLike;
   if (item.kind === "diff_hunk") {
@@ -2361,7 +2461,7 @@ async function openWorkbench(
   ]);
   const publishedSnapshot = await readStrongPublishedSnapshotV1(
     runtime,
-    pulse.evaluatedSnapshotId,
+    parsed.data.route.taskId === undefined ? pulse.evaluatedSnapshotId : (await runtime.store.readTaskBundle(parsed.data.route.taskId)).bundle.manifest.latestSnapshotId,
   );
   const headCommit = publishedSnapshot.snapshot.headState.kind === "commit"
     ? publishedSnapshot.snapshot.headState.commit
@@ -2374,13 +2474,14 @@ async function openWorkbench(
     : workbenchUi;
   const session = await openWorkbenchSessionV1(parsed.data, {
     canonicalRoot,
+    ...(runtime.runtimeProfile === "local_durable_v1" ? { maxDashboardResponseBytes: LOCAL_INDEX_READ_BUDGETS_V1.searchBytes } : {}),
     productVersion: PRODUCT_VERSION,
     repositoryId: publishedSnapshot.snapshot.repositoryId,
     worktreeId: publishedSnapshot.snapshot.worktreeId,
     sourceSnapshotId: publishedSnapshot.snapshot.snapshotId,
     headCommit,
     worktreeFingerprint: publishedSnapshot.worktreeFingerprint,
-    freshness: pulse.status,
+    freshness: pulse.evaluatedSnapshotId === publishedSnapshot.snapshot.snapshotId ? pulse.status : "stale",
     ...workbenchUiOptions,
     taskBriefReader: async (input) => {
       const page = await runtime.taskEngine.getTaskBrief(input);
@@ -2597,6 +2698,7 @@ export async function callImplementedTool(
           canonicalRoot,
           selection.canonicalInstallationRoot,
           selection.canonicalHostInstallationRoot,
+          selection.runtimeProfile,
         );
     }
   } catch (error) {

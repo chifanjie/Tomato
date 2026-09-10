@@ -207,6 +207,14 @@ function verifyMappings(input: KnowledgeArtifactSetV2Input, errors: string[]): v
       continue;
     }
     if (record.role !== page.role || record.category !== page.category) add(errors, `搜索记录 ${record.id} 的页面分类不一致`);
+    if (record.kind === "page" && record.contentLineIds !== undefined) {
+      const markdown = input.markdownByPath.get(page.markdownPath);
+      const lines = markdown?.split("\n");
+      if (lines === undefined || lines.length !== record.contentLineIds.length
+        || record.contentLineIds.some((id, lineIndex) => searchIndex.contentLines?.[id] !== lines[lineIndex])) {
+        add(errors, `搜索记录 ${record.id} 的共享正文与 Markdown 不一致`);
+      }
+    }
     if (record.kind === "symbol") {
       const graphNode = record.nodeId === undefined ? undefined : graph.nodes.find((node) => node.id === record.nodeId);
       const documentation = record.nodeId === undefined ? undefined : nodeDocs.get(record.nodeId);

@@ -11,6 +11,7 @@ import {
   GetRepoPulsePublicMetaV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
+  GetTaskBriefInputV1Schema,
   McpCancelledNotificationV1Schema,
   McpProgressNotificationV1Schema,
   McpProgressRequestMetaV1Schema,
@@ -532,6 +533,41 @@ describe("common MCP response contracts", () => {
         },
       }).success,
     ).toBe(false);
+  });
+
+  it("adds bounded analysis pages with complete Claims without changing legacy sections", () => {
+    const claim = referencePayload<{ claims: Array<Record<string, unknown>> }>("claims.json")
+      .claims.find((item) => item.kind === "recommendation")!;
+    const item = { kind: "claim_reference", role: "recommendation", claimId: claim.id, claim };
+    const result = { task: referenceTask, section: "analysis", items: [item] };
+    expect(GetTaskBriefOutputV1Schema.safeParse(pagedSuccessOutput(result, 1)).success).toBe(true);
+    for (const invalidItem of [
+      { ...item, claim: undefined },
+      { ...item, claim: { ...claim, id: "claim:another" } },
+      { ...item, claim: { ...claim, taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAW" } },
+      { ...item, role: "conclusion" },
+    ]) {
+      expect(GetTaskBriefOutputV1Schema.safeParse(pagedSuccessOutput({ ...result, items: [invalidItem] }, 1)).success).toBe(false);
+    }
+    expect(GetTaskBriefOutputV1Schema.safeParse(pagedSuccessOutput({ ...result, section: "goals" }, 1)).success).toBe(false);
+    // Existing payloads containing only a Claim ID remain valid in old sections.
+    expect(GetTaskBriefOutputV1Schema.safeParse(pagedSuccessOutput({
+      task: referenceTask, section: "goals", items: [{ kind: "claim_reference", role: "goal", claimId: "claim:goal" }],
+    }, 1)).success).toBe(true);
+    const goal = referencePayload<{ claims: Array<Record<string, unknown>> }>("claims.json")
+      .claims.find((candidate) => candidate.kind === "goal")!;
+    for (const [taskId, valid] of [[referenceTask.taskId, true], ["01ARZ3NDEKTSV4RRFFQ69G5FAW", false]] as const) {
+      expect(GetTaskBriefOutputV1Schema.safeParse(pagedSuccessOutput({
+        task: referenceTask, section: "goals",
+        items: [{ kind: "claim_reference", role: "goal", claimId: goal.id, claim: { ...goal, taskId } }],
+      }, 1)).success).toBe(valid);
+    }
+    for (const pageSize of [1, 200]) {
+      expect(GetTaskBriefInputV1Schema.safeParse({ taskId: TASK_ID, section: "analysis", pageSize }).success).toBe(true);
+    }
+    for (const pageSize of [0, 201]) {
+      expect(GetTaskBriefInputV1Schema.safeParse({ taskId: TASK_ID, section: "analysis", pageSize }).success).toBe(false);
+    }
   });
 });
 

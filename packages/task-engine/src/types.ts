@@ -66,6 +66,7 @@ export interface WikiRecordLike {
   title: string;
   summary?: string;
   content?: string;
+  contentLineIds?: readonly number[];
   filePath?: string;
   terms?: readonly string[];
   businessTerms?: readonly string[];
@@ -76,6 +77,7 @@ export interface WikiIndexLike {
   generatedAt?: string;
   freshness?: ArtifactFreshnessLike;
   valid?: boolean;
+  contentLines?: readonly string[];
   records: readonly WikiRecordLike[];
 }
 

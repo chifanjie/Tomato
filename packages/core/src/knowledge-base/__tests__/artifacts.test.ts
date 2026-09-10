@@ -40,6 +40,25 @@ const input: KnowledgeArtifactInput = {
 };
 
 describe("knowledge artifacts", () => {
+  it("shares large page bodies losslessly and deterministically while keeping symbol terms specific", () => {
+    const documents = input.documents.map((document) => ({ ...document,
+      content: ("## 中文策略\nAlphaBeta()\n\n").repeat(30000),
+      searchTerms: [...document.searchTerms, "unrelatedSibling"],
+    }));
+    const artifacts = buildKnowledgeArtifacts({ ...input, documents });
+    const search = artifacts.searchIndex;
+    expect(search.contentLines).toBeDefined();
+    for (const document of documents) {
+      const page = search.records.find((item) => item.kind === "page" && item.pageId === document.id)!;
+      expect(page.content).toBeUndefined();
+      expect(page.contentLineIds!.map((id) => search.contentLines![id]).join("\n")).toBe(document.content);
+    }
+    const symbol = search.records.find((item) => item.kind === "symbol")!;
+    expect(symbol.terms).toEqual(["function:src/a.ts:run", "run", "src/a.ts"]);
+    expect(symbol.terms).not.toContain("unrelatedSibling");
+    expect(JSON.stringify(search).length).toBeLessThan(documents.reduce((size, document) => size + document.content.length, 0) / 2);
+    expect(buildKnowledgeArtifacts({ ...input, documents: [...documents].reverse() }).searchIndex).toEqual(search);
+  });
   it("builds a valid index, searchable symbol anchor, exact traces, and independent coverage", () => {
     const artifacts = buildKnowledgeArtifacts(input);
     expect(artifacts.wikiIndex.version).toBe(2);

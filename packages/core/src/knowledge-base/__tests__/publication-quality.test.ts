@@ -3,6 +3,7 @@ import {
   containsGenericPublicationPhrase,
   evaluatePublication,
   evaluatePublicationCorpus,
+  maskMarkdownCode,
   type PublicationDocument,
   type PublicationEvidence,
 } from "../publication-quality.js";
@@ -220,6 +221,16 @@ describe("publication quality", () => {
     }
     expect(containsGenericPublicationPhrase("普通正文明确承担核心逻辑。")).toBe(true);
     expect(containsGenericPublicationPhrase("\\`承担核心逻辑\\`")).toBe(true);
+  });
+
+  it("preserves exact offsets and newlines while masking large code spans", () => {
+    const prose = "正文保持原样。".repeat(20_000);
+    const code = "const emoji = '😀';\r\nreturn value;\n".repeat(10_000);
+    const fenced = `~~~ts\r\n${code}~~~`;
+    const inline = "`inline😀\r\nvalue`";
+    const input = `${prose}\n${fenced}\n${inline}\n${prose}`;
+    const expected = `${prose}\n${fenced.replace(/[^\r\n]/g, " ")}\n${inline.replace(/[^\r\n]/g, " ")}\n${prose}`;
+    expect(maskMarkdownCode(input)).toBe(expected);
   });
 
   it("does not count repeated lines inside long mixed fences as corpus prose", () => {

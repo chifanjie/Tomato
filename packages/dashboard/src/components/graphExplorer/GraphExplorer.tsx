@@ -499,6 +499,21 @@ export default function GraphExplorer({
       wikiIndex,
     ],
   );
+  const reachability = useMemo(() => {
+    const renderedIds = new Set(view?.semanticGraph.nodes.map((node) => node.id) ?? []);
+    const jumpIds = new Set(quickJumpItems.map((item) => item.id));
+    const byType = new Map<string, { total: number; reachable: number }>();
+    let visible = 0;
+    for (const node of graph?.nodes ?? []) {
+      if (renderedIds.has(node.id)) visible += 1;
+      const count = byType.get(node.type) ?? { total: 0, reachable: 0 };
+      count.total += 1;
+      if (jumpIds.has(node.id)) count.reachable += 1;
+      byType.set(node.type, count);
+    }
+    const calls = graph?.edges.filter((edge) => edge.type === "calls") ?? [];
+    return { visible, byType: [...byType.entries()], calls: calls.length, withoutProvenance: calls.filter((edge) => !edge.provenance?.length).length };
+  }, [graph, quickJumpItems, view]);
   const latestLayoutReadyStateRef = useRef<LatestGraphLayoutReadyState>({
     pending: null,
     semanticNodeIds: new Set(),
@@ -908,6 +923,14 @@ export default function GraphExplorer({
           </button>
         </div>
       </div>
+
+      <details className="uc-panel-muted px-3 py-2 text-xs text-text-secondary" data-testid="graph-reachability">
+        <summary className="cursor-pointer">图谱范围与静态分析边界 · 原始节点直接显示 {reachability.visible} / {graph.nodes.length} · 隐藏或聚合 {graph.nodes.length - reachability.visible}</summary>
+        <p className="mt-2 leading-5">画布对象包含聚合节点。沿上方层级下钻，或使用“浏览全部对象”定位隐藏对象；面包屑可返回上层。以下可达数表示 快速跳转已有定位入口。</p>
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1" aria-label="按节点类型的可达性">{reachability.byType.map(([type, count]) => <li key={type}>{type}：{count.reachable} / {count.total}{count.reachable < count.total ? "（部分无定位入口）" : ""}</li>)}</ul>
+        <p className="mt-2 leading-5">静态调用边 {reachability.calls} 条，其中 {reachability.withoutProvenance} 条缺少调用位置或置信度。静态关系不能证明完整运行时调用链。</p>
+        {graph.callResolution ? <><p className="mt-2">调用点 {graph.callResolution.totalCallSites} · 已解析 {graph.callResolution.resolvedCallSites} · 未解析 {graph.callResolution.unresolvedCallSites}</p><ul className="mt-1 list-disc pl-4">{graph.callResolution.limitations.map((reason) => <li key={reason}>{reason}</li>)}</ul></> : <p className="mt-2 text-warning">此产物未记录未解析调用数量；缺口未知，请用新版索引器重建。</p>}
+      </details>
 
       {notice && view.semanticGraph.nodes.length > 0 && (
         <p role="status" aria-live="polite" className="uc-panel-muted px-3 py-2 text-sm text-text-muted">

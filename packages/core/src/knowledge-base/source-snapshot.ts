@@ -1,5 +1,15 @@
 import type { SourceEvidence, SourceSnapshot } from "./types.js";
 
+const lineCache = new WeakMap<SourceSnapshot, { text: string; lines: string[] }>();
+
+function sourceLines(snapshot: SourceSnapshot): string[] {
+  const cached = lineCache.get(snapshot);
+  if (cached?.text === snapshot.text) return cached.lines;
+  const lines = snapshot.text.split(/\r?\n/);
+  lineCache.set(snapshot, { text: snapshot.text, lines });
+  return lines;
+}
+
 export function buildSourceSnapshot(filePath: string, sourceFiles: Record<string, string>): SourceSnapshot {
   const text = sourceFiles[filePath];
   if (text === undefined) {
@@ -25,7 +35,7 @@ export function buildSourceSnapshot(filePath: string, sourceFiles: Record<string
 export function excerptForLineRange(snapshot: SourceSnapshot, lineRange?: [number, number]): string {
   if (!snapshot.exists || !lineRange) return "";
   const [start, end] = lineRange;
-  const lines = snapshot.text.split(/\r?\n/);
+  const lines = sourceLines(snapshot);
   return lines.slice(Math.max(0, start - 1), Math.min(lines.length, end)).join("\n");
 }
 

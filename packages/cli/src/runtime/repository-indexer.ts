@@ -5,8 +5,19 @@ import { TextDecoder } from "node:util";
 
 import {
   GraphBuilder,
+  validateGraph,
+  validateKnowledgeArtifactSetV2,
+  parseWikiIndexV2,
+  parseWikiSearchIndexV2,
+  parseWikiDocumentTracesV2,
+  parseWikiGenerationReportV2,
+  shardIndexFor,
+  shardFileName,
+  capExcerpt,
   PluginRegistry,
   buildKnowledgeArtifacts,
+  withSourceReferenceDocuments,
+  referenceFileNodeIdsForGraph,
   contentHash,
   createIgnoreFilter,
   extractFileFingerprint,
@@ -14,7 +25,6 @@ import {
   resolveCalls,
   type CallResolverFile,
   type FingerprintStore,
-  type GeneratedDocument,
   type KnowledgeGraph,
 } from "@understand-code/core";
 import {
@@ -52,6 +62,7 @@ const SKIP_DIRECTORIES = new Set([
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2",
   ".ttf", ".eot", ".mp3", ".mp4", ".pdf", ".zip", ".tar", ".gz",
+  ".so", ".dylib", ".dll", ".a", ".o", ".exe",
 ]);
 const INDEX_STAGING_DIRECTORY = ".refresh-index-staging-v1";
 const INDEX_STAGE_MANIFEST = "stage-manifest.json";
@@ -152,6 +163,7 @@ export interface RepositoryIndexGenerationBindingV1 {
 }
 
 export interface RepositoryIndexAuthorityV1 {
+  readonly runtimeProfile?: "local_durable_v1";
   readonly sourceSnapshotId: string;
   readonly finalizedProviderRevision: number;
 }
@@ -176,6 +188,12 @@ function digest(value: string): `sha256:${string}` {
 
 function digestBytes(value: Buffer): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+// Manifest parsing and generation identities use code-unit order. Locale
+// collation changes punctuation/case ordering and must not enter this protocol.
+function compareIndexArtifactPaths(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function knowledgeLineageV1(value: unknown): RepositoryIndexKnowledgeLineageV1 {
@@ -237,7 +255,7 @@ function createIndexPublicationV1(
   sourceInventoryDigest: `sha256:${string}`,
 ): Pick<RepositoryIndexKnowledgePublicationV1, "generation" | "publication"> {
   const detachedFiles = files.map((file) => ({ ...file, bytes: Buffer.from(file.bytes) }))
-    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+    .sort((left, right) => compareIndexArtifactPaths(left.relativePath, right.relativePath));
   const seed = {
     schemaVersion: 1,
     sourceInventoryDigest,
@@ -417,10 +435,10 @@ async function collectStagedIndexFiles(
       "staged repository index root changed during inspection",
     );
   }
-  return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return files.sort((left, right) => compareIndexArtifactPaths(left.relativePath, right.relativePath));
 }
 
-async function readStableNoFollowFile(filePath: string): Promise<Buffer> {
+async function readStableNoFollowFile(filePath: string, requirePrivateMode = true): Promise<Buffer> {
   const parent = path.dirname(filePath);
   const parentBefore = await fs.lstat(parent);
   if (!parentBefore.isDirectory() || parentBefore.isSymbolicLink()) {
@@ -432,7 +450,7 @@ async function readStableNoFollowFile(filePath: string): Promise<Buffer> {
   );
   try {
     const before = await handle.stat();
-    if (!before.isFile() || (before.mode & 0o777) !== 0o600) {
+    if (!before.isFile() || (requirePrivateMode && (before.mode & 0o777) !== 0o600)) {
       throw new RepositoryIndexError("repository index path is not a file");
     }
     const bytes = await handle.readFile();
@@ -574,6 +592,10 @@ async function collectSourceFiles(root: string): Promise<SourceFile[]> {
       const relativePath = relativeDirectory === ""
         ? entry.name
         : `${relativeDirectory}/${entry.name}`;
+      // Linked worktrees and submodules use a .git metadata file. Never index or follow it.
+      if (entry.name === ".git") continue;
+      // Finder metadata can be committed accidentally; it never contains repository source.
+      if (entry.name === ".DS_Store") continue;
       if (entry.isDirectory()) {
         if (SKIP_DIRECTORIES.has(entry.name) || ignore.isIgnored(`${relativePath}/`)) continue;
         if (isSensitiveRepositoryPath(relativePath)) {
@@ -650,119 +672,10 @@ export async function preflightRepositoryIndex(
   };
 }
 
-function lineRange(content: string): [number, number] {
-  return [1, Math.max(1, content.split(/\r?\n/u).length)];
-}
-
-function sourceExcerpt(content: string): string {
-  return content.length <= 800 ? content : `${content.slice(0, 800)}\n…`;
-}
-
-
-function fallbackDocument(
-  existing: GeneratedDocument | undefined,
-  input: { readonly id: string; readonly path: string; readonly title: string; readonly stage: "purpose" | "evidence"; readonly routeOrder: number; readonly nodeId: string; readonly filePath: string; readonly excerpt: string; readonly lineRange: [number, number] },
-): GeneratedDocument {
-  return {
-    ...(existing ?? {
-      representedEdgeIds: [],
-      reason: "repository-indexer-fallback",
-      symbolAnchors: [],
-      searchTerms: [input.title, input.filePath],
-      category: "overview" as const,
-      role: "featured" as const,
-      directNodeIds: [input.nodeId],
-      contextNodeIds: [],
-    }),
-    id: input.id,
-    path: input.path,
-    title: input.title,
-    summary: `${input.title}（由本地源码索引生成）`,
-    category: input.stage === "purpose" ? "overview" : "module",
-    role: "featured",
-    directNodeIds: [input.nodeId],
-    contextNodeIds: [],
-    route: { order: input.routeOrder, stage: input.stage },
-    content: input.stage === "purpose"
-      ? `# ${input.title}\n\n## 项目边界\n\n本页由本地源码扫描生成，描述当前绑定仓库中的真实文件与可追踪入口。\n\n## 入口证据\n\n${input.filePath} 是当前索引发现的入口文件；后续页面和搜索结果均绑定同一源码快照。\n\n## 维护提示\n\n源码变化后重新运行 refresh_index mode=full，以重新生成图谱和知识索引。`
-      : `# ${input.title}\n\n## 文件职责\n\n${input.filePath} 已纳入本次源码图谱。\n\n## 源码证据\n\n\`${input.filePath}\` 的实际内容已被安全读取并绑定到当前快照。`,
-    sourceEvidence: [{
-      filePath: input.filePath,
-      lineRange: input.lineRange,
-      nodeId: input.nodeId,
-      excerpt: input.excerpt,
-      claim: `${input.filePath} 是当前仓库中的真实源码节点。`,
-    }],
-    quality: "generated",
-    generationStatus: "complete",
-    qualityIssues: [],
-  };
-}
-
-function ensureRouteDocuments(
-  documents: GeneratedDocument[],
-  graph: KnowledgeGraph,
-  sourceFiles: readonly SourceFile[],
-): GeneratedDocument[] {
-  const firstFile = graph.nodes.find((node) => node.type === "file" && node.filePath !== undefined);
-  if (firstFile?.filePath === undefined) {
-    throw new RepositoryIndexError("repository contains no analyzable source files");
-  }
-  const source = sourceFiles.find((file) => file.relativePath === firstFile.filePath);
-  if (source === undefined) throw new RepositoryIndexError(`indexed source disappeared: ${firstFile.filePath}`);
-  const anchor = graph.nodes.find((node) => node.filePath === firstFile.filePath && node.type !== "file") ?? firstFile;
-  const byPath = new Map(documents.map((document) => [document.path, document]));
-  const usedRouteOrders = new Set(
-    documents.flatMap((document) => document.route === undefined ? [] : [document.route.order]),
-  );
-  const allocateRouteOrder = (preferred: number): number => {
-    let order = preferred;
-    while (usedRouteOrders.has(order)) order += 1;
-    usedRouteOrders.add(order);
-    return order;
-  };
-  const overview = byPath.get("项目总览.md");
-  const entry = byPath.get("源码入口.md");
-  const usableRouteDocument = (document: GeneratedDocument | undefined): boolean =>
-    document !== undefined
-    && document.generationStatus === "complete"
-    && document.quality !== "failed"
-    && document.route !== undefined
-    && document.directNodeIds.length > 0
-    && document.sourceEvidence.length > 0;
-  if (!usableRouteDocument(overview)) {
-    byPath.set("项目总览.md", fallbackDocument(overview, {
-      id: overview?.id ?? "page:%E9%A1%B9%E7%9B%AE%E6%80%BB%E8%A7%88.md",
-      path: "项目总览.md",
-      title: "项目总览",
-      stage: "purpose",
-      routeOrder: allocateRouteOrder(0),
-      nodeId: anchor.id,
-      filePath: firstFile.filePath,
-      excerpt: sourceExcerpt(source.content),
-      lineRange: lineRange(source.content),
-    }));
-  }
-  if (!usableRouteDocument(entry)) {
-    byPath.set("源码入口.md", fallbackDocument(entry, {
-      id: entry?.id ?? "page:%E6%BA%90%E7%A0%81%E5%85%A5%E5%8F%A3.md",
-      path: "源码入口.md",
-      title: "源码入口",
-      stage: "evidence",
-      routeOrder: allocateRouteOrder(1),
-      nodeId: firstFile.id,
-      filePath: firstFile.filePath,
-      excerpt: sourceExcerpt(source.content),
-      lineRange: lineRange(source.content),
-    }));
-  }
-  return [...byPath.values()];
-}
-
-async function atomicWriteJson(filePath: string, value: unknown): Promise<void> {
+async function atomicWriteJson(filePath: string, value: unknown, compact = false): Promise<void> {
   await atomicWriteBytes(
     filePath,
-    Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8"),
+    Buffer.from(`${JSON.stringify(value, null, compact ? undefined : 2)}\n`, "utf8"),
   );
 }
 
@@ -876,8 +789,8 @@ export async function buildRepositoryIndex(
     const summary = `${source.relativePath} 的源码节点（${source.content.split(/\r?\n/u).length} 行）`;
     if (analysis !== null) {
       const summaries = Object.fromEntries([
-        ...analysis.functions.map((fn) => [fn.name, `${fn.name} 的本地实现`]),
-        ...analysis.classes.map((cls) => [cls.name, `${cls.name} 的本地类型`]),
+        ...analysis.functions.map((fn) => [fn.name, `静态函数定义：${source.relativePath}:${fn.lineRange.join("-")}；业务语义待宿主分析`]),
+        ...analysis.classes.map((cls) => [cls.name, `静态类型定义：${source.relativePath}:${cls.lineRange.join("-")}；业务语义待宿主分析`]),
       ]);
       builder.addFileWithAnalysis(source.relativePath, analysis, {
         summary,
@@ -925,14 +838,48 @@ export async function buildRepositoryIndex(
       callGraph: registry.extractCallGraph(source.relativePath, source.content) ?? [],
     });
   }
-  for (const call of resolveCalls(callFiles).calls) {
-    builder.addCallEdge(call.callerFile, call.callerFunc, call.calleeFile, call.calleeFunc, {
+  const callResolution = resolveCalls(callFiles);
+  const functionsByIdentity = new Map<string, KnowledgeGraph["nodes"]>();
+  for (const node of builder.build().nodes) {
+    if (node.type !== "function" || node.filePath === undefined) continue;
+    const key = `${node.filePath}\0${node.name}`;
+    const candidates = functionsByIdentity.get(key) ?? [];
+    candidates.push(node); functionsByIdentity.set(key, candidates);
+  }
+  const acceptedCalls: typeof callResolution.calls = [];
+  for (const call of callResolution.calls) {
+    const callers = (functionsByIdentity.get(`${call.callerFile}\0${call.callerFunc}`) ?? [])
+      .filter((node) => node.lineRange !== undefined && call.lineNumber >= node.lineRange[0] && call.lineNumber <= node.lineRange[1]);
+    const callees = functionsByIdentity.get(`${call.calleeFile}\0${call.calleeFunc}`) ?? [];
+    if (callers.length !== 1 || callees.length !== 1) {
+      callResolution.unresolved.push({ file: call.callerFile, caller: call.callerFunc,
+        callee: call.calleeFunc, lineNumber: call.lineNumber,
+        reason: callers.length !== 1 ? "caller-node-not-unique" : "callee-node-not-unique" });
+      continue;
+    }
+    // Graph identities can include a receiver/class even when the lexical function
+    // name returned by call resolution does not. Bind actual nodes, never invent IDs.
+    const callerIdentity = callers[0]!.id.slice(`function:${call.callerFile}:`.length);
+    const calleeIdentity = callees[0]!.id.slice(`function:${call.calleeFile}:`.length);
+    builder.addCallEdge(call.callerFile, callerIdentity, call.calleeFile, calleeIdentity, {
       filePath: call.callerFile, lineNumber: call.lineNumber,
       confidence: call.confidence, source: "static-analysis",
     });
+    acceptedCalls.push(call);
   }
+  callResolution.calls = acceptedCalls;
   const graph = builder.build();
+  const graphNodeIds = new Set(graph.nodes.map((node) => node.id));
+  if (graph.edges.some((edge) => !graphNodeIds.has(edge.source) || !graphNodeIds.has(edge.target))) {
+    throw new RepositoryIndexError("repository graph contains an edge without exact source and target nodes");
+  }
   graph.project.analyzedAt = generatedAt;
+  graph.callResolution = {
+    totalCallSites: callResolution.calls.length + callResolution.unresolved.length,
+    resolvedCallSites: callResolution.calls.length,
+    unresolvedCallSites: callResolution.unresolved.length,
+    limitations: ["静态绑定分析不代表完整运行时调用链", "动态调用、外部依赖与无法唯一绑定的调用保留为未解析"],
+  };
   const graphDigest = digest(JSON.stringify(graph));
   const sourceMap = Object.fromEntries(sourceFiles.map((source) => [source.relativePath, source.content]));
   const knowledge = generateKnowledgeBase(graph, {
@@ -940,16 +887,16 @@ export async function buildRepositoryIndex(
     sourceFiles: sourceMap,
     currentGitCommitHash: headCommit,
     outputLanguage: "zh-CN",
-    generationMode: "writer",
-    deterministicOnly: false,
+    generationMode: "deterministic",
+    deterministicOnly: true,
   });
-  const documents = ensureRouteDocuments(knowledge.documents, graph, sourceFiles);
+  const documents = withSourceReferenceDocuments(graph, sourceMap, knowledge.documents);
   const graphNodes = graph.nodes.map((node) => ({ id: node.id, type: node.type, name: node.name, ...(node.filePath === undefined ? {} : { filePath: node.filePath }) }));
   const artifacts = buildKnowledgeArtifacts({
     projectName,
     generatedAt,
     outputLanguage: "zh-CN",
-    generationMode: "writer",
+    generationMode: "deterministic",
     graphDigest,
     gitCommitHash: headCommit,
     sourceRootIdentity: snapshot.rootIdentity,
@@ -958,19 +905,15 @@ export async function buildRepositoryIndex(
       total: sourceFiles.length,
       missingIds: [],
     },
-    requiredRouteStages: ["purpose", "evidence"],
+    requiredRouteStages: knowledge.plan.requiredRouteStages,
     businessTerms: [],
     nodes: graphNodes,
-    referenceFileNodeIds: graph.nodes
-      .filter((node) => ["file", "config", "schema", "document"].includes(node.type) && node.filePath !== undefined)
-      .map((node) => node.id),
+    referenceFileNodeIds: referenceFileNodeIdsForGraph(graph),
+    generationNodeCount: graph.nodes.length,
     documents,
-    warnings: [],
-    errors: [],
+    warnings: [...knowledge.validation.warnings, ...knowledge.coverageReport.warnings],
+    errors: [...knowledge.validation.errors, ...knowledge.coverageReport.errors],
   });
-  if (artifacts.wikiIndex.mainReadiness.status !== "ready") {
-    throw new RepositoryIndexError(`knowledge index is not ready: ${artifacts.wikiIndex.mainReadiness.reasons.join("; ")}`);
-  }
   const fingerprintFiles: FingerprintStore["files"] = {};
   for (const source of sourceFiles) {
     const analysis = analyses.get(source.relativePath);
@@ -1054,9 +997,33 @@ export async function buildRepositoryIndex(
     await atomicWriteText(documentPath, document.content);
   }
   await atomicWriteJson(path.join(knowledgeBaseRoot, "wiki-index.json"), artifacts.wikiIndex);
-  await atomicWriteJson(path.join(knowledgeBaseRoot, "search-index.json"), artifacts.searchIndex);
+  // Ordered line references must not pay indentation overhead per source line.
+  await atomicWriteJson(path.join(knowledgeBaseRoot, "search-index.json"), artifacts.searchIndex, true);
   await atomicWriteJson(path.join(traceRoot, "document-traces.json"), artifacts.documentTraces);
   await atomicWriteJson(path.join(traceRoot, "generation-report.json"), artifacts.generationReport);
+  const sourceManifest = {
+    schemaVersion: 1, sourceSnapshotId: snapshot.snapshotId,
+    files: sourceFiles.map((source) => ({ filePath: source.relativePath, contentDigest: digest(source.content),
+      blobPath: `knowledge-base/.trace/source-content/${digest(source.content).slice(7)}.txt` })),
+  };
+  await ensureDirectoryChain(traceRoot, path.join(traceRoot, "source-content"));
+  for (const source of sourceFiles) {
+    await atomicWriteBytes(path.join(traceRoot, "source-content", `${digest(source.content).slice(7)}.txt`), Buffer.from(source.content, "utf8"));
+  }
+  await atomicWriteJson(path.join(traceRoot, "source-manifest.json"), sourceManifest);
+  await atomicWriteJson(path.join(traceRoot, "call-resolution.json"), {
+    schemaVersion: 1, sourceSnapshotId: snapshot.snapshotId, graphDigest,
+    ...graph.callResolution, unresolved: callResolution.unresolved,
+  });
+  await atomicWriteJson(path.join(traceRoot, "host-analysis-context.json"), {
+    schemaVersion: 1, repositoryId: snapshot.repositoryId, sourceSnapshotId: snapshot.snapshotId,
+    sourceRootIdentity: snapshot.rootIdentity, graphDigest, sourceInventoryDigest: inventoryDigest,
+    scope: { indexedFiles: sourceFiles.length, graphNodes: graph.nodes.length, excludedDirectories: [...SKIP_DIRECTORIES].sort() },
+    semanticStatus: "awaiting-host-analysis",
+    evidenceIndex: "knowledge-base/wiki-index.json", searchIndex: "knowledge-base/search-index.json",
+    unknowns: ["业务结论尚未经宿主解释和验证", ...graph.callResolution!.limitations],
+    instruction: "读取索引中的真实源码证据，按问题解释具体条件分支；将结论、证据引用和未知项写入当前任务。不要将静态引用页当作已核验业务知识。",
+  });
   if (lineage !== undefined) await atomicWriteJson(path.join(managedRoot, KNOWLEDGE_LINEAGE_PATH), lineage);
   const stagedFiles = await collectStagedIndexFiles(stagingRoot);
   const generationSeed = {
@@ -1120,6 +1087,7 @@ function parseActiveGenerationV1(
       "sourceInventoryDigest",
       "sourceSnapshotId",
       "finalizedProviderRevision",
+      ...(Object.hasOwn(value, "runtimeProfile") ? ["runtimeProfile"] : []),
     ].sort().join("\u0000")
   ) {
     throw new RepositoryIndexError("active repository index manifest is invalid");
@@ -1127,6 +1095,7 @@ function parseActiveGenerationV1(
   const record = value as Record<string, unknown>;
   if (
     record["schemaVersion"] !== 1 ||
+    (Object.hasOwn(record, "runtimeProfile") && record.runtimeProfile !== "local_durable_v1") ||
     typeof record["generationId"] !== "string" ||
     !INDEX_GENERATION_ID.test(record["generationId"]) ||
     typeof record["generationManifestDigest"] !== "string" ||
@@ -1150,21 +1119,25 @@ function parseActiveGenerationV1(
       record["sourceInventoryDigest"] as `sha256:${string}`,
     sourceSnapshotId: record["sourceSnapshotId"],
     finalizedProviderRevision: record["finalizedProviderRevision"],
+    ...(record.runtimeProfile === "local_durable_v1" ? { runtimeProfile: "local_durable_v1" as const } : {}),
   };
 }
 
-function parseRefreshPublicationHeadV1(value: unknown): { providerRevision: number; sourceSnapshotId: string } {
+function parseRefreshPublicationHeadV1(value: unknown): { providerRevision: number; sourceSnapshotId: string; runtimeProfile?: "local_durable_v1" } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new RepositoryIndexError("refresh publication head is invalid");
   }
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).sort().join("\u0000") !== "providerRevision\u0000schemaVersion\u0000sourceSnapshotId" ||
+  if (Object.keys(record).sort().join("\u0000") !== ["providerRevision", "schemaVersion", "sourceSnapshotId", ...(Object.hasOwn(record, "runtimeProfile") ? ["runtimeProfile"] : [])].sort().join("\u0000") ||
+    (Object.hasOwn(record, "runtimeProfile") && record.runtimeProfile !== "local_durable_v1") ||
     record.schemaVersion !== 1 || typeof record.providerRevision !== "number" ||
     !Number.isSafeInteger(record.providerRevision) || record.providerRevision < 1 ||
     typeof record.sourceSnapshotId !== "string" || record.sourceSnapshotId.length === 0) {
     throw new RepositoryIndexError("refresh publication head is invalid");
   }
-  return { providerRevision: record.providerRevision, sourceSnapshotId: record.sourceSnapshotId };
+  return { providerRevision: record.providerRevision, sourceSnapshotId: record.sourceSnapshotId,
+    ...(record.runtimeProfile === "local_durable_v1" ? { runtimeProfile: "local_durable_v1" as const } : {}),
+  };
 }
 
 async function collectAndCleanGenerationsV1(
@@ -1294,6 +1267,7 @@ async function garbageCollectStagingOperationsV1(
 }
 
 export interface ActiveRepositoryIndexReaderV1 {
+  readonly generationRoot: string;
   readonly generation: RepositoryIndexGenerationBindingV1;
   readonly authority: RepositoryIndexAuthorityV1;
   readonly knowledgeLineage?: RepositoryIndexKnowledgeLineageV1;
@@ -1357,6 +1331,7 @@ export async function openActiveRepositoryIndexV1(
   const lineageFile = files.find((file) => file.relativePath === KNOWLEDGE_LINEAGE_PATH);
   const knowledgeLineage = lineageFile === undefined ? undefined : readKnowledgeLineageBytesV1(lineageFile.bytes);
   return Object.freeze({
+    generationRoot,
     generation: Object.freeze({
       generationId: active.generationId,
       generationManifestDigest: active.generationManifestDigest,
@@ -1365,6 +1340,7 @@ export async function openActiveRepositoryIndexV1(
     authority: Object.freeze({
       sourceSnapshotId: active.sourceSnapshotId,
       finalizedProviderRevision: active.finalizedProviderRevision,
+      ...(active.runtimeProfile === undefined ? {} : { runtimeProfile: active.runtimeProfile }),
     }),
     ...(knowledgeLineage === undefined ? {} : { knowledgeLineage }),
     async read(relativePath: string) {
@@ -1618,6 +1594,10 @@ export async function publishStagedRepositoryIndex(
     ...input.generation,
     ...input.authority,
   };
+  if ((previousActive !== undefined && previousActive.runtimeProfile !== input.authority.runtimeProfile) ||
+    (publicationHead !== undefined && publicationHead.runtimeProfile !== input.authority.runtimeProfile)) {
+    throw new RepositoryIndexError("repository index runtime profile cannot change without an explicit migration");
+  }
   if (publicationHead !== undefined &&
     (publicationHead.providerRevision > input.authority.finalizedProviderRevision ||
       (publicationHead.providerRevision === input.authority.finalizedProviderRevision &&
@@ -1641,6 +1621,7 @@ export async function publishStagedRepositoryIndex(
     schemaVersion: 1,
     providerRevision: input.authority.finalizedProviderRevision,
     sourceSnapshotId: input.authority.sourceSnapshotId,
+    ...(input.authority.runtimeProfile === undefined ? {} : { runtimeProfile: input.authority.runtimeProfile }),
   });
   await atomicWriteJson(
     path.join(managedRoot, INDEX_ACTIVE_MANIFEST),
@@ -2031,5 +2012,176 @@ export async function publishIncrementalStrongCutV1(input: Readonly<{
         }
       } catch { /* never remove an unverified lock */ }
     }
+  }
+}
+
+async function sourceDirectoryV1(directory: string): Promise<void> {
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.realpath(directory) !== directory) {
+    throw new RepositoryIndexError("source or writer directory is not canonical");
+  }
+}
+
+function assertRepositorySourcePathV1(filePath: string): void {
+  if (isSensitiveRepositoryPath(filePath) || filePath.startsWith("/") ||
+    filePath.includes("\\") || filePath.split("/").some((segment) => ["", ".", ".."].includes(segment))) {
+    throw new RepositoryIndexError("repository source path is invalid");
+  }
+}
+
+/** Pin verified source manifests once; each read still checks directory safety and exact blob bytes. */
+export async function openRepositoryIndexSourcesV1(input: Readonly<{
+  canonicalRoot: string; sourceSnapshotId: string;
+}>): Promise<Readonly<{ read(filePath: string, contentDigest?: `sha256:${string}`): Promise<Buffer | undefined> }>> {
+  if (await fs.realpath(input.canonicalRoot) !== input.canonicalRoot) throw new RepositoryIndexError("source root is not canonical");
+  await sourceDirectoryV1(input.canonicalRoot);
+  const readWithinRoot = async (filePath: string) => {
+    await sourceDirectoryV1(input.canonicalRoot);
+    let parent = input.canonicalRoot;
+    for (const segment of path.relative(input.canonicalRoot, path.dirname(filePath)).split(path.sep)) {
+      parent = path.join(parent, segment); await sourceDirectoryV1(parent);
+    }
+    return readStableNoFollowFile(filePath);
+  };
+  const sources = new Map<string, { absolutePath: string; contentDigest: `sha256:${string}` }>();
+  const root = path.join(input.canonicalRoot, ".understand-code", INDEX_GENERATIONS_DIRECTORY);
+  let entries: import("node:fs").Dirent[];
+  try {
+    await sourceDirectoryV1(root);
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    entries = [];
+  }
+  if (entries.length > MAX_RETAINED_GENERATIONS) throw new RepositoryIndexError("retained source generation capacity exceeded");
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !INDEX_GENERATION_ID.test(entry.name)) continue;
+    const generationRoot = path.join(root, entry.name);
+    const manifest = parseGenerationManifestV1(JSON.parse((await readWithinRoot(path.join(generationRoot, INDEX_GENERATION_MANIFEST))).toString("utf8")));
+    if (manifest.generationId !== entry.name) throw new RepositoryIndexError("source generation identity mismatch");
+    const descriptors = new Map(manifest.files.map((file) => [file.path, file]));
+    const sourceMapPath = "knowledge-base/.trace/source-manifest.json";
+    const sourceMapDescriptor = descriptors.get(sourceMapPath);
+    if (!sourceMapDescriptor) continue;
+    const sourceMapBytes = await readWithinRoot(path.join(generationRoot, sourceMapPath));
+    if (digestBytes(sourceMapBytes) !== sourceMapDescriptor.contentDigest) throw new RepositoryIndexError("source manifest digest mismatch");
+    const sourceMap = JSON.parse(sourceMapBytes.toString("utf8")) as { schemaVersion: number; sourceSnapshotId: string; files: Array<{ filePath: string; contentDigest: `sha256:${string}`; blobPath: string }> };
+    if (sourceMap.schemaVersion !== 1 || !Array.isArray(sourceMap.files)) throw new RepositoryIndexError("source manifest is invalid");
+    if (sourceMap.sourceSnapshotId !== input.sourceSnapshotId) continue;
+    for (const source of sourceMap.files) {
+      assertRepositorySourcePathV1(source.filePath);
+      if (!/^sha256:[0-9a-f]{64}$/u.test(source.contentDigest) || source.blobPath !== `knowledge-base/.trace/source-content/${source.contentDigest.slice(7)}.txt`) {
+        throw new RepositoryIndexError("source digest does not match the requested Snapshot");
+      }
+      const blob = descriptors.get(source.blobPath);
+      if (!blob || blob.contentDigest !== source.contentDigest) throw new RepositoryIndexError("source content is not bound to generation");
+      const existing = sources.get(source.filePath);
+      if (existing !== undefined && existing.contentDigest !== source.contentDigest) throw new RepositoryIndexError("retained source Snapshot has conflicting content");
+      sources.set(source.filePath, { absolutePath: path.join(generationRoot, source.blobPath), contentDigest: source.contentDigest });
+    }
+  }
+  return Object.freeze({
+    async read(filePath: string, contentDigest?: `sha256:${string}`): Promise<Buffer | undefined> {
+      assertRepositorySourcePathV1(filePath);
+      const source = sources.get(filePath);
+      if (source === undefined) return undefined;
+      if (contentDigest !== undefined && contentDigest !== source.contentDigest) throw new RepositoryIndexError("source digest does not match the requested Snapshot");
+      const bytes = await readWithinRoot(source.absolutePath);
+      if (bytes.length > MAX_SOURCE_BYTES || digestBytes(bytes) !== source.contentDigest) throw new RepositoryIndexError("source content digest mismatch");
+      return bytes;
+    },
+  });
+}
+
+/** Exact retained source bytes for a Snapshot, including dirty baselines and deleted files. */
+export async function readRepositoryIndexSourceV1(input: Readonly<{
+  canonicalRoot: string; sourceSnapshotId: string; filePath: string; contentDigest?: `sha256:${string}`;
+}>): Promise<Buffer | undefined> {
+  assertRepositorySourcePathV1(input.filePath);
+  return (await openRepositoryIndexSourcesV1(input)).read(input.filePath, input.contentDigest);
+}
+
+
+/** Import only the official writer output for this Task, bound to this exact source inventory. */
+export async function withRepositoryIndexWriterDraftV1(input: Readonly<{
+  canonicalRoot: string; taskId: string; index: BuildRepositoryIndexResult;
+}>): Promise<Pick<RepositoryIndexKnowledgePublicationV1, "generation" | "publication">> {
+  const draftRoot = path.join(input.canonicalRoot, ".understand-code/knowledge-drafts", encodeURIComponent(TaskIdSchema.parse(input.taskId)));
+  try { await sourceDirectoryV1(draftRoot); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return input.index;
+    throw error;
+  }
+  const read = async (relative: string): Promise<Buffer> => {
+    if (!safeIndexArtifactPath(`knowledge-base/${relative}`)) throw new RepositoryIndexError("writer draft path is invalid");
+    let parent = input.canonicalRoot;
+    for (const segment of path.relative(input.canonicalRoot, path.dirname(path.join(draftRoot, relative))).split(path.sep)) {
+      parent = path.join(parent, segment); await sourceDirectoryV1(parent);
+    }
+    const bytes = await readStableNoFollowFile(path.join(draftRoot, relative), false);
+    if (bytes.length > 64 * 1024 * 1024) throw new RepositoryIndexError("writer draft file is too large");
+    return bytes;
+  };
+  const normalized = validateGraph(input.index.graph);
+  if (!normalized.success || !normalized.data) throw new RepositoryIndexError("writer source graph is invalid");
+  const sourceManifest = JSON.parse(input.index.publication.files.find((file) => file.relativePath === "knowledge-base/.trace/source-manifest.json")!.bytes.toString("utf8")) as { files: Array<{filePath: string; contentDigest: string; blobPath: string}> };
+  const sourceEntries = sourceManifest.files.map((file) => [file.filePath, file.contentDigest.slice(7)]).sort(([a], [b]) => a.localeCompare(b));
+  const binding = JSON.parse((await read(".intermediate/source-binding.json")).toString("utf8"));
+  const graphDigest = digest(JSON.stringify(normalized.data)).slice(7);
+  if (binding.schemaVersion !== 1 || binding.graphDigest !== graphDigest || binding.sourceInventoryDigest !== digest(JSON.stringify(sourceEntries)).slice(7)) {
+    throw new RepositoryIndexError("writer source binding is stale; prepare writer outputs from the current immutable graph and source Snapshot");
+  }
+  const wrappers = await Promise.all(["wiki-index.json", "search-index.json", ".trace/document-traces.json", ".trace/generation-report.json"].map(read));
+  const wiki = parseWikiIndexV2(JSON.parse(wrappers[0].toString("utf8")));
+  const search = parseWikiSearchIndexV2(JSON.parse(wrappers[1].toString("utf8")));
+  const traces = parseWikiDocumentTracesV2(JSON.parse(wrappers[2].toString("utf8")));
+  const report = parseWikiGenerationReportV2(JSON.parse(wrappers[3].toString("utf8")));
+  if (!wiki.ok || !search.ok || !traces.ok || !report.ok) throw new RepositoryIndexError("writer draft contracts are invalid");
+  const markdownByPath = new Map<string, string>();
+  const files: StagedIndexFile[] = [];
+  const add = (relativePath: string, bytes: Buffer) => files.push({ relativePath, bytes, contentDigest: digestBytes(bytes) });
+  ["wiki-index.json", "search-index.json", ".trace/document-traces.json", ".trace/generation-report.json"].forEach((file, i) => add(`knowledge-base/${file}`, wrappers[i]));
+  for (const page of wiki.value.pages) {
+    const bytes = await read(page.markdownPath.slice("knowledge-base/".length));
+    markdownByPath.set(page.markdownPath, bytes.toString("utf8")); add(page.markdownPath, bytes);
+  }
+  const shards = new Map<number, Record<string, string>>();
+  if (wiki.value.excerptStore) {
+    const descriptor = wiki.value.excerptStore;
+    for (let i = 0; i < descriptor.shardCount; i += 1) {
+      const relative = `${descriptor.pathPrefix}/${shardFileName(i)}`;
+      const bytes = await read(relative); shards.set(i, JSON.parse(bytes.toString("utf8"))); add(`knowledge-base/${relative}`, bytes);
+    }
+  }
+  for (const evidence of wiki.value.evidence) {
+    const source = sourceManifest.files.find((file) => file.filePath === evidence.filePath);
+    const bytes = input.index.publication.files.find((file) => file.relativePath === source?.blobPath)?.bytes;
+    if (!bytes) throw new RepositoryIndexError("writer evidence has no indexed source");
+    const lines = bytes.toString("utf8").split(/\r?\n/u);
+    const [start, end] = evidence.lineRange;
+    if (start < 1 || end > lines.length) throw new RepositoryIndexError("writer evidence line range is invalid");
+    const actual = lines.slice(start - 1, end).join("\n");
+    const descriptor = wiki.value.excerptStore;
+    const excerpt = descriptor ? shards.get(shardIndexFor(evidence.id, descriptor.shardCount))?.[evidence.id] : evidence.excerpt;
+    if (excerpt !== (descriptor ? capExcerpt(actual) : actual)) throw new RepositoryIndexError("writer evidence excerpt does not match source");
+  }
+  const check = validateKnowledgeArtifactSetV2({ graph: normalized.data, wikiIndex: wiki.value, searchIndex: search.value,
+    documentTraces: traces.value, generationReport: report.value, markdownByPath,
+    expected: { outputLanguage: "zh-CN", generationMode: "writer", sourceRootIdentity: input.canonicalRoot,
+      graphDigest, gitCommitHash: normalized.data.project.gitCommitHash } });
+  if (!check.ok) throw new RepositoryIndexError(`writer knowledge is not ready: ${check.errors.join("; ")}`);
+  add("knowledge-base/.trace/writer-source-binding.json", Buffer.from(JSON.stringify(binding)));
+  const preserved = input.index.publication.files.filter((file) => !file.relativePath.startsWith("knowledge-base/") ||
+    file.relativePath.startsWith("knowledge-base/.trace/source-") || file.relativePath === "knowledge-base/.trace/call-resolution.json");
+  return createIndexPublicationV1([...preserved, ...files], input.index.generation.sourceInventoryDigest);
+}
+
+export function assertRepositoryKnowledgeWriterReadyV1(candidate: RepositoryIndexKnowledgePublicationV1): void {
+  const verified = verifiedIndexPublicationV1(candidate);
+  const reportBytes = verified.publication.files.find((file) => file.relativePath === "knowledge-base/.trace/generation-report.json")?.bytes;
+  const report = reportBytes && parseWikiGenerationReportV2(JSON.parse(reportBytes.toString("utf8")));
+  if (!report || !report.ok || report.value.generationMode !== "writer" || report.value.mainReadiness.status !== "ready" ||
+    report.value.referenceCoverage.status !== "complete" || report.value.errors.length > 0 ||
+    !verified.publication.files.some((file) => file.relativePath === "knowledge-base/.trace/writer-source-binding.json")) {
+    throw new RepositoryIndexError("formal knowledge publication requires source-verified writer output with ready quality and full coverage");
   }
 }

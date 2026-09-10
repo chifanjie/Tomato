@@ -25,6 +25,7 @@ export interface MainReadinessSummaryV2 {
 }
 
 export interface ReferenceCoverageSummaryV2 {
+  scope?: { basis: "full-graph"; totalGraphNodes: number; generationNodes: number; documentedNodes: number };
   status: "complete" | "partial";
   files: CountSummaryV2;
   functions: CountSummaryV2;
@@ -101,6 +102,8 @@ export interface WikiSearchRecordV2 {
   title: string;
   summary?: string;
   content?: string;
+  /** Exact original body as ordered references into the index's shared raw lines. */
+  contentLineIds?: number[];
   pageId: string;
   anchor?: string;
   nodeId?: string;
@@ -116,6 +119,8 @@ export interface WikiSearchIndexV2 {
   version: 2;
   generatedAt: string;
   records: WikiSearchRecordV2[];
+  /** Lossless body storage. Joining a record's referenced lines with LF restores its Markdown. */
+  contentLines?: string[];
 }
 
 export interface WikiClaimTraceV2 {
@@ -199,6 +204,12 @@ export const MainReadinessSummaryV2Schema = z.strictObject({
 }) satisfies z.ZodType<MainReadinessSummaryV2>;
 
 export const ReferenceCoverageSummaryV2Schema = z.strictObject({
+  scope: z.strictObject({
+    basis: z.literal("full-graph"),
+    totalGraphNodes: z.number().int().nonnegative(),
+    generationNodes: z.number().int().nonnegative(),
+    documentedNodes: z.number().int().nonnegative(),
+  }).optional(),
   status: z.enum(["complete", "partial"]),
   files: CountSummaryV2Schema,
   functions: CountSummaryV2Schema,
@@ -310,6 +321,7 @@ export const WikiSearchRecordV2Schema = z.strictObject({
   title: z.string(),
   summary: z.string().optional(),
   content: z.string().optional(),
+  contentLineIds: z.array(z.number().int().nonnegative()).optional(),
   pageId: z.string(),
   anchor: z.string().optional(),
   nodeId: z.string().optional(),
@@ -319,12 +331,31 @@ export const WikiSearchRecordV2Schema = z.strictObject({
   terms: StringArraySchema,
   businessTerms: StringArraySchema,
   filePath: z.string().optional(),
+}).superRefine((record, context) => {
+  if (record.content !== undefined && record.contentLineIds !== undefined) {
+    context.addIssue({ code: "custom", message: "search content must use one representation", path: ["contentLineIds"] });
+  }
+  if (record.kind === "symbol" && record.contentLineIds !== undefined) {
+    context.addIssue({ code: "custom", message: "symbol records cannot contain page bodies", path: ["contentLineIds"] });
+  }
 }) satisfies z.ZodType<WikiSearchRecordV2>;
 
 export const WikiSearchIndexV2Schema = z.strictObject({
   version: z.literal(2),
   generatedAt: z.string(),
   records: z.array(WikiSearchRecordV2Schema),
+  contentLines: z.array(z.string()).optional(),
+}).superRefine((index, context) => {
+  index.records.forEach((record, recordIndex) => {
+    if (record.contentLineIds !== undefined && index.contentLines === undefined) {
+      context.addIssue({ code: "custom", message: "shared search content requires a line dictionary", path: ["records", recordIndex, "contentLineIds"] });
+    }
+    record.contentLineIds?.forEach((lineId, lineIndex) => {
+      if (index.contentLines === undefined || lineId >= index.contentLines.length) {
+        context.addIssue({ code: "custom", message: "search content line reference is missing", path: ["records", recordIndex, "contentLineIds", lineIndex] });
+      }
+    });
+  });
 }) satisfies z.ZodType<WikiSearchIndexV2>;
 
 export const WikiClaimTraceV2Schema = z.strictObject({
@@ -695,6 +726,11 @@ function validateCountSummary(summary: CountSummaryV2, path: string, errors: str
 }
 
 function validateCountSummaries(index: WikiIndexV2, errors: string[]): void {
+  const scope = index.referenceCoverage.scope;
+  if (scope && (scope.generationNodes > scope.totalGraphNodes || scope.documentedNodes > scope.totalGraphNodes ||
+    scope.totalGraphNodes !== index.nodeDocumentation.length)) {
+    addInvariantError(errors, "referenceCoverage.scope", "覆盖范围必须使用完整图谱且计数不能超出节点总数", "coverage scope must reconcile with the full graph");
+  }
   validateCountSummary(index.referenceCoverage.files, "referenceCoverage.files", errors);
   validateCountSummary(index.referenceCoverage.functions, "referenceCoverage.functions", errors);
   validateCountSummary(index.referenceCoverage.types, "referenceCoverage.types", errors);

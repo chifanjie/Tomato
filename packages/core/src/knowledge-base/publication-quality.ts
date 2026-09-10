@@ -101,7 +101,7 @@ function appendIssue(issues: string[], issue: string): void {
 }
 
 function masked(value: string): string {
-  return value.replace(/[^\r\n]/g, " ");
+  return value.replace(/[^\r\n]+/g, (span) => " ".repeat(span.length));
 }
 
 function maskFencedCode(markdown: string): string {
@@ -145,8 +145,10 @@ function maskInlineCode(markdown: string): string {
   let index = 0;
   while (index < markdown.length) {
     if (markdown[index] !== "`") {
-      result += markdown[index];
-      index += 1;
+      const nextBacktick = markdown.indexOf("`", index);
+      const end = nextBacktick === -1 ? markdown.length : nextBacktick;
+      result += markdown.slice(index, end);
+      index = end;
       continue;
     }
 
@@ -197,17 +199,6 @@ function proseWithoutCode(markdown: string): string {
 export function containsGenericPublicationPhrase(markdown: string): boolean {
   const prose = proseWithoutCode(markdown);
   return GENERIC_PHRASES.some((phrase) => prose.includes(phrase));
-}
-
-function proseForCharacterChecks(markdown: string): string {
-  return proseWithoutCode(markdown)
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(?:#|\|)/.test(line))
-    .join("\n");
-}
-
-function hanCharacterCount(markdown: string): number {
-  return proseForCharacterChecks(markdown).match(/\p{Script=Han}/gu)?.length ?? 0;
 }
 
 function levelTwoHeadings(markdown: string): Set<string> {
@@ -277,13 +268,14 @@ export function evaluatePublication(
   }
 
   const prose = proseWithoutCode(document.content);
-  if (containsGenericPublicationPhrase(document.content)) {
+  if (GENERIC_PHRASES.some((phrase) => prose.includes(phrase))) {
     appendIssue(issues, "正文包含空泛模板语句");
   }
 
-  const insufficientProse = hanCharacterCount(document.content) < MIN_HAN_BY_ROLE[document.role];
+  const characterProse = prose.split(/\r?\n/).filter((line) => !/^\s*(?:#|\|)/.test(line)).join("\n");
+  const insufficientProse = (characterProse.match(/\p{Script=Han}/gu)?.length ?? 0) < MIN_HAN_BY_ROLE[document.role];
   if (insufficientProse) appendIssue(issues, "正文有效中文内容不足");
-  if (TRADITIONAL_ONLY_CHARACTERS.test(proseForCharacterChecks(document.content))) {
+  if (TRADITIONAL_ONLY_CHARACTERS.test(characterProse)) {
     appendIssue(issues, "正文包含非简体中文用字");
   }
 

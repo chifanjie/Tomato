@@ -98,7 +98,15 @@ export interface ProjectMeta {
 }
 
 // Root KnowledgeGraph
+export interface CallResolutionSummary {
+  totalCallSites: number;
+  resolvedCallSites: number;
+  unresolvedCallSites: number;
+  limitations: string[];
+}
+
 export interface KnowledgeGraph {
+  callResolution?: CallResolutionSummary;
   version: string;
   kind?: "codebase" | "knowledge";
   project: ProjectMeta;

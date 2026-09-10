@@ -21,6 +21,7 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { BuildTaskBriefOutputV1Schema, GetTaskBriefOutputV1Schema, RefreshIndexOutputV1Schema, McpToolErrorResultV1Schema } from "../../contracts/dist/index.js";
 
 import { assertProviderBackedPackedWorkbenchBrowserV1 } from "./provider-backed-workbench-browser.mjs";
 
@@ -53,20 +54,6 @@ const EXPECTED_TOOL_NAMES = [
   "trace_impact",
   "refresh_index",
 ];
-const EXPECTED_PUBLIC_MUTATION_FAILURE = {
-  isError: true,
-  content: [{
-    type: "text",
-    text: "The strong Store is unavailable. Run Doctor for details.",
-  }],
-  structuredContent: {
-    error: {
-      schemaVersion: 1,
-      code: "provider_unavailable",
-      details: { reason: "unavailable" },
-    },
-  },
-};
 const CANDIDATE_MANIFEST_FILE = "understand-code-alpha-candidate.json";
 const CANDIDATE_SCHEMA_FILE = "understand-code-alpha-candidate-v1.schema.json";
 const CANDIDATE_CHECKSUM_FILE = "SHA256SUMS";
@@ -632,7 +619,7 @@ async function snapshotManagedArtifactTree(repositoryRoot) {
   return recursiveByteInventory(artifactRoot);
 }
 
-async function exerciseInstalledMutationLocks(options) {
+async function exerciseInstalledLocalTasks(options) {
   const { repositoryRoot, clientName, expectedIndexPath } = options;
   const sourcePath = path.join(repositoryRoot, "src/index.ts");
   const indexPath = await absoluteGitPath(repositoryRoot, "index");
@@ -641,10 +628,9 @@ async function exerciseInstalledMutationLocks(options) {
     expectedIndexPath,
     "the installed plugin must use the pre-audited linked-worktree index",
   );
-  const [sourceBefore, indexBefore, artifactTreeBefore] = await Promise.all([
+  const [sourceBefore, indexBefore] = await Promise.all([
     readFile(sourcePath),
     readFile(indexPath),
-    snapshotManagedArtifactTree(repositoryRoot),
   ]);
   const execution = await withInstalledMcp(
     options,
@@ -665,7 +651,7 @@ async function exerciseInstalledMutationLocks(options) {
         {
           name: "build_task_brief",
           arguments: {
-            task: "Prepare an installed plugin mutation that must remain locked.",
+            task: "Explain the alpha function using its indexed source evidence.",
             expectedRevision: 0,
             idempotencyKey: `${clientName}-build-locked`,
             actor: `agent:${clientName}`,
@@ -742,7 +728,22 @@ async function exerciseInstalledMutationLocks(options) {
         },
       ];
       let requestId = 3;
-      for (const mutation of publicMutations) {
+      const refresh = publicMutations[0];
+      const refreshResult = await callToolResult(child, output, requestId++, refresh.name, refresh.arguments);
+      assert.notEqual(refreshResult.isError, true, JSON.stringify(refreshResult));
+      const refreshed = RefreshIndexOutputV1Schema.parse(refreshResult);
+      assert.equal(refreshed.structuredContent.result.operation.status, "completed");
+      const build = publicMutations[1];
+      const buildResult = await callToolResult(child, output, requestId++, build.name, build.arguments);
+      assert.notEqual(buildResult.isError, true, JSON.stringify(buildResult));
+      const created = BuildTaskBriefOutputV1Schema.parse(buildResult).structuredContent.result;
+      assert.ok(created.evidenceIds.length > 0);
+      const replay = BuildTaskBriefOutputV1Schema.parse(await callToolResult(child, output, requestId++, build.name, build.arguments)).structuredContent.result;
+      assert.equal(replay.task.taskId, created.task.taskId);
+      assert.equal(replay.mutation.idempotentReplay, true);
+      const read = GetTaskBriefOutputV1Schema.parse(await callToolResult(child, output, requestId++, "get_task_brief", { taskId: created.task.taskId, section: "summary" })).structuredContent.result;
+      assert.equal(read.task.taskId, created.task.taskId);
+      for (const mutation of publicMutations.slice(2)) {
         const mutationLabel = mutation.label ?? mutation.name;
         const [mutationSourceBefore, mutationIndexBefore, mutationTreeBefore] =
           await Promise.all([
@@ -757,11 +758,8 @@ async function exerciseInstalledMutationLocks(options) {
           mutation.name,
           mutation.arguments,
         );
-        assert.deepEqual(
-          failure,
-          EXPECTED_PUBLIC_MUTATION_FAILURE,
-          `${mutationLabel} must remain locked behind the unavailable strong Store`,
-        );
+        const rejected = McpToolErrorResultV1Schema.parse(failure);
+        assert.notEqual(rejected.structuredContent.error.code, "provider_unavailable", `${mutationLabel} should reject an absent Task through the local runtime`);
         assert.deepEqual(
           await readFile(sourcePath),
           mutationSourceBefore,
@@ -783,18 +781,14 @@ async function exerciseInstalledMutationLocks(options) {
   assert.deepEqual(
     await readFile(sourcePath),
     sourceBefore,
-    "failed public mutations must not mutate source bytes",
+    "Task operations must not mutate source bytes",
   );
   assert.deepEqual(
     await readFile(indexPath),
     indexBefore,
-    "failed public mutations must not mutate Git index bytes",
+    "Task operations must not mutate Git index bytes",
   );
-  assert.deepEqual(
-    await snapshotManagedArtifactTree(repositoryRoot),
-    artifactTreeBefore,
-    "failed public mutations must leave the managed artifact tree byte-identical",
-  );
+  assert.notEqual(await snapshotManagedArtifactTree(repositoryRoot), null, "successful local operations persist managed Task artifacts");
   return execution;
 }
 
@@ -1350,7 +1344,7 @@ for (const host of ["codex", "claude"]) {
     const output = JSON.parse(result.stdout);
     assert.deepEqual(output.argv, [
       process.execPath, result.cliPath, "mcp", "--stdio",
-      "--root", result.repositoryRoot, "--installation-root", result.activationRoot,
+      "--root", result.repositoryRoot,
     ]);
     assert.equal(output.cwd, result.repositoryRoot);
     assert.equal(output.input, "fixture stdin\n");
@@ -1404,15 +1398,15 @@ test("marketplace wrapper rejects execve errors without spawning a fallback", {
   assert.equal(result.stderr, "host_adapter_unavailable\n");
 });
 
-test("marketplace wrapper checks fixed activation before handing off the CLI", async () => {
+test("local marketplace wrapper runs without a Provider activation", async () => {
   const result = await runSourceWrapperFixture({ activation: false });
-  assert.deepEqual(result.outcome, [1, null]);
-  assert.equal(result.stdout, "");
-  assert.equal(result.stderr, "provider_installation_root_unavailable\n");
+  assert.deepEqual(result.outcome, [17, null]);
+  assert.equal(result.stderr, "fixture stderr\n");
+  assert.deepEqual(JSON.parse(result.stdout).argv, [process.execPath, result.cliPath, "mcp", "--stdio", "--root", result.repositoryRoot]);
 });
 
 test(
-  "marketplace wrapper binds Provider only through its fixed owned activation",
+  "local wrapper ignores ambient Provider selection and explicit CLI rejects tampered activation",
   async () => {
     const sandbox = await realpath(
       await mkdtemp(path.join(tmpdir(), "understand-code-plugin-activation-")),
@@ -1541,7 +1535,7 @@ test(
       );
       const server = await resolveMcpServer(installedRoot, "codex");
       const assertActivationRejected = async (label) => {
-        const child = spawn(server.executable, server.args, {
+        const child = spawn(process.execPath, [installedCli, "mcp", "--stdio", "--root", repositoryRoot, "--installation-root", activationRoot], {
           cwd: repositoryRoot,
           env: poisonedEnvironment,
           stdio: ["ignore", "pipe", "pipe"],
@@ -1582,7 +1576,7 @@ test(
 );
 
 test(
-  "real Codex and Claude plugin lifecycles preserve the public strong-writer lock",
+  "real Codex and Claude plugin lifecycles preserve local Task persistence and rejected-mutation guards",
   async (t) => {
     const originalHome = process.env.HOME ?? "";
     const codexCli = await findExecutable(
@@ -1931,7 +1925,7 @@ test(
         env: codexEnv,
         expectedStatus: "healthy",
       });
-      const codexV1 = await exerciseInstalledMutationLocks({
+      const codexV1 = await exerciseInstalledLocalTasks({
         host: "codex",
         installedRoot: codexInstalledRoot,
         version: v1Version,
@@ -2036,7 +2030,7 @@ test(
         env: claudeEnv,
         expectedStatus: "healthy",
       });
-      const claudeV1 = await exerciseInstalledMutationLocks({
+      const claudeV1 = await exerciseInstalledLocalTasks({
         host: "claude",
         installedRoot: claudeInstalledRoot,
         version: v1Version,
@@ -2324,7 +2318,7 @@ test(
         env: codexEnv,
         expectedStatus: "healthy",
       });
-      await exerciseInstalledMutationLocks({
+      await exerciseInstalledLocalTasks({
         host: "codex",
         installedRoot: codexInstalledRoot,
         version: releases.v2.version,
@@ -2389,7 +2383,7 @@ test(
         env: claudeEnv,
         expectedStatus: "healthy",
       });
-      await exerciseInstalledMutationLocks({
+      await exerciseInstalledLocalTasks({
         host: "claude",
         installedRoot: claudeInstalledRoot,
         version: releases.v2.version,
@@ -2460,7 +2454,7 @@ test(
         env: codexEnv,
         expectedStatus: "healthy",
       });
-      await exerciseInstalledMutationLocks({
+      await exerciseInstalledLocalTasks({
         host: "codex",
         installedRoot: codexInstalledRoot,
         version: v1Version,
@@ -2540,7 +2534,7 @@ test(
         env: claudeEnv,
         expectedStatus: "healthy",
       });
-      await exerciseInstalledMutationLocks({
+      await exerciseInstalledLocalTasks({
         host: "claude",
         installedRoot: claudeInstalledRoot,
         version: v1Version,
@@ -2667,13 +2661,12 @@ test(
 
       for (const root of [
         primaryRepositoryRoot,
-        repositoryRoot,
         ambientRepositoryRoot,
       ]) {
         assert.equal(
           await snapshotManagedArtifactTree(root),
           null,
-          "locked public mutations must not create a managed Store in any repository",
+          "local operations must not create managed artifacts outside the selected linked worktree",
         );
       }
       assert.equal(
@@ -2687,10 +2680,10 @@ test(
       assert.equal(
         (await repositoryGit(
           repositoryRoot,
-          ["status", "--porcelain=v1", "--untracked-files=all"],
+          ["status", "--porcelain=v1", "--untracked-files=all", "--", ".", ":(exclude).understand-code"],
         )).stdout,
         "",
-        "linked worktree must remain completely clean",
+        "linked worktree source must remain clean outside its managed Task artifacts",
       );
       assert.deepEqual(await readFile(primarySourcePath), primarySourceBefore);
       assert.deepEqual(await readFile(primaryIndexPath), primaryIndexBefore);

@@ -1,3 +1,4 @@
+import { localRuntimeCapabilitiesV1 } from "./runtime/capabilities.js";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 
@@ -52,6 +53,7 @@ export type HostRegistrationDoctorResultV1 = Readonly<{
   readiness: "alpha";
   releaseReady: false;
   strongWrites: "locked";
+  capabilities: ReturnType<typeof localRuntimeCapabilitiesV1>;
   host: HostRegistrationDoctorHostV1;
   hostRegistration: "registered" | "not_registered" | "unknown";
   status: "healthy" | "not_registered" | "unhealthy" | "unavailable";
@@ -236,6 +238,7 @@ function result(
     readiness: "alpha",
     releaseReady: false,
     strongWrites: "locked",
+    capabilities: localRuntimeCapabilitiesV1(),
     host,
     hostRegistration,
     status,

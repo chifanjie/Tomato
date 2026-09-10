@@ -4,13 +4,13 @@ import type {
   WikiDocumentRole,
   WikiSearchRecordV2,
 } from "@understand-code/core/knowledge-base";
-import { normalizeLegacySearchRecordsBranding } from "../legacyBranding";
+import { normalizeLegacySearchArtifactBranding } from "../legacyBranding";
 import { dashboardFetchInit, withDashboardAccess } from "../workbench/transport";
 
 export type SearchLoadStatus = "idle" | "loading" | "ready" | "fallback";
 
 export type SearchArtifactLoadResult =
-  | { status: "ready"; records: WikiSearchRecordV2[] }
+  | { status: "ready"; records: WikiSearchRecordV2[]; contentLines?: readonly string[] }
   | { status: "missing" | "invalid" | "forbidden" | "error"; records: [] };
 
 export interface SearchArtifactRequestSnapshot {
@@ -48,7 +48,7 @@ function optionalStrings(item: Record<string, unknown>, fields: readonly string[
   return fields.every((field) => item[field] === undefined || typeof item[field] === "string");
 }
 
-function searchRecord(value: unknown): value is WikiSearchRecordV2 {
+function searchRecord(value: unknown, contentLines?: readonly string[]): value is WikiSearchRecordV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   if (
@@ -66,6 +66,8 @@ function searchRecord(value: unknown): value is WikiSearchRecordV2 {
     || !strings(item.businessTerms)
     || !optionalStrings(item, ["summary", "content", "anchor", "nodeId", "filePath"])
   ) return false;
+  if (item.contentLineIds !== undefined && (item.content !== undefined || contentLines === undefined
+    || !Array.isArray(item.contentLineIds) || !item.contentLineIds.every((id) => Number.isInteger(id) && id >= 0 && id < contentLines.length))) return false;
 
   return item.kind !== "symbol"
     || (
@@ -74,6 +76,7 @@ function searchRecord(value: unknown): value is WikiSearchRecordV2 {
       && typeof item.nodeId === "string"
       && item.nodeId.trim().length > 0
       && item.content === undefined
+      && item.contentLineIds === undefined
       && item.businessTerms.length === 0
     );
 }
@@ -105,17 +108,19 @@ export async function loadSearchArtifact(
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return { status: "invalid", records: [] };
     }
-    const payload = value as { version?: unknown; records?: unknown };
+    const payload = value as { version?: unknown; records?: unknown; contentLines?: unknown };
+    if (payload.contentLines !== undefined && !strings(payload.contentLines)) return { status: "invalid", records: [] };
+    const contentLines = payload.contentLines as string[] | undefined;
     if (
       payload.version !== 2
       || !Array.isArray(payload.records)
-      || !payload.records.every(searchRecord)
+      || !payload.records.every((record) => searchRecord(record, contentLines))
     ) {
       return { status: "invalid", records: [] };
     }
     return {
       status: "ready",
-      records: normalizeLegacySearchRecordsBranding(payload.records),
+      ...normalizeLegacySearchArtifactBranding(payload.records, contentLines),
     };
   } catch {
     return { status: "error", records: [] };

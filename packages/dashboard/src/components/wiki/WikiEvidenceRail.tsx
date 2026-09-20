@@ -137,7 +137,7 @@ export default function WikiEvidenceRail({
           />
         </details>
 
-        <details className="uc-evidence-section">
+        {contextPages.length > 0 && <details className="uc-evidence-section">
           <summary>
             <span id="wiki-context-pages-heading">相关资料</span>
             <span aria-label={"共 " + contextPages.length + " 篇"}>{contextPages.length}</span>
@@ -147,7 +147,7 @@ export default function WikiEvidenceRail({
             emptyText="暂无补充背景资料。"
             onOpenPage={onOpenPage}
           />
-        </details>
+        </details>}
 
         <details className="uc-evidence-section">
           <summary>

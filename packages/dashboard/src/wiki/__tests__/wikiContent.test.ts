@@ -14,6 +14,7 @@ import {
   wikiPageHash,
   wikiPageIdFromHash,
   wikiMarkdownUrl,
+  wikiMarkdownErrorMessage,
 } from "../wikiContent";
 
 describe("wikiContent", () => {
@@ -88,6 +89,26 @@ describe("wikiContent", () => {
       .rejects.toThrow("找不到这篇 Markdown 文档");
     await expect(loadWikiMarkdown("empty.md", { fetcher: empty, baseUrl: "/", search: "" }))
       .rejects.toThrow("没有正文内容");
+  });
+
+  it("rejects HTML application shells returned with a successful HTTP status", async () => {
+    for (const response of [
+      new Response("<!doctype html><html><body><div id=\"root\"></div></body></html>"),
+      new Response("app shell", { headers: { "Content-Type": "text/html" } }),
+    ]) {
+      await expect(loadWikiMarkdown("目录.md", { fetcher: async () => response, baseUrl: "/", search: "" }))
+        .rejects.toThrow("返回了网页而非 Markdown");
+    }
+  });
+
+  it("shows known missing-document errors while hiding unexpected transport details", async () => {
+    try {
+      await loadWikiMarkdown("missing.md", { fetcher: async () => new Response("", { status: 404 }), baseUrl: "/", search: "" });
+      throw new Error("unexpected successful load");
+    } catch (error) {
+      expect(wikiMarkdownErrorMessage(error)).toContain("找不到这篇 Markdown 文档");
+    }
+    expect(wikiMarkdownErrorMessage(new Error("private transport detail"))).not.toContain("private");
   });
 
   it("removes a duplicate leading title but preserves a different heading", () => {

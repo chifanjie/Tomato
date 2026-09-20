@@ -71,6 +71,22 @@ describe("WikiPageView Markdown and anchors", () => {
     await act(async () => root.unmount());
   });
 
+  it("shows a recoverable error when removing the duplicate title leaves no body", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const payload = wikiV2Fixture();
+    const page = payload.pages[0]!;
+    vi.stubGlobal("fetch", async () => new Response(`# ${page.title}\n`, { headers: { "Content-Type": "text/markdown" } }));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(WikiPageView, { page, pages: payload.pages }));
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("没有正文内容");
+    expect(container.textContent).toContain("重新加载");
+    await act(async () => root.unmount());
+  });
+
   it("uses preset status tokens for both Wiki recovery states", () => {
     expect(PAGE_SOURCE).not.toMatch(/(?:border|bg)-(?:amber|red)-/);
     expect(PAGE_SOURCE.match(/uc-wiki-recovery/g)).toHaveLength(2);

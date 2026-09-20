@@ -534,9 +534,9 @@ body {
 
 .uc-article-page {
   box-sizing: border-box;
-  width: min(100%, 760px);
+  width: min(100%, 1120px);
   margin: 0 auto;
-  padding: 48px 44px 72px;
+  padding: 36px clamp(24px, 3vw, 48px) 72px;
 }
 
 .uc-article-header {
@@ -622,14 +622,65 @@ body {
   border: 1px solid var(--color-border-subtle);
   border-radius: 8px;
 }
-.uc-prose-table { width: 100%; min-width: 560px; border-collapse: collapse; text-align: left; font-size: 14px; }
+.uc-prose-table { width: 100%; min-width: 680px; border-collapse: collapse; text-align: left; font-size: 14px; }
 .uc-prose-table-head { background: var(--color-elevated); color: var(--color-text-primary); }
 .uc-prose-table-heading,
-.uc-prose-table-cell { padding: 12px 16px; border-right: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); }
+.uc-prose-table-cell { padding: 11px 14px; border-right: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); }
 .uc-prose-table-heading:last-child,
 .uc-prose-table-cell:last-child { border-right: 0; }
-.uc-prose-table-heading { font-weight: 650; }
-.uc-prose-table-cell { color: var(--color-text-secondary); line-height: 1.6; vertical-align: top; }
+.uc-prose-table-heading { font-weight: 650; white-space: nowrap; }
+.uc-prose-table-cell { min-width: 5.5rem; overflow-wrap: anywhere; color: var(--color-text-secondary); line-height: 1.6; vertical-align: top; }
+
+
+/* File locations stay readable within paragraphs and narrow table cells. */
+.uc-wiki-path-chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  max-width: 100%; vertical-align: baseline; border-radius: 5px;
+  padding: 1px 6px; border: 1px solid var(--color-border-subtle);
+  background: var(--color-elevated); color: var(--color-text-primary);
+}
+.uc-wiki-path-chip > svg { flex: none; align-self: center; color: var(--color-text-muted); }
+.uc-wiki-file-path { min-width: 0; overflow-wrap: anywhere; font: 0.86em/1.7 var(--font-mono); }
+.uc-wiki-path-chip button { flex: none; align-self: center; padding: 4px; border-radius: 3px; color: var(--color-text-muted); }
+.uc-wiki-path-chip button:hover { color: var(--color-accent); background: var(--color-surface); }
+.uc-wiki-path-status { color: var(--color-accent); font: 11px/1.5 var(--font-sans); }
+.uc-wiki-path-chip button:focus-visible,
+.uc-prose-table-wrap:focus-visible,
+.uc-prose-pre:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.uc-prose-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-elevated) 45%, transparent); }
+.uc-prose-table tbody tr:hover { background: var(--color-elevated); }
+.uc-prose-table-cell:first-child { min-width: 3rem; }
+.uc-prose-table-cell:last-child { min-width: 10rem; }
+.uc-prose .contains-task-list { list-style: none; padding-left: 4px; }
+.uc-prose .task-list-item input { margin-right: 8px; }
+.uc-resource-reference { position: relative; }
+.uc-resource-link { display: inline; text-align: inherit; color: var(--color-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent); }
+.uc-resource-link-icon { margin-left: 4px; font-size: 0.78em; opacity: .75; }
+.uc-resource-panel { display: block; min-width: 0; margin: 10px 0; padding: 12px; border: 1px solid var(--color-border-medium); border-radius: 7px; background: var(--color-surface); color: var(--color-text-secondary); text-align: left; font-weight: 400; }
+.uc-resource-panel-heading { display: block; font-size: 13px; font-weight: 650; color: var(--color-text-primary); }
+.uc-resource-path { display: block; margin: 6px 0; font: 12px/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.uc-resource-message { display: block; margin: 6px 0; font-size: 13px; line-height: 1.6; }
+.uc-resource-code { display: block; max-height: 320px; overflow: auto; margin: 10px 0; padding: 8px 0; background: var(--color-elevated); font: 12px/1.7 var(--font-mono); white-space: pre; }
+.uc-resource-code-line { display: block; min-width: max-content; padding-right: 12px; }
+.uc-resource-code-line[data-highlighted="true"] { background: var(--color-accent-overlay-bg); box-shadow: inset 2px 0 var(--color-accent); }
+.uc-resource-line-number { display: inline-block; min-width: 4em; padding: 0 10px; color: var(--color-text-muted); user-select: none; }
+.uc-resource-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.uc-resource-actions button { min-height: 32px; padding: 3px 10px; border: 1px solid var(--color-border-subtle); border-radius: 4px; color: var(--color-accent); font-size: 12px; }
+.uc-resource-reference button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.uc-wiki-diagram { margin: 24px 0; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 8px; background: var(--color-surface); }
+.uc-wiki-diagram-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--color-border-subtle); font-size: 13px; font-weight: 650; color: var(--color-text-primary); }
+.uc-wiki-diagram-canvas { overflow: auto; padding: 20px 16px; background: var(--color-surface); }
+.uc-wiki-diagram-canvas svg { display: block; min-width: 360px; max-width: 100%; height: auto; margin: 0 auto; }
+.uc-wiki-diagram-canvas svg text, .uc-wiki-diagram-canvas .label { fill: var(--color-text-primary) !important; color: var(--color-text-primary) !important; }
+.uc-wiki-diagram-canvas .node :is(rect, circle, ellipse, polygon, path) { fill: var(--color-elevated) !important; stroke: var(--color-accent) !important; }
+.uc-wiki-diagram-canvas .flowchart-link { stroke: var(--color-text-muted) !important; }
+.uc-wiki-diagram-canvas .marker { fill: var(--color-text-muted) !important; stroke: var(--color-text-muted) !important; }
+.uc-wiki-diagram-canvas .edgeLabel rect { fill: var(--color-surface) !important; }
+.uc-wiki-diagram-canvas .cluster rect { fill: var(--color-surface) !important; stroke: var(--color-border-medium) !important; }
+.uc-wiki-diagram-source { border-top: 1px solid var(--color-border-subtle); padding: 10px 16px; color: var(--color-text-muted); font-size: 13px; }
+.uc-wiki-diagram-source summary { cursor: pointer; }
+.uc-wiki-diagram-source pre { margin: 10px 0; }
+.uc-wiki-diagram-error { padding: 14px 16px; color: var(--color-text-secondary); font-size: 13px; }
 
 .uc-evidence-section {
   padding: 18px 0;

@@ -17,6 +17,15 @@ export interface WikiMarkdownLoadOptions {
   baseUrl?: string;
 }
 
+/** Only messages produced by the Markdown loader are safe to show verbatim. */
+export class WikiMarkdownLoadError extends Error {}
+
+export function wikiMarkdownErrorMessage(error: unknown): string {
+  return error instanceof WikiMarkdownLoadError
+    ? error.message
+    : "文档加载失败，请检查网络后重试。";
+}
+
 export function wikiPageHash(pageId: string): string {
   return wikiTargetHash({ pageId });
 }
@@ -224,16 +233,20 @@ export async function loadWikiMarkdown(
 
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("没有读取这篇文档的权限，请重新打开知识库链接");
+      throw new WikiMarkdownLoadError("没有读取这篇文档的权限，请重新打开知识库链接");
     }
     if (response.status === 404) {
-      throw new Error("找不到这篇 Markdown 文档，可能尚未生成或索引已过期");
+      throw new WikiMarkdownLoadError("找不到这篇 Markdown 文档，可能尚未生成或索引已过期");
     }
-    throw new Error(`文档加载失败（HTTP ${response.status}）`);
+    throw new WikiMarkdownLoadError(`文档加载失败（HTTP ${response.status}）`);
   }
 
   const markdown = await response.text();
-  if (!markdown.trim()) throw new Error("这篇文档目前没有正文内容");
+  if (/\btext\/html\b/iu.test(response.headers.get("content-type") ?? "")
+    || /^\s*(?:<!doctype\s+html\b|<html\b)/iu.test(markdown)) {
+    throw new WikiMarkdownLoadError("文档地址返回了网页而非 Markdown，请检查知识库发布状态后重试");
+  }
+  if (!markdown.trim()) throw new WikiMarkdownLoadError("这篇文档目前没有正文内容");
   return normalizeLegacyMarkdownBranding(markdown);
 }
 

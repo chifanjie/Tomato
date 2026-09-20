@@ -53,12 +53,10 @@ const projection = {
 };
 
 function response(status: number, body: unknown) {
-  return {
-    ok: status >= 200 && status < 300,
+  return new Response(typeof body === "string" ? body : JSON.stringify(body), {
     status,
-    json: async () => body,
-    text: async () => typeof body === "string" ? body : JSON.stringify(body),
-  } as Response;
+    headers: { "Content-Type": typeof body === "string" ? "text/markdown" : "application/json" },
+  });
 }
 
 afterEach(() => {

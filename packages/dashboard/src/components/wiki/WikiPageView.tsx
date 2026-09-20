@@ -1,13 +1,24 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { KnowledgeFetchContext } from "../../workbench/publishedKnowledge";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import type { RootContent } from "mdast";
+import remarkWikiPaths, { isWikiFilePath } from "../../wiki/remarkWikiPaths";
+import WikiMermaidDiagram from "./WikiMermaidDiagram";
+import { remarkWikiFormatting } from "../../wiki/remarkWikiFormatting";
+import WikiFilePath, { WikiPathInLink } from "./WikiFilePath";
+import { WikiResourceLink } from "./WikiResourceLink";
+import { inferWikiRepositoryRoot, isWikiLocalResourceHref } from "../../wiki/wikiResourceLinks";
 import type { WikiDocumentCategory, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import { useDashboardStore } from "../../store";
 import {
   buildWikiMarkdownPageLookup,
   extractExplicitAnchors,
   loadWikiMarkdown,
+  wikiMarkdownErrorMessage,
+  WikiMarkdownLoadError,
   markdownWithoutDuplicateTitle,
   markdownWithoutExplicitAnchors,
   nextMarkdownFenceState,
@@ -44,7 +55,7 @@ const CATEGORY_LABELS: Record<WikiDocumentCategory, string> = {
   capability: "业务能力",
   flow: "业务流程",
   module: "核心模块",
-  topic: "函数与类型",
+  topic: "专题文档",
   file: "文件说明",
   quality: "质量报告",
   coverage: "覆盖情况",
@@ -71,6 +82,17 @@ function outlineHeadingId(line: number, _text: string): string {
 export function extractWikiOutline(markdown: string): WikiOutlineHeading[] {
   const headings: WikiOutlineHeading[] = [];
   const explicitAnchors = extractExplicitAnchors(markdown);
+  const headingTexts = new Map<number, string>();
+  const textOf = (node: RootContent): string => {
+    if ("value" in node) return node.value;
+    if ("children" in node) return node.children.map(child => textOf(child as RootContent)).join("");
+    return "alt" in node ? node.alt ?? "" : "";
+  };
+  const visit = (node: RootContent) => {
+    if (node.type === "heading" && node.position) headingTexts.set(node.position.start.line, textOf(node));
+    if ("children" in node) node.children.forEach(child => visit(child as RootContent));
+  };
+  unified().use(remarkParse).parse(markdown).children.forEach(visit);
   let fence: MarkdownFenceState | null = null;
   markdown.split(/\r?\n/).forEach((line, index) => {
     const wasFenced = fence !== null;
@@ -82,7 +104,7 @@ export function extractWikiOutline(markdown: string): WikiOutlineHeading[] {
     const match = line.match(/^\s*(#{2,4})(?!#)\s+(.+?)\s*#*\s*$/);
     if (!match) return;
     const level = match[1]?.length as 2 | 3 | 4;
-    const text = (match[2] ?? "").replace(/[`*_~]/g, "").trim();
+    const text = (headingTexts.get(index + 1) ?? (match[2] ?? "").replace(/[`*_~]/g, "")).trim();
     if (!text) return;
     const heading = {
       id: explicitAnchors.get(index + 1) ?? outlineHeadingId(index + 1, text),
@@ -118,8 +140,10 @@ export function findWikiAnchorTarget(
   article: Pick<HTMLElement, "querySelectorAll">,
   anchor: string,
 ): HTMLElement | null {
-  return [...article.querySelectorAll<HTMLElement>("[id]")]
-    .find((element) => element.id === anchor) ?? null;
+  const elements = [...article.querySelectorAll<HTMLElement>("[id]")];
+  return elements.find((element) => element.id === anchor)
+    ?? elements.find((element) => element.dataset.wikiAnchor === anchor)
+    ?? null;
 }
 
 export function scrollWikiAnchor(
@@ -139,6 +163,15 @@ function reactNodeText(value: unknown): string {
     return reactNodeText((value as { props?: { children?: unknown } }).props?.children);
   }
   return "";
+}
+
+function readMarkdownCodeBlock(node: ExtraProps["node"]): { source: string; className: string } {
+  const code = node?.children.find((child) => child.type === "element" && child.tagName === "code");
+  if (code?.type !== "element") return { source: "", className: "" };
+  return {
+    source: code.children.map((child) => child.type === "text" ? child.value : "").join(""),
+    className: String(code.properties.className ?? ""),
+  };
 }
 
 function chineseSummary(value: string): string {
@@ -173,68 +206,75 @@ export function WikiMarkdownDocument({
   headings: WikiOutlineHeading[];
   onSelectTarget: (target: WikiTarget) => void;
 }) {
+  const wikiPayload = useDashboardStore((store) => store.wikiIndex.payload);
+  const referencePage = wikiPayload?.pages.find((page) => page.category === "file" && page.markdownPath === currentMarkdownPath);
+  const boundEvidenceIds = new Set(referencePage?.evidenceIds ?? []);
+  const boundFilePaths = wikiPayload?.evidence.filter((item) => boundEvidenceIds.has(item.id)).map((item) => item.filePath);
+  const repositoryRoot = inferWikiRepositoryRoot(markdown, boundFilePaths);
+  const slugCounts = new Map<string, number>();
+  const naturalAnchors = new Map(headings.map((heading) => {
+    const slug = heading.text.toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").trim().replace(/\s/g, "-");
+    const count = slugCounts.get(slug) ?? 0;
+    slugCounts.set(slug, count + 1);
+    return [heading.id, count ? `${slug}-${count}` : slug];
+  }));
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      urlTransform={(url, key) => key === "href" && isWikiLocalResourceHref(url) ? url : defaultUrlTransform(url)}
+      remarkPlugins={[remarkGfm, remarkWikiFormatting, remarkWikiPaths]}
       components={{
         h1: ({ children }) => <h1 className="uc-prose-h1">{children}</h1>,
         h2: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 2, text);
-          return <h2 id={id} className="uc-prose-h2 scroll-mt-4">{children}</h2>;
+          return <h2 id={id} data-wiki-anchor={naturalAnchors.get(id)} className="uc-prose-h2 scroll-mt-4">{children}</h2>;
         },
         h3: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 3, text);
-          return <h3 id={id} className="uc-prose-h3 scroll-mt-4">{children}</h3>;
+          return <h3 id={id} data-wiki-anchor={naturalAnchors.get(id)} className="uc-prose-h3 scroll-mt-4">{children}</h3>;
         },
         h4: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 4, text);
-          return <h4 id={id} className="uc-prose-h4 scroll-mt-4">{children}</h4>;
+          return <h4 id={id} data-wiki-anchor={naturalAnchors.get(id)} className="uc-prose-h4 scroll-mt-4">{children}</h4>;
         },
         p: ({ children }) => <p className="uc-prose-paragraph">{children}</p>,
-        a: ({ href, children }) => {
-          const external = /^(?:https?:)?\/\//i.test(href ?? "");
-          const target = resolveWikiPageViewLinkTarget(currentMarkdownPath, href, pageIdByMarkdownPath);
-          return (
-            <a
-              href={target ? wikiTargetHash(target) : href}
-              onClick={target ? (event) => {
-                event.preventDefault();
-                onSelectTarget(target);
-              } : undefined}
-              target={external ? "_blank" : undefined}
-              rel={external ? "noreferrer" : undefined}
-              className="uc-prose-link"
-            >
-              {children}
-            </a>
-          );
-        },
+        a: ({ href, children }) => (
+          <WikiPathInLink.Provider value={true}>
+            <WikiResourceLink href={href} currentMarkdownPath={currentMarkdownPath}
+              pageIdByMarkdownPath={pageIdByMarkdownPath} repositoryRoot={repositoryRoot}
+              onSelectTarget={onSelectTarget}>{children}</WikiResourceLink>
+          </WikiPathInLink.Provider>
+        ),
         strong: ({ children }) => <strong className="uc-prose-strong">{children}</strong>,
-        ul: ({ children }) => <ul className="uc-prose-list uc-prose-list-unordered">{children}</ul>,
-        ol: ({ children }) => <ol className="uc-prose-list uc-prose-list-ordered">{children}</ol>,
-        li: ({ children }) => <li className="uc-prose-list-item">{children}</li>,
+        ul: ({ children, className }) => <ul className={`uc-prose-list uc-prose-list-unordered ${className ?? ""}`}>{children}</ul>,
+        ol: ({ children, start }) => <ol start={start} className="uc-prose-list uc-prose-list-ordered">{children}</ol>,
+        li: ({ children, className }) => <li className={`uc-prose-list-item ${className ?? ""}`}>{children}</li>,
         blockquote: ({ children }) => <blockquote className="uc-prose-blockquote">{children}</blockquote>,
         hr: () => <hr className="uc-prose-rule" />,
-        pre: ({ children }) => <pre className="uc-prose-pre">{children}</pre>,
-        code: ({ className, children }) => className ? (
-          <code className={`${className} uc-prose-code-block`}>{children}</code>
-        ) : (
-          <code className="uc-prose-code-inline">{children}</code>
-        ),
+        pre: ({ node }) => {
+          const { source, className } = readMarkdownCodeBlock(node);
+          if (className.split(/[ ,]+/).includes("language-mermaid")) return <WikiMermaidDiagram source={source} />;
+          return <pre className="uc-prose-pre" tabIndex={0}><code className={`${className} uc-prose-code-block`}>{source}</code></pre>;
+        },
+        code: ({ children }) => {
+          const text = reactNodeText(children);
+          return isWikiFilePath(text)
+            ? <WikiFilePath path={text} />
+            : <code className="uc-prose-code-inline">{children}</code>;
+        },
         table: ({ children }) => (
-          <div className="uc-prose-table-wrap">
+          <div className="uc-prose-table-wrap" tabIndex={0} role="region" aria-label="文档表格，可横向滚动">
             <table className="uc-prose-table">{children}</table>
           </div>
         ),
         thead: ({ children }) => <thead className="uc-prose-table-head">{children}</thead>,
-        th: ({ children }) => <th className="uc-prose-table-heading">{children}</th>,
-        td: ({ children }) => <td className="uc-prose-table-cell">{children}</td>,
+        th: ({ children, style }) => <th style={style} className="uc-prose-table-heading">{children}</th>,
+        td: ({ children, style }) => <td style={style} className="uc-prose-table-cell">{children}</td>,
       }}
     >
       {markdown}
@@ -282,6 +322,7 @@ function LoadedWikiPageView({
     loadWikiMarkdown(page.markdownPath, { signal: controller.signal, fetcher })
       .then((markdown) => {
         const content = markdownWithoutDuplicateTitle(markdown, page.title);
+        if (!content.trim()) throw new WikiMarkdownLoadError("这篇文档目前没有正文内容");
         const headings = extractWikiOutline(content);
         setState({
           pageId: page.id,
@@ -298,7 +339,7 @@ function LoadedWikiPageView({
           pageId: page.id,
           status: "error",
           markdown: "",
-          error: "文档加载失败，请检查网络后重试。",
+          error: wikiMarkdownErrorMessage(error),
         });
       });
 
@@ -368,7 +409,7 @@ function LoadedWikiPageView({
     >
       <article ref={articleRef} aria-label="文档正文" className="uc-article-page">
         <header className="uc-article-header">
-          <p className="text-xs font-semibold tracking-[0.16em] text-accent">{CATEGORY_LABELS[page.category]}</p>
+          <p className="text-xs font-semibold tracking-[0.16em] text-accent">{/目录(?:\.md)?$/.test(page.title) ? "知识库目录" : CATEGORY_LABELS[page.category]}</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary">{page.title}</h1>
           <p className="mt-4 max-w-3xl break-words text-base leading-7 text-text-secondary [overflow-wrap:anywhere]">{chineseSummary(page.summary)}</p>
           <div className="mt-5 flex flex-wrap gap-2 text-xs text-text-muted">

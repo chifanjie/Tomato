@@ -808,6 +808,93 @@ describe("workbench runtime session", () => {
     await session.close();
   });
 
+  it.each(["started", "reused"] as const)("keeps an unopened %s launch link usable for 24 hours without allowing replay", async (disposition) => {
+    const root = await runtimeRoot("workbench-delayed-launch-");
+    const route = { view: "knowledge" } as const;
+    let clock = Date.parse("2026-09-20T00:00:00Z");
+    const options = { ...binding(root), now: () => clock };
+    const first = await openWorkbenchSessionV1({ route }, options);
+    try {
+      if (disposition === "reused") clock += 60_000;
+      const session = disposition === "reused" ? await openWorkbenchSessionV1({ route }, options) : first;
+      const issuedAt = clock;
+      const result = session.output.structuredContent.result;
+      expect(result.runtime.disposition).toBe(disposition);
+      const url = new URL(result.deepLink);
+      const token = url.hash.slice(1);
+      const launchRequest = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) };
+      clock += 24 * 60 * 60 * 1_000 - 1;
+      const launch = await fetch(`${url.origin}/__workbench/launch`, launchRequest);
+      expect(launch.status).toBe(200);
+      expect(Date.parse(result.launchTokenExpiresAt)).toBe(issuedAt + 24 * 60 * 60 * 1_000);
+      const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+      const page = await fetch(result.deepLink, { headers: { cookie } });
+      expect(await page.text()).toBe(DASHBOARD_INDEX);
+      expect((await fetch(`${url.origin}/__workbench/launch`, launchRequest)).status).toBe(401);
+    } finally { await first.close(); }
+  });
+
+  it.each(["started", "reused"] as const)("expires an unopened %s launch link at the 24-hour boundary", async (disposition) => {
+    const root = await runtimeRoot("workbench-launch-boundary-");
+    const route = { view: "knowledge" } as const;
+    let clock = Date.parse("2026-09-20T00:00:00Z");
+    const options = { ...binding(root), now: () => clock };
+    const first = await openWorkbenchSessionV1({ route }, options);
+    try {
+      if (disposition === "reused") clock += 60_000;
+      const session = disposition === "reused" ? await openWorkbenchSessionV1({ route }, options) : first;
+      const url = new URL(session.output.structuredContent.result.deepLink);
+      clock += 24 * 60 * 60 * 1_000;
+      const launch = await fetch(`${url.origin}/__workbench/launch`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: url.hash.slice(1) }),
+      });
+      expect(launch.status).toBe(401);
+      expect(launch.headers.get("set-cookie")).toBeNull();
+      expect((await fetch(`${url.origin}/assets/index-test.js`)).status).toBe(401);
+    } finally { await first.close(); }
+  });
+
+  it("keeps an idle browser session usable for 24 hours from redemption and then expires it despite activity", async () => {
+    const root = await runtimeRoot("workbench-browser-lifetime-");
+    let clock = Date.parse("2026-09-20T00:00:00Z");
+    const session = await openWorkbenchSessionV1({ route: { view: "knowledge" } }, { ...binding(root), now: () => clock });
+    try {
+      const url = new URL(session.output.structuredContent.result.deepLink);
+      clock += 30_000;
+      const launch = await fetch(`${url.origin}/__workbench/launch`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: url.hash.slice(1) }),
+      });
+      expect(launch.status).toBe(200);
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      clock += 24 * 60 * 60 * 1_000 - 1;
+      const page = await fetch(url, { headers });
+      expect(await page.text()).toBe(DASHBOARD_INDEX);
+      expect((await fetch(`${url.origin}/assets/index-test.js`, { headers })).status).toBe(200);
+      clock += 1;
+      expect((await fetch(`${url.origin}/assets/index-test.js`, { headers })).status).toBe(401);
+      const expiredPage = await fetch(url, { headers });
+      expect(await expiredPage.text()).toContain("/__workbench/bootstrap.js");
+    } finally { await session.close(); }
+  });
+
+  it("accepts a 24-hour launch TTL and rejects invalid or longer lifetimes", async () => {
+    const root = await runtimeRoot("workbench-launch-ttl-");
+    let clock = 1_000;
+    const session = await openWorkbenchSessionV1({ route: { view: "knowledge" } }, {
+      ...binding(root), launchTokenTtlMs: 24 * 60 * 60 * 1_000, now: () => clock,
+    });
+    try {
+      clock += 2 * 60 * 60 * 1_000;
+      const token = new URL(session.output.structuredContent.result.deepLink).hash.slice(1);
+      expect(session.redeemLaunchToken(token).route).toEqual({ view: "knowledge" });
+      for (const launchTokenTtlMs of [0, -1, 1.5, NaN, Infinity, 24 * 60 * 60 * 1_000 + 1]) {
+        await expect(openWorkbenchSessionV1({ route: { view: "knowledge" } }, {
+          ...binding(root), launchTokenTtlMs,
+        })).rejects.toMatchObject({ code: "invalid_input" });
+      }
+    } finally { await session.close(); }
+  });
+
   it("rejects relative roots and expires launch tokens without allowing replay", async () => {
     await expect(
       openWorkbenchSessionV1(

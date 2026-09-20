@@ -37,10 +37,10 @@ import {
   WorktreeIdSchema,
 } from "@understand-code/contracts/primitives";
 
-const DEFAULT_LAUNCH_TTL_MS = 60_000;
-const MAX_LAUNCH_TTL_MS = 60_000;
-const SESSION_TTL_MS = 8 * 60 * 60 * 1_000;
-const SESSION_IDLE_TTL_MS = 30 * 60 * 1_000;
+const DEFAULT_LAUNCH_TTL_MS = 24 * 60 * 60 * 1_000;
+const MAX_LAUNCH_TTL_MS = DEFAULT_LAUNCH_TTL_MS;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
+const SESSION_IDLE_TTL_MS = SESSION_TTL_MS;
 const LOOPBACK_HOST = "127.0.0.1" as const;
 
 export interface WorkbenchRuntimeBindingV1 {
@@ -425,7 +425,7 @@ export type WorkbenchUiModeV1 =
   | typeof LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1;
 
 interface OpenWorkbenchSessionBaseOptionsV1 extends WorkbenchRuntimeBindingV1 {
-  /** Defaults to the frozen 60 second launch-token TTL. */
+  /** Defaults to 24 hours, which is also the maximum launch-token TTL. */
   readonly launchTokenTtlMs?: number;
   /** Injected clock is intentionally kept local/test-only and never serialized. */
   readonly now?: () => number;

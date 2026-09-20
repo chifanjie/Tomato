@@ -21,6 +21,8 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 宿主负责调用工具。首次创建任务会初始化缺失的索引；普通使用者不需要在目标仓库安装本工具的 npm 依赖或手工运行分析脚本。任务页能查看历史、从自然语言主张跳到证据与源码、查看变更差异，再进入图谱或 Wiki 并返回原任务。页面可见时每 10 秒读取任务修订版，也可手动刷新。
 
+Workbench 链接现在默认可在生成后的 **24 小时内首次打开**；打开后浏览器会话的最长有效期和空闲超时均为 **24 小时**。链接仍为一次性，且链接和已打开页面都依赖 MCP 运行进程持续运行。更新后需先构建或安装新版运行时、重启 MCP 服务，再由宿主调用 `open_workbench` 生成新链接；已经过期或使用过的旧链接不会自动续期。
+
 接着在同一会话说明需要修改的内容。宿主实际修改源码、重新建立当前快照、执行变更检查与测试，再将真实命令、退出码、快照和结果记录到同一个 Task。源码索引不会自动完成业务理解；业务结论由宿主阅读源码后形成，并保留证据、推断理由和未知边界。确定性 Wiki 诊断稿不能充当正式知识发布。
 
 分别确认以下状态，不要用其中一项代替另外三项：
@@ -639,6 +641,7 @@ UNDERSTAND_NO_WORKTREE_REDIRECT=1
 | `No knowledge graph found` | 目标目录没有图谱 | 先运行 `/understand --full`，再运行 chat/explain/kb/onboard/diff |
 | 同一个 commit 不重新分析 | 增量决策认为图谱仍对应当前 commit | 明确运行 `/understand --full`，或选择 `--review` |
 | Dashboard 显示 `Access Token Required` | URL 丢了 `?token=`，或令牌被截断 | 从终端重新复制完整 URL；必要时手动粘贴 token |
+| Workbench 提示“请从宿主重新打开工作台链接。” | 启动链接或浏览器会话已失效，或 MCP 运行进程已重启 | 让宿主再次调用 `open_workbench`，打开新的一次性链接；新版首次打开期限及浏览器会话最长有效期均为 24 小时，使用时保持 MCP 进程运行。升级后需重启服务并重新生成链接 |
 | Dashboard 没有知识库 | KB 尚未生成、路径不一致或仍在生成 | 检查 `.understand-code/knowledge-base/`，使用同一个项目路径重新运行 `/understand-kb` |
 | 知识库中断或有失败批次 | 进程中止、内存不足或某个 writer 批次失败 | 先运行 `/understand-kb --resume`；需要诊断时使用高级 `--retry`，查看 `覆盖报告.md` 和 `.trace/generation-report.json` |
 | 图谱节点明显少 | `.understandignore` 排除了源码，或图谱来自旧 commit | 检查忽略文件，确认 `meta.json`，然后 `/understand --full` |

@@ -20,6 +20,13 @@ record verification that the Host really performed. The Workbench shows task
 history, readable claims and evidence, source/diffs, revision refresh, Graph,
 and Wiki. It does not execute tests or replace the Host conversation.
 
+Workbench links now allow 24 hours for their first opening; authenticated
+browser sessions have a 24-hour absolute lifetime and a 24-hour idle timeout.
+Keep the MCP runtime running while using the Workbench. If the page asks you to
+reopen the link from the Host, call `open_workbench` again for a fresh single-use
+link. After updating, rebuild or install the updated runtime and restart the
+MCP server before requesting that link; existing expired links are not renewed.
+
 The package contains MCP tools, not the `/understand-*` skills below. Source
 skills `2.7.6` and Preview `0.1.0-preview.2` have independent version numbers.
 The earlier `0.1.0-preview.1` macOS task path remains locked; a healthy plugin

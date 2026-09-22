@@ -1,3 +1,4 @@
+import HostInstruction from "./HostInstruction";
 import type { TaskFirstRoute } from "./route";
 import type {
   TaskArtifactLoadResult,
@@ -111,6 +112,7 @@ function CandidateCard({
           查看候选图谱
         </button>
       </div>
+      <HostInstruction title="反馈候选 / 继续在宿主处理" context={{ taskId: route.taskId, generationId: candidate.candidateGenerationId, sourceSnapshotId: candidate.sourceSnapshotId, taskRevision: candidate.taskRevision }} request="请复核这个候选的来源与质量，按我的反馈补充或修正知识；先报告是否可以发布，未经我明确确认不要发布。" />
     </li>
   );
 }

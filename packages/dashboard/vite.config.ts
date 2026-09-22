@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { graphFileCandidates, knowledgeBaseRootCandidates } from "./vite.paths";
 import { computeGraphStaleness } from "./graphStaleness";
 import { classifyKnowledgeBaseAt } from "./knowledgeBaseState";
+import { markdownWorkerSafeAliases } from "./vite.markdown.mjs";
 
 // Generate a one-time token when the server process starts.
 // This token is printed to the terminal and must be in the URL
@@ -275,6 +276,7 @@ export default defineConfig({
 
   resolve: {
     alias: {
+      ...markdownWorkerSafeAliases,
       "@understand-code/core/schema": path.resolve(__dirname, "../core/dist/schema.js"),
       "@understand-code/core/search": path.resolve(__dirname, "../core/dist/search.js"),
       "@understand-code/core/types": path.resolve(__dirname, "../core/dist/types.js"),

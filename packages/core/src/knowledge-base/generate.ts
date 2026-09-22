@@ -16,6 +16,7 @@ import { summarizeMarkdownQuality } from "./quality.js";
 import type {
   BusinessCapabilityProfile,
   FileDocPlan,
+  FeaturedWriterOutput,
   GeneratedKnowledgeBase,
   KnowledgeBaseOptions,
   ProjectProfile,
@@ -29,6 +30,7 @@ export interface MaterializeKnowledgeBaseInput {
   topicPlan: TopicPlan;
   merged: MergeKnowledgeBaseWriterOutputsResult;
   options: KnowledgeBaseOptions;
+  featuredWriterOutput?: FeaturedWriterOutput;
 }
 
 export function materializeKnowledgeBase(input: MaterializeKnowledgeBaseInput): GeneratedKnowledgeBase {
@@ -47,10 +49,13 @@ export function materializeKnowledgeBase(input: MaterializeKnowledgeBaseInput): 
     businessCapabilityProfile,
     topicPlan,
     merged,
+    featuredWriterOutput: input.featuredWriterOutput,
+    requireFeaturedWriter: options.generationMode === "writer",
   });
   const validationErrors = [...new Set([...merged.validation.errors, ...materialized.errors])];
   const validationWarnings = [...new Set([
     ...merged.validation.warnings,
+    ...(input.featuredWriterOutput?.warnings ?? []),
     ...topicPlan.warnings,
     ...plan.warnings,
   ])].sort();

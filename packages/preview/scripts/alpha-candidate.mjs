@@ -34,10 +34,12 @@ const CHECKSUM_FILE = "SHA256SUMS";
 const LOCKFILE_PATH = "pnpm-lock.yaml";
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
-const MAX_TARBALL_BYTES = 32 * 1024 * 1024;
-const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
+// Match the cold release gate: 275 reviewed files (including the three
+// Dashboards' Mermaid modules), plus the three Unicode Wiki PAX headers.
+const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
+const MAX_EXPANDED_TAR_BYTES = 32 * 1024 * 1024;
 const MAX_TAR_FILE_BYTES = 4 * 1024 * 1024;
-const MAX_TAR_ENTRY_COUNT = 128;
+const MAX_TAR_ENTRY_COUNT = 278;
 const MAX_PAX_BYTES = 16 * 1024;
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 const GIT_TIMEOUT_MS = 30 * 1000;
@@ -644,7 +646,7 @@ function parsePaxRecords(payload) {
   return Object.freeze({ path: records.path, size });
 }
 
-function parseBoundedTarball(tarballBytes) {
+export function parseBoundedTarball(tarballBytes) {
   if (
     !Buffer.isBuffer(tarballBytes) ||
     tarballBytes.byteLength === 0 ||
@@ -1139,4 +1141,8 @@ async function main() {
   }
 }
 
-await main();
+// The bounded parser is also exercised directly against the actual packed
+// release; importing it must not run the assembler or change process state.
+if (process.argv[1] && await realpath(process.argv[1]).catch(() => undefined) === fileURLToPath(import.meta.url)) {
+  await main();
+}

@@ -24,7 +24,8 @@
         "check_change",
         "record_verification",
         "open_workbench",
-        "refresh_index"
+        "refresh_index",
+        "index_job"
       ]
     },
     "ordinal": {

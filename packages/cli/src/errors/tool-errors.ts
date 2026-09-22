@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { writeErrorDiagnostic } from "../logging/stderr.js";
 
 import {
   McpToolErrorResultV1Schema,
+  ToolErrorEnvelopeV1Schema,
   type McpToolErrorResultV1,
   type ToolErrorEnvelopeV1,
   type WorkspaceBindingReasonV1,
@@ -60,7 +62,12 @@ export function invalidArgumentsFailure(
       typeof component === "symbol" ? String(component) : component,
     ),
     code: issue.code,
-    message: "Invalid tool argument.",
+    message: issue.code === "invalid_type" && "expected" in issue
+      ? `Expected ${String(issue.expected)}.`
+      : issue.code === "too_small" ? "Value is below the allowed minimum. See this tool's input schema."
+      : issue.code === "too_big" ? "Value exceeds the allowed maximum. See this tool's input schema."
+      : issue.code === "invalid_value" ? "Use one of the allowed values in this tool's input schema."
+      : "Invalid tool argument. Check this field against the tool input schema.",
   }));
   return toolError(
     {
@@ -73,7 +80,7 @@ export function invalidArgumentsFailure(
             : [{ path: [], code: "invalid_arguments", message: "Invalid tool argument." }],
       },
     },
-    "Tool arguments are invalid.",
+    "Tool arguments are invalid. Correct the fields listed in details.issues using this tool’s input schema, then retry.",
   );
 }
 
@@ -95,7 +102,7 @@ export function invalidArgumentFailure(
         ],
       },
     },
-    "Tool arguments are invalid.",
+    "Tool arguments are invalid. Correct the fields listed in details.issues using this tool’s input schema, then retry.",
   );
 }
 
@@ -188,6 +195,20 @@ export function taskGateFailure(
   );
 }
 
+/** Only validated public Task identity and revision numbers may leave the error boundary. */
+export function revisionConflictFailure(
+  taskId: unknown,
+  expectedRevision: unknown,
+  actualRevision: unknown,
+): McpToolErrorResultV1 | undefined {
+  const error = ToolErrorEnvelopeV1Schema.safeParse({
+    schemaVersion: 1, code: "revision_conflict",
+    details: { taskId, expectedRevision, actualRevision },
+  });
+  return error.success ? toolError(error.data,
+    "Task revision does not match expectedRevision. Read get_task_brief for the current Task and revision, then re-evaluate the action before retrying. Do not increment a revision merely because a prior call was attempted.") : undefined;
+}
+
 export function idempotencyConflictFailure(
   idempotencyKey: string,
   requestDigest: string,
@@ -216,13 +237,15 @@ export function sourceAccessDeniedFailure(
   );
 }
 
-export function internalErrorFailure(): McpToolErrorResultV1 {
+export function internalErrorFailure(error?: unknown, phase?: string): McpToolErrorResultV1 {
+  const errorId = `error:${randomUUID()}`;
+  const nextStep = writeErrorDiagnostic(errorId, error, phase);
   return toolError(
     {
       schemaVersion: 1,
       code: "internal_error",
-      details: { errorId: `error:${randomUUID()}` },
+      details: { errorId },
     },
-    "The tool call could not be completed.",
+    `The tool call could not be completed. ${nextStep} Reference: ${errorId}.`,
   );
 }

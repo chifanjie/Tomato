@@ -184,3 +184,12 @@ describe("lazy Wiki search artifact", () => {
     expect(controller.isCurrent("old")).toBe(false);
   });
 });
+
+it("retries a transient search failure without a page reload", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockImplementation(async () => jsonResponse({ version: 2, records: searchFixture() }));
+  const controller = createSearchArtifactRequestController(fetcher);
+  expect((await controller.open("token")).status).toBe("error");
+  controller.close();
+  expect((await controller.open("token")).status).toBe("ready");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

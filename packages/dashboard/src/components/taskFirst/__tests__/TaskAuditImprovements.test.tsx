@@ -82,3 +82,29 @@ describe("task audit user paths", () => {
     expect(parseTaskDiscovery({ ...discovery, runtime: { kind: "local", ready: "true" } })).toBeNull();
   });
 });
+
+it("opens the evidence and graph target directly from a reading recommendation", async () => {
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  const openEvidence = vi.fn(); const openGraph = vi.fn();
+  const entry = { id: "reading:one", order: 0, kind: "symbol" as const, filePath: "src/old.ts", symbolId: "function:src/old.ts:old", claimIds: [claim.id], evidenceIds: [evidence.id] };
+  try {
+    await act(async () => root.render(createElement(TaskFirstWorkbench, { route: { view: "tasks", taskId: task.taskId, section: "reading_path" }, page: { task, section: "reading_path", items: [{ kind: "reading_path", entry }] }, onOpenEvidence: openEvidence, onOpenEvidenceGraph: openGraph })));
+    const button = (text: string) => [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === text)!;
+    await act(async () => button("查看关联源码证据 1").click());
+    await act(async () => button("定位符号图谱").click());
+    expect(openEvidence).toHaveBeenCalledWith(undefined, evidence.id);
+    expect(openGraph).toHaveBeenCalledWith(entry.symbolId);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+it("prepares claim feedback with exact task, claim, evidence and snapshot context", async () => {
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  const copy = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+  try {
+    await act(async () => root.render(createElement(TaskFirstWorkbench, { route: { view: "tasks", taskId: task.taskId, section: "goals" }, page: { task, claims: [claim], section: "goals", items: [{ kind: "claim_reference", claimId: claim.id, role: "acceptance" }] } })));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === "复制完整指令")!.click());
+    const copied = copy.mock.calls[0][0] as string;
+    for (const value of [task.taskId, claim.id, claim.sourceSnapshotId, evidence.id]) expect(copied).toContain(value);
+    expect(copied).toContain("不要把未确认内容标为已核验");
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});

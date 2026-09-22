@@ -35,6 +35,31 @@ describe("PythonExtractor", () => {
     expect(extractor.languageIds).toEqual(["python"]);
   });
 
+  it("binds a proven direct call between unique top-level functions", () => {
+    const { tree, parser, root } = parse("def helper():\n    return 1\ndef main():\n    return helper()\n");
+    const calls = extractor.extractCallGraph(root);
+    expect(calls.find((entry) => entry.caller === "main" && entry.callee === "helper")?.binding)
+      .toEqual({ kind: "local", name: "helper" });
+    tree.delete(); parser.delete();
+  });
+
+  it.each(["def helper():\n    return 1\ndef main(helper):\n    return helper()\n", "def helper():\n    return 1\ndef main():\n    helper = lambda: 2\n    return helper()\n", "def helper():\n    return 1\ndef main():\n    def helper():\n        return 2\n    return helper()\n", "from plugin import *\ndef helper():\n    return 1\ndef main():\n    return helper()\n", "@decorator\ndef helper():\n    return 1\ndef main():\n    return helper()\n", "def helper():\n    return 1\ndef main():\n    globals()[\"helper\"] = lambda: 2\n    return helper()\n"])("does not guess a binding across shadowing or unsupported scope: %s", (source) => {
+    const { tree, parser, root } = parse(source);
+    const calls = extractor.extractCallGraph(root).filter((entry) => entry.callee === "helper");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((entry) => entry.binding === undefined)).toBe(true);
+    tree.delete(); parser.delete();
+  });
+
+  it.each([
+    "def helper():\n    return 1\ndef main(value=helper()):\n    return value\n",
+    "def helper():\n    return 1\ndef main():\n    return lambda: helper()\n",
+  ])("does not attribute definition-time or deferred calls to the enclosing function", (source) => {
+    const { tree, parser, root } = parse(source);
+    expect(extractor.extractCallGraph(root).filter((entry) => entry.callee === "helper").every((entry) => entry.binding === undefined)).toBe(true);
+    tree.delete(); parser.delete();
+  });
+
   // ---- Functions ----
 
   describe("extractStructure - functions", () => {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { launchTaskWorkbench, loadTaskDiscovery } from "../../workbench/taskDiscovery";
 import { taskStatusLabel } from "./TaskFirstWorkbench";
 
+const TASK_STATUS_FILTERS = ["created", "context_ready", "planned", "in_progress", "check_required", "verification_required", "verified", "blocked", "stale", "superseded"] as const;
+
 const REPOSITORY_LABELS: Record<string, string> = { ready: "已就绪", fresh: "当前", partial: "部分就绪", stale: "已过期", unavailable: "不可用", missing: "尚未生成", invalid: "需要修复" };
 
 export default function TaskHome({ accessToken, onTokenInvalid, onOpenGraph, onOpenKnowledge }: {
@@ -15,10 +17,20 @@ export default function TaskHome({ accessToken, onTokenInvalid, onOpenGraph, onO
   const [openingTaskId, setOpeningTaskId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState("复制启动指令");
+  const [intent, setIntent] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [waitingForTask, setWaitingForTask] = useState(false);
   const [revision, setRevision] = useState(0);
   const data = result?.value;
   const runtimeName = data?.runtime.kind === "local_durable_v1" ? "本地持久任务" : "任务服务";
-  const prompt = `请使用 Understand Code 为当前仓库${data?.repository.name ? `（${data.repository.name}）` : ""}处理这个需求：<填写需求>。先读取仓库状态和快照，创建持久 Task；把目标、验收条件、源码证据与未知项写入任务，并返回 taskId 和 Workbench 链接。若工具不可用，请说明当前连接或能力限制。`;
+  const prompt = `请使用 Understand Code 为当前仓库${data?.repository.name ? `（${data.repository.name}）` : ""}处理这个需求：${intent.trim() || "请先在页面填写需求"}。先读取仓库状态和快照，创建持久 Task；把目标、验收条件、源码证据与未知项写入任务，并返回 taskId 和 Workbench 链接。若工具不可用，请说明当前连接或能力限制。`;
+  const tasks = [...(data?.tasks ?? [])].filter((task) =>
+    (statusFilter === "all" || task.status === statusFilter)
+    && `${task.title} ${task.originalIntent} ${task.taskId}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  ).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
@@ -30,7 +42,13 @@ export default function TaskHome({ accessToken, onTokenInvalid, onOpenGraph, onO
       inFlight = false;
       if (cancelled) return;
       if (next.status === "forbidden") onTokenInvalid();
-      setResult(next);
+      if (next.status === "ready") {
+        setResult(next);
+        setRefreshError(null);
+      } else {
+        setResult((previous) => previous?.status === "ready" ? previous : next);
+        setRefreshError(next.message ?? "任务列表读取失败，请重试。");
+      }
       setLoading(false);
     }
     void refresh();
@@ -52,16 +70,20 @@ export default function TaskHome({ accessToken, onTokenInvalid, onOpenGraph, onO
     <div className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold">任务首页</h1><p className="mt-2 text-sm text-text-secondary">在 Codex 或 Claude 中提出需求，在这里审阅任务与证据。</p></div><button type="button" disabled={loading} onClick={() => setRevision((value) => value + 1)} className="min-h-11 rounded border border-border-medium px-3 text-sm disabled:opacity-50">{loading ? "读取中…" : "刷新任务列表"}</button></header>
       <section className="uc-panel p-4" aria-label="仓库与连接状态"><h2 className="font-semibold">仓库与连接</h2>
-        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-text-muted">当前仓库</dt><dd className="mt-1 break-all">{data ? `${data.repository.name ? `${data.repository.name} · ` : ""}${data.repository.repoId}` : "尚未确认"}</dd></div><div><dt className="text-text-muted">工作台连接</dt><dd className="mt-1">{result?.status === "ready" ? "已连接当前本地服务" : loading ? "正在检测" : "未确认"}</dd></div><div><dt className="text-text-muted">仓库产物</dt><dd className="mt-1">{data ? REPOSITORY_LABELS[data.repository.status] ?? "未知" : "未知"}{data?.repository.reason ? ` · ${data.repository.reason}` : ""}</dd></div><div><dt className="text-text-muted">任务后端</dt><dd className="mt-1">{data ? data.runtime.ready ? `已就绪 · ${runtimeName}` : `受限 · ${data.runtime.reason ?? runtimeName}` : "尚未确认"}</dd></div></dl>
+        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-text-muted">当前仓库</dt><dd className="mt-1 break-all">{data ? `${data.repository.name ? `${data.repository.name} · ` : ""}${data.repository.repoId}` : "尚未确认"}</dd></div><div><dt className="text-text-muted">工作台连接</dt><dd className="mt-1">{refreshError && data ? "本次连接失败，保留上次结果" : result?.status === "ready" ? "已连接当前本地服务" : loading ? "正在检测" : "未确认"}</dd></div><div><dt className="text-text-muted">仓库产物</dt><dd className="mt-1">{data ? REPOSITORY_LABELS[data.repository.status] ?? "未知" : "未知"}{data?.repository.reason ? ` · ${data.repository.reason}` : ""}</dd></div><div><dt className="text-text-muted">任务后端</dt><dd className="mt-1">{data ? data.runtime.ready ? `已就绪 · ${runtimeName}` : `受限 · ${data.runtime.reason ?? runtimeName}` : "尚未确认"}</dd></div></dl>
         {data && <details className="mt-3 text-xs text-text-muted"><summary>连接元数据</summary><p className="mt-1 font-mono">{data.runtime.kind} · {data.repository.status}</p></details>}
         {data?.repository.snapshotId && <p className="mt-3 break-all font-mono text-xs text-text-muted">快照 {data.repository.snapshotId}</p>}
         <p className="mt-3 text-xs leading-5 text-text-muted">此处确认浏览器到服务的连接。宿主已注册、当前 Codex 会话已获得工具，需要在宿主中分别确认。</p>
         {(result?.message || data?.runtime.nextAction) && <p className="mt-3 text-sm leading-6 text-warning" role="status">{result?.message ?? data?.runtime.nextAction}</p>}
       </section>
-      <section className="uc-panel p-4"><h2 className="font-semibold">最近任务</h2>{openError && <p role="alert" className="mt-2 text-sm text-warning">{openError}</p>}<p className="mt-1 text-xs text-text-muted">当前仓库中持久化的任务，按最近更新时间排列。页面可见时每 10 秒刷新。</p>
-        {data && data.tasks.length > 0 ? <ul className="mt-3 space-y-2">{[...data.tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((task) => <li key={task.taskId}><button type="button" onClick={() => void select(task.taskId)} disabled={openingTaskId !== null} className="w-full rounded border border-border-subtle p-3 text-left hover:border-accent/40"><span className="block text-sm font-semibold text-accent">{openingTaskId === task.taskId ? "正在打开…" : task.title}</span><span className="mt-1 block text-sm text-text-secondary">{task.originalIntent}</span><span className="mt-2 block text-xs text-text-muted">{taskStatusLabel(task.status)} · 修订版 {task.revision} · {new Date(task.updatedAt).toLocaleString()}</span></button></li>)}</ul> : <p className="mt-4 text-sm text-text-muted">{loading ? "正在读取任务…" : data ? "当前仓库还没有持久任务。" : "任务历史暂不可用；无法据此判断仓库中没有任务。"}</p>}
+      <section className="uc-panel p-4"><h2 className="font-semibold">最近任务</h2>{refreshError && <p role="alert" className="mt-2 text-sm text-warning">{data ? "刷新失败，保留上次成功读取的列表：" : ""}{refreshError}</p>}{openError && <p role="alert" className="mt-2 text-sm text-warning">{openError}</p>}<p className="mt-1 text-xs text-text-muted">当前仓库中持久化的任务，按最近更新时间排列。页面可见时每 10 秒刷新。</p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <label className="min-w-0 flex-1 text-xs text-text-muted">搜索任务<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="标题、需求或任务编号" className="mt-1 block min-h-11 w-full rounded border border-border-medium bg-root px-3 text-sm" /></label>
+          <label className="text-xs text-text-muted">任务状态<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="mt-1 block min-h-11 rounded border border-border-medium bg-root px-3 text-sm"><option value="all">全部状态</option>{TASK_STATUS_FILTERS.map((status) => <option key={status} value={status}>{taskStatusLabel(status)}</option>)}</select></label>
+        </div>
+        {data && tasks.length > 0 ? <ul className="mt-3 space-y-2">{tasks.map((task) => <li key={task.taskId}><button type="button" onClick={() => void select(task.taskId)} disabled={openingTaskId !== null} className="w-full rounded border border-border-subtle p-3 text-left hover:border-accent/40"><span className="block text-sm font-semibold text-accent">{openingTaskId === task.taskId ? "正在打开…" : task.title}</span><span className="mt-1 block text-sm text-text-secondary">{task.originalIntent}</span><span className="mt-2 block text-xs text-text-muted">{taskStatusLabel(task.status)} · 修订版 {task.revision} · {new Date(task.updatedAt).toLocaleString()}</span></button></li>)}</ul> : <p className="mt-4 text-sm text-text-muted">{loading ? "正在读取任务…" : data ? data.tasks.length > 0 ? "没有匹配的任务，请调整关键词或状态。" : "当前仓库还没有持久任务。" : "任务历史暂不可用；无法据此判断仓库中没有任务。"}</p>}
       </section>
-      <section className="uc-panel p-4"><h2 className="font-semibold">从宿主开始</h2><p className="mt-2 text-sm leading-6 text-text-secondary">将下面内容复制到已连接 Understand Code 的 Codex 或 Claude 会话，替换需求后发送。此页面不运行修改或验证命令。</p><textarea aria-label="复制到宿主的启动指令" readOnly value={prompt} rows={4} className="mt-3 w-full rounded border border-border-medium bg-root p-3 text-sm leading-6" /><div className="mt-3 flex flex-wrap items-center gap-3"><button type="button" onClick={() => { if (!navigator.clipboard) { setCopyStatus("请选中上方文本复制"); return; } void navigator.clipboard.writeText(prompt).then(() => setCopyStatus("已复制")).catch(() => setCopyStatus("请选中上方文本复制")); }} className="min-h-11 rounded border border-accent/35 px-3 text-sm text-accent">{copyStatus}</button><button type="button" onClick={onOpenKnowledge} className="min-h-11 rounded border border-border-medium px-3 text-sm">浏览知识库</button><button type="button" onClick={onOpenGraph} className="min-h-11 rounded border border-border-medium px-3 text-sm">浏览关系图谱</button></div></section>
+      <section className="uc-panel p-4"><h2 className="font-semibold">从宿主开始</h2><p className="mt-2 text-sm leading-6 text-text-secondary">将下面内容复制到已连接 Understand Code 的 Codex 或 Claude 会话，发送完整指令。此页面不运行修改或验证命令。</p><label className="mt-3 block text-sm font-medium">你希望完成什么？<textarea value={intent} onChange={(event) => { setIntent(event.target.value); setCopyStatus("复制启动指令"); setWaitingForTask(false); }} placeholder="例如：解释订单取消流程，并列出关键规则和源码依据" rows={3} className="mt-2 w-full rounded border border-border-medium bg-root p-3 text-sm" /></label><textarea aria-label="复制到宿主的启动指令" readOnly value={prompt} rows={4} className="mt-3 w-full rounded border border-border-medium bg-root p-3 text-sm leading-6" /><div className="mt-3 flex flex-wrap items-center gap-3"><button type="button" disabled={!intent.trim()} onClick={() => { if (!navigator.clipboard) { setCopyStatus("请选中上方文本复制"); return; } void navigator.clipboard.writeText(prompt).then(() => { setCopyStatus("已复制"); setWaitingForTask(true); }).catch(() => setCopyStatus("请选中上方文本复制")); }} className="min-h-11 rounded border border-accent/35 px-3 text-sm text-accent disabled:opacity-50">{copyStatus}</button><button type="button" onClick={onOpenKnowledge} className="min-h-11 rounded border border-border-medium px-3 text-sm">浏览知识库</button><button type="button" onClick={onOpenGraph} className="min-h-11 rounded border border-border-medium px-3 text-sm">浏览关系图谱</button></div>{waitingForTask && <p className="mt-3 text-sm text-text-secondary" role="status">请在宿主中粘贴并发送指令；任务创建后会出现在上方列表（每 10 秒更新），也可直接打开宿主返回的工作台链接。</p>}</section>
     </div>
   </main>;
 }

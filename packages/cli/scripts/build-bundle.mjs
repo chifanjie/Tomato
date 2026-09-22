@@ -94,6 +94,12 @@ const result = await build({
   sourcemap: false,
   metafile: true,
   define: {
+    __UNDERSTAND_CODE_BUNDLED_WRITER__: "true",
+    __UNDERSTAND_CODE_WRITER_GUIDES__: JSON.stringify({
+      files: await readFile(path.join(workspaceRoot, "agents/kb-file-writer.md"), "utf8"),
+      topics: await readFile(path.join(workspaceRoot, "agents/kb-topic-writer.md"), "utf8"),
+      featured: await readFile(path.join(workspaceRoot, "agents/kb-featured-writer.md"), "utf8"),
+    }),
     __UNDERSTAND_CODE_PRODUCT_VERSION__: JSON.stringify(
       bundleOptions.productVersion,
     ),

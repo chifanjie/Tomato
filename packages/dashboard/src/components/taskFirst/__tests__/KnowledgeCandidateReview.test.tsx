@@ -83,3 +83,11 @@ describe("KnowledgeCandidateReview", () => {
     document.body.replaceChildren();
   });
 });
+
+it("includes the exact candidate and task in the prepared host feedback", () => {
+  const html = renderToStaticMarkup(createElement(KnowledgeCandidateReview, { route, result: result() }));
+  expect(html).toContain(`taskId: ${taskId}`);
+  expect(html).toContain(`generationId: ${currentGeneration}`);
+  expect(html).toContain("sourceSnapshotId: snapshot:current");
+  expect(html).toContain("未经我明确确认不要发布");
+});

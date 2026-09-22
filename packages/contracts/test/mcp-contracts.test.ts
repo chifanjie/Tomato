@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   BuildTaskBriefOutputV1Schema,
+  BuildTaskBriefPendingOutputV1Schema,
+  IndexJobOutputV1Schema,
   CheckChangeOutputV1Schema,
   GetEvidenceOutputV1Schema,
   GetRepoPulsePublicMetaV1Schema,
@@ -193,7 +195,7 @@ function pagedSuccessOutput(result: unknown, returned: number) {
 }
 
 describe("P0 MCP tool inventory", () => {
-  it("freezes exactly the eleven approved P0 tools", () => {
+  it("freezes the P0 tools including durable local index job control", () => {
     expect(P0_MCP_TOOL_NAMES_V1).toEqual([
       "get_repo_pulse",
       "build_task_brief",
@@ -206,16 +208,18 @@ describe("P0 MCP tool inventory", () => {
       "record_verification",
       "open_workbench",
       "refresh_index",
+      "index_job",
     ]);
     expect(Object.keys(P0_MCP_TOOL_CONTRACTS_V1)).toEqual(
       P0_MCP_TOOL_NAMES_V1,
     );
-    expect(P0_MCP_TOOL_NAMES_V1).toHaveLength(11);
+    expect(P0_MCP_TOOL_NAMES_V1).toHaveLength(12);
     expect(P0_MCP_TOOL_NAMES_V1).not.toContain("cancel_refresh_index");
   });
 
   it("accepts a valid request for every tool and rejects unknown arguments", () => {
     const inputs = {
+      index_job: { action: "status" },
       get_repo_pulse: {},
       build_task_brief: {
         task: "Add a stable MCP contract",
@@ -321,6 +325,31 @@ describe("P0 MCP tool inventory", () => {
 });
 
 describe("common MCP response contracts", () => {
+  it("keeps pending indexing separate from completed Task and source identities", () => {
+    const pending = {
+      isError: false,
+      content: [{ type: "text", text: "Indexing is in progress; no Task has been created." }],
+      structuredContent: {
+        schemaVersion: 1, meta: { durationMs: 20 }, result: {
+          status: "waiting_for_index", pollAfterMs: 1000, nextStep: "Query index_job, then replay the original build request.",
+          job: { jobId: TASK_ID, status: "queued", phase: "Waiting for the worker.", createdAt: "2026-09-22T00:00:00.000Z", updatedAt: "2026-09-22T00:00:00.000Z" },
+        },
+      },
+    };
+    expect(BuildTaskBriefPendingOutputV1Schema.safeParse(pending).success).toBe(true);
+    expect(P0_MCP_TOOL_CONTRACTS_V1.build_task_brief.output.safeParse(pending).success).toBe(true);
+    expect(BuildTaskBriefOutputV1Schema.safeParse(pending).success).toBe(false);
+    expect(BuildTaskBriefPendingOutputV1Schema.safeParse({ ...pending, structuredContent: {
+      ...pending.structuredContent, result: { ...pending.structuredContent.result, task: referenceTask },
+    } }).success).toBe(false);
+    expect(BuildTaskBriefPendingOutputV1Schema.safeParse({ ...pending, structuredContent: {
+      ...pending.structuredContent, meta: { ...pending.structuredContent.meta, sourceSnapshotId: SNAPSHOT_ID },
+    } }).success).toBe(false);
+    expect(IndexJobOutputV1Schema.safeParse({ ...pending, structuredContent: {
+      ...pending.structuredContent, result: { job: null, nextStep: "Call build_task_brief to initialize this repository." },
+    } }).success).toBe(true);
+  });
+
   it("uses the trusted Task Bundle parser for the same handoff artifact as Core and Dashboard", () => {
     const bundle = referenceFixture("task-bundle.json");
     const trusted = parseTrustedTaskArtifactBundleV1(

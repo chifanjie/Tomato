@@ -7,86 +7,79 @@ local Graph/Wiki viewer, the full stdio MCP tool surface, and the managed
 install/Doctor/uninstall lifecycle. Runtime npm dependencies are bundled; Node.js
 22 or newer and Git on `PATH` are required.
 
-```sh
-npm install -g ./understand-code-preview-0.1.0-preview.2.tgz
-understand-code-preview --demo
-```
+## Build an installable local package
 
-The command prints a local URL. Open it in a browser. `--demo` is self-contained and
-works from an empty directory. To inspect a repository that already has published
-Understand Code artifacts, use:
+From this repository's checkout, use Node.js 22+, Git, and pnpm to build and
+pack the current source. Replace the output directory with an existing absolute
+directory outside the checkout:
 
 ```sh
-understand-code-preview --root /absolute/path/to/worktree
+pnpm install --frozen-lockfile
+pnpm --filter @understand-code/preview build
+pnpm --dir packages/preview pack --pack-destination /ABSOLUTE/EXISTING/OUTPUT
 ```
 
-`--root` accepts only the canonical Git worktree top-level. It fails closed when the
-knowledge graph is missing, malformed, or its published revision disagrees with the
-current Git `HEAD`. It also requires a clean launch snapshot: staged, unstaged,
-untracked, renamed, deleted, conflicted, or incompletely sampled non-product paths
-are rejected. Managed `.understand-code/**` publication artifacts are excluded from
-that repository-state identity. Every token-protected data request revalidates the
-launch `HEAD`/Index/Worktree/Untracked snapshot and fails closed if it drifted. A
-repository without Wiki V2 still opens the Graph surface and reports Wiki as missing
-instead of presenting stale Wiki content.
-
-The same installation exposes the full Alpha MCP command:
-
-```sh
-understand-code mcp --stdio --root /absolute/path/to/worktree
-```
-
-It also contains self-contained Codex and Claude Code plugin marketplaces. The
-installed plugins carry their own exact-version MCP executable, so Host plugin
-caches do not depend on the monorepo, a globally installed Understand Code
-command, or the original tarball location.
-
-Cold indexing of a large repository can exceed two minutes. `build_task_brief`
-waits for that first full index in the same tool call. The packaged ordinary
-Codex TOML template includes `tool_timeout_sec = 900` for this case, with an
-explicit repository root. Plugin timeout support and Claude's default timeout
-have not been confirmed; the plugin `.mcp.json` files therefore contain no
-unverified timeout setting. Acceptance with a runner configured for 300 or 900
-seconds does not establish cold large-repository success for a default plugin
-installation. Installing the package does not change global Host timeouts.
+Install the tarball emitted by `pack`; this guide does not assume an npm release
+or a downloadable release asset exists. This produces an unsigned local package.
+For the stricter clean-checkout candidate and checksum workflow, see
+[Assemble an unsigned Alpha Candidate](#assemble-an-unsigned-alpha-candidate).
 
 ## Packaged Host lifecycle
 
-The commands below use visibly invalid absolute placeholders so an unexpanded
-shell variable cannot silently select another package. Run `npm root -g`, then
-replace every `/ABSOLUTE/NPM/GLOBAL/ROOT` occurrence with that command's exact
-absolute output. Replace the tarball and repository placeholders before running
-any command. After every npm install below, `understand-code --version` must
-print the intended tarball's exact package version before any Host command is
-run. Keep the old tarball if pinned recovery may be needed.
+Replace tarball and repository placeholders with real absolute paths. After
+installing, check that `understand-code --version` matches the intended package.
+Keep the old tarball if pinned recovery may be needed.
 
 ### 1. First install, Doctor, and a new Host session
+
+Choose the Host you use. Its `codex` or `claude` CLI must already be on `PATH`.
+For Codex:
 
 ```sh
 npm install -g "/ABSOLUTE/PATH/TO/understand-code-preview-X.Y.Z.tgz"
 understand-code --version
+understand-code-preview --install-host codex
+```
 
+For Claude Code, use `understand-code-preview --install-host claude` after the
+same npm installation. The helper finds this installed package's own marketplace,
+uses the Host's official registration/install commands, and runs
+`understand-code doctor --host codex` or `--host claude`. It does not install the
+Host itself or establish a logged-in chat session.
+
+Doctor must exit 0 and report `hostRegistration: "registered"`,
+`status: "healthy"`, the intended package version, `strongWrites: "locked"`, and
+`releaseReady: false`. Close sessions that were open during installation. Start
+a new Codex or Claude session inside the target Git worktree; for Claude, the
+Host must supply that canonical worktree as `CLAUDE_PROJECT_DIR`. Ask the Host
+to create a persistent Task, attach source evidence, and return its task ID and
+Workbench link. Registration health alone does not prove that the new session
+has connected to the tools.
+
+<details>
+<summary>Manual registration for diagnosis</summary>
+
+Run `npm root -g` and replace `/ABSOLUTE/NPM/GLOBAL/ROOT` below with its exact
+absolute output. Run only the block for your selected Host:
+
+```sh
 codex plugin marketplace add "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/codex" --json
 codex plugin add understand-code@understand-code-alpha --json
+understand-code doctor --host codex
+```
 
+```sh
 claude plugin validate --strict "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/claude"
 claude plugin marketplace add "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/claude" --scope user
 claude plugin install understand-code@understand-code-alpha --scope user
-
-understand-code doctor --host codex
 understand-code doctor --host claude
 ```
 
-The Codex marketplace JSON must report
-`marketplaceName: "understand-code-alpha"`; the plugin JSON must report the
-canonical `pluginId`, exact `version`, and active `installedPath`. Both Doctor
-commands must exit 0 and report
-`hostRegistration: "registered"`, `status: "healthy"`, the installed package
-version, `strongWrites: "locked"`, and `releaseReady: false`. Close any Host
-session that was open during installation. Start a new Codex or Claude session
-inside `/ABSOLUTE/PATH/TO/GIT/WORKTREE`; for Claude, the Host must supply that
-same canonical worktree as `CLAUDE_PROJECT_DIR`. A new session is the supported
-boundary for loading the newly cached plugin and its MCP tools.
+The Codex marketplace JSON must report `marketplaceName: "understand-code-alpha"`;
+the plugin JSON must report the canonical `pluginId`, exact `version`, and active
+`installedPath`. Start a new Host session after successful registration.
+
+</details>
 
 ### 2. Install a newer packaged plugin
 
@@ -250,6 +243,37 @@ provenance record (`dist/provenance.json`) bound to the Git commit, tree, and
 lockfile. These records provide verifiable inventory and build traceability;
 publisher signatures remain unavailable and release authenticity stays locked.
 
+## Task workflow, progress, and later reading
+
+The installed plugins carry their own exact-version MCP executable, so Host
+caches do not depend on the source checkout, a global CLI, or the original
+tarball location. The same package exposes the direct MCP entrypoint:
+
+```sh
+understand-code mcp --stdio --root /absolute/path/to/worktree
+```
+
+Cold indexing can exceed two minutes and remains inside one
+`build_task_brief` or `refresh_index` call. With a Host-supplied MCP
+`progressToken`, indexing sends stage progress; cancellation requests are
+honored at cooperative checkpoints and preserve the prior complete publication.
+This is not a background job or a guarantee that every Host displays a progress
+bar/cancel control. The ordinary Codex TOML template sets
+`tool_timeout_sec = 900`; plugin timeout support and Claude defaults are not
+confirmed, and installation does not change global timeouts. Passing a longer
+runner timeout does not establish default-plugin cold-index success.
+
+To read persisted Tasks after leaving the chat Host:
+
+```sh
+understand-code workbench --root /absolute/path/to/worktree --no-open
+```
+
+Open the newly printed local URL. Add `--task-id "<TASK_ULID>"` for one existing
+Task, replacing the placeholder with its actual ID. Keep this CLI running while
+reading; Ctrl+C closes its reader session. Tasks persist, and repeating the
+command creates a fresh link independently of the MCP process.
+
 The MCP server advertises `get_repo_pulse`, `build_task_brief`, `get_task_brief`,
 `update_task`, `check_change`, `record_verification`, `open_workbench`,
 `get_evidence`, `search_context`, `trace_impact`, and `refresh_index`. A full
@@ -265,6 +289,29 @@ verification commands run in the host.
 Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
+
+For formal knowledge writing, start with the bundled guide:
+
+```sh
+understand-code knowledge --root /absolute/path/to/worktree --task-id "<TASK_ULID>" --guide
+```
+
+The Host follows its prepare/lease/complete/merge phases, reads source, and
+writes evidence-backed explanations into a Task-scoped draft. `--prepare-topics`
+also writes `.intermediate/featured-plan.json`; the Host uses the bundled
+featured-page guide to write every planned page with exact IDs, paths, required
+sections, and source evidence into `.intermediate/featured-writer-output.json`.
+`--prepare-featured` rebuilds only the plan and preserves existing output.
+`--finalize` requires valid authored file, topic, and featured-page content and
+retains all source-binding and publication-quality checks. Missing or invalid
+featured pages must be corrected, not replaced with diagnostic templates.
+This command does not invent business content, run verification, or publish. Continue with
+the MCP staging and explicit publication sequence below. Full phase instructions,
+`--discard-candidate --candidate "<GENERATION_ID>"`, and
+`--cleanup-interrupted` are in the [CLI writer lifecycle](../cli/README.md#task-knowledge-lifecycle);
+all knowledge commands require the same explicit root and Task ID. See also the
+[language and relation boundaries](../cli/README.md#language-and-relation-boundaries)
+before treating missing Graph edges as absence of an impact.
 
 Both installed Host wrappers expose the same Task workflow guidance through MCP
 `initialize.instructions`. For a local or Provider-authorized Task, checked knowledge is
@@ -352,6 +399,32 @@ gates. The officially active Claude cache has been shown to keep its bundled MCP
 alive while the browser gate runs, but this is not yet a credentialed,
 model-selected tool call from a complete Codex or Claude chat.
 
+## Optional static viewer
+
+After installing the package, open the built-in demo:
+
+```sh
+understand-code-preview --demo
+```
+
+The command prints a local URL. Open it in a browser. `--demo` is self-contained and
+works from an empty directory. To inspect a repository that already has published
+Understand Code artifacts, use:
+
+```sh
+understand-code-preview --root /absolute/path/to/worktree
+```
+
+`--root` accepts only the canonical Git worktree top-level. It fails closed when the
+knowledge graph is missing, malformed, or its published revision disagrees with the
+current Git `HEAD`. It also requires a clean launch snapshot: staged, unstaged,
+untracked, renamed, deleted, conflicted, or incompletely sampled non-product paths
+are rejected. Managed `.understand-code/**` publication artifacts are excluded from
+that repository-state identity. Every token-protected data request revalidates the
+launch `HEAD`/Index/Worktree/Untracked snapshot and fails closed if it drifted. A
+repository without Wiki V2 still opens the Graph surface and reports Wiki as missing
+instead of presenting stale Wiki content.
+
 ## Assemble an unsigned Alpha Candidate
 
 From an exact clean Git checkout with the committed `pnpm-lock.yaml`, install
@@ -407,6 +480,7 @@ distribution.
 ## Preview commands
 
 ```text
+understand-code-preview --install-host codex|claude
 understand-code-preview --demo [--port 0] [--no-open]
 understand-code-preview --root <absolute-worktree> [--port 0] [--no-open]
 understand-code-preview --help

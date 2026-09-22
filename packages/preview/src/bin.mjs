@@ -3,6 +3,8 @@ import { startPreview } from "./server.mjs";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { installPackagedHost } from "./host-install.mjs";
 
 const packageMetadata = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -17,6 +19,7 @@ function help() {
     "Understand Code Preview Candidate",
     "",
     "Usage:",
+    "  understand-code-preview --install-host codex|claude",
     "  understand-code-preview --demo [--port 0] [--no-open]",
     "  understand-code-preview --root <absolute-worktree> [--port 0] [--no-open]",
     "  understand-code-preview --help",
@@ -33,6 +36,10 @@ function fail(message) {
 
 function parseArgs(values) {
   const args = { demo: false, root: null, port: 0, noOpen: false, help: false, version: false };
+  if (values[0] === "--install-host") {
+    if (values.length !== 2 || !["codex", "claude"].includes(values[1])) throw new Error("Choose --install-host codex or claude.");
+    return { ...args, installHost: values[1] };
+  }
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value === "--help" || value === "-h") { args.help = true; continue; }
@@ -63,6 +70,7 @@ try {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(`${help()}\n`); }
   else if (args.version) { process.stdout.write(`${PRODUCT_VERSION}\n`); }
+  else if (args.installHost) { process.stdout.write(`${installPackagedHost(args.installHost, path.dirname(fileURLToPath(import.meta.url)))}\n`); }
   else {
     const preview = await startPreview({ root: args.root, demo: args.demo, port: args.port });
     if (!args.noOpen) {

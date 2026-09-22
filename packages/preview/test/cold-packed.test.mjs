@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { ArtifactStore, sha256CanonicalJson } from "../../artifact-store/dist/index.js";
 import {
@@ -32,16 +32,16 @@ const EXTERNAL_COMMAND_TIMEOUT_MS = 30_000;
 const EXPECTED_CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
-// The production CLI now embeds the fixed, compressed Tree-sitter runtime and
-// grammar inventory so an installed Host never resolves mutable WASM files.
-// Keep the per-file, plugin-total, and expanded archive bounds unchanged; the
-// aggregate tgz budget covers the resulting duplicated Host plugin payloads.
-const MAX_PACKED_TARBALL_BYTES = 8 * 1024 * 1024;
-const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
+// The embedded Tree-sitter runtime and three self-contained Dashboards include
+// the reviewed Mermaid modules below. These bounded budgets cover that exact
+// inventory, including both Host plugin copies; arbitrary assets stay forbidden.
+const MAX_PACKED_TARBALL_BYTES = 10 * 1024 * 1024;
+const MAX_EXPANDED_TAR_BYTES = 32 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
-const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 12 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 91;
+const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 20 * 1024 * 1024;
+// Original 91 entries + one installer helper + 60 Mermaid modules in each copy.
+const EXPECTED_PACKED_FILE_COUNT = 275;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const PRODUCT_VERSION_PATTERN =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -50,6 +50,7 @@ const PRODUCT_VERSION_PATTERN =
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
   { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|contracts\.mjs|server\.mjs)$/u, count: 3, mode: 0o644 },
+  { label: "Host installer helper", pattern: /^package\/dist\/host-install\.mjs$/u, count: 1, mode: 0o644 },
   { label: "Preview executable", pattern: /^package\/dist\/bin\.mjs$/u, count: 1, mode: 0o755 },
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
   { label: "host executable", pattern: /^package\/dist\/host-bin\.mjs$/u, count: 1, mode: 0o755 },
@@ -70,6 +71,7 @@ const packedFileRules = [
   { label: "self-contained plugin Dashboard JavaScript entries", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin Dashboard stylesheet entries", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.css$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin layout worker chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/layout\.worker-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin search worker chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/search\.worker-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin markdown chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/markdown-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin React vendor chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/react-vendor-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
   { label: "self-contained plugin XYFlow JavaScript chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/xyflow-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
@@ -82,6 +84,7 @@ const packedFileRules = [
   { label: "dashboard JavaScript entry", pattern: /^package\/dist\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "dashboard stylesheet entry", pattern: /^package\/dist\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.css$/u, count: 1, mode: 0o644 },
   { label: "layout worker chunk", pattern: /^package\/dist\/dashboard\/assets\/layout\.worker-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
+  { label: "search worker chunk", pattern: /^package\/dist\/dashboard\/assets\/search\.worker-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "markdown chunk", pattern: /^package\/dist\/dashboard\/assets\/markdown-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "React vendor chunk", pattern: /^package\/dist\/dashboard\/assets\/react-vendor-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "XYFlow JavaScript chunk", pattern: /^package\/dist\/dashboard\/assets\/xyflow-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -96,6 +99,37 @@ const packedFileRules = [
   { label: "demo Wiki pages", pattern: /^package\/dist\/demo\/\.understand-code\/knowledge-base\/(?:参考\/app\.ts|阅读流程|项目总览)\.md$/u, count: 3, mode: 0o644 },
   { label: "demo source", pattern: /^package\/dist\/demo\/src\/app\.ts$/u, count: 1, mode: 0o644 },
 ];
+
+// Mermaid's pinned module identities are reviewed individually. Only Vite's
+// final content hash may vary; no wildcard chunk or unrestricted asset rule.
+const reviewedMermaidChunkStems = [
+  "abnfDiagram-VCTEODGH", "arc", "architectureDiagram-5GKGNRK7",
+  "blockDiagram-I7D4REHJ", "c4Diagram-7LVT6UL2", "channel",
+  "chunk-2Q5K7J3B", "chunk-5VM5RSS4", "chunk-F27PBJKO", "chunk-IMKFNOWR",
+  "chunk-JWPE2WC7", "chunk-POPQ4Y6H", "chunk-SVP7TREG", "chunk-TICWLB2K", "chunk-XXDRQBXY",
+  "classDiagram-v2-VYDZK3BY", "classDiagram-ZZMXUADV", "cose-bilkent-JH36ORCC",
+  "cynefin-OW5HDTMX", "cynefinDiagram-5FMLGOSQ", "cytoscape.esm", "dagre-GXQ25YYZ",
+  "defaultLocale", "diagram-S7CK7UJ4", "diagram-UQ7AKVKN", "diagram-VSXAHHWV",
+  "diagram-VX7I27RA", "diagram-Z3DM3KII", "ebnfDiagram-PWID7BFC", "erDiagram-RLTQ6QDP",
+  "flowDiagram-HODETNUW", "ganttDiagram-EL5Y4UJY", "gitGraphDiagram-WWUBYQGX",
+  "infoDiagram-27XIBGKW", "init", "ishikawaDiagram-5VMMS53U", "journeyDiagram-3NMN7TZE",
+  "kanban-definition-UXKFOSKX", "katex", "layout", "linear", "mermaid.core",
+  "mindmap-definition-YA3MSWOX", "ordinal", "pegDiagram-XKGWAZYB", "pieDiagram-E7YTZNPT",
+  "quadrantDiagram-AXDQQJYC", "railroadDiagram-O6MQD6OU", "requirementDiagram-BXWQKSXE",
+  "sankeyDiagram-P5KCCOFB", "sequenceDiagram-WJ2MYXX4", "sizeCapture-INFHLROL",
+  "stateDiagram-D77RDMKH", "stateDiagram-v2-MP3YSRHH", "swimlanes-42K2YHIH",
+  "swimlanesDiagram-VR7AAH4N", "timeline-definition-24CTP7MA", "vennDiagram-4TSXK5OY",
+  "wardleyDiagram-VM6X3IG4", "xychartDiagram-S5SC5T6Z",
+];
+assert.equal(reviewedMermaidChunkStems.length, 60);
+for (const stem of reviewedMermaidChunkStems) {
+  const escaped = stem.replaceAll(".", "\\.");
+  packedFileRules.push(
+    { label: `Mermaid module ${stem}`, pattern: new RegExp(`^package/dist/dashboard/assets/${escaped}-[A-Za-z0-9_-]{8}\\.js$`, "u"), count: 1, mode: 0o644 },
+    { label: `plugin Mermaid module ${stem}`, pattern: new RegExp(`^package/dist/plugin-roots/(?:codex|claude)/plugins/understand-code/bin/dashboard/assets/${escaped}-[A-Za-z0-9_-]{8}\\.js$`, "u"), count: 2, mode: 0o644 },
+  );
+}
+assert.equal(packedFileRules.reduce((total, rule) => total + rule.count, 0), EXPECTED_PACKED_FILE_COUNT);
 
 const expectedPaxPaths = new Map([
   ["PaxHeader/app.ts.md", "package/dist/demo/.understand-code/knowledge-base/参考/app.ts.md"],
@@ -179,7 +213,7 @@ function validatePackedTarball(tarballBytes) {
       terminated = true;
       break;
     }
-    assert.ok(entries.length < 128, "tar raw-entry count must remain bounded");
+    assert.ok(entries.length < EXPECTED_PACKED_FILE_COUNT + expectedPaxPaths.size, "tar raw-entry count must remain bounded");
     const declaredChecksum = tarOctal(header, 148, 8, "tar checksum");
     let checksum = 0;
     for (let index = 0; index < header.byteLength; index += 1) {
@@ -255,7 +289,7 @@ function validatePackedTarball(tarballBytes) {
   assert.equal(pendingPax, null, "tar must not end with an unapplied PAX header");
   assert.equal(fileCount, EXPECTED_PACKED_FILE_COUNT, "packed logical file count must remain exact");
   assert.equal(seenPaxHeaders.size, expectedPaxPaths.size, "packed PAX header count must remain exact");
-  assert.ok(baseFileBytes <= MAX_BASE_PACKED_TOTAL_FILE_BYTES, "pre-plugin packed files must retain their original total-size bound");
+  assert.ok(baseFileBytes <= MAX_BASE_PACKED_TOTAL_FILE_BYTES, "base packed files must satisfy their reviewed total-size bound");
   assert.ok(pluginFileBytes <= MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES, "self-contained plugin files must satisfy their separate total-size bound");
   for (const rule of packedFileRules) {
     assert.equal(ruleCounts.get(rule.label), rule.count, `${rule.label} packed-entry count must remain exact`);
@@ -711,6 +745,30 @@ async function assertPackedDashboard(indexResponse, indexHtml, previewUrl, packe
   assert.match(bootstrap.bytes.toString("utf8"), /localStorage\.getItem\("uc-theme"\)/u);
 }
 
+test("packed release rejects unreviewed assets, sensitive paths, links and oversized files", () => {
+  const archiveWithEntry = (entryPath, { type = "0", size = 0 } = {}) => {
+    const header = Buffer.alloc(512);
+    assert.ok(Buffer.byteLength(entryPath) < 100);
+    header.write(entryPath, 0);
+    header.write("0000644\0", 100);
+    header.write(`${size.toString(8).padStart(11, "0")}\0`, 124);
+    header.write(type, 156);
+    header.write("ustar\0", 257);
+    header.fill(0x20, 148, 156);
+    const checksum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+    return gzipSync(Buffer.concat([header, Buffer.alloc(Math.ceil(size / 512) * 512 + 1024)]));
+  };
+  for (const entryPath of [
+    "package/dist/dashboard/assets/unreviewedModule-ABCDEFGH.js",
+    "package/dist/dashboard/assets/chunk-UNREVIEWED-ABCDEFGH.js",
+    "package/dist/dashboard/assets/.env",
+    "package/dist/../private-key.pem",
+  ]) assert.throws(() => validatePackedTarball(archiveWithEntry(entryPath)), /outside the release allowlist/u);
+  assert.throws(() => validatePackedTarball(archiveWithEntry("package/dist/host-install.mjs", { type: "2" })), /forbidden tar entry type/u);
+  assert.throws(() => validatePackedTarball(archiveWithEntry("package/dist/host-install.mjs", { size: MAX_PACKED_FILE_BYTES + 1 })), /per-file size bound/u);
+});
+
 test("cold packed Alpha validates the installed fail-closed lifecycle outside the monorepo", async () => {
   const packDirectory = await mkdtemp(path.join(tmpdir(), "preview-pack-"));
   const installDirectory = await mkdtemp(path.join(tmpdir(), "preview-install-"));
@@ -776,7 +834,7 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
         error &&
         error.code === 2 &&
         error.stdout === "" &&
-        error.stderr === "understand-code: configuration_error\n",
+        error.stderr === "understand-code: configuration_error — Invalid command or options. Use an absolute repository path for --root and check the usage below.\n" + mcpHelp.stdout,
       "the public CLI must reject the private service entrypoint without an exact invocation",
     );
     const manifest = JSON.parse(await readFile(path.join(installedPackageRoot, "package.json"), "utf8"));
@@ -1269,6 +1327,7 @@ test("cold packed Alpha validates the installed fail-closed lifecycle outside th
       "search_context",
       "trace_impact",
       "refresh_index",
+      "index_job",
     ]);
 
     const pulse = await callTool(

@@ -18,10 +18,11 @@ function readableResourcePath(value: string): string {
 }
 
 function SourceExcerpt({ target }: { target: Extract<WikiResourceTarget, { kind: "source" }> }) {
-  const { excerpts, loading } = useEvidenceExcerpts([target.evidence.id]);
+  const { excerpts, loading, error, retry } = useEvidenceExcerpts([target.evidence.id]);
   const content = excerpts.get(target.evidence.id) ?? target.evidence.excerpt;
   if (!content) return <span className="uc-resource-message" role="status">
-    {loading ? "正在读取源码片段…" : "该引用已收录，暂时无法读取源码片段。"}
+    {loading ? "正在读取源码片段…" : error ?? "该引用已收录，暂时无法读取源码片段。"}
+    {error && <button type="button" onClick={retry} disabled={loading}>重试读取证据</button>}
   </span>;
   const lines = content.replace(/\n$/u, "").split("\n");
   const requestedIndex = (target.line ?? target.evidence.lineRange[0]) - target.evidence.lineRange[0];

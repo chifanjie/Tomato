@@ -23,6 +23,7 @@ import {
   extractFileFingerprint,
   generateKnowledgeBase,
   resolveCalls,
+  resolveJavaCalls,
   type CallResolverFile,
   type FingerprintStore,
   type KnowledgeGraph,
@@ -41,6 +42,7 @@ import {
 } from "@understand-code/repository-state";
 import { repositoryParserRegistryV1 } from "./repository-parser.js";
 import { createRepositoryImportResolverV1 } from "./repository-imports.js";
+import { operationCheckpoint, throwIfOperationCancelled } from "./operation-control.js";
 
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const SKIP_DIRECTORIES = new Set([
@@ -73,6 +75,7 @@ const INDEX_ACTIVE_MANIFEST = "index-active-v1.json";
 const INDEX_GENERATION_MANIFEST = "generation-manifest.json";
 const INDEX_PUBLISH_LOCK = ".index-publish-v1.lock";
 const INDEX_PENDING_DIRECTORY = "index-pending-v1";
+const INDEX_ARCHIVED_DIRECTORY = "index-archived-v1";
 const INDEX_PENDING_LOCK = ".index-pending-v1.lock";
 const KNOWLEDGE_LINEAGE_PATH = "knowledge-base/.trace/task-lineage.json";
 const MAX_PENDING_GENERATIONS = 32;
@@ -589,6 +592,7 @@ async function collectSourceFiles(root: string): Promise<SourceFile[]> {
     const entries = await fs.readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
+      await operationCheckpoint();
       const relativePath = relativeDirectory === ""
         ? entry.name
         : `${relativeDirectory}/${entry.name}`;
@@ -596,6 +600,9 @@ async function collectSourceFiles(root: string): Promise<SourceFile[]> {
       if (entry.name === ".git") continue;
       // Finder metadata can be committed accidentally; it never contains repository source.
       if (entry.name === ".DS_Store") continue;
+      // Exclusions are decided from the directory entry alone. Do not inspect,
+      // open or follow an excluded secret or symbolic link.
+      if (ignore.isIgnored(relativePath) || ignore.isIgnored(`${relativePath}/`)) continue;
       if (entry.isDirectory()) {
         if (SKIP_DIRECTORIES.has(entry.name) || ignore.isIgnored(`${relativePath}/`)) continue;
         if (isSensitiveRepositoryPath(relativePath)) {
@@ -612,7 +619,6 @@ async function collectSourceFiles(root: string): Promise<SourceFile[]> {
       if (isSensitiveRepositoryPath(relativePath)) {
         throw new RepositoryIndexError(`sensitive repository source is not analyzable: ${relativePath}`);
       }
-      if (ignore.isIgnored(relativePath) || ignore.isIgnored(`${relativePath}/`)) continue;
       if (!entry.isFile()) {
         throw new RepositoryIndexError(`special repository paths are not analyzable: ${relativePath}`);
       }
@@ -764,6 +770,7 @@ export async function buildRepositoryIndex(
     throw new RepositoryIndexError("knowledge lineage does not match the index Snapshot");
   }
   const { canonicalRoot, snapshot } = input;
+  await operationCheckpoint("Reading repository source files");
   const sourceFiles = await collectSourceFiles(canonicalRoot);
   const inventoryDigest = sourceInventoryDigest(sourceFiles);
   if (
@@ -783,7 +790,9 @@ export async function buildRepositoryIndex(
   const headCommit = snapshotHeadCommit(snapshot);
   const builder = new GraphBuilder(projectName, headCommit ?? "unknown");
   const analyses = new Map<string, ReturnType<PluginRegistry["analyzeFile"]>>();
+  await operationCheckpoint("Analyzing source structure");
   for (const source of sourceFiles) {
+    await operationCheckpoint();
     const analysis = registry.analyzeFile(source.relativePath, source.content);
     analyses.set(source.relativePath, analysis);
     const summary = `${source.relativePath} 的源码节点（${source.content.split(/\r?\n/u).length} 行）`;
@@ -810,8 +819,9 @@ export async function buildRepositoryIndex(
   const resolveImport = createRepositoryImportResolverV1(sourceFiles);
   const callFiles: CallResolverFile[] = [];
   for (const source of sourceFiles) {
+    await operationCheckpoint();
     const analysis = analyses.get(source.relativePath);
-    if (!analysis) continue;
+    if (!analysis || source.relativePath.endsWith(".java")) continue;
     const imports = analysis.imports.map((imported) => {
       const resolvedPaths = resolveImport(source.relativePath, imported.source);
       for (const target of resolvedPaths) builder.addImportEdge(source.relativePath, target);
@@ -838,11 +848,18 @@ export async function buildRepositoryIndex(
       callGraph: registry.extractCallGraph(source.relativePath, source.content) ?? [],
     });
   }
+  await operationCheckpoint("Resolving static source relationships");
   const callResolution = resolveCalls(callFiles);
+  const javaResolution = resolveJavaCalls(sourceFiles.filter((source) => source.relativePath.endsWith(".java"))
+    .flatMap((source) => { const analysis = analyses.get(source.relativePath); return analysis ? [{ path: source.relativePath, analysis }] : []; }));
+  callResolution.calls.push(...javaResolution.calls);
+  callResolution.unresolved.push(...javaResolution.unresolved);
+  for (const imported of javaResolution.imports) builder.addImportEdge(imported.fromPath, imported.toPath);
   const functionsByIdentity = new Map<string, KnowledgeGraph["nodes"]>();
   for (const node of builder.build().nodes) {
     if (node.type !== "function" || node.filePath === undefined) continue;
-    const key = `${node.filePath}\0${node.name}`;
+    const identity = node.filePath.endsWith(".java") ? node.id.slice(`function:${node.filePath}:`.length) : node.name;
+    const key = `${node.filePath}\0${identity}`;
     const candidates = functionsByIdentity.get(key) ?? [];
     candidates.push(node); functionsByIdentity.set(key, candidates);
   }
@@ -878,10 +895,18 @@ export async function buildRepositoryIndex(
     totalCallSites: callResolution.calls.length + callResolution.unresolved.length,
     resolvedCallSites: callResolution.calls.length,
     unresolvedCallSites: callResolution.unresolved.length,
-    limitations: ["静态绑定分析不代表完整运行时调用链", "动态调用、外部依赖与无法唯一绑定的调用保留为未解析"],
+    limitations: ["静态绑定分析不代表完整运行时调用链", "动态调用、外部依赖与无法唯一绑定的调用保留为未解析",
+      ...(sourceFiles.some((file) => /\.(?:py|rs)$/u.test(file.relativePath))
+        ? ["Python/Rust：仅解析无名称遮蔽的顶层函数直接调用；方法、跨模块和动态调用保留为未解析"] : []),
+      ...(sourceFiles.some((file) => file.relativePath.endsWith(".java"))
+        ? ["Java：支持无继承歧义的同类 private/static/final 方法、明确类名与 import/package 静态调用、唯一局部 new 接收者；重载、虚分派、继承、接口、字段/参数接收者、构造器及闭包保留为未解析"] : []),
+      ...(sourceFiles.some((file) => /\.(?:rb|php|c|cc|cpp|h|hpp|cs)$/u.test(file.relativePath))
+        ? ["Ruby/PHP/C/C++/C#：当前提取定义与调用位置，尚不支持静态调用目标绑定；调用关系保留为未解析"] : []),
+    ],
   };
   const graphDigest = digest(JSON.stringify(graph));
   const sourceMap = Object.fromEntries(sourceFiles.map((source) => [source.relativePath, source.content]));
+  await operationCheckpoint("Generating reference knowledge");
   const knowledge = generateKnowledgeBase(graph, {
     projectRoot: canonicalRoot,
     sourceFiles: sourceMap,
@@ -937,6 +962,7 @@ export async function buildRepositoryIndex(
     files: fingerprintFiles,
   };
   const installationStat = await fs.lstat(input.canonicalInstallationRoot);
+  await operationCheckpoint("Saving the completed index candidate");
   if (!installationStat.isDirectory() || installationStat.isSymbolicLink() ||
     (installationStat.mode & 0o777) !== 0o700 ||
     await fs.realpath(input.canonicalInstallationRoot) !== input.canonicalInstallationRoot) {
@@ -1383,6 +1409,7 @@ export async function publishStagedRepositoryIndex(
     publishStoreCut: () => Promise<void>;
   }>,
 ): Promise<void> {
+  throwIfOperationCancelled();
   const manifestBytes = Buffer.from(input.publication.manifestBytes);
   if (digestBytes(manifestBytes) !== input.generation.generationManifestDigest) {
     throw new RepositoryIndexError(
@@ -1687,7 +1714,7 @@ async function pendingDirectoryV1(directory: string): Promise<Awaited<ReturnType
   return stat;
 }
 
-async function pendingRootV1(canonicalRoot: string, create: boolean): Promise<string> {
+async function pendingRootV1(canonicalRoot: string, create: boolean, directoryName = INDEX_PENDING_DIRECTORY): Promise<string> {
   if (!path.isAbsolute(canonicalRoot) || path.resolve(canonicalRoot) !== canonicalRoot) {
     throw new RepositoryIndexError("pending repository index root is not canonical");
   }
@@ -1696,7 +1723,7 @@ async function pendingRootV1(canonicalRoot: string, create: boolean): Promise<st
     throw new RepositoryIndexError("pending repository index root is not canonical");
   }
   const managedRoot = path.join(canonicalRoot, ".understand-code");
-  const directory = path.join(managedRoot, INDEX_PENDING_DIRECTORY);
+  const directory = path.join(managedRoot, directoryName);
   if (create) await ensureDirectoryChain(canonicalRoot, directory);
   await pendingDirectoryV1(managedRoot);
   await pendingDirectoryV1(directory);
@@ -1751,7 +1778,13 @@ export async function readPendingRepositoryIndexV1(input: Readonly<{
   const canonicalRoot = input.canonicalRoot;
   const generationId = input.generationId;
   if (!INDEX_GENERATION_ID.test(generationId)) throw new RepositoryIndexError("pending generation ID is invalid");
-  const root = await pendingRootV1(canonicalRoot, false);
+  let root = await pendingRootV1(canonicalRoot, false);
+  // Published candidates remain readable for exact publication retries, but
+  // no longer consume the capacity reserved for reviewable drafts.
+  try { await fs.lstat(path.join(root, generationId)); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    root = await pendingRootV1(canonicalRoot, false, INDEX_ARCHIVED_DIRECTORY);
+  }
   const rootBefore = await pendingDirectoryV1(root);
   const directory = path.join(root, generationId);
   const before = await pendingDirectoryV1(directory);
@@ -1764,7 +1797,7 @@ export async function readPendingRepositoryIndexV1(input: Readonly<{
   }
   const verified = verifiedIndexPublicationV1({ generation: metadata.generation, publication: { manifestBytes: metadata.manifestBytes, files } });
   const after = await pendingDirectoryV1(directory);
-  const rootAfter = await pendingDirectoryV1(await pendingRootV1(canonicalRoot, false));
+  const rootAfter = await pendingDirectoryV1(await pendingRootV1(canonicalRoot, false, path.basename(root)));
   if (before.dev !== after.dev || before.ino !== after.ino || rootBefore.dev !== rootAfter.dev || rootBefore.ino !== rootAfter.ino ||
     !(await pendingFileBytesV1(path.join(directory, INDEX_GENERATION_MANIFEST))).equals(metadata.manifestBytes)) {
     throw new RepositoryIndexError("pending repository index changed during read");
@@ -1876,6 +1909,7 @@ export async function savePendingRepositoryIndexV1(input: Readonly<{
   generation: RepositoryIndexGenerationBindingV1;
   publication: RepositoryIndexPublicationBundleV1;
 }>): Promise<PendingRepositoryIndexV1> {
+  throwIfOperationCancelled();
   const canonicalRoot = input.canonicalRoot;
   const candidate = verifiedIndexPublicationV1(input);
   const lineageFile = candidate.publication.files.find((file) => file.relativePath === KNOWLEDGE_LINEAGE_PATH);
@@ -1895,6 +1929,12 @@ export async function savePendingRepositoryIndexV1(input: Readonly<{
     }
     return replay;
   }
+  // Retrying a published generation must not recreate its pending slot.
+  const archived = path.join(canonicalRoot, ".understand-code", INDEX_ARCHIVED_DIRECTORY, candidate.generation.generationId);
+  if (await fs.lstat(archived).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+    return undefined;
+  })) return readPendingRepositoryIndexV1({ canonicalRoot, generationId: candidate.generation.generationId });
   const lockPath = path.join(path.dirname(root), INDEX_PENDING_LOCK);
   const token = `${process.pid}:${randomBytes(16).toString("hex")}\n`;
   const lock = await acquirePendingLockV1(lockPath);
@@ -1962,6 +2002,126 @@ export async function savePendingRepositoryIndexV1(input: Readonly<{
       }
     }
   }
+}
+
+async function withPendingMutationV1<T>(canonicalRoot: string, run: (root: string) => Promise<T>, cancellable = true): Promise<T> {
+  if (cancellable) throwIfOperationCancelled();
+  const root = await pendingRootV1(canonicalRoot, false);
+  const lockPath = path.join(path.dirname(root), INDEX_PENDING_LOCK);
+  const lock = await acquirePendingLockV1(lockPath);
+  const identity = await lock.stat();
+  try {
+    await lock.writeFile(`${process.pid}:${randomBytes(16).toString("hex")}\n`, "utf8");
+    await lock.sync();
+    return await run(root);
+  } finally {
+    await lock.close();
+    const current = await fs.lstat(lockPath).catch(() => undefined);
+    if (current && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino) await fs.unlink(lockPath);
+  }
+}
+
+async function syncIndexDirectoryV1(directory: string): Promise<void> {
+  await pendingDirectoryV1(directory);
+  const handle = await fs.open(directory, fsConstants.O_RDONLY | O_NOFOLLOW);
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
+/** Free a draft slot only after the active publication proves this exact candidate was published. */
+export async function archivePublishedRepositoryIndexV1(input: Readonly<{
+  canonicalRoot: string; taskId: string; generationId: string;
+}>): Promise<void> {
+  const taskId = TaskIdSchema.parse(input.taskId);
+  if (!INDEX_GENERATION_ID.test(input.generationId)) throw new RepositoryIndexError("pending generation ID is invalid");
+  await withPendingMutationV1(input.canonicalRoot, async (root) => {
+    const from = path.join(root, input.generationId);
+    const pending = await fs.lstat(from).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return undefined;
+    });
+    const candidate = await readPendingRepositoryIndexV1(input);
+    if (candidate.knowledgeLineage.taskId !== taskId) {
+      throw new RepositoryIndexError("published candidate ownership does not match");
+    }
+    // Already archived bytes are immutable and fully verified above. A newer
+    // active publication must not invalidate historical publication retries.
+    if (!pending) return;
+    const active = await openActiveRepositoryIndexV1(input.canonicalRoot);
+    const lineage = active.knowledgeLineage;
+    if (lineage?.status !== "published" || lineage.taskId !== taskId || lineage.candidateGenerationId !== input.generationId ||
+        candidate.knowledgeLineage.sourceSnapshotId !== lineage.sourceSnapshotId) {
+      throw new RepositoryIndexError("only the source-bound published candidate may be archived");
+    }
+    const archive = await pendingRootV1(input.canonicalRoot, true, INDEX_ARCHIVED_DIRECTORY);
+    const to = path.join(archive, input.generationId);
+    await pendingDirectoryV1(from);
+    // A pre-existing destination must never be replaced, even with equal bytes.
+    if (await fs.lstat(to).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return undefined;
+    })) throw new RepositoryIndexError("published candidate archive already exists");
+    await fs.rename(from, to);
+    await syncIndexDirectoryV1(root);
+    await syncIndexDirectoryV1(archive);
+  }, false);
+}
+
+/** Explicit cleanup for incomplete writes only; acquiring the writer lock proves no save is active. */
+export async function cleanupInterruptedPendingRepositoryIndexesV1(input: Readonly<{
+  canonicalRoot: string;
+}>): Promise<{ removed: number }> {
+  try { await pendingRootV1(input.canonicalRoot, false); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { removed: 0 };
+    throw error;
+  }
+  return withPendingMutationV1(input.canonicalRoot, async (root) => {
+    const candidates: string[] = [];
+    for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+      if (!/^\.tmp-generation-[0-9a-f]{64}-[0-9a-f]{32}$/u.test(entry.name)) continue;
+      const directory = path.join(root, entry.name);
+      await pendingDirectoryV1(directory);
+      // Fully validate private, regular content before deleting any temporary
+      // directory. Incomplete manifests are allowed; links and escapes are not.
+      await collectStagedIndexFiles(directory, INDEX_GENERATION_MANIFEST);
+      candidates.push(directory);
+    }
+    for (const directory of candidates) await fs.rm(directory, { recursive: true });
+    await syncIndexDirectoryV1(root);
+    return { removed: candidates.length };
+  });
+}
+
+/** Explicitly discard one verified draft; never evicts another Task or a published candidate. */
+export async function discardPendingRepositoryIndexV1(input: Readonly<{
+  canonicalRoot: string; taskId: string; generationId: string; expectedSourceSnapshotId: string;
+}>): Promise<void> {
+  const taskId = TaskIdSchema.parse(input.taskId);
+  SnapshotIdSchema.parse(input.expectedSourceSnapshotId);
+  if (!INDEX_GENERATION_ID.test(input.generationId)) throw new RepositoryIndexError("pending generation ID is invalid");
+  await withPendingMutationV1(input.canonicalRoot, async (root) => {
+    const directory = path.join(root, input.generationId);
+    await pendingDirectoryV1(directory); // Archives are not discardable through this API.
+    const candidate = await readPendingRepositoryIndexV1(input);
+    if (candidate.knowledgeLineage.taskId !== taskId || candidate.knowledgeLineage.sourceSnapshotId !== input.expectedSourceSnapshotId) {
+      throw new RepositoryIndexError("discard candidate ownership does not match");
+    }
+    const active = await openActiveRepositoryIndexV1(input.canonicalRoot).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return undefined;
+    });
+    if (active?.knowledgeLineage?.status === "published" && active.knowledgeLineage.candidateGenerationId === input.generationId) {
+      throw new RepositoryIndexError("published candidates must be archived, not discarded");
+    }
+    // Move out of the draft namespace before deleting. A crash leaves only an
+    // inert explicitly discarded directory, never an occupied pending slot.
+    const archive = await pendingRootV1(input.canonicalRoot, true, INDEX_ARCHIVED_DIRECTORY);
+    const discarded = path.join(archive, `.discarded-${input.generationId}-${randomBytes(16).toString("hex")}`);
+    await fs.rename(directory, discarded);
+    await syncIndexDirectoryV1(root);
+    await syncIndexDirectoryV1(archive);
+    await fs.rm(discarded, { recursive: true });
+    await syncIndexDirectoryV1(archive);
+  });
 }
 
 export async function publishIncrementalStrongCutV1(input: Readonly<{

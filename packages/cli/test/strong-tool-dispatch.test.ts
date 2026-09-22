@@ -1,3 +1,4 @@
+import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
   StrongRepoPulseV1Schema,
   StrongRepositorySnapshotV1Schema,
@@ -113,6 +114,21 @@ describe("strong MCP tool dispatch", () => {
       },
     });
     expect(fakes.runtime.close).toHaveBeenCalledOnce();
+  });
+
+  it("maps a Task bundle CAS conflict to exact public Task revisions", async () => {
+    fakes.runtime.taskEngine.updateTask.mockRejectedValueOnce(new ArtifactStoreError(
+      "revision_conflict", "Private store diagnostics must not be exposed.",
+      { expectedRevision: 6, currentRevision: 7, bundleRevision: 7 },
+    ));
+    const result = await callImplementedTool("update_task", {
+      taskId, expectedRevision: 6, actor: "codex", idempotencyKey: "cas-conflict",
+      action: { type: "transition_status", to: "in_progress" },
+    }, "/srv/repository", { canonicalInstallationRoot: installationRoot });
+    expect(result).toMatchObject({ isError: true, structuredContent: { error: {
+      schemaVersion: 1, code: "revision_conflict", details: { taskId, expectedRevision: 6, actualRevision: 7 },
+    } } });
+    expect(JSON.stringify(result)).not.toContain("Private store diagnostics");
   });
 
   it("dispatches the strong Check profile only to TaskEngine.checkChanges", async () => {

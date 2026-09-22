@@ -308,8 +308,10 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.validation.errors).toContain("计划文件缺少已接受写作者输出：文件文档/src-api-routes.ts.md");
     expect(kb.documents.some((document) => document.path === "文件文档/src-api-routes.ts.md")).toBe(false);
     expect(kb.documents.filter((document) => document.role === "maintenance").map((document) => document.path)).toEqual(
-      expect.arrayContaining(["项目总览.md", "引用覆盖.md", "质量状态.md"]),
+      expect.arrayContaining(["引用覆盖.md", "质量状态.md"]),
     );
+    expect(kb.validation.errors).toContain("计划主干页面缺少有效写作者输出：项目总览.md");
+    expect(kb.documents.some((document) => document.path === "项目总览.md")).toBe(false);
     expect(kb.coverageReport.totalDocuments).toBe(kb.documents.filter((document) => document.role !== "maintenance").length);
   });
 

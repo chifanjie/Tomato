@@ -35,6 +35,28 @@ describe("RustExtractor", () => {
     expect(extractor.languageIds).toEqual(["rust"]);
   });
 
+  it("binds a proven direct call between unique top-level functions", () => {
+    const { tree, parser, root } = parse("fn helper() -> i32 { 1 }\nfn main() { helper(); }");
+    const calls = extractor.extractCallGraph(root);
+    expect(calls.find((entry) => entry.caller === "main" && entry.callee === "helper")?.binding)
+      .toEqual({ kind: "local", name: "helper" });
+    tree.delete(); parser.delete();
+  });
+
+  it.each(["fn helper() {}\nfn main(helper: fn()) { helper(); }", "fn helper() {}\nfn main() { let helper = || {}; helper(); }", "fn helper() {}\nfn main() { fn helper() {} helper(); }", "fn helper() {}\nmod nested { fn main() { helper(); } }", "#[cfg(feature = \"optional\")]\nfn helper() {}\nfn main() { helper(); }"])("does not guess a binding across shadowing or unsupported scope: %s", (source) => {
+    const { tree, parser, root } = parse(source);
+    const calls = extractor.extractCallGraph(root).filter((entry) => entry.callee === "helper");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((entry) => entry.binding === undefined)).toBe(true);
+    tree.delete(); parser.delete();
+  });
+
+  it("does not attribute deferred closure calls to the enclosing function", () => {
+    const { tree, parser, root } = parse("fn helper() {} fn main() { let deferred = || helper(); }");
+    expect(extractor.extractCallGraph(root).filter((entry) => entry.callee === "helper").every((entry) => entry.binding === undefined)).toBe(true);
+    tree.delete(); parser.delete();
+  });
+
   // ---- Functions ----
 
   describe("extractStructure - functions", () => {

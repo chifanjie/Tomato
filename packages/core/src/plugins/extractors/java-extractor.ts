@@ -1,6 +1,7 @@
 import type { StructuralAnalysis, CallGraphEntry } from "../../types.js";
 import type { LanguageExtractor, TreeSitterNode } from "./types.js";
 import { findChild, findChildren } from "./base-extractor.js";
+import { extractJavaSourceBindings, type JavaStructuralAnalysis } from "./java-call-binding.js";
 
 /**
  * Extract parameter names from a Java `formal_parameters` node.
@@ -96,7 +97,7 @@ function lastComponent(path: string): string {
 export class JavaExtractor implements LanguageExtractor {
   readonly languageIds = ["java"];
 
-  extractStructure(rootNode: TreeSitterNode): StructuralAnalysis {
+  extractStructure(rootNode: TreeSitterNode): JavaStructuralAnalysis {
     const functions: StructuralAnalysis["functions"] = [];
     const classes: StructuralAnalysis["classes"] = [];
     const imports: StructuralAnalysis["imports"] = [];
@@ -121,7 +122,17 @@ export class JavaExtractor implements LanguageExtractor {
       }
     }
 
-    return { functions, classes, imports, exports };
+    const javaBindings = extractJavaSourceBindings(rootNode);
+    const methods = javaBindings.types.filter((type) => type.isClass).flatMap((type) => type.methods);
+    // The existing graph builder understands symbolName while retaining the
+    // readable short method name. Keep overloads and equal names in different
+    // classes as separate source identities.
+    for (const fn of functions) {
+      const index = methods.findIndex((method) => method.name === fn.name &&
+        method.startLine === fn.lineRange[0] && method.endLine === fn.lineRange[1]);
+      if (index >= 0) fn.symbolName = methods.splice(index, 1)[0].symbolName;
+    }
+    return { functions, classes, imports, exports, javaBindings };
   }
 
   extractCallGraph(rootNode: TreeSitterNode): CallGraphEntry[] {

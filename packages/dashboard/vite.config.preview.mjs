@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { markdownWorkerSafeAliases } from "./vite.markdown.mjs";
 
 const dashboardRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const previewRoot = path.resolve(dashboardRoot, "../preview");
@@ -15,6 +16,7 @@ export default defineConfig({
   define: { "import.meta.env.VITE_DEMO_MODE": JSON.stringify("false") },
   resolve: {
     alias: {
+      ...markdownWorkerSafeAliases,
       "@understand-code/core/schema": path.join(coreRoot, "dist/schema.js"),
       "@understand-code/core/search": path.join(coreRoot, "dist/search.js"),
       "@understand-code/core/types": path.join(coreRoot, "dist/types.js"),

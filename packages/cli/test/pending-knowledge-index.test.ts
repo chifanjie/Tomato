@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildRepositoryIndex,
+  archivePublishedRepositoryIndexV1,
+  cleanupInterruptedPendingRepositoryIndexesV1,
+  discardPendingRepositoryIndexV1,
   discardStagedRepositoryIndex,
   listPendingRepositoryIndexesV1,
   openActiveRepositoryIndexV1,
@@ -86,6 +89,63 @@ afterEach(async () => {
 });
 
 describe("durable pending knowledge index", () => {
+  it("explicitly cleans incomplete writes while preserving every complete draft", async () => {
+    const scope = await fixture();
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    const root = path.join(scope.canonicalRoot, ".understand-code/index-pending-v1");
+    const temporary = path.join(root, `.tmp-${scope.built.generation.generationId}-${"f".repeat(32)}`);
+    await mkdir(temporary, { mode: 0o700 });
+    await symlink("/unavailable/private/source", path.join(temporary, "knowledge-graph.json"));
+    await expect(cleanupInterruptedPendingRepositoryIndexesV1(scope)).rejects.toThrow(/symlink/u);
+    await unlink(path.join(temporary, "knowledge-graph.json"));
+    await expect(cleanupInterruptedPendingRepositoryIndexesV1(scope)).resolves.toEqual({ removed: 1 });
+    await expect(cleanupInterruptedPendingRepositoryIndexesV1(scope)).resolves.toEqual({ removed: 0 });
+    expect(await listPendingRepositoryIndexesV1({ ...scope, taskId })).toHaveLength(1);
+  });
+
+  it("archives only published candidates, frees their slot, and preserves exact replay", async () => {
+    const scope = await fixture();
+    const input = { canonicalRoot: scope.canonicalRoot, taskId, generationId: scope.built.generation.generationId };
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    await expect(archivePublishedRepositoryIndexV1(input)).rejects.toThrow();
+    const published = withRepositoryIndexKnowledgeLineageV1({ ...scope.built, knowledgeLineage: {
+      ...pendingLineage, status: "published", candidateGenerationId: input.generationId,
+      currentCheckId: "check:current", verificationIds: ["verification:passed"],
+    } });
+    await publishStagedRepositoryIndex({ ...scope, ...published,
+      authority: { sourceSnapshotId: pendingLineage.sourceSnapshotId, finalizedProviderRevision: 1 }, publishStoreCut: async () => undefined });
+    await expect(discardPendingRepositoryIndexV1({ ...input, expectedSourceSnapshotId: pendingLineage.sourceSnapshotId })).rejects.toThrow(/published/u);
+    await archivePublishedRepositoryIndexV1(input);
+    await archivePublishedRepositoryIndexV1(input);
+    const newer = withRepositoryIndexKnowledgeLineageV1({ ...scope.built, knowledgeLineage: {
+      ...pendingLineage, taskRevision: 8, requestDigest: `sha256:${"8".repeat(64)}`, idempotencyKeyDigest: `sha256:${"9".repeat(64)}`,
+    } });
+    const newerPublished = withRepositoryIndexKnowledgeLineageV1({ ...newer, knowledgeLineage: {
+      ...newer.knowledgeLineage, status: "published", candidateGenerationId: newer.generation.generationId,
+      currentCheckId: "check:newer", verificationIds: ["verification:newer"],
+    } });
+    await publishStagedRepositoryIndex({ ...scope, ...newerPublished,
+      authority: { sourceSnapshotId: pendingLineage.sourceSnapshotId, finalizedProviderRevision: 2 }, publishStoreCut: async () => undefined });
+    await archivePublishedRepositoryIndexV1(input);
+    await expect(archivePublishedRepositoryIndexV1({ ...input, taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAW" })).rejects.toThrow(/ownership/u);
+    expect(await listPendingRepositoryIndexesV1(input)).toEqual([]);
+    expect((await readPendingRepositoryIndexV1(input)).generation).toEqual(scope.built.generation);
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    expect(await listPendingRepositoryIndexesV1(input)).toEqual([]);
+  });
+
+  it("discards only an explicitly selected draft bound to the expected Task and Snapshot", async () => {
+    const scope = await fixture();
+    await savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built });
+    const input = { canonicalRoot: scope.canonicalRoot, taskId, generationId: scope.built.generation.generationId,
+      expectedSourceSnapshotId: pendingLineage.sourceSnapshotId };
+    await expect(discardPendingRepositoryIndexV1({ ...input, taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAW" })).rejects.toThrow(/ownership/u);
+    await expect(discardPendingRepositoryIndexV1({ ...input, expectedSourceSnapshotId: "snapshot:other" })).rejects.toThrow(/ownership/u);
+    expect(await listPendingRepositoryIndexesV1(input)).toHaveLength(1);
+    await discardPendingRepositoryIndexV1(input);
+    expect(await listPendingRepositoryIndexesV1(input)).toEqual([]);
+    await expect(readPendingRepositoryIndexV1(input)).rejects.toThrow();
+  });
   it("lists only the requested Task after complete candidate validation without writing", async () => {
     const scope = await fixture();
     const input = { canonicalRoot: scope.canonicalRoot, taskId };
@@ -139,6 +199,8 @@ describe("durable pending knowledge index", () => {
     const { child, exited } = await holdPendingLock(lockPath);
     const token = await readFile(lockPath);
     await expect(savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...scope.built })).rejects.toThrow();
+    await expect(cleanupInterruptedPendingRepositoryIndexesV1({ canonicalRoot: scope.canonicalRoot })).rejects.toThrow();
+    expect(await readdir(pendingRoot)).toContain(interrupted);
     expect(await readFile(lockPath)).toEqual(token);
     if (termination === "exit") child.stdin!.write("exit\n");
     else child.kill("SIGKILL");
@@ -286,6 +348,10 @@ describe("durable pending knowledge index", () => {
     expect((await readdir(directory)).sort()).toEqual(before);
     const replay = await readPendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, generationId: before[0]! });
     await expect(savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...replay })).resolves.toBeDefined();
+    await discardPendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, taskId,
+      generationId: replay.generation.generationId, expectedSourceSnapshotId: pendingLineage.sourceSnapshotId });
+    await expect(savePendingRepositoryIndexV1({ canonicalRoot: scope.canonicalRoot, ...overflow })).resolves.toBeDefined();
+    expect(await readdir(directory)).toHaveLength(32);
   });
 
   it("rejects a symlinked managed parent for reads and writes without following it", async () => {

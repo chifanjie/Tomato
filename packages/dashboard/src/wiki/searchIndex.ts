@@ -28,6 +28,9 @@ export interface WikiSearchRuntime {
   preparedRecords: readonly PreparedWikiSearchRecord[];
   mode: "full" | "fallback";
   contentMatcher: ReturnType<typeof createWikiSearchContentMatcher>;
+  /** Present only when the full index stays inside the dedicated search worker. */
+  searchAsync?: (query: string, page: number, pageSize: number) => Promise<WikiSearchResults>;
+  fallbackRuntime?: WikiSearchRuntime;
 }
 
 export interface WikiSearchResults {
@@ -59,7 +62,7 @@ function groupFor(record: WikiSearchRecordV2): WikiSearchGroupKind {
 }
 
 function normalize(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase("zh-CN").trim();
+  return value.normalize("NFKC").toLowerCase().trim();
 }
 
 function prepareSearchRecord(record: WikiSearchRecordV2): PreparedWikiSearchRecord {
@@ -78,7 +81,9 @@ function prepareSearchRecord(record: WikiSearchRecordV2): PreparedWikiSearchReco
     filePath,
     terms,
     businessTerms,
-    haystack: [title, summary, content, filePath, ...terms, ...businessTerms].join("\n"),
+    // Body matching already uses contentIncludes; concatenating it here copied
+    // the entire legacy corpus a second time without changing token matches.
+    haystack: [title, summary, filePath, ...terms, ...businessTerms].join("\n"),
     sortTitle: record.title,
   };
 }
@@ -93,7 +98,7 @@ function createRuntime(
     preparedRecords: records.map(prepareSearchRecord),
     mode,
     contentMatcher: createWikiSearchContentMatcher(contentLines, {
-      normalizeLine: (line) => line.normalize("NFKC").toLocaleLowerCase("zh-CN"),
+      normalizeLine: (line) => line.normalize("NFKC").toLowerCase(),
       separator: "\n",
     }),
   };
@@ -199,9 +204,18 @@ export function buildWikiSearchRuntime(
     return createRuntime(buildFallbackSearchRecords(wikiIndex), mode);
   }
 
+  return buildWikiSearchRuntimeForPages(records, new Set(wikiIndex.pagesById.keys()), contentLines);
+}
+
+/** Full search requires only page identities, not a cloned Wiki/evidence graph. */
+export function buildWikiSearchRuntimeForPages(
+  records: readonly WikiSearchRecordV2[],
+  pageIds: ReadonlySet<string>,
+  contentLines?: readonly string[],
+): WikiSearchRuntime {
   const seen = new Set<string>();
   const validRecords = records.filter((record) => {
-    if (seen.has(record.id) || !wikiIndex.pagesById.has(record.pageId)) return false;
+    if (seen.has(record.id) || !pageIds.has(record.pageId)) return false;
     if (record.contentLineIds !== undefined && (record.content !== undefined || contentLines === undefined
       || !Array.isArray(record.contentLineIds) || record.contentLineIds.some((id) => !Number.isInteger(id) || id < 0 || typeof contentLines[id] !== "string"))) return false;
     if (
@@ -217,7 +231,7 @@ export function buildWikiSearchRuntime(
     seen.add(record.id);
     return true;
   });
-  return createRuntime(validRecords, mode, contentLines);
+  return createRuntime(validRecords, "full", contentLines);
 }
 
 function emptyCounts(): Record<WikiSearchGroupKind, number> {

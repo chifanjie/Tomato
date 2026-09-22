@@ -21,6 +21,7 @@ import TokenGate from "./components/TokenGate";
 import StalenessBanner from "./components/StalenessBanner";
 import { ExcerptLoaderProvider } from "./wiki/ExcerptContext";
 import WarningBanner from "./components/WarningBanner";
+import HostInstruction from "./components/taskFirst/HostInstruction";
 import TaskHome from "./components/taskFirst/TaskHome";
 import TaskFirstWorkbench, {
   type TaskFirstRoute,
@@ -142,6 +143,7 @@ export function WikiAvailabilityView({ status, onRetry, graphAvailable = true }:
           {copy.title}
         </h2>
         <p className="mt-3 text-sm leading-7 text-text-secondary">{description}</p>
+        {["legacy", "invalid", "missing", "empty"].includes(status) && <HostInstruction title="获取生成或迁移指令" context={{ wikiStatus: status }} request="请检查当前仓库知识库的格式与生成状态，保留可用旧产物，重新生成并校验 V2 知识索引、正文及源码证据。完成后返回新的工作台链接；若无法完成请说明具体阶段和下一步。" />}
         {onRetry && (
           <button
             type="button"
@@ -666,17 +668,18 @@ function TaskFirstDashboard({
     window.dispatchEvent(new Event("popstate"));
   }, [cookieMode]);
 
-  const navigateToSurface = useCallback((nextSurface: "wiki" | "graph", nextRoute: TaskFirstRoute, focus?: string) => {
+  const navigateToSurface = useCallback((nextSurface: "wiki" | "graph", nextRoute: TaskFirstRoute, focus?: string, wikiAnchor?: string) => {
     if (!nextRoute.taskId) {
       const pathname = cookieMode ? "/workbench" : "/";
       window.history.pushState(null, "", `${pathname}#${nextSurface}`);
       window.dispatchEvent(new Event("popstate"));
       return;
     }
-    const { focus: _oldFocus, ...routeWithoutFocus } = nextRoute;
+    const { focus: _oldFocus, wikiAnchor: _oldAnchor, ...routeWithoutFocus } = nextRoute;
     navigate({
       ...routeWithoutFocus,
       ...(focus ? { focus } : {}),
+      ...(nextSurface === "wiki" && wikiAnchor ? { wikiAnchor } : {}),
     }, nextSurface);
   }, [cookieMode, navigate]);
 
@@ -751,10 +754,22 @@ function TaskFirstDashboard({
 
   const requestTaskSearch = useCallback(() => {
     navigateToSurface("wiki", route);
-    window.setTimeout(() => {
-      window.dispatchEvent(new Event(GLOBAL_WIKI_SEARCH_REQUEST_EVENT));
-    }, 0);
+    const target = new URL(window.location.href);
+    target.searchParams.set("wikiSearch", "1");
+    window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
   }, [navigateToSurface, route]);
+
+  useEffect(() => {
+    if (surface !== "task") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        requestTaskSearch();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [requestTaskSearch, surface]);
 
   const taskContext = useMemo<TaskDashboardContext | null>(() => (
     surface === "task" ? null : {
@@ -764,7 +779,7 @@ function TaskFirstDashboard({
       focusNodeId,
       focusUnavailable,
       onSelectSurface: (nextSurface, focus) => navigateToSurface(nextSurface, route, focus),
-      onSelectWikiTarget: (target) => navigateToSurface("wiki", route, target.pageId),
+      onSelectWikiTarget: (target) => navigateToSurface("wiki", route, target.pageId, target.anchor),
       onSelectedGraphNode: (nodeId) => navigateToSurface("graph", route, nodeId ?? undefined),
       onBackToFinding: backToFinding,
     }
@@ -1146,16 +1161,22 @@ function DashboardContent({
   const selectWikiPage = useDashboardStore((state) => state.selectWikiPage);
   const openWikiTarget = useDashboardStore((state) => state.openWikiTarget);
   const openGraphForWikiPage = useDashboardStore((state) => state.openGraphForWikiPage);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(() => new URLSearchParams(window.location.search).get("wikiSearch") === "1");
+  const [searchRetryRevision, setSearchRetryRevision] = useState(0);
+  useEffect(() => {
+    const target = new URL(window.location.href);
+    if (!target.searchParams.has("wikiSearch")) return;
+    target.searchParams.delete("wikiSearch");
+    window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
+  }, []);
   const [wikiDrawerOpen, setWikiDrawerOpen] = useState(false);
   const [wikiNavigationRevision, setWikiNavigationRevision] = useState(0);
   const [searchLoadStatus, setSearchLoadStatus] = useState<SearchLoadStatus>("idle");
+  const searchFallbackRuntime = useMemo(() => buildWikiSearchRuntime([], wikiIndex, "fallback"), [wikiIndex]);
   const [searchRuntime, setSearchRuntime] = useState<WikiSearchRuntime>(() =>
-    buildWikiSearchRuntime([], wikiIndex, "fallback"));
+    searchFallbackRuntime);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const searchControllerRef = useRef(createSearchArtifactRequestController(knowledgeFetcher));
-  const fullSearchRecordsRef = useRef<Parameters<typeof buildWikiSearchRuntime>[0]>([]);
-  const fullSearchContentLinesRef = useRef<readonly string[] | undefined>(undefined);
   const recentWikiTargetRef = useRef<WikiTarget | null>(null);
   const noteWikiLocationApplied = useCallback(() => {
     setWikiNavigationRevision((revision) => revision + 1);
@@ -1196,25 +1217,17 @@ function DashboardContent({
     }
     if (taskContext.surface !== "wiki" || taskContext.stale || !taskContext.route.focus) return;
     if (wikiIndex.pagesById.has(taskContext.route.focus)) {
-      openWikiTarget({ pageId: taskContext.route.focus });
+      openWikiTarget({ pageId: taskContext.route.focus, ...(taskContext.route.wikiAnchor ? { anchor: taskContext.route.wikiAnchor } : {}) });
     }
   }, [openWikiTarget, setDashboardSurface, taskContext, wikiIndex]);
 
   useEffect(() => {
     searchControllerRef.current.reset(accessToken);
-    fullSearchRecordsRef.current = [];
-    fullSearchContentLinesRef.current = undefined;
     setSearchLoadStatus("idle");
-    setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
-  }, [accessToken]);
+    setSearchRuntime(searchFallbackRuntime);
+  }, [accessToken, wikiIndex]);
 
-  useEffect(() => {
-    if (searchLoadStatus === "ready") {
-      setSearchRuntime(buildWikiSearchRuntime(fullSearchRecordsRef.current, wikiIndex, "full", fullSearchContentLinesRef.current));
-    } else if (searchLoadStatus === "fallback" || searchLoadStatus === "idle") {
-      setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
-    }
-  }, [searchLoadStatus, wikiIndex]);
+  useEffect(() => () => searchControllerRef.current.reset(), []);
 
   useEffect(() => {
     const controller = searchControllerRef.current;
@@ -1222,32 +1235,26 @@ function DashboardContent({
       controller.close();
       return;
     }
+    let cancelled = false;
     const applyResult = (result: Awaited<ReturnType<typeof controller.open>>) => {
-      if (!controller.isCurrent(accessToken)) return;
+      if (cancelled || !controller.isCurrent(accessToken)) return;
       if (result.status === "forbidden") {
         onTokenInvalid();
         return;
       }
       if (result.status === "ready") {
-        fullSearchRecordsRef.current = result.records;
-        fullSearchContentLinesRef.current = result.contentLines;
-        setSearchRuntime(buildWikiSearchRuntime(result.records, wikiIndex, "full", result.contentLines));
+        const runtime = result.runtime ?? buildWikiSearchRuntime(result.records, wikiIndex, "full", result.contentLines);
+        setSearchRuntime(runtime.searchAsync ? { ...runtime, fallbackRuntime: searchFallbackRuntime } : runtime);
         setSearchLoadStatus("ready");
       } else {
-        fullSearchRecordsRef.current = [];
-        fullSearchContentLinesRef.current = undefined;
-        setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
+        setSearchRuntime(searchFallbackRuntime);
         setSearchLoadStatus("fallback");
       }
     };
-    const cached = controller.snapshot();
-    if (cached.token === accessToken && cached.result) {
-      applyResult(cached.result);
-      return;
-    }
     setSearchLoadStatus("loading");
-    void controller.open(accessToken).then(applyResult);
-  }, [accessToken, onTokenInvalid, searchOpen, wikiIndex]);
+    void controller.open(accessToken, wikiIndex).then(applyResult);
+    return () => { cancelled = true; controller.close(); };
+  }, [accessToken, onTokenInvalid, searchOpen, searchRetryRevision, wikiIndex]);
 
   const requestGlobalSearch = useCallback(() => {
     if (searchOpen) return;
@@ -1446,6 +1453,7 @@ function DashboardContent({
         returnFocusRef={searchButtonRef}
         onClose={() => setSearchOpen(false)}
         onSelectTarget={selectSearchTarget}
+        onRetry={() => { searchControllerRef.current.reset(accessToken); setSearchRetryRevision((value) => value + 1); }}
       />
     </div>
     </ExcerptLoaderProvider>

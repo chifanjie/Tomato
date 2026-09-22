@@ -13,6 +13,8 @@ interface WikiEvidenceRailProps {
   /** Excerpts resolved from the shard store; absent while they load. */
   excerpts?: ReadonlyMap<string, string>;
   excerptsLoading?: boolean;
+  excerptsError?: string | null;
+  onRetryExcerpts?: () => void;
 }
 
 const EMPTY_EXCERPTS: ReadonlyMap<string, string> = new Map();
@@ -88,6 +90,8 @@ export default function WikiEvidenceRail({
   onOpenGraph,
   excerpts = EMPTY_EXCERPTS,
   excerptsLoading = false,
+  excerptsError,
+  onRetryExcerpts,
 }: WikiEvidenceRailProps) {
   const hasGraphNodes = directGraphNodeIds.length > 0;
 
@@ -154,6 +158,7 @@ export default function WikiEvidenceRail({
             <span id="wiki-source-evidence-heading">源码证据</span>
             <span aria-label={"共 " + evidence.length + " 条"}>{evidence.length}</span>
           </summary>
+          {excerptsError && <div role="alert" className="p-3 text-sm text-warning">{excerptsError}{onRetryExcerpts && <button type="button" onClick={onRetryExcerpts} disabled={excerptsLoading} className="ml-2 min-h-11 text-accent">重试读取证据</button>}</div>}
           <div className="uc-source-evidence-list">
             {evidence.length === 0 ? (
               <p className="text-sm text-text-muted">本文尚未绑定源码证据。</p>
@@ -162,7 +167,7 @@ export default function WikiEvidenceRail({
                 <summary>{evidenceLocation(item)}</summary>
                 <div>
                   <p>{EVIDENCE_TYPE_LABELS[item.evidenceType]}</p>
-                  <pre>{excerptText(item, excerpts, excerptsLoading)}</pre>
+                  <pre>{excerptsError && !excerpts.has(item.id) && !item.excerpt ? "代码片段读取失败" : excerptText(item, excerpts, excerptsLoading)}</pre>
                 </div>
               </details>
             ))}

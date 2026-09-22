@@ -1,3 +1,8 @@
+import { assertCompatibleLocalArtifacts } from "../runtime/legacy-recovery.js";
+import { controlIndexJobV1, startIndexJobV1 } from "../index-job-command.js";
+import { withRepositoryAccess } from "../runtime/recovery-guard.js";
+import { CliOperationErrorV1 } from "../errors/cli-operation-error.js";
+import { operationCheckpoint } from "../runtime/operation-control.js";
 import { projectWorkbenchDiffV1 } from "./workbench-diff.js";
 import { assertLocalIndexReadSizeV1, LOCAL_INDEX_READ_BUDGETS_V1, withLocalIndexReadBudgetsV1 } from "../runtime/local-read-budgets.js";
 import { createHash } from "node:crypto";
@@ -25,6 +30,10 @@ import {
   type ChangeCheckReadClassificationV1,
 } from "@understand-code/contracts";
 import {
+  BuildTaskBriefPendingOutputV1Schema,
+  IndexJobInputV1Schema,
+  IndexJobOutputV1Schema,
+  IndexJobStateV1Schema,
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
@@ -94,6 +103,7 @@ import {
   invalidArgumentsFailure,
   repositoryNotReadyFailure,
   resourceNotFoundFailure,
+  revisionConflictFailure,
   sourceAccessDeniedFailure,
   strongStoreUnavailableFailure,
   taskGateFailure,
@@ -115,6 +125,8 @@ import {
 
 export interface ToolRuntimeSelectionV1 {
   readonly runtimeProfile?: "local_durable_v1";
+  /** Installed MCP cold starts hand indexing to a durable independent worker. */
+  readonly backgroundInitialIndex?: boolean;
   readonly canonicalInstallationRoot?: string;
   readonly canonicalHostInstallationRoot?: string;
 }
@@ -279,6 +291,7 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "search_context",
   "trace_impact",
   "refresh_index",
+  "index_job",
 ] as const);
 
 export type ImplementedToolName = (typeof IMPLEMENTED_TOOL_NAMES)[number];
@@ -589,6 +602,30 @@ async function searchContext(
       );
     }
   }
+  // Reading entries are persisted symbol identities pinned to this Task's source
+  // snapshot. Resolve their source evidence instead of guessing names from text.
+  const symbolCandidates = new Map<string, { filePath: string; evidenceIds: Set<string>; excerpts: Set<string> }>();
+  for (const entry of bundle.brief.readingPath) {
+    if (entry.kind !== "symbol" || entry.symbolId === undefined || entry.filePath === undefined) continue;
+    const evidence = bundle.evidence.filter((item) => entry.evidenceIds.includes(item.id) &&
+      "filePath" in item && item.filePath === entry.filePath && item.nodeIds.includes(entry.symbolId!) &&
+      item.observedAtSnapshotId === bundle.manifest.latestSnapshotId);
+    if (evidence.length === 0) continue;
+    const symbol = symbolCandidates.get(entry.symbolId) ?? {
+      filePath: entry.filePath, evidenceIds: new Set<string>(), excerpts: new Set<string>(),
+    };
+    for (const item of evidence) {
+      symbol.evidenceIds.add(item.id);
+      if ("excerpt" in item && item.excerpt) symbol.excerpts.add(item.excerpt);
+    }
+    symbolCandidates.set(entry.symbolId, symbol);
+  }
+  for (const [symbolId, symbol] of symbolCandidates) {
+    const summary = [...symbol.excerpts].join("\n").slice(0, 8_192) || `Source-backed symbol in ${symbol.filePath}.`;
+    addCandidate({ kind: "symbol", id: symbolId, symbolId, filePath: symbol.filePath,
+      title: symbolId, summary, score: 0, reasons: [], evidenceIds: [...symbol.evidenceIds].sort(),
+    }, [symbolId, symbol.filePath, summary]);
+  }
   for (const impactPath of bundle.impactPaths) {
     const evidenceIds = impactPath.steps.flatMap((step) =>
       step.evidenceId === undefined ? [] : [step.evidenceId],
@@ -845,6 +882,37 @@ async function getRepoPulse(
   );
 }
 
+function indexJobProjection(job: Awaited<ReturnType<typeof startIndexJobV1>>) {
+  const { schemaVersion: _schemaVersion, kind: _kind, nextStep: _nextStep, ...state } = job;
+  return IndexJobStateV1Schema.parse(state);
+}
+
+function indexJobNextStep(job?: { status: string; errorCode?: string }) {
+  if (!job) return "No matching index job exists in this bound repository. Call build_task_brief with the original arguments to initialize it.";
+  if (job.status === "queued" || job.status === "running") return "Wait at least pollAfterMs before each index_job status call. Limit a batch to 10 checks; if still active, report this jobId and phase, then yield or wait at least 10 seconds before another batch. If the Host cannot wait, yield instead of polling immediately. Use action cancel on user cancellation. After completed, repeat build_task_brief with identical original arguments and idempotencyKey. The job survives Host exit.";
+  if (job.status === "completed") return "Repeat build_task_brief with the identical original arguments and idempotencyKey to create or replay the Task. No Task was created by the background index job.";
+  if (job.errorCode === "legacy_state_requires_recovery") return "Preserve the existing artifacts. Close Hosts and follow the phase message to run the explicit recover command before retrying build_task_brief.";
+  return "Stop polling this terminal job and report its phase. After fixing the cause or an explicit retry request, repeat build_task_brief with identical original arguments. Do not automatically restart failed jobs in a loop. Previously committed artifacts remain available.";
+}
+
+async function indexJob(argumentsValue: unknown, canonicalRoot: string, selection: ToolRuntimeSelectionV1) {
+  const parsed = IndexJobInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  // This local worker is never a fallback for Provider-backed strong writes.
+  if (selection.runtimeProfile !== "local_durable_v1" || selection.canonicalInstallationRoot !== undefined) failStrongStoreUnavailableV1();
+  const startedAt = performance.now();
+  const job = await controlIndexJobV1(canonicalRoot, parsed.data.action, parsed.data.jobId);
+  return IndexJobOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: job ? `Background index job is ${job.status}.` : "No matching background index job exists in this repository." }],
+    structuredContent: { schemaVersion: 1, meta: { durationMs: elapsed(startedAt) }, result: {
+      job: job ? indexJobProjection(job) : null,
+      ...(job && ["queued", "running"].includes(job.status) ? { pollAfterMs: 1_000 } : {}),
+      nextStep: indexJobNextStep(job),
+    } },
+  });
+}
+
 async function buildTaskBrief(
   argumentsValue: unknown,
   canonicalRoot: string,
@@ -857,6 +925,20 @@ async function buildTaskBrief(
     try { await openActiveRepositoryIndexV1(canonicalRoot); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (selection.backgroundInitialIndex) {
+        await assertCompatibleLocalArtifacts(canonicalRoot);
+        await operationCheckpoint("Starting or reusing a background repository index job.");
+        const job = await startIndexJobV1(canonicalRoot);
+        return BuildTaskBriefPendingOutputV1Schema.parse({
+          isError: false,
+          content: [{ type: "text", text: "Repository indexing runs in the background. No Task has been created yet; query index_job and repeat this request after completion." }],
+          structuredContent: { schemaVersion: 1, meta: { durationMs: elapsed(startedAt) }, result: {
+            status: "waiting_for_index", job: indexJobProjection(job), pollAfterMs: 1_000,
+            nextStep: indexJobNextStep(job),
+          } },
+        });
+      }
+      await operationCheckpoint("Initializing this repository for the first task.");
       await refreshIndex({ mode: "full", actor: parsed.data.actor, idempotencyKey: `initialize:${parsed.data.idempotencyKey}` }, canonicalRoot, undefined, undefined, "local_durable_v1");
     }
   }
@@ -865,6 +947,7 @@ async function buildTaskBrief(
     : await openProductionRuntime(canonicalRoot, requireProductionInstallationRootV1(selection));
   try {
     await assertStrongPublishedCutV1(runtime);
+    await operationCheckpoint("Creating the persistent task from the indexed snapshot.");
     const result = await runtime.taskEngine.buildTaskBrief(parsed.data, {
       actor: parsed.data.actor,
       repositoryId: runtime.store.repositoryId,
@@ -2544,6 +2627,10 @@ const taskGateGuardCodes: ReadonlySet<string> = new Set([
 ]);
 
 function mappedTaskEngineFailure(error: TaskEngineError): McpToolErrorResultV1 | undefined {
+  if (error.code === "revision_conflict") {
+    return revisionConflictFailure(error.details?.taskId, error.details?.expectedRevision, error.details?.currentRevision);
+  }
+
   if (error.code === "artifact_unavailable") {
     const artifactType =
       typeof error.details?.artifactType === "string"
@@ -2625,6 +2712,15 @@ function mappedArtifactStoreFailure(
   toolName: ImplementedToolName,
   argumentsValue: unknown,
 ): McpToolErrorResultV1 | undefined {
+  // Task bundle CAS conflicts have this shape. Do not relabel an unrelated
+  // artifact/manifest revision as the Task revision just because it has a number.
+  if (error.code === "revision_conflict" && typeof error.details?.bundleRevision === "number" &&
+    ["update_task", "check_change", "record_verification"].includes(toolName) &&
+    argumentsValue !== null && typeof argumentsValue === "object") {
+    return revisionConflictFailure((argumentsValue as { taskId?: unknown }).taskId,
+      error.details.expectedRevision, error.details.currentRevision);
+  }
+
   if (error.code === "artifact_not_found") {
     if (
       (toolName === "get_task_brief" ||
@@ -2671,9 +2767,33 @@ export async function callImplementedTool(
   selection: ToolRuntimeSelectionV1 = {},
 ): Promise<unknown> {
   try {
+    const operation = () => callImplementedToolInternal(toolName, argumentsValue, canonicalRoot, selection);
+    return selection.runtimeProfile === "local_durable_v1" && selection.canonicalInstallationRoot === undefined
+      ? await withRepositoryAccess(canonicalRoot, operation) : await operation();
+  } catch (error) {
+    if (error instanceof CliOperationErrorV1 && error.code === "legacy_state_requires_recovery") {
+      const failure = repositoryNotReadyFailure("not_ready", ["legacy_state_requires_recovery"], "repair_environment");
+      return { ...failure, content: [{ type: "text", text: error.message }] };
+    }
+    if (error instanceof CliOperationErrorV1 && error.code === "recovery_busy") {
+      return repositoryNotReadyFailure("not_ready", ["repository_recovery_in_progress"], "repair_environment");
+    }
+    throw error;
+  }
+}
+
+async function callImplementedToolInternal(
+  toolName: ImplementedToolName,
+  argumentsValue: unknown,
+  canonicalRoot: string,
+  selection: ToolRuntimeSelectionV1 = {},
+): Promise<unknown> {
+  try {
     switch (toolName) {
       case "get_repo_pulse":
         return await getRepoPulse(argumentsValue, canonicalRoot, selection);
+      case "index_job":
+        return await indexJob(argumentsValue, canonicalRoot, selection);
       case "build_task_brief":
         return await buildTaskBrief(argumentsValue, canonicalRoot, selection);
       case "get_task_brief":
@@ -2707,12 +2827,12 @@ export async function callImplementedTool(
       return strongStoreUnavailableFailure();
     }
     if (error instanceof TaskEngineError) {
-      return mappedTaskEngineFailure(error) ?? internalErrorFailure();
+      return mappedTaskEngineFailure(error) ?? internalErrorFailure(error, toolName);
     }
     if (error instanceof ArtifactStoreError) {
       return (
         mappedArtifactStoreFailure(error, toolName, argumentsValue) ??
-        internalErrorFailure()
+        internalErrorFailure(error, toolName)
       );
     }
     throw error;

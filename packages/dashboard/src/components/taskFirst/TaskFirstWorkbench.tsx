@@ -21,6 +21,7 @@ import type {
   TaskEvidenceProjection,
 } from "../../workbench/taskContextLoader";
 import TaskEvidencePanel from "./TaskEvidencePanel";
+import HostInstruction from "./HostInstruction";
 import KnowledgeCandidateReview from "./KnowledgeCandidateReview";
 import type { TaskFirstRoute as RoutedTaskFirstRoute } from "./route";
 
@@ -274,6 +275,7 @@ function ClaimCard({ claim, currentSnapshotId, onOpenEvidence }: {
       {claim.evidenceIds.map((id, index) => <button key={id} type="button" disabled={!onOpenEvidence} title={id} onClick={() => onOpenEvidence?.(undefined, id)} className="min-h-11 rounded border border-border-medium px-3 py-2 text-xs text-accent disabled:opacity-50" data-evidence-id={id}>查看证据 {index + 1}</button>)}
       {claim.evidenceIds.length === 0 && <p className="text-xs text-text-muted">尚无支撑证据</p>}
     </div>
+    <HostInstruction title="反馈此结论 / 请求补充证据" context={{ taskId: claim.taskId, claimId: claim.id, sourceSnapshotId: claim.sourceSnapshotId, evidenceIds: claim.evidenceIds.join(", ") }} request="请复核此主张及其证据，根据反馈更正结论或补充证据，不要把未确认内容标为已核验。" />
     <details className="mt-2 text-xs text-text-muted"><summary>来源与标识</summary><p className="mt-1 break-all font-mono">{claim.id} · {claim.sourceSnapshotId}</p></details>
   </article>;
 }
@@ -282,10 +284,14 @@ function BriefItems({
   page,
   section,
   onOpenEvidence,
+  onOpenGraph,
+  onSelectImpactPath,
 }: {
   readonly page: TaskBriefPageResult;
   readonly section: TaskFirstSection;
   readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
+  readonly onOpenGraph?: (nodeId: string) => void;
+  readonly onSelectImpactPath?: (impactPathId: string) => void;
 }) {
   const items = page.items ?? [];
   if (items.length === 0) {
@@ -302,6 +308,11 @@ function BriefItems({
         const claim = resolved?.success ? resolved.data : item.kind === "claim_reference" ? page.claims?.find((claim) => claim.id === item.claimId) : undefined;
         if (claim) return <li key={claim.id}><ClaimCard claim={claim} currentSnapshotId={page.task.latestSnapshotId} onOpenEvidence={onOpenEvidence} /></li>;
         const text = itemText(item);
+        const target = item.kind === "reading_path" ? item.entry : item.kind === "planned_change" ? item.change : null;
+        const evidenceIds = item.kind === "reading_path" ? item.entry.evidenceIds : item.kind === "planned_change"
+          ? [...new Set((page.claims ?? []).filter((claim) => item.change.claimIds.includes(claim.id)).flatMap((claim) => claim.evidenceIds))] : [];
+        const graphNodeId = target?.symbolId ?? (target?.filePath ? `file:${target.filePath}` : undefined);
+        const impactPathIds = item.kind === "reading_path" && item.entry.impactPathId ? [item.entry.impactPathId] : item.kind === "planned_change" ? item.change.impactPathIds : [];
         return (
           <li
             key={`${item.kind}-${index}-${text.title}`}
@@ -312,6 +323,12 @@ function BriefItems({
               {text.meta && <span className="shrink-0 text-xs text-text-muted">{text.meta}</span>}
             </div>
             {text.detail && <p className="mt-1 text-xs leading-5 text-text-secondary">{text.detail}</p>}
+            {target && <div className="mt-3 flex flex-wrap gap-2">
+              {evidenceIds.map((id, index) => <button key={id} type="button" disabled={!onOpenEvidence} onClick={() => onOpenEvidence?.(undefined, id)} className="min-h-11 rounded border border-border-medium px-3 text-xs text-accent disabled:opacity-50">查看关联源码证据 {index + 1}</button>)}
+              {graphNodeId && <button type="button" disabled={!onOpenGraph} onClick={() => onOpenGraph?.(graphNodeId)} className="min-h-11 rounded border border-border-medium px-3 text-xs text-accent disabled:opacity-50">定位{target.symbolId ? "符号" : "文件"}图谱</button>}
+              {impactPathIds.map((id, index) => <button key={id} type="button" disabled={!onSelectImpactPath} onClick={() => onSelectImpactPath?.(id)} className="min-h-11 rounded border border-border-medium px-3 text-xs text-accent disabled:opacity-50">查看影响路径 {index + 1}</button>)}
+              {evidenceIds.length === 0 && <span className="self-center text-xs text-text-muted">{graphNodeId ? "暂无关联源码证据，可通过图谱定位；未收录的对象会提示不可用。" : "暂无关联源码证据，可查看影响路径。"}</span>}
+            </div>}
           </li>
         );
       })}
@@ -889,7 +906,7 @@ export function TaskFirstWorkbench({
             onOpenGraph={onOpenGraph}
           />
 
-          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />
+          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} onOpenGraph={onOpenEvidenceGraph} onSelectImpactPath={onSelectImpactPath} />
         </>
       );
     }
@@ -897,11 +914,11 @@ export function TaskFirstWorkbench({
       return (
         <>
           <VerificationCard records={verificationRecords} status={verificationStatus} message={verificationMessage} claims={page.claims} brief={page.brief} currentSnapshotId={task.latestSnapshotId} onOpenEvidence={onOpenEvidence} />
-          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />
+          <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} onOpenGraph={onOpenEvidenceGraph} onSelectImpactPath={onSelectImpactPath} />
         </>
       );
     }
-    return <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} />;
+    return <BriefItems page={page} section={activeSection.id} onOpenEvidence={onOpenEvidence} onOpenGraph={onOpenEvidenceGraph} onSelectImpactPath={onSelectImpactPath} />;
   };
 
   return (

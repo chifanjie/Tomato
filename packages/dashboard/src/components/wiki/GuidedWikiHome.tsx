@@ -30,6 +30,7 @@ export interface GuidedWikiHomeProps {
   onOpenPage: (pageId: string) => void;
   onOpenGraph: () => void;
   onOpenReference: (opener: HTMLButtonElement) => void;
+  onOpenStatus?: () => void;
 }
 
 export default function GuidedWikiHome({
@@ -38,13 +39,16 @@ export default function GuidedWikiHome({
   onOpenPage,
   onOpenGraph,
   onOpenReference,
+  onOpenStatus,
 }: GuidedWikiHomeProps) {
+  const stagePages = (stage: typeof STAGE_ORDER[number]) => routePages.filter((page) => page.route?.stage === stage);
+  const missingStages = STAGE_ORDER.filter((stage) => stagePages(stage).length === 0);
   return (
     <main className="uc-guided-home">
       <header className="uc-guided-home-intro">
         <p className="uc-eyebrow">推荐起点</p>
         <h1>先理解项目，再进入代码</h1>
-        <p>{projectName} 的知识按同一条路线从业务目标展开到可核验源码。</p>
+        <p>{projectName} 的知识按以下阶段组织；可阅读内容和待补充阶段以当前知识库为准。</p>
       </header>
 
       <ol className="uc-guided-route" aria-label="理解项目的五个阶段">
@@ -54,10 +58,12 @@ export default function GuidedWikiHome({
             <span>
               <strong>{STAGE_LABEL[stage]}</strong>
               <small>{STAGE_SUMMARY[stage]}</small>
+              {stagePages(stage).length > 0 ? <button type="button" className="mt-1 text-sm text-accent" onClick={() => onOpenPage(stagePages(stage)[0]!.id)}>阅读本阶段 · {stagePages(stage).length} 篇</button> : <small className="text-warning">待补充 · 暂无主干文档</small>}
             </span>
           </li>
         ))}
       </ol>
+      {missingStages.length > 0 && <p className="text-sm text-text-secondary" role="status">当前还有 {missingStages.length} 个阶段待补充：{missingStages.map((stage) => STAGE_LABEL[stage]).join("、")}。{onOpenStatus && <button type="button" onClick={onOpenStatus} className="ml-2 min-h-11 text-accent">查看知识库状态</button>}</p>}
 
       <section className="uc-reading-list" aria-labelledby="guided-reading-heading">
         <h2 id="guided-reading-heading">推荐阅读路线</h2>

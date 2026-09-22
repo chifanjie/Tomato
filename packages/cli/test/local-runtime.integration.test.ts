@@ -12,6 +12,31 @@ import { openActiveRepositoryIndexV1, readRepositoryIndexSourceV1 } from "../src
 afterEach(async () => { await closeAllWorkbenchSessionsV1(); await cleanupTemporaryDirectories(); });
 const local = { runtimeProfile: "local_durable_v1" as const };
 describe("supported local durable runtime", () => {
+  it("reports exact Task revision conflicts after rejected gates and concurrent mutations", async () => {
+    const root = await createGitRepository({ seedArtifacts: false });
+    const created: any = await callImplementedTool("build_task_brief", { task: "Check revision recovery", expectedRevision: 0, actor: "codex", idempotencyKey: "revision-task" }, root, local);
+    expect(created.isError, JSON.stringify(created)).toBe(false);
+    const { task, brief } = created.structuredContent.result;
+    const update = (expectedRevision: number, idempotencyKey: string, action: unknown) => callImplementedTool("update_task", { taskId: task.taskId, actor: "codex", expectedRevision, idempotencyKey, action }, root, local) as Promise<any>;
+    const rejected = await update(task.revision, "unconfirmed-plan", { type: "transition_status", to: "planned" });
+    expect(rejected.structuredContent.error.code).toBe("task_gate_unsatisfied");
+    for (const expectedRevision of [task.revision + 1, task.revision - 1]) {
+      const conflict = await update(expectedRevision, `wrong-revision-${expectedRevision}`, { type: "transition_status", to: "in_progress" });
+      expect(conflict.structuredContent.error).toEqual({ schemaVersion: 1, code: "revision_conflict", details: {
+        taskId: task.taskId, expectedRevision, actualRevision: task.revision,
+      } });
+      expect(conflict.content[0].text).toContain("get_task_brief");
+    }
+    const results = await Promise.all(["first", "second"].map((key) => update(task.revision, `concurrent-goal-${key}`, { type: "confirm_goal", claimId: brief.goalClaimId })));
+    expect(results.filter((result) => result.isError !== true)).toHaveLength(1);
+    expect(results.find((result) => result.isError === true)?.structuredContent.error).toEqual({ schemaVersion: 1, code: "revision_conflict", details: {
+      taskId: task.taskId, expectedRevision: task.revision, actualRevision: task.revision + 1,
+    } });
+    const after: any = await callImplementedTool("get_task_brief", { taskId: task.taskId, section: "summary" }, root, local);
+    expect(after.structuredContent.result.task.revision).toBe(task.revision + 1);
+    expect(after.structuredContent.result.task.status).toBe(task.status);
+  }, 60_000);
+
   it("persists a real Git Task, opens evidence, checks an edit and records an executed test", async () => {
     const root = await createGitRepository({ seedArtifacts: false });
     const created: any = await callImplementedTool("build_task_brief", { expectedRevision: 0, task: "Explain the task function return value and its callers", actor: "codex", idempotencyKey: "local-create-1" }, root, local);
@@ -31,6 +56,19 @@ describe("supported local durable runtime", () => {
     const search: any = await callImplementedTool("search_context", { taskId: task.taskId, query: "task" }, root, local);
     expect(search, JSON.stringify(search)).toMatchObject({ isError: false });
     expect(search.structuredContent.result.results.length).toBeGreaterThan(0);
+    const symbols: any = await callImplementedTool("search_context", { taskId: task.taskId, query: "task", scopes: ["symbol"], pathPrefixes: ["src"] }, root, local);
+    expect(symbols.isError, JSON.stringify(symbols)).toBe(false);
+    expect(symbols.structuredContent.result.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "symbol", filePath: "src/task.ts", symbolId: expect.any(String), evidenceIds: expect.arrayContaining([expect.any(String)]) }),
+    ]));
+    for (const symbol of symbols.structuredContent.result.results) {
+      const evidence: any = await callImplementedTool("get_evidence", { taskId: task.taskId, evidenceIds: symbol.evidenceIds }, root, local);
+      expect(evidence.isError, JSON.stringify(evidence)).toBe(false);
+      expect(JSON.stringify(evidence)).toContain(symbol.symbolId);
+    }
+    const excluded: any = await callImplementedTool("search_context", { taskId: task.taskId, query: "task", scopes: ["symbol"], pathPrefixes: ["other"] }, root, local);
+    expect(excluded.structuredContent.result.results).toEqual([]);
+
     const opened: any = await callImplementedTool("open_workbench", { route: { view: "tasks", taskId: task.taskId, section: "summary" } }, root, local);
     expect(opened.isError, JSON.stringify(opened)).not.toBe(true);
     const url = new URL(opened.structuredContent.result.deepLink);

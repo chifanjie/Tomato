@@ -1,6 +1,7 @@
 import type { StructuralAnalysis, CallGraphEntry } from "../../types.js";
 import type { LanguageExtractor, TreeSitterNode } from "./types.js";
 import { findChild, findChildren } from "./base-extractor.js";
+import { topLevelCallBinding } from "./local-call-binding.js";
 
 /**
  * Extract parameter names from a Rust `parameters` node.
@@ -146,6 +147,8 @@ export class RustExtractor implements LanguageExtractor {
   extractCallGraph(rootNode: TreeSitterNode): CallGraphEntry[] {
     const entries: CallGraphEntry[] = [];
     const functionStack: string[] = [];
+    const functionNodes: TreeSitterNode[] = [];
+    const bindLocal = topLevelCallBinding(rootNode, "function_item");
 
     const walkForCalls = (node: TreeSitterNode) => {
       let pushedName = false;
@@ -155,6 +158,7 @@ export class RustExtractor implements LanguageExtractor {
         const nameNode = node.childForFieldName("name");
         if (nameNode) {
           functionStack.push(nameNode.text);
+          functionNodes.push(node);
           pushedName = true;
         }
       }
@@ -168,6 +172,9 @@ export class RustExtractor implements LanguageExtractor {
               caller: functionStack[functionStack.length - 1],
               callee,
               lineNumber: node.startPosition.row + 1,
+              ...(bindLocal(functionNodes.at(-1), node.childForFieldName("function")) === undefined ? {} : {
+                binding: bindLocal(functionNodes.at(-1), node.childForFieldName("function")),
+              }),
             });
           }
         }
@@ -180,6 +187,7 @@ export class RustExtractor implements LanguageExtractor {
 
       if (pushedName) {
         functionStack.pop();
+        functionNodes.pop();
       }
     };
 

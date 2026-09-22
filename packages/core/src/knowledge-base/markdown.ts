@@ -8,6 +8,8 @@ import type {
   BusinessFact,
   DirectSourceEvidence,
   FeaturedPlan,
+  FeaturedWriterOutput,
+  FeaturedWriterDocument,
   FileDocPlan,
   FileDocTask,
   FileWriterDocument,
@@ -28,8 +30,8 @@ import {
   normalizeKnowledgeSourcePath,
   slugPath,
 } from "./paths.js";
-import { stableSymbolAnchors, type MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
-import { TOPIC_WRITER_REQUIRED_SECTIONS } from "./writer-contracts.js";
+import { validateEvidenceAgainstSource, stableSymbolAnchors, type MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
+import { parseFeaturedWriterOutput, TOPIC_WRITER_REQUIRED_SECTIONS } from "./writer-contracts.js";
 import { containsPlaceholderProse, summarizeMarkdownQuality } from "./quality.js";
 import type { MarkdownQualitySummary } from "./quality.js";
 import { excerptForLineRange } from "./source-snapshot.js";
@@ -1782,6 +1784,8 @@ export interface MaterializeKnowledgeBaseDocumentsInput {
   businessCapabilityProfile: BusinessCapabilityProfile;
   topicPlan: TopicPlan;
   merged: MergeKnowledgeBaseWriterOutputsResult;
+  featuredWriterOutput?: FeaturedWriterOutput;
+  requireFeaturedWriter?: boolean;
 }
 
 export interface MaterializeKnowledgeBaseDocumentsResult {
@@ -2140,6 +2144,37 @@ export function materializeKnowledgeBaseDocuments(
     (merged.maintenanceFileWriterDocuments ?? []).map((document) => [document.fileNodeId, document]),
   );
   const topicWriterByNode = new Map(merged.acceptedTopicWriterDocuments.map((document) => [document.topicNodeId, document]));
+  const featuredWriterById = new Map<string, FeaturedWriterDocument>();
+  const featuredPlanById = new Map(plan.documents
+    .filter((document) => document.role !== "maintenance" && document.category !== "file" && document.category !== "topic")
+    .map((document) => [document.id, document]));
+  if (input.featuredWriterOutput) {
+    const parsed = parseFeaturedWriterOutput(input.featuredWriterOutput);
+    if (!parsed.ok) errors.push(...parsed.errors.map((error) => `featured writer: ${error}`));
+    else {
+      const duplicateIds = new Set<string>();
+      const seenIds = new Set<string>();
+      for (const writer of parsed.value.documents) {
+        if (seenIds.has(writer.documentId)) duplicateIds.add(writer.documentId);
+        seenIds.add(writer.documentId);
+      }
+      for (const writer of parsed.value.documents) {
+        const planned = featuredPlanById.get(writer.documentId);
+        if (!planned || planned.path !== writer.documentPath || duplicateIds.has(writer.documentId)) {
+          errors.push(`featured writer document identity does not uniquely match plan: ${writer.documentId}`);
+          continue;
+        }
+        const evidenceErrors: string[] = [];
+        validateEvidenceAgainstSource({ profile, fileDocPlan }, writer.evidence, "featured", 0, evidenceErrors, new Set());
+        const covered = new Set(writer.evidence.map((item) => item.nodeId));
+        for (const nodeId of planned.directNodeIds) {
+          if (!covered.has(nodeId)) evidenceErrors.push(`featured writer evidence missing direct node: ${nodeId}`);
+        }
+        if (evidenceErrors.length > 0) errors.push(...evidenceErrors);
+        else featuredWriterById.set(planned.id, writer);
+      }
+    }
+  }
 
   for (const planned of plan.documents) {
     if (planned.role === "maintenance") continue;
@@ -2181,6 +2216,13 @@ export function materializeKnowledgeBaseDocuments(
         continue;
       }
       documents.push(generatedFromPlan(planned, writer.markdown, writer.evidence, profile));
+      continue;
+    }
+
+    if (input.requireFeaturedWriter || input.featuredWriterOutput) {
+      const writer = featuredWriterById.get(planned.id);
+      if (!writer) errors.push(`计划主干页面缺少有效写作者输出：${planned.path}`);
+      else documents.push(generatedFromPlan(planned, writer.markdown, writer.evidence, profile));
       continue;
     }
 

@@ -1,4 +1,5 @@
 import type {
+  FeaturedWriterOutput,
   FileWriterBatchOutput,
   FileWriterDocument,
   TopicWriterBatchOutput,
@@ -348,6 +349,24 @@ function validateCommonBatchShape(value: unknown, warningsPath: string, errors: 
   requireNumber(value, "batchIndex", "", errors);
   requireStringArray(value, warningsPath, "", errors);
   return true;
+}
+
+/** Shape validation only; materialization also binds the plan and checks exact source snapshots. */
+export function parseFeaturedWriterOutput(value: unknown): ContractParseResult<FeaturedWriterOutput> {
+  const errors: string[] = [];
+  if (!isRecord(value)) return { ok: false, errors: ["value must be an object"] };
+  requireStringArray(value, "warnings", "", errors);
+  validateWarningPlaceholders(value.warnings, errors);
+  const documents = requireNonEmptyArray(value, "documents", "", "document", errors);
+  documents?.forEach((document, index) => {
+    const path = `documents[${index}]`;
+    if (!isRecord(document)) { errors.push(`${path} must be an object`); return; }
+    for (const field of ["documentId", "documentPath", "markdown"]) requireNonEmptyString(document, field, path, errors);
+    const evidence = requireNonEmptyArray(document, "evidence", path, "evidence item", errors);
+    evidence?.forEach((item, evidenceIndex) => validateSourceEvidence(item, `${path}.evidence[${evidenceIndex}]`, errors));
+    validateNoPlaceholderText(document.markdown, `${path}.markdown`, errors);
+  });
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, value: value as unknown as FeaturedWriterOutput, errors: [] };
 }
 
 export function parseFileWriterBatchOutput(value: unknown): ContractParseResult<FileWriterBatchOutput> {

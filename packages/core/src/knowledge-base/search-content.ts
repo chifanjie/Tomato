@@ -22,9 +22,9 @@ export function createWikiSearchContentMatcher(
   lines(record: WikiSearchContentRecord): Iterable<string>;
   includes(record: WikiSearchContentRecord, normalizedQuery: string): boolean;
 } {
-  const normalizedLines = new Map<number, string>();
+  const normalizedLines: Array<string | undefined> = new Array(contentLines.length);
   const inlineLines = new WeakMap<WikiSearchContentRecord, string[]>();
-  const queryResults = new Map<string, Uint8Array>();
+  const queryResults = new Map<string, { lines: Uint8Array; records: WeakMap<WikiSearchContentRecord, boolean> }>();
   const queryCacheCapacity = contentLines.length === 0 ? 128
     : Math.min(128, Math.max(1, Math.floor(64 * 1024 * 1024 / contentLines.length)));
 
@@ -35,10 +35,10 @@ export function createWikiSearchContentMatcher(
   }
 
   function normalizedLine(id: number): string {
-    let normalized = normalizedLines.get(id);
+    let normalized = normalizedLines[id];
     if (normalized === undefined) {
       normalized = options.normalizeLine(rawLine(id));
-      normalizedLines.set(id, normalized);
+      normalizedLines[id] = normalized;
     }
     return normalized;
   }
@@ -53,11 +53,30 @@ export function createWikiSearchContentMatcher(
 
   function includes(record: WikiSearchContentRecord, query: string): boolean {
     if (query.length === 0) return true;
-    let lineMatches = queryResults.get(query);
-    if (lineMatches === undefined) {
+    let cached = queryResults.get(query);
+    if (cached === undefined) {
       if (queryResults.size >= queryCacheCapacity) queryResults.delete(queryResults.keys().next().value!);
-      lineMatches = new Uint8Array(contentLines.length);
-      queryResults.set(query, lineMatches);
+      cached = { lines: new Uint8Array(contentLines.length), records: new WeakMap() };
+      queryResults.set(query, cached);
+    }
+    const previous = cached.records.get(record);
+    if (previous !== undefined) return previous;
+    const lineMatches = cached.lines;
+    const remember = (matched: boolean): boolean => { cached.records.set(record, matched); return matched; };
+    // A substring without the joining character cannot cross a line boundary.
+    // Most UI queries are single-line tokens, so skip boundary strings and even
+    // normalized-line lookups when another page has already checked this line.
+    if (record.contentLineIds !== undefined && !query.includes(options.separator)) {
+      for (const id of record.contentLineIds) {
+        let matched = lineMatches[id];
+        if (matched === undefined) rawLine(id); // Preserve invalid-reference failures.
+        if (matched === 0) {
+          matched = normalizedLine(id).includes(query) ? 2 : 1;
+          lineMatches[id] = matched;
+        }
+        if (matched === 2) return remember(true);
+      }
+      return remember(false);
     }
     let tail = "";
     let hasLine = false;
@@ -80,7 +99,7 @@ export function createWikiSearchContentMatcher(
           matched = line.includes(query) ? 2 : 1;
           lineMatches[id] = matched;
         }
-        if (visit(line, matched === 2)) return true;
+        if (visit(line, matched === 2)) return remember(true);
       }
     } else {
       let normalized = inlineLines.get(record);
@@ -88,9 +107,9 @@ export function createWikiSearchContentMatcher(
         normalized = record.content === undefined ? [] : record.content.split("\n").map(options.normalizeLine);
         inlineLines.set(record, normalized);
       }
-      for (const line of normalized) if (visit(line, line.includes(query))) return true;
+      for (const line of normalized) if (visit(line, line.includes(query))) return remember(true);
     }
-    return false;
+    return remember(false);
   }
 
   return { lines, includes };

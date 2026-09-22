@@ -7,8 +7,12 @@ Understand Code turns a repository into a traceable knowledge graph, architectur
 ## Codex / Claude MCP Task workflow
 
 The `0.1.0-preview.2` package adds `local_durable_v1` for macOS and Linux.
-After installing its [MCP Host plugin](packages/preview/README.md), open a new
-session in your target Git repository and ask:
+After installing a locally built Preview tarball, register one Host with
+`understand-code-preview --install-host codex` or
+`understand-code-preview --install-host claude`. The helper uses the Host's
+official plugin commands and runs Doctor; the selected Host CLI must already be
+installed. See the [build, install and lifecycle guide](packages/preview/README.md).
+Open a new session in your target Git repository and ask:
 
 > Use Understand Code to explain this feature. Read the repository state,
 > create a persistent Task with goals and acceptance criteria, attach source
@@ -22,10 +26,26 @@ and Wiki. It does not execute tests or replace the Host conversation.
 
 Workbench links now allow 24 hours for their first opening; authenticated
 browser sessions have a 24-hour absolute lifetime and a 24-hour idle timeout.
-Keep the MCP runtime running while using the Workbench. If the page asks you to
+Keep the process that opened the Workbench running. If the page asks you to
 reopen the link from the Host, call `open_workbench` again for a fresh single-use
 link. After updating, rebuild or install the updated runtime and restart the
 MCP server before requesting that link; existing expired links are not renewed.
+
+To read persisted Tasks after the Host exits, run
+`understand-code workbench --root /absolute/path/to/worktree --no-open` and open
+the newly printed link. Add `--task-id "<TASK_ULID>"` to select a Task. Keep this
+reader CLI running; stop it with Ctrl+C.
+
+For a formal knowledge draft, give the Host
+`understand-code knowledge --root /absolute/path/to/worktree --task-id "<TASK_ULID>" --guide`.
+The installed CLI includes file, topic, and featured-page writer guides and
+draft preparation/validation commands. After `--prepare-topics`, the Host writes
+every page in `.intermediate/featured-plan.json` to
+`.intermediate/featured-writer-output.json` with its exact identity and source
+evidence; `--finalize` requires this authored content. The Host reads source,
+writes explanations, and performs real
+verification; MCP `refresh_index` stages and explicitly publishes the reviewed
+candidate. See [the writer lifecycle and recovery commands](packages/cli/README.md#task-knowledge-lifecycle).
 
 The package contains MCP tools, not the `/understand-*` skills below. Source
 skills `2.7.6` and Preview `0.1.0-preview.2` have independent version numbers.
@@ -40,7 +60,12 @@ and [remediation evidence record](docs/testing/2026-09-10-audit-remediation.md)
 for actual acceptance status. Desktop, CLI, IDE and cross-Host continuity need
 separate real-session verification. Static graph relations and deterministic
 Wiki drafts do not establish complete business understanding or publishable
-knowledge.
+knowledge. A first local `build_task_brief` starts a durable background index and
+returns a job ID promptly. The Host polls or cancels with `index_job`, then replays
+the original build request after completion. Jobs survive Host exit; existing-index
+Task creation remains synchronous. Explicit `refresh_index` calls support stage
+progress and cooperative request cancellation. [Language and relation limits](packages/cli/README.md#language-and-relation-boundaries)
+describe which imports and calls can be resolved without guessing.
 
 ## Source skills: install into Claude Code
 

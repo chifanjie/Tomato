@@ -8,6 +8,7 @@ export {
   type ParsedTaskEventLog,
 } from "./event-log.js";
 export * from "./evidence-adapter.js";
+export { withIndexJobStateLock } from "./index-job-state-lock.js";
 export {
   createArtifactStoreLayout,
   taskDirectoryName,

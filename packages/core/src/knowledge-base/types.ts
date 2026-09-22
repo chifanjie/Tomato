@@ -314,6 +314,20 @@ export interface TopicWriterDocument {
   markdown: string;
 }
 
+/** Host-authored prose for planned overview, capability, flow and module pages.
+ * Identity, role, route and title always come from the featured plan. */
+export interface FeaturedWriterDocument {
+  documentId: string;
+  documentPath: string;
+  markdown: string;
+  evidence: DirectSourceEvidence[];
+}
+
+export interface FeaturedWriterOutput {
+  documents: FeaturedWriterDocument[];
+  warnings: string[];
+}
+
 export interface TopicWriterBatchOutput {
   batchIndex: number;
   topics: TopicWriterDocument[];

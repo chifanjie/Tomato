@@ -9,6 +9,7 @@ describe("public Artifact Store boundary", () => {
     const exported = publicApi as Record<string, unknown>;
     expect(exported.ArtifactStore).toBeTypeOf("function");
     expect(exported.adaptWikiV2EvidenceAndClaims).toBeTypeOf("function");
+    expect(exported.withIndexJobStateLock).toBeTypeOf("function");
     for (const internalName of [
       "atomicWriteFile",
       "atomicWriteJson",

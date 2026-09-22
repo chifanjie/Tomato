@@ -16,7 +16,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { parseBoundedTarball } from "../scripts/alpha-candidate.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -158,6 +159,45 @@ function singleBitTamper(bytes, needle) {
   tampered[offset] ^= 0x01;
   return tampered;
 }
+
+test("Alpha packed payload accepts the reviewed current release and enforces archive bounds", async (t) => {
+  const packedDirectory = await mkdtemp(path.join(tmpdir(), "uc-alpha-payload-"));
+  try {
+    const packed = await run("npm", ["pack", ".", "--ignore-scripts", "--json", "--pack-destination", packedDirectory], { cwd: packageRoot });
+    const [record] = JSON.parse(packed.stdout);
+    const bytes = await readFile(path.join(packedDirectory, record.filename));
+    const files = parseBoundedTarball(bytes);
+    const expandedBytes = gunzipSync(bytes, { maxOutputLength: 32 * 1024 * 1024 }).byteLength;
+    assert.equal(record.entryCount, 275);
+    assert.equal(files.size, 275);
+    assert.equal([...files.keys()].filter((name) => /\/dashboard\/assets\/mermaid\.core-[A-Za-z0-9_-]{8}\.js$/u.test(name)).length, 3);
+    assert.ok(expandedBytes > 20 * 1024 * 1024, "the reviewed Mermaid release exercises the increased expanded budget");
+    t.diagnostic(JSON.stringify({ files: files.size, compressedBytes: bytes.byteLength, expandedTarBytes: expandedBytes, payloadBytes: record.unpackedSize }));
+  } finally {
+    await rm(packedDirectory, { recursive: true, force: true });
+  }
+
+  const archive = (entries) => gzipSync(Buffer.concat([...entries.map(({ name, type = "0", size = 0 }) => {
+    const header = Buffer.alloc(512);
+    assert.ok(Buffer.byteLength(name) < 100);
+    header.write(name, 0);
+    header.write("0000644\0", 100);
+    header.write(`${size.toString(8).padStart(11, "0")}\0`, 124);
+    header.write(type, 156);
+    header.write("ustar\0", 257);
+    header.fill(0x20, 148, 156);
+    const checksum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+    return header;
+  }), Buffer.alloc(1024)]));
+  assert.throws(() => parseBoundedTarball(archive(Array.from({ length: 279 }, (_, index) => ({ name: `package/dist/file-${index}` })))), /too many raw entries/u);
+  assert.throws(() => parseBoundedTarball(gzipSync(Buffer.alloc(32 * 1024 * 1024 + 1))), { code: "ERR_BUFFER_TOO_LARGE" });
+  for (const name of ["../outside", "/absolute", "package/dist/../secret", "package\\private"]) {
+    assert.throws(() => parseBoundedTarball(archive([{ name }])), /unsafe/u);
+  }
+  assert.throws(() => parseBoundedTarball(archive([{ name: "package/dist/host-install.mjs", type: "2" }])), /entry type is forbidden/u);
+  assert.throws(() => parseBoundedTarball(archive([{ name: "package/dist/host-install.mjs", size: 4 * 1024 * 1024 + 1 }])), /entry exceeds its size bound/u);
+});
 
 test("assembles and verifies one unsigned Alpha candidate from an exact clean source", { timeout: 15 * 60 * 1000 }, async () => {
   const temporaryParent = await realpath(
@@ -429,7 +469,7 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
     });
 
     const expandedTarball = gunzipSync(tarballBytes, {
-      maxOutputLength: 20 * 1024 * 1024,
+      maxOutputLength: 32 * 1024 * 1024,
     });
     const nativePeerEntries = (await run(
       "tar",

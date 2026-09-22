@@ -11,6 +11,7 @@ import {
 import {
   searchWiki,
   type WikiSearchGroupKind,
+  type WikiSearchResults,
   type WikiSearchRuntime,
 } from "../../wiki/searchIndex";
 import { wikiTargetHash, type WikiTarget } from "../../wiki/wikiContent";
@@ -23,6 +24,7 @@ export interface GlobalWikiSearchProps {
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onSelectTarget: (target: WikiTarget) => void;
+  onRetry?: () => void;
 }
 
 export interface GlobalWikiSearchItem {
@@ -82,7 +84,10 @@ export function buildGlobalWikiSearchView(
   query: string,
   visibleCount: number,
 ): GlobalWikiSearchView {
-  const results = searchWiki(runtime, query, 1, visibleCount);
+  return globalWikiSearchViewFromResults(searchWiki(runtime, query, 1, visibleCount));
+}
+
+export function globalWikiSearchViewFromResults(results: WikiSearchResults): GlobalWikiSearchView {
   const resultGroups = new Map(results.groups.map((group) => [group.kind, group.items]));
   return {
     groups: GROUPS.map(({ kind, label }) => ({
@@ -112,7 +117,7 @@ export function globalWikiSearchStatusMessage(
   query: string,
   total: number,
 ): string | null {
-  if (loadStatus === "loading") return "正在加载全局搜索索引…";
+  if (loadStatus === "loading" && query.trim() && total === 0) return "当前标题、路径和符号暂无匹配，全文索引仍在加载。";
   if (!query.trim()) return "输入文档、流程、文件或函数名称开始搜索。";
   if (total === 0) return "没有找到匹配内容，请尝试其他关键词。";
   return null;
@@ -125,12 +130,12 @@ export default function GlobalWikiSearch({
   returnFocusRef,
   onClose,
   onSelectTarget,
+  onRetry,
 }: GlobalWikiSearchProps) {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(20);
   const deferredQuery = useDeferredValue(query);
   const previousOpen = useRef(open);
-  const previousLoadStatus = useRef(loadStatus);
   const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -138,12 +143,25 @@ export default function GlobalWikiSearch({
   const activationFrameRef = useRef<number | null>(null);
   const focusFrameRef = useRef<number | null>(null);
   const containmentFrameRef = useRef<number | null>(null);
-  const readyFocusFrameRef = useRef<number | null>(null);
+  const [remote, setRemote] = useState<{ runtime: WikiSearchRuntime; query: string; count: number; view?: GlobalWikiSearchView; failed?: boolean } | null>(null);
   onCloseRef.current = onClose;
-  const view = useMemo(
-    () => buildGlobalWikiSearchView(runtime, deferredQuery, visibleCount),
+  const localView = useMemo(
+    () => buildGlobalWikiSearchView(runtime.fallbackRuntime ?? runtime, deferredQuery, visibleCount),
     [deferredQuery, runtime, visibleCount],
   );
+  const currentRemote = remote?.runtime === runtime && remote.query === deferredQuery && remote.count === visibleCount ? remote : null;
+  const view = currentRemote?.view ?? localView;
+  const searching = Boolean(open && deferredQuery.trim() && runtime.searchAsync && !currentRemote?.view && !currentRemote?.failed);
+  useEffect(() => {
+    if (!open || !deferredQuery.trim() || !runtime.searchAsync) return;
+    let current = true;
+    void runtime.searchAsync(deferredQuery, 1, visibleCount).then((results) => {
+      if (current) setRemote({ runtime, query: deferredQuery, count: visibleCount, view: globalWikiSearchViewFromResults(results) });
+    }).catch(() => {
+      if (current) setRemote({ runtime, query: deferredQuery, count: visibleCount, failed: true });
+    });
+    return () => { current = false; };
+  }, [open, deferredQuery, visibleCount, runtime]);
   const statusMessage = globalWikiSearchStatusMessage(loadStatus, deferredQuery, view.total);
 
   useEffect(() => {
@@ -154,34 +172,6 @@ export default function GlobalWikiSearch({
     if (previousOpen.current && !open) returnFocusRef.current?.focus();
     previousOpen.current = open;
   }, [open, returnFocusRef]);
-
-  useLayoutEffect(() => {
-    const wasLoading = previousLoadStatus.current === "loading";
-    previousLoadStatus.current = loadStatus;
-    if (
-      !open
-      || !wasLoading
-      || (loadStatus !== "ready" && loadStatus !== "fallback")
-    ) return;
-
-    readyFocusFrameRef.current = window.requestAnimationFrame(() => {
-      readyFocusFrameRef.current = null;
-      const dialog = dialogRef.current;
-      const input = inputRef.current;
-      const active = document.activeElement;
-      if (
-        dialog
-        && input
-        && !input.disabled
-        && (active === dialog || active === closeButtonRef.current)
-      ) input.focus();
-    });
-    return () => {
-      if (readyFocusFrameRef.current === null) return;
-      window.cancelAnimationFrame(readyFocusFrameRef.current);
-      readyFocusFrameRef.current = null;
-    };
-  }, [loadStatus, open]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -293,7 +283,6 @@ export default function GlobalWikiSearch({
             id="global-wiki-search-input"
             ref={inputRef}
             value={query}
-            disabled={loadStatus === "loading"}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索文档、流程、文件或函数…"
             className="min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
@@ -302,14 +291,18 @@ export default function GlobalWikiSearch({
           <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">关闭</button>
         </header>
 
+        {loadStatus === "loading" && <p className="uc-global-search-fallback" role="status">正在补充全文索引，已可搜索标题、路径和符号。</p>}
+        {searching && <p className="uc-global-search-fallback" role="status">正在搜索全文…</p>}
+        {currentRemote?.failed && <p className="uc-global-search-fallback" role="status">全文搜索暂不可用。{onRetry && <button type="button" onClick={onRetry} className="ml-2 min-h-11 text-accent">重试完整搜索</button>}</p>}
         {loadStatus === "fallback" && (
           <p className="uc-global-search-fallback">
             搜索索引不可用，当前仅搜索标题、路径和符号。
+            {onRetry && <button type="button" onClick={onRetry} className="ml-2 min-h-11 text-accent">重试完整搜索</button>}
           </p>
         )}
 
-        <div className="uc-global-search-results">
-          {statusMessage && view.total === 0 ? (
+        <div className="uc-global-search-results" aria-busy={searching}>
+          {statusMessage && view.total === 0 && !searching && !currentRemote?.failed ? (
             <p role="status" className="py-10 text-center text-sm text-text-muted">{statusMessage}</p>
           ) : view.total > 0 ? (
             <div className="space-y-6">
@@ -320,7 +313,7 @@ export default function GlobalWikiSearch({
                     <span>{group.total}</span>
                   </h2>
                   {group.items.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-border-subtle px-3 py-2 text-xs text-text-muted">本组暂无匹配</p>
+                    <p className="rounded-lg border border-dashed border-border-subtle px-3 py-2 text-xs text-text-muted">{group.total > 0 ? "本组还有匹配结果，继续显示可查看。" : "本组暂无匹配"}</p>
                   ) : (
                     <ul>
                       {group.items.map((item) => (

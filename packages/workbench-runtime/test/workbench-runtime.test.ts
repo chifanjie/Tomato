@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -73,6 +73,63 @@ afterEach(async () => {
 });
 
 describe("workbench runtime session", () => {
+  it("serves legacy writer Wiki indexes with an opaque root identity without mutating the artifact", async () => {
+    const root = await realpath(await runtimeRoot("workbench-wiki-root-"));
+    const fixture = JSON.parse(await readFile(new URL("../../contracts/fixtures/v1/legacy/wiki-index-v2.json", import.meta.url), "utf8"));
+    const wiki = Object.freeze({ ...fixture, source: Object.freeze({ ...fixture.source, sourceRootIdentity: root }) });
+    const original = JSON.stringify(wiki);
+    let artifact = wiki;
+    const session = await openWorkbenchSessionV1({ route: { view: "knowledge" } }, {
+      ...binding(root),
+      dashboardReader: async () => ({ status: "ready", json: artifact }),
+    });
+    try {
+      const base = `http://127.0.0.1:${session.port}`;
+      const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+      const launch = await fetch(`${base}/__workbench/launch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+      const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+      const rootIdentity = `root-${digest(JSON.stringify({ canonicalRoot: process.platform === "win32" ? root.toLowerCase() : root })).slice("sha256:".length)}`;
+      for (const suffix of ["", `?indexVersion=published&indexGenerationId=generation-${"a".repeat(64)}`]) {
+        const response = await fetch(`${base}/knowledge-base/wiki-index.json${suffix}`, { headers });
+        expect(response.status).toBe(200);
+        const body = await response.text();
+        expect(body).not.toContain(root);
+        expect(JSON.parse(body)).toEqual({ ...wiki, source: { ...wiki.source, sourceRootIdentity: rootIdentity } });
+        expect(JSON.stringify(wiki)).toBe(original);
+      }
+      artifact = Object.freeze({ ...wiki, source: Object.freeze({ ...wiki.source, sourceRootIdentity: "root-existing-opaque-identity" }) });
+      const opaque = await fetch(`${base}/knowledge-base/wiki-index.json`, { headers });
+      expect(opaque.status).toBe(200);
+      expect(await opaque.json()).toEqual(artifact);
+    } finally { await session.close(); }
+  });
+
+  it("retains Wiki response budgets and rejects root paths outside the legacy identity field", async () => {
+    const root = await realpath(await runtimeRoot("workbench-wiki-root-guards-"));
+    const fixture = JSON.parse(await readFile(new URL("../../contracts/fixtures/v1/legacy/wiki-index-v2.json", import.meta.url), "utf8"));
+    const wiki = { ...fixture, source: { ...fixture.source, sourceRootIdentity: root } };
+    for (const scenario of [
+      { route: "/knowledge-base/wiki-index.json", json: { ...wiki, projectName: root }, budget: 32 * 1024 * 1024 },
+      { route: "/knowledge-base/wiki-index.json", json: { ...wiki, evidence: [{ ...wiki.evidence[0], excerpt: root }] }, budget: 32 * 1024 * 1024 },
+      { route: "/knowledge-base/search-index.json", json: wiki, budget: 32 * 1024 * 1024 },
+      { route: "/knowledge-base/wiki-index.json", json: wiki, budget: 64 },
+    ]) {
+      const session = await openWorkbenchSessionV1({ route: { view: "knowledge" } }, {
+        ...binding(root), maxDashboardResponseBytes: scenario.budget,
+        dashboardReader: async () => ({ status: "ready", json: scenario.json }),
+      });
+      try {
+        const base = `http://127.0.0.1:${session.port}`;
+        const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+        const launch = await fetch(`${base}/__workbench/launch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+        const headers = { cookie: launch.headers.get("set-cookie")!.split(";", 1)[0]! };
+        const response = await fetch(`${base}${scenario.route}`, { headers });
+        expect(response.status).toBe(422);
+        expect(await response.json()).toEqual({ error: "dashboard_resource_invalid" });
+      } finally { await session.close(); }
+    }
+  });
+
   it("enforces trusted response budgets while retaining the default and static asset limits", async () => {
     const root = await runtimeRoot("workbench-response-budget-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";

@@ -6,6 +6,7 @@ const KNOWLEDGE_GENERATION_ID = /^generation-[0-9a-f]{64}$/u;
 
 /** Frontend-only selection for inspecting a Task's read-only candidate. */
 export interface TaskKnowledgeSelection {
+  readonly wikiAnchor?: string;
   readonly knowledgeVersion?: "pending";
   readonly knowledgeGenerationId?: string;
 }
@@ -99,6 +100,10 @@ export function taskFirstLocationStateFromLocation(
   const surface: TaskLocalSurface = surfaceValue === "graph" || surfaceValue === "wiki"
     ? surfaceValue
     : "task";
+  const wikiAnchor = decodeSegment(query.get("wikiAnchor"));
+  if (surface === "wiki" && route.focus && wikiAnchor) {
+    (route as { wikiAnchor?: string }).wikiAnchor = wikiAnchor;
+  }
   return { route, surface };
 }
 
@@ -138,6 +143,7 @@ export function taskFirstLocationUrl(
   if (route.impactPathId) params.set("impactPathId", route.impactPathId);
   if (surface !== "task") params.set("surface", surface);
   if (surface !== "task" && route.focus) params.set("focus", route.focus);
+  if (surface === "wiki" && route.focus && route.wikiAnchor) params.set("wikiAnchor", route.wikiAnchor);
   if (route.view === "tasks"
     && route.taskId
     && route.knowledgeVersion === "pending"

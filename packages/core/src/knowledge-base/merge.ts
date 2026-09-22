@@ -91,10 +91,10 @@ function validateFilePublication(
   }
 }
 
-function validateEvidenceAgainstSource(
-  inputs: MergeKnowledgeBaseWriterOutputsInput,
+export function validateEvidenceAgainstSource(
+  inputs: Pick<MergeKnowledgeBaseWriterOutputsInput, "profile" | "fileDocPlan">,
   evidence: readonly DirectSourceEvidence[],
-  writerKind: "file" | "topic",
+  writerKind: "file" | "topic" | "featured",
   batchIndex: number,
   errors: string[],
   retryBatchIndexes: Set<number>,

@@ -53,6 +53,7 @@ const EXPECTED_TOOL_NAMES = [
   "search_context",
   "trace_impact",
   "refresh_index",
+  "index_job",
 ];
 const CANDIDATE_MANIFEST_FILE = "understand-code-alpha-candidate.json";
 const CANDIDATE_SCHEMA_FILE = "understand-code-alpha-candidate-v1.schema.json";
@@ -1548,10 +1549,17 @@ test(
         child.stderr.on("data", (chunk) => stderr.push(chunk));
         assert.deepEqual(await waitForExit(child, label, 10_000), [1, null]);
         assert.equal(stdout.join(""), "");
-        assert.equal(
-          stderr.join(""),
-          "understand-code: internal_error\n",
-        );
+        const diagnosticText = stderr.join("");
+        assert.match(diagnosticText, /^understand-code: \{[^\n]+\}\n$/u);
+        const diagnostic = JSON.parse(diagnosticText.slice("understand-code: ".length));
+        assert.deepEqual(Object.keys(diagnostic).sort(), ["category", "errorId", "nextStep", "phase"]);
+        assert.equal(diagnostic.category, "internal_error");
+        assert.equal(diagnostic.phase, "cli");
+        assert.match(diagnostic.errorId, /^error:[0-9a-f-]{36}$/u);
+        assert.match(diagnostic.nextStep, /doctor/u);
+        for (const privatePath of [repositoryRoot, activationRoot, poisonProviderRoot]) {
+          assert.equal(diagnosticText.includes(privatePath), false, "diagnostics must not disclose internal paths");
+        }
       };
 
       activationConfig.providerInstallationRoot = poisonProviderRoot;

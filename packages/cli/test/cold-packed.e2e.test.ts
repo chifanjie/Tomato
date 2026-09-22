@@ -1,5 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import { lstat, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { connect, createServer, type Socket } from "node:net";
@@ -10,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import {
   GetRepoPulseOutputV1Schema,
   BuildTaskBriefOutputV1Schema,
+  BuildTaskBriefPendingOutputV1Schema,
+  IndexJobOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   RefreshIndexOutputV1Schema,
   McpToolErrorResultV1Schema,
@@ -274,6 +277,7 @@ describe("cold packed CLI", () => {
         "search_context",
         "trace_impact",
         "refresh_index",
+        "index_job",
       ]);
       const pulseResponse = await collected.waitFor((message) => message.id === 3);
       const pulse = GetRepoPulseOutputV1Schema.parse(pulseResponse.result);
@@ -366,7 +370,25 @@ describe("cold packed CLI", () => {
         }],
       ] as const;
       writeMessage(child, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "build_task_brief", arguments: mutationCalls[0][1] } });
-      const createdResponse = await collected.waitFor((message) => message.id === 4);
+      let createdResponse = await collected.waitFor((message) => message.id === 4);
+      const pending = BuildTaskBriefPendingOutputV1Schema.safeParse(createdResponse.result);
+      if (pending.success) {
+        const jobId = pending.data.structuredContent.result.job.jobId;
+        let state = pending.data.structuredContent.result.job.status;
+        let requestId = 100;
+        const deadline = Date.now() + 60_000;
+        while (["queued", "running"].includes(state) && Date.now() < deadline) {
+          await delay(200);
+          const id = requestId++;
+          writeMessage(child, { jsonrpc: "2.0", id, method: "tools/call", params: { name: "index_job", arguments: { action: "status", jobId } } });
+          const response = await collected.waitFor((message) => message.id === id);
+          state = IndexJobOutputV1Schema.parse(response.result).structuredContent.result.job!.status;
+        }
+        expect(state).toBe("completed");
+        writeMessage(child, { jsonrpc: "2.0", id: requestId, method: "tools/call", params: { name: "build_task_brief", arguments: mutationCalls[0][1] } });
+        createdResponse = await collected.waitFor((message) => message.id === requestId);
+      }
+      expect(createdResponse.result.isError, JSON.stringify(createdResponse.result)).not.toBe(true);
       const created = BuildTaskBriefOutputV1Schema.parse(createdResponse.result);
       expect(created.structuredContent.result.evidenceIds.length).toBeGreaterThan(0);
       writeMessage(child, { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "build_task_brief", arguments: mutationCalls[0][1] } });
@@ -497,9 +519,9 @@ describe("cold packed CLI", () => {
       const [invalidExitCode] = await once(invalidCli, "close");
       expect(invalidExitCode).toBe(2);
       expect(invalidCliOutput.stdout.join("")).toBe("");
-      expect(invalidCliOutput.stderr.join("")).toBe(
-        "understand-code: configuration_error\n",
-      );
+      expect(invalidCliOutput.stderr.join("")).toContain("configuration_error");
+      expect(invalidCliOutput.stderr.join("")).toContain("Usage:");
+      expect(invalidCliOutput.stderr.join("")).toContain("understand-code --help");
       expect(invalidCliOutput.stderr.join("")).not.toContain(root);
     },
     60_000,

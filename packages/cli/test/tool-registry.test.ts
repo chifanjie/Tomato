@@ -1,6 +1,8 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import {
   BuildTaskBriefOutputV1Schema,
+  BuildTaskBriefPendingOutputV1Schema,
+  IndexJobOutputV1Schema,
   CheckChangeOutputV1Schema,
   StrongCheckChangeOutputV1Schema,
   GetEvidenceOutputV1Schema,
@@ -33,6 +35,7 @@ function toolOutputSchema(schema: z.ZodType) {
 }
 
 const expectedOutputSchemas = {
+  index_job: toolOutputSchema(z.union([IndexJobOutputV1Schema.shape.structuredContent, McpToolErrorResultV1Schema.shape.structuredContent])),
   get_repo_pulse: toolOutputSchema(
     z.union([
       GetRepoPulseOutputV1Schema.shape.structuredContent,
@@ -42,6 +45,7 @@ const expectedOutputSchemas = {
   build_task_brief: toolOutputSchema(
     z.union([
       BuildTaskBriefOutputV1Schema.shape.structuredContent,
+      BuildTaskBriefPendingOutputV1Schema.shape.structuredContent,
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
@@ -104,7 +108,7 @@ const expectedOutputSchemas = {
 } as const;
 
 describe("advertised tool contracts", () => {
-  it("keeps the Preview Candidate surface pinned to the original three tools", () => {
+  it("keeps background job control available in the limited Preview surface", () => {
     expect(implementedToolNamesForSurfaceProfileV1("preview_three_tool_v1")).toBe(
       PREVIEW_THREE_TOOL_NAMES_V1,
     );
@@ -112,6 +116,7 @@ describe("advertised tool contracts", () => {
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+      "index_job",
     ]);
     expect(implementedToolNamesForSurfaceProfileV1("full")).toEqual([
       "get_repo_pulse",
@@ -125,6 +130,7 @@ describe("advertised tool contracts", () => {
       "search_context",
       "trace_impact",
       "refresh_index",
+      "index_job",
     ]);
   });
 
@@ -141,6 +147,7 @@ describe("advertised tool contracts", () => {
       "search_context",
       "trace_impact",
       "refresh_index",
+      "index_job",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
       expect(tool.description).not.toMatch(/\bunavailable\b/iu);

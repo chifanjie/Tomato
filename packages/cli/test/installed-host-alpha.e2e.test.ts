@@ -1,5 +1,6 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   chmod,
   cp,
@@ -13,7 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { McpToolErrorResultV1Schema, BuildTaskBriefOutputV1Schema, GetTaskBriefOutputV1Schema } from "@understand-code/contracts/mcp";
+import { BuildTaskBriefPendingOutputV1Schema, IndexJobOutputV1Schema, McpToolErrorResultV1Schema, BuildTaskBriefOutputV1Schema, GetTaskBriefOutputV1Schema } from "@understand-code/contracts/mcp";
 import {
   INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_CONFIG_FILE,
@@ -168,7 +169,20 @@ async function exerciseInstalledLocalRuntime(
     expect(resumed.structuredContent.result.task.taskId).toBe(resumedTaskId);
   }
   const input = { task: "Explain the actual task function using source evidence.", expectedRevision: 0, actor, idempotencyKey: `${keyPrefix}-build`, scope: ["src/task.ts"] };
-  const built = BuildTaskBriefOutputV1Schema.parse(await call("build_task_brief", input));
+  let buildResponse = await call("build_task_brief", input);
+  const pending = BuildTaskBriefPendingOutputV1Schema.safeParse(buildResponse);
+  if (pending.success) {
+    const jobId = pending.data.structuredContent.result.job.jobId;
+    let status = pending.data.structuredContent.result.job.status;
+    const deadline = Date.now() + 60_000;
+    while (["queued", "running"].includes(status) && Date.now() < deadline) {
+      await delay(200);
+      status = IndexJobOutputV1Schema.parse(await call("index_job", { action: "status", jobId })).structuredContent.result.job!.status;
+    }
+    expect(status).toBe("completed");
+    buildResponse = await call("build_task_brief", input);
+  }
+  const built = BuildTaskBriefOutputV1Schema.parse(buildResponse);
   const taskId = built.structuredContent.result.task.taskId;
   expect(built.structuredContent.result.evidenceIds.length).toBeGreaterThan(0);
   const replay = BuildTaskBriefOutputV1Schema.parse(await call("build_task_brief", input));

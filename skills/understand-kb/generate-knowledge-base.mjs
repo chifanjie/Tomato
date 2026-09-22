@@ -20,7 +20,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { basename, dirname, isAbsolute, relative, resolve, join } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   existsSync,
@@ -63,6 +63,7 @@ function parseArgs(argv) {
     else if (arg === '--prepare-file-docs') args.phase = 'prepare-file-docs';
     else if (arg === '--merge-file-docs') args.phase = 'merge-file-docs';
     else if (arg === '--prepare-topics') args.phase = 'prepare-topics';
+    else if (arg === '--prepare-featured') args.phase = 'prepare-featured';
     else if (arg === '--finalize') args.phase = 'finalize';
     else if (arg === '--lease-file-batch') args.phase = 'lease-file-batch';
     else if (arg === '--lease-topic-batch') args.phase = 'lease-topic-batch';
@@ -102,7 +103,7 @@ function parseArgs(argv) {
       const value = Number(argv[index + 1]);
       if (!Number.isFinite(value) || value <= 0) {
         console.error('--max-source-mb must be a positive number');
-        process.exit(1);
+        throw new Error('Knowledge writer phase failed; see diagnostics above.');
       }
       args.maxSourceBytes = Math.floor(value * 1024 * 1024);
       index += 1;
@@ -232,6 +233,10 @@ function assertSafeOutputRoot(sourceRoot, outputRoot) {
     .some((protectedPath) => isWithin(paths.outputRoot, protectedPath));
   const lexicalOutputInsideSource = isWithin(paths.sourceRoot, paths.outputRoot);
   const lexicalOutputInsideDefaultKnowledgeRoot = isWithin(defaultKnowledgeRoot, paths.outputRoot);
+  // The packaged Task writer owns exactly one ULID-named draft directory.
+  // Do not permit the drafts parent or arbitrary directories in the source tree.
+  const taskDraftRelative = relative(paths.sourceRoot, paths.outputRoot).split(sep).join('/');
+  const lexicalTaskDraft = /^\.understand-code\/knowledge-drafts\/[0-9A-HJKMNP-TV-Z]{26}$/u.test(taskDraftRelative);
 
   let canonicalSourceRoot;
   let canonicalOutputRoot;
@@ -256,13 +261,15 @@ function assertSafeOutputRoot(sourceRoot, outputRoot) {
     canonicalOutputRoot,
   );
   const crossesSourceBoundary = lexicalOutputInsideSource !== canonicalOutputInsideSource;
+  const canonicalTaskDraft = lexicalTaskDraft
+    && canonicalOutputRoot === resolve(canonicalSourceRoot, taskDraftRelative);
 
   if (
     lexicalOutputContainsProtectedPath
     || canonicalOutputContainsProtectedPath
     || crossesSourceBoundary
-    || (lexicalOutputInsideSource && !lexicalOutputInsideDefaultKnowledgeRoot)
-    || (canonicalOutputInsideSource && !canonicalOutputInsideDefaultKnowledgeRoot)
+    || (lexicalOutputInsideSource && !lexicalOutputInsideDefaultKnowledgeRoot && !lexicalTaskDraft)
+    || (canonicalOutputInsideSource && !canonicalOutputInsideDefaultKnowledgeRoot && !canonicalTaskDraft)
   ) {
     throw new Error('输出目录不能覆盖源码或图谱目录。');
   }
@@ -357,7 +364,7 @@ function unresolvedQueue(queueSummary) {
 function requireQueue(queuePath, missingMessage) {
   if (!existsSync(queuePath)) {
     console.error(missingMessage);
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
   return readJson(queuePath);
 }
@@ -614,7 +621,7 @@ function loadGraph(core, sourceRoot) {
   if (!existsSync(graphPath)) {
     console.error(`未找到知识图谱: ${graphPath}`);
     console.error('请先运行 /understand，再重新运行 /understand-kb。');
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
 
   const raw = readJson(graphPath);
@@ -624,7 +631,7 @@ function loadGraph(core, sourceRoot) {
     for (const issue of validation.issues) {
       console.error(`- ${issue.path}: ${issue.message}`);
     }
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
   return validation.data;
 }
@@ -869,7 +876,7 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
     if (!parsed.ok) {
       console.error(`${entry} 未通过契约校验:`);
       for (const error of parsed.errors) console.error(`- ${error}`);
-      process.exit(1);
+      throw new Error('Knowledge writer phase failed; see diagnostics above.');
     }
     outputs.push(parsed.value);
   }
@@ -928,7 +935,7 @@ function completeBatch(core, outputRoot, queueFileName, args) {
 
   if (JSON.stringify(nextQueue) === JSON.stringify(queue)) {
     console.error(`未能更新队列条目: batchIndex=${args.batchIndex}, workerId=${args.workerId}, resultStatus=${args.resultStatus || 'needs_retry'}`);
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
 
   writeJson(queuePath, nextQueue);
@@ -958,20 +965,36 @@ function mergeFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
   console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
 }
 
+function writeFeaturedPlan(core, profile, fileDocPlan, topicPlan, config, outputRoot) {
+  const businessProfile = core.buildBusinessCapabilityProfile(profile, fileDocPlan);
+  const plan = core.buildFeaturedPlan({ profile, businessProfile, fileDocPlan, topicPlan, config: config.knowledgeBase ?? {} });
+  const documents = plan.documents.filter((document) => document.role !== 'maintenance' && !['file', 'topic'].includes(document.category))
+    .map((document) => ({ ...document, requiredSections: core.REQUIRED_SECTIONS[document.category] ?? [] }));
+  writeJson(join(outputRoot, '.intermediate', 'featured-plan.json'), { schemaVersion: 1, documents, warnings: plan.warnings });
+  console.log(`主干写作计划已准备: ${documents.length} 篇。请按计划和主干指南写入 .intermediate/featured-writer-output.json，再执行 --finalize。`);
+}
+
+function prepareFeatured(core, sourceRoot, outputRoot, maxSourceBytes) {
+  const { profile, fileDocPlan, config } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
+  const topicPath = join(outputRoot, '.intermediate', 'topic-plan.json');
+  if (!existsSync(topicPath)) throw new Error('请先运行 --prepare-topics。');
+  writeFeaturedPlan(core, profile, fileDocPlan, readJson(topicPath), config, outputRoot);
+}
+
 function prepareTopics(core, sourceRoot, outputRoot, maxSourceBytes, args) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
+  const { profile, fileDocPlan, config } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes, outputRoot);
   const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
   if (!existsSync(acceptedPath)) {
     console.error('未找到已接受的文件文档。请先运行 --merge-file-docs。');
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
   const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const fileQueueSummary = core.summarizeQueue(fileQueue);
   if (unresolvedQueue(fileQueueSummary)) {
     console.error('文件阶段尚未完成，不能进入专题阶段。');
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
   const acceptedFileDocs = readJson(acceptedPath);
   const topicPlan = core.buildTopicPlan(profile, fileDocPlan, acceptedFileDocs);
@@ -987,6 +1010,7 @@ function prepareTopics(core, sourceRoot, outputRoot, maxSourceBytes, args) {
 
   console.log(`已准备专题批次: ${topicPlan.batches.length}`);
   console.log(`计划生成专题文档数: ${topicPlan.topics.length}`);
+  writeFeaturedPlan(core, profile, fileDocPlan, topicPlan, config, outputRoot);
 }
 
 function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, maxSourceBytes) {
@@ -1006,7 +1030,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
   const topicQueueSummary = core.summarizeQueue(topicQueue);
   if (unresolvedQueue(topicQueueSummary)) {
     console.error('专题阶段尚未完成，不能进入 finalize 成功态。');
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
   const fileMerged = core.mergeKnowledgeBaseWriterOutputs({ profile, fileDocPlan, fileWriterOutputs });
@@ -1044,9 +1068,23 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     merged.retryPlan.topicBatchIndexes.length > 0
   ) {
     console.error('merge 校验仍存在待重试批次，不能输出最终知识库。');
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
 
+  const featuredPath = join(intermediateRoot, 'featured-writer-output.json');
+  let featured;
+  try {
+    featured = existsSync(featuredPath) ? core.parseFeaturedWriterOutput(readJson(featuredPath)) : {
+      ok: false, errors: ['缺少主干写作输出。运行 --prepare-featured 查看计划，按 --guide 的主干指南写入 .intermediate/featured-writer-output.json。'],
+    };
+  } catch {
+    featured = { ok: false, errors: ['.intermediate/featured-writer-output.json 不是有效 JSON；请修正该文件后重试。'] };
+  }
+  if (!featured.ok) {
+    writeJson(join(intermediateRoot, 'featured-writer-retry-plan.json'), { errors: featured.errors });
+    for (const error of featured.errors) console.error(error);
+    throw new Error('主干写作输出未通过校验；已有草稿已保留。');
+  }
   const businessCapabilityProfile = core.buildBusinessCapabilityProfile(profile, fileDocPlan);
   const kb = core.materializeKnowledgeBase({
     profile,
@@ -1054,6 +1092,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     businessCapabilityProfile,
     topicPlan,
     merged,
+    featuredWriterOutput: featured.value,
     options: {
       sourceFiles,
       outputLanguage: knowledgeBaseOutputLanguage(config),
@@ -1061,6 +1100,16 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
       generationMode: 'writer',
     },
   });
+
+  const writerErrors = [...new Set([
+    ...kb.validation.errors, ...kb.coverageReport.errors,
+    ...kb.documents.flatMap((document) => (document.qualityIssues ?? []).map((issue) => `${document.path}: ${issue}`)),
+  ])];
+  if (writerErrors.length > 0) {
+    writeJson(join(intermediateRoot, 'featured-writer-retry-plan.json'), { errors: writerErrors });
+  } else {
+    rmSync(join(intermediateRoot, 'featured-writer-retry-plan.json'), { force: true });
+  }
 
   if (graph.project.gitCommitHash !== profile.graph.project.gitCommitHash) {
     console.warn('警告: 生成最终知识库时图谱元数据发生变化。');
@@ -1077,14 +1126,26 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
     errors: [...kb.validation.errors, ...kb.coverageReport.errors],
   });
+  if (artifacts.generationReport.mainReadiness.status !== 'ready'
+    || artifacts.generationReport.referenceCoverage.status !== 'complete'
+    || artifacts.generationReport.errors.length > 0) {
+    const errors = [...new Set([...writerErrors, ...artifacts.generationReport.errors,
+      ...(artifacts.generationReport.mainReadiness.reasons ?? []),
+      `主干状态: ${artifacts.generationReport.mainReadiness.status}；参考覆盖: ${artifacts.generationReport.referenceCoverage.status}`])];
+    writeJson(join(intermediateRoot, 'featured-writer-retry-plan.json'), { errors });
+    for (const error of errors) console.error(error);
+    throw new Error('正式知识质量未通过；草稿已保留，请运行 --retry 修正后重试。');
+  }
   if (publishKnowledgeBase(core, outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
+  } else {
+    throw new Error('最终知识产物未通过校验；草稿已保留。');
   }
 }
 
 function printRetryPlan(outputRoot) {
   const intermediateRoot = join(outputRoot, '.intermediate');
-  const retryFiles = ['file-doc-retry-plan.json', 'topic-retry-plan.json']
+  const retryFiles = ['file-doc-retry-plan.json', 'topic-retry-plan.json', 'featured-writer-retry-plan.json']
     .map((name) => join(intermediateRoot, name))
     .filter((path) => existsSync(path));
   if (retryFiles.length === 0) {
@@ -1097,11 +1158,11 @@ function printRetryPlan(outputRoot) {
   }
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
+export async function runKnowledgeBaseGenerator(argv = process.argv, suppliedCore) {
+  const args = parseArgs(argv);
   selectedGraphPath = args.graphPath;
   assertSafeOutputRoot(args.sourceRoot, args.outputRoot);
-  const core = await loadCore();
+  const core = suppliedCore ?? await loadCore();
 
   if (args.deterministicOnly || args.phase === 'deterministic') {
     deterministicGenerate(core, args.sourceRoot, args.outputRoot, args.keepIntermediate, args);
@@ -1111,6 +1172,8 @@ async function main() {
     mergeFileDocs(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes);
   } else if (args.phase === 'prepare-topics') {
     prepareTopics(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes, args);
+  } else if (args.phase === 'prepare-featured') {
+    prepareFeatured(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes);
   } else if (args.phase === 'lease-file-batch') {
     leaseBatch(core, args.outputRoot, 'file-doc-queue.json', args);
   } else if (args.phase === 'lease-topic-batch') {
@@ -1125,11 +1188,16 @@ async function main() {
     printRetryPlan(args.outputRoot);
   } else {
     console.error(`未知阶段: ${args.phase}`);
-    process.exit(1);
+    throw new Error('Knowledge writer phase failed; see diagnostics above.');
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
-  process.exit(1);
-});
+// The installed CLI reuses this writer pipeline with its bundled core. Importing
+// it must not run a second CLI or depend on the source checkout at runtime.
+if (typeof __UNDERSTAND_CODE_BUNDLED_WRITER__ === 'undefined'
+    && process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  runKnowledgeBaseGenerator().catch((error) => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

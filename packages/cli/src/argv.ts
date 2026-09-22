@@ -3,6 +3,10 @@ import { MAX_PATH_BYTES } from "./constants.js";
 export type CliInvocation =
   | { readonly kind: "help" }
   | { readonly kind: "version" }
+  | { readonly kind: "index_job"; readonly root: string; readonly action: "start" | "status" | "cancel" | "run"; readonly jobId?: string }
+  | { readonly kind: "recovery"; readonly root: string; readonly action: "rebuild" | "restore"; readonly backupId?: string }
+  | { readonly kind: "workbench"; readonly root: string; readonly taskId?: string; readonly noOpen: boolean }
+  | { readonly kind: "knowledge"; readonly root: string; readonly taskId: string; readonly writerArgs: readonly string[]; readonly candidateGenerationId?: string }
   | {
       /** Private installed-service entrypoint; config remains root-owned. */
       readonly kind: "provider_service_runtime";
@@ -87,6 +91,74 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
   }
   if (values.length === 1 && ["--version", "-V"].includes(values[0]!)) {
     return { kind: "version" };
+  }
+  if (values[0] === "index" || values[0] === "__index-job-run" || values[0] === "recover") {
+    const recovery = values[0] === "recover";
+    const internal = values[0] === "__index-job-run";
+    let root: string | undefined;
+    let jobId: string | undefined;
+    let backupId: string | undefined;
+    let action: "start" | "status" | "cancel" | "run" | "rebuild" | "restore" = internal ? "run" : "start";
+    let explicitAction = false;
+    const seen = new Set<string>();
+    for (let index = 1; index < values.length; index += 1) {
+      const flag = values[index]!;
+      if (seen.has(flag)) throw new CliArgumentError();
+      seen.add(flag);
+      const selected = recovery ? (flag === "--rebuild" ? "rebuild" : flag === "--restore" ? "restore" : undefined)
+        : internal ? undefined : flag === "--background" ? "start" : flag === "--status" ? "status" : flag === "--cancel" ? "cancel" : undefined;
+      if (selected) {
+        if (explicitAction) throw new CliArgumentError();
+        action = selected; explicitAction = true;
+        if (selected !== "restore") continue;
+      }
+      const value = values[++index];
+      if (!safePathArgument(value) || !value || value.startsWith("--")) throw new CliArgumentError();
+      if (flag === "--root" && pathIsAbsolute(value)) root = value;
+      else if (!recovery && flag === "--job-id" && /^[0-9A-HJKMNP-TV-Z]{26}$/u.test(value)) jobId = value;
+      else if (recovery && flag === "--restore" && /^recovery-[0-9a-f]{32}$/u.test(value)) backupId = value;
+      else throw new CliArgumentError();
+    }
+    if (!root) throw new CliArgumentError();
+    if (recovery) {
+      if (action !== "rebuild" && action !== "restore") throw new CliArgumentError();
+      return { kind: "recovery", root, action, ...(backupId ? { backupId } : {}) };
+    }
+    if ((internal && !jobId) || action === "rebuild" || action === "restore" || (action === "start" && jobId)) throw new CliArgumentError();
+    return { kind: "index_job", root, action, ...(jobId ? { jobId } : {}) };
+  }
+  if (values[0] === "workbench" || values[0] === "knowledge") {
+    const kind = values[0];
+    let root: string | undefined;
+    let taskId: string | undefined;
+    let candidateGenerationId: string | undefined;
+    let noOpen = false;
+    const writerArgs: string[] = [];
+    const seen = new Set<string>();
+    const phases = new Set(["--prepare-file-docs", "--restart-draft", "--lease-file-batch", "--complete-file-batch", "--merge-file-docs", "--prepare-topics", "--prepare-featured", "--lease-topic-batch", "--complete-topic-batch", "--finalize", "--retry", "--guide", "--discard-candidate", "--cleanup-interrupted"]);
+    let phaseCount = 0;
+    for (let index = 1; index < values.length; index += 1) {
+      const flag = values[index]!;
+      if (seen.has(flag)) throw new CliArgumentError();
+      seen.add(flag);
+      if (flag === "--no-open" && kind === "workbench") { noOpen = true; continue; }
+      if (kind === "knowledge" && phases.has(flag)) { writerArgs.push(flag); phaseCount += 1; continue; }
+      if (kind === "knowledge" && ["--resume", "--include-extended-topics"].includes(flag)) { writerArgs.push(flag); continue; }
+      const value = values[++index];
+      if (!safePathArgument(value) || !value || value.startsWith("--")) throw new CliArgumentError();
+      if (flag === "--root" && pathIsAbsolute(value)) root = value;
+      else if (flag === "--task-id" && /^[0-9A-HJKMNP-TV-Z]{26}$/u.test(value)) taskId = value;
+      else if (kind === "knowledge" && flag === "--candidate" && /^generation-[0-9a-f]{64}$/u.test(value)) candidateGenerationId = value;
+      else if (kind === "knowledge" && ["--worker-id", "--batch-index", "--result-status", "--max-source-mb"].includes(flag)) {
+        if (flag === "--batch-index" && !/^\d+$/u.test(value)) throw new CliArgumentError();
+        if (flag === "--max-source-mb" && (!Number.isFinite(Number(value)) || Number(value) <= 0)) throw new CliArgumentError();
+        writerArgs.push(flag, value);
+      } else throw new CliArgumentError();
+    }
+    if (!root) throw new CliArgumentError();
+    if (kind === "workbench") return { kind, root, ...(taskId ? { taskId } : {}), noOpen };
+    if (!taskId || phaseCount !== 1 || writerArgs.includes("--discard-candidate") !== Boolean(candidateGenerationId)) throw new CliArgumentError();
+    return { kind, root, taskId, writerArgs, ...(candidateGenerationId ? { candidateGenerationId } : {}) };
   }
   if (values.length === 2 && values[0] === "--service-config") {
     const serviceConfig = values[1];
@@ -465,6 +537,11 @@ export function helpText(): string {
     "Understand Code",
     "",
     "Usage:",
+    "  understand-code workbench --root <absolute-worktree-path> [--task-id <taskId>] [--no-open]",
+    "  understand-code knowledge --root <absolute-worktree-path> --task-id <taskId> --guide",
+    "  understand-code knowledge --root <absolute-worktree-path> --task-id <taskId> --prepare-file-docs",
+    "  understand-code knowledge --root <absolute-worktree-path> --task-id <taskId> --discard-candidate --candidate <generationId>",
+    "  understand-code knowledge --root <absolute-worktree-path> --task-id <taskId> --cleanup-interrupted",
     "  understand-code mcp --stdio --root <absolute-worktree-path> [--installation-root <absolute-host-installation-root>]",
     "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
     "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude] [--provider-installation-root <absolute-provider-service-installation-root>]",
@@ -479,6 +556,10 @@ export function helpText(): string {
     "  understand-code rollback --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",
     "  understand-code uninstall --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code index --root <absolute-worktree-root> [--background|--status|--cancel] [--job-id <ULID>]",
+    "  understand-code recover --root <absolute-worktree-root> --rebuild",
+    "  understand-code recover --root <absolute-worktree-root> --restore <recovery-id>",
+    "  understand-code knowledge --root <absolute-worktree-root> --task-id <ULID> --restart-draft",
     "  understand-code --help",
     "  understand-code --version",
     "",

@@ -1,8 +1,14 @@
 import { CliArgumentError, helpText, parseCliArguments } from "./argv.js";
 import { resolveInitialBinding } from "./binding/root-binding.js";
 import { PRODUCT_VERSION } from "./constants.js";
-import { writeDiagnostic } from "./logging/stderr.js";
+import { writeDiagnostic, writeErrorDiagnostic } from "./logging/stderr.js";
+import { randomUUID } from "node:crypto";
+import { CliOperationErrorV1 } from "./errors/cli-operation-error.js";
 import { runStdioServer } from "./mcp/server.js";
+import { runWorkbenchCommand } from "./workbench-command.js";
+import { runKnowledgeCommand } from "./knowledge-command.js";
+import { runIndexJobCommand } from "./index-job-command.js";
+import { runRecoveryCommand } from "./recovery-command.js";
 import { runReleaseDoctorV1 } from "./release-doctor.js";
 import { runHostRegistrationDoctorV1 } from "./host-registration-doctor.js";
 import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
@@ -246,7 +252,8 @@ async function main(): Promise<void> {
     invocation = parseCliArguments(process.argv.slice(2));
   } catch (error) {
     if (error instanceof CliArgumentError) {
-      writeDiagnostic("configuration_error");
+      process.stderr.write("understand-code: configuration_error — Invalid command or options. Use an absolute repository path for --root and check the usage below.\n");
+      process.stderr.write(helpText());
       process.exitCode = 2;
       return;
     }
@@ -259,6 +266,22 @@ async function main(): Promise<void> {
   }
   if (invocation.kind === "version") {
     process.stdout.write(`${PRODUCT_VERSION}\n`);
+    return;
+  }
+  if (invocation.kind === "index_job") {
+    await runIndexJobCommand(invocation);
+    return;
+  }
+  if (invocation.kind === "recovery") {
+    await runRecoveryCommand(invocation);
+    return;
+  }
+  if (invocation.kind === "workbench") {
+    await runWorkbenchCommand(invocation);
+    return;
+  }
+  if (invocation.kind === "knowledge") {
+    await runKnowledgeCommand(invocation);
     return;
   }
   if (invocation.kind === "provider_service_runtime") {
@@ -310,7 +333,11 @@ async function main(): Promise<void> {
 
 try {
   await main();
-} catch {
-  writeDiagnostic("internal_error");
+} catch (error) {
+  if (error instanceof CliOperationErrorV1) {
+    process.stderr.write(`understand-code: ${error.code} — ${error.message}\n`);
+  } else {
+    writeErrorDiagnostic(`error:${randomUUID()}`, error, "cli");
+  }
   process.exitCode = 1;
 }

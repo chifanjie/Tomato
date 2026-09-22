@@ -463,3 +463,53 @@ describe("Task-first Preview host bridge", () => {
     }
   });
 });
+
+it.each(["click", "keyboard"])("opens search from the task page on the first %s action", async (action) => {
+  window.history.replaceState(null, "", `/workbench?view=tasks&taskId=${taskId}`);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    if (url.pathname.endsWith("/brief.json")) return response(200, projection);
+    if (url.pathname.endsWith("/wiki-index.json")) return response(200, wikiV2Fixture());
+    if (url.pathname.endsWith("/search-index.json")) return response(200, { version: 2, records: [] });
+    return response(404, {});
+  }));
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(App)));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => {
+      if (action === "click") container.querySelector<HTMLButtonElement>('[aria-label="搜索知识库"]')!.click();
+      else window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[role="dialog"][aria-label="全局搜索知识库"]')).not.toBeNull();
+    expect(window.location.search).not.toContain("wikiSearch");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("keeps a Task Wiki chapter in the URL and restores its anchor after reopening", async () => {
+  window.history.replaceState(null, "", `/workbench?view=tasks&taskId=${taskId}&surface=wiki&focus=page%3Arun`);
+  const scrolled: HTMLElement[] = [];
+  vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    if (url.pathname.endsWith("/brief.json")) return response(200, projection);
+    if (url.pathname.endsWith("/wiki-index.json")) return response(200, wikiV2Fixture());
+    if (url.pathname.endsWith(".md")) return response(200, "# 运行流程\n\n[查看章节](#run)\n\n## run\n\n函数解释。");
+    return response(404, {});
+  }));
+  const container = document.createElement("div"); document.body.append(container); let root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(App)));
+    await act(async () => [...container.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent === "查看章节")!.click());
+    expect(new URLSearchParams(window.location.search).get("wikiAnchor")).toBe("run");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(scrolled.some((element) => element.dataset.wikiAnchor === "run")).toBe(true);
+    await act(async () => root.unmount());
+    scrolled.length = 0;
+    useDashboardStore.setState(useDashboardStore.getInitialState(), true);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(App)));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(scrolled.some((element) => element.dataset.wikiAnchor === "run")).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+});

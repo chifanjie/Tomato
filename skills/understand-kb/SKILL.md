@@ -8,7 +8,7 @@ argument-hint: "[project-path] [--parallel 1|2] [--resume] [--include-extended-t
 
 Generate a Markdown knowledge base at an explicit output root from a graph and source tree at an explicit source root.
 
-The command assumes `/understand` has already scanned the repository. It uses the graph as the fact source, writes one file document for every graph file node, covers every function/class card inside its parent file document, plans uncapped topic documents from graph and file-writer signals, and writes a strict coverage report.
+The command assumes `/understand` has already scanned the repository. It uses the graph as the fact source, writes one file document for every graph file node, covers every function/class card inside its parent file document, plans uncapped topic documents from graph and file-writer signals, authors the planned overview/flow/module/capability pages, and writes a strict coverage report.
 
 ## Instructions
 
@@ -103,7 +103,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
    ```
 
 8. Create exactly `$PARALLEL_LIMIT` logical file workers.
-   - Default worker count is `2`.
+   - Default worker count is `1`, as resolved above.
    - Maximum worker count is `2`.
    - Use stable worker ids such as `file-writer-1` and `file-writer-2`.
 
@@ -138,8 +138,10 @@ The command assumes `/understand` has already scanned the repository. It uses th
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$SOURCE_ROOT" --source-root "$SOURCE_ROOT" --output-root "$OUTPUT_ROOT" --prepare-topics [--max-source-mb <n>]
     ```
 
+    This also writes `$OUTPUT_ROOT/.intermediate/featured-plan.json`. Keep this plan for the featured-page writing step below; file and topic outputs alone do not complete the knowledge base.
+
 12. Create exactly `$PARALLEL_LIMIT` logical topic workers.
-    - Default worker count is `2`.
+    - Default worker count is `1`, as resolved above.
     - Maximum worker count is `2`.
     - Use stable worker ids such as `topic-writer-1` and `topic-writer-2`.
 
@@ -162,11 +164,28 @@ The command assumes `/understand` has already scanned the repository. It uses th
       ```
     - On validation failure, missing output, or other batch-specific failure, complete the lease with a non-success `--result-status` that preserves the concrete reason.
 
-14. After all topic workers stop, finalize the knowledge base.
+13.5. After all topic workers stop, write the planned featured pages.
+    - Run [agents/kb-featured-writer.md](../../agents/kb-featured-writer.md) with `$OUTPUT_ROOT/.intermediate/featured-plan.json`, the accepted file/topic writing, the graph, and source evidence from the same unchanged roots and source snapshot.
+    - Use one writer after the topic workers stop; do not add an extra concurrent pool.
+    - Read the actual plan and write every listed document, not a fixed list of assumed pages. It includes planned overview, flow, module, and capability pages outside file/topic documents.
+    - Preserve each plan entry's exact ID and path as `documentId` and `documentPath`. Follow its required sections and cover its direct nodes with real `DirectSourceEvidence`; keep the existing source-path, line, excerpt, and prepared source-snapshot bindings. Do not invent evidence or copy generic templates to satisfy the quality gate.
+    - Write the guide's `FeaturedWriterOutput` JSON to exactly:
+      ```text
+      $OUTPUT_ROOT/.intermediate/featured-writer-output.json
+      ```
+    - Verify that the output exists. If the plan needs to be regenerated, run:
+      ```bash
+      node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$SOURCE_ROOT" --source-root "$SOURCE_ROOT" --output-root "$OUTPUT_ROOT" --prepare-featured [--max-source-mb <n>]
+      ```
+      This only rebuilds the plan; it does not overwrite existing featured output. Compare that output with the current plan and bound source before reusing it.
+
+14. After all writers finish, finalize the knowledge base.
 
     ```bash
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$SOURCE_ROOT" --source-root "$SOURCE_ROOT" --output-root "$OUTPUT_ROOT" --finalize [--max-source-mb <n>]
     ```
+
+    Finalize requires the featured writer output and validates identities, source evidence, required sections, coverage, and publication quality together with the existing file/topic checks. Missing, mismatched, or low-quality main pages are failures; inspect `--retry`, repair the authored output, and finalize again. Never downgrade a quality gate or substitute deterministic-only output to claim success.
 
 15. If the user passed `--include-extended-topics`, repeat the topic phase for extended topics after the required-topic finalize succeeds.
     - Re-run topic preparation with:
@@ -175,6 +194,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
       ```
     - Recreate exactly `$PARALLEL_LIMIT` logical topic workers.
     - Repeat the same `--lease-topic-batch` / topic writer / `--complete-topic-batch` loop for the new extended-topic queue.
+    - Topic preparation also refreshes `featured-plan.json`. Repeat step 13.5 against this plan before finalizing; retain valid existing content only when its identity and source evidence still match, and write or correct any missing or changed pages.
     - Run finalize again after the extended-topic workers stop:
       ```bash
       node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$SOURCE_ROOT" --source-root "$SOURCE_ROOT" --output-root "$OUTPUT_ROOT" --finalize [--max-source-mb <n>]
@@ -185,6 +205,8 @@ The command assumes `/understand` has already scanned the repository. It uses th
     ```bash
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$SOURCE_ROOT" --source-root "$SOURCE_ROOT" --output-root "$OUTPUT_ROOT" --retry [--max-source-mb <n>]
     ```
+
+    Retry diagnostics include `featured-writer-retry-plan.json` for missing, malformed, or rejected main-page content; use the concrete errors without changing source bindings or validation requirements.
 
 16. Report the result to the user.
     - Knowledge base path: `$OUTPUT_ROOT/`

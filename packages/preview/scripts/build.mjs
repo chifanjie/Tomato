@@ -701,6 +701,7 @@ async function main() {
   }
   const meta = { lastAnalyzedAt: wiki.generatedAt, gitCommitHash: "preview-fixture", version: "1.0.0", analyzedFiles: 1, theme: { presetId: "technical-document" } };
   await cp(path.join(packageRoot, "src/bin.mjs"), path.join(distRoot, "bin.mjs"));
+  await cp(path.join(packageRoot, "src/host-install.mjs"), path.join(distRoot, "host-install.mjs"));
   await cp(path.join(packageRoot, "src/host-bin.mjs"), path.join(distRoot, "host-bin.mjs"));
   await cp(path.join(packageRoot, "src/server.mjs"), path.join(distRoot, "server.mjs"));
   await Promise.all([

@@ -1,0 +1,22 @@
+{
+  "$id": "urn:understand-code:schema:v1:index_job-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "status",
+        "cancel"
+      ]
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "additionalProperties": false
+}

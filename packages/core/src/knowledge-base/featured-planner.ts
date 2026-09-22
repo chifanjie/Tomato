@@ -502,13 +502,19 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     const fileId = fileNodeIdForNode(profile, nodeId);
     return fileId ? [fileId] : [];
   }));
+  // Repositories without inferred layers or entry candidates still have real
+  // source files. Keep both mandatory reading pages anchored to those files.
+  const fallbackSourceFileIds = fileDocPlan.tasks.filter((task) => task.sourceSnapshot.exists)
+    .map((task) => task.fileNodeId).sort().slice(0, 6);
+  if (sourceEntryFileIds.length === 0) sourceEntryFileIds.push(...fallbackSourceFileIds);
   const layerFileIds = sortedUnique(profile.layerProfiles.flatMap((layer) => fileIdsInLayer(profile, layer.id)));
   const fallbackOverviewNodeIds = rankedLayers(profile)
     .flatMap((layer) => fileIdsInLayer(profile, layer.id))
     .sort((left, right) => (profile.nodeDegrees.get(right)?.total ?? 0) - (profile.nodeDegrees.get(left)?.total ?? 0)
       || left.localeCompare(right))
     .slice(0, 6);
-  const overviewDirectNodeIds = publishableEntryIds.length > 0 ? publishableEntryIds : fallbackOverviewNodeIds;
+  const overviewDirectNodeIds = publishableEntryIds.length > 0 ? publishableEntryIds
+    : fallbackOverviewNodeIds.length > 0 ? fallbackOverviewNodeIds : fallbackSourceFileIds;
   const exactPaths = [
     KB_PATHS.projectOverview,
     KB_PATHS.sourceEntry,

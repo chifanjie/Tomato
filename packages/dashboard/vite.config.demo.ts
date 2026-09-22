@@ -2,12 +2,14 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { markdownWorkerSafeAliases } from "./vite.markdown.mjs";
 
 export default defineConfig({
   base: "/demo/",
 
   resolve: {
     alias: {
+      ...markdownWorkerSafeAliases,
       "@understand-code/core/schema": path.resolve(__dirname, "../core/dist/schema.js"),
       "@understand-code/core/search": path.resolve(__dirname, "../core/dist/search.js"),
       "@understand-code/core/types": path.resolve(__dirname, "../core/dist/types.js"),

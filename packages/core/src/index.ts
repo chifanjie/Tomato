@@ -130,3 +130,5 @@ export {
 } from "./ignore-filter.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
 export * from "./knowledge-base/index.js";
+
+export { resolveJavaCalls, javaBindingsOf } from "./plugins/extractors/java-call-binding.js";

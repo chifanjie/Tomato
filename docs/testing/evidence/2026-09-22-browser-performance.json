@@ -1,0 +1,1528 @@
+{
+  "scope": "Browser PerformanceObserver / page JS heap samples; excludes Worker heap, native buffers and process RSS. Hidden IAB event timings are not INP acceptance.",
+  "runs": [
+    {
+      "label": "baseline",
+      "runEpochMs": 1790047496641,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "paint": [
+        {
+          "name": "first-paint",
+          "start": 192,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 272,
+          "duration": 0
+        }
+      ],
+      "searchWindowMs": [
+        44431,
+        195149
+      ],
+      "searchLongTasks": [
+        {
+          "name": "self",
+          "start": 45074,
+          "duration": 158
+        },
+        {
+          "name": "self",
+          "start": 45233,
+          "duration": 207
+        },
+        {
+          "name": "self",
+          "start": 45450,
+          "duration": 187
+        },
+        {
+          "name": "self",
+          "start": 154655,
+          "duration": 89
+        }
+      ],
+      "searchHeapSamplePeakBytes": 631429016,
+      "longTasks": [
+        {
+          "name": "self",
+          "start": 180,
+          "duration": 67
+        },
+        {
+          "name": "self",
+          "start": 362,
+          "duration": 75
+        },
+        {
+          "name": "self",
+          "start": 533,
+          "duration": 73
+        },
+        {
+          "name": "self",
+          "start": 45074,
+          "duration": 158
+        },
+        {
+          "name": "self",
+          "start": 45233,
+          "duration": 207
+        },
+        {
+          "name": "self",
+          "start": 45450,
+          "duration": 187
+        },
+        {
+          "name": "self",
+          "start": 154655,
+          "duration": 89
+        },
+        {
+          "name": "self",
+          "start": 195266,
+          "duration": 627
+        },
+        {
+          "name": "self",
+          "start": 195948,
+          "duration": 77
+        }
+      ],
+      "interactionEvents": [
+        {
+          "name": "pointerup",
+          "start": 44501,
+          "duration": 56,
+          "interactionId": 9199,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 44501,
+          "duration": 56,
+          "interactionId": 9199,
+          "processing": 15
+        },
+        {
+          "name": "keydown",
+          "start": 81693,
+          "duration": 24,
+          "interactionId": 9206,
+          "processing": 1
+        },
+        {
+          "name": "keypress",
+          "start": 81696,
+          "duration": 24,
+          "interactionId": 9206,
+          "processing": 6
+        },
+        {
+          "name": "keyup",
+          "start": 81714,
+          "duration": 24,
+          "interactionId": 9206,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 81750,
+          "duration": 32,
+          "interactionId": 9206,
+          "processing": 4
+        },
+        {
+          "name": "pointerdown",
+          "start": 195085,
+          "duration": 24,
+          "interactionId": 9213,
+          "processing": 1
+        },
+        {
+          "name": "pointerup",
+          "start": 195125,
+          "duration": 40,
+          "interactionId": 9213,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 195125,
+          "duration": 40,
+          "interactionId": 9213,
+          "processing": 29
+        },
+        {
+          "name": "pointerup",
+          "start": 195200,
+          "duration": 24,
+          "interactionId": 9220,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 195200,
+          "duration": 24,
+          "interactionId": 9220,
+          "processing": 7
+        }
+      ],
+      "resources": [
+        {
+          "path": "/assets/theme-bootstrap-bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d.js",
+          "duration": 31,
+          "transfer": 732,
+          "decoded": 1163
+        },
+        {
+          "path": "/assets/react-vendor-BCibNWLg.js",
+          "duration": 44,
+          "transfer": 67376,
+          "decoded": 193846
+        },
+        {
+          "path": "/assets/index-BuLjcc6n.js",
+          "duration": 49,
+          "transfer": 206793,
+          "decoded": 713528
+        },
+        {
+          "path": "/assets/index-0B-CVPWb.css",
+          "duration": 33,
+          "transfer": 18893,
+          "decoded": 90614
+        },
+        {
+          "path": "/assets/markdown-B7z_TtzA.js",
+          "duration": 37,
+          "transfer": 40527,
+          "decoded": 117802
+        },
+        {
+          "path": "/meta.json",
+          "duration": 7,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/wiki-index.json",
+          "duration": 91,
+          "transfer": 727544,
+          "decoded": 10959215
+        },
+        {
+          "path": "/knowledge-graph.json",
+          "duration": 236,
+          "transfer": 1127644,
+          "decoded": 19483805
+        },
+        {
+          "path": "/favicon.svg",
+          "duration": 5,
+          "transfer": 1082,
+          "decoded": 782
+        },
+        {
+          "path": "/meta.json",
+          "duration": 9,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/search-index.json",
+          "duration": 558,
+          "transfer": 13388901,
+          "decoded": 97668068
+        },
+        {
+          "path": "/assets/GraphExplorer-BAxhZc--.js",
+          "duration": 52,
+          "transfer": 43133,
+          "decoded": 121889
+        },
+        {
+          "path": "/assets/xyflow-Bq-JiJlN.js",
+          "duration": 57,
+          "transfer": 66429,
+          "decoded": 183468
+        },
+        {
+          "path": "/assets/xyflow-BZV40eAE.css",
+          "duration": 51,
+          "transfer": 3281,
+          "decoded": 15851
+        },
+        {
+          "path": "/assets/graph-layout-CsnyUhpS.js",
+          "duration": 54,
+          "transfer": 16936,
+          "decoded": 42978
+        },
+        {
+          "path": "/assets/layout.worker-CXiypZMj.js",
+          "duration": -19,
+          "transfer": 19092,
+          "decoded": 48110
+        }
+      ]
+    },
+    {
+      "label": "baseline",
+      "runEpochMs": 1790048011341,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "paint": [
+        {
+          "name": "first-paint",
+          "start": 132,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 132,
+          "duration": 0
+        }
+      ],
+      "searchWindowMs": [
+        112909,
+        1431070
+      ],
+      "searchLongTasks": [
+        {
+          "name": "self",
+          "start": 113866,
+          "duration": 195
+        },
+        {
+          "name": "self",
+          "start": 114061,
+          "duration": 272
+        },
+        {
+          "name": "self",
+          "start": 114334,
+          "duration": 54
+        },
+        {
+          "name": "self",
+          "start": 114398,
+          "duration": 263
+        },
+        {
+          "name": "self",
+          "start": 114664,
+          "duration": 55
+        },
+        {
+          "name": "self",
+          "start": 381501,
+          "duration": 129
+        },
+        {
+          "name": "self",
+          "start": 403211,
+          "duration": 58
+        }
+      ],
+      "searchHeapSamplePeakBytes": 634553383,
+      "longTasks": [
+        {
+          "name": "self",
+          "start": 234,
+          "duration": 66
+        },
+        {
+          "name": "self",
+          "start": 358,
+          "duration": 52
+        },
+        {
+          "name": "self",
+          "start": 113866,
+          "duration": 195
+        },
+        {
+          "name": "self",
+          "start": 114061,
+          "duration": 272
+        },
+        {
+          "name": "self",
+          "start": 114334,
+          "duration": 54
+        },
+        {
+          "name": "self",
+          "start": 114398,
+          "duration": 263
+        },
+        {
+          "name": "self",
+          "start": 114664,
+          "duration": 55
+        },
+        {
+          "name": "self",
+          "start": 381501,
+          "duration": 129
+        },
+        {
+          "name": "self",
+          "start": 403211,
+          "duration": 58
+        }
+      ],
+      "interactionEvents": [
+        {
+          "name": "pointerup",
+          "start": 112940,
+          "duration": 72,
+          "interactionId": 4170,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 112940,
+          "duration": 72,
+          "interactionId": 4170,
+          "processing": 33
+        }
+      ],
+      "resources": [
+        {
+          "path": "/assets/theme-bootstrap-bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d.js",
+          "duration": 21,
+          "transfer": 732,
+          "decoded": 1163
+        },
+        {
+          "path": "/assets/index-0B-CVPWb.css",
+          "duration": 24,
+          "transfer": 18893,
+          "decoded": 90614
+        },
+        {
+          "path": "/assets/markdown-B7z_TtzA.js",
+          "duration": 25,
+          "transfer": 40527,
+          "decoded": 117802
+        },
+        {
+          "path": "/assets/react-vendor-BCibNWLg.js",
+          "duration": 26,
+          "transfer": 67376,
+          "decoded": 193846
+        },
+        {
+          "path": "/assets/index-BuLjcc6n.js",
+          "duration": 33,
+          "transfer": 206793,
+          "decoded": 713528
+        },
+        {
+          "path": "/meta.json",
+          "duration": 13,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/wiki-index.json",
+          "duration": 87,
+          "transfer": 727544,
+          "decoded": 10959215
+        },
+        {
+          "path": "/knowledge-graph.json",
+          "duration": 116,
+          "transfer": 1127644,
+          "decoded": 19483805
+        },
+        {
+          "path": "/favicon.svg",
+          "duration": 11,
+          "transfer": 1082,
+          "decoded": 782
+        },
+        {
+          "path": "/meta.json",
+          "duration": 2,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/search-index.json",
+          "duration": 869,
+          "transfer": 13388901,
+          "decoded": 97668068
+        }
+      ]
+    },
+    {
+      "label": "worker",
+      "runEpochMs": 1790048532962,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "paint": [
+        {
+          "name": "first-paint",
+          "start": 148,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 180,
+          "duration": 0
+        }
+      ],
+      "searchWindowMs": [
+        35944,
+        505048
+      ],
+      "searchLongTasks": [],
+      "searchHeapSamplePeakBytes": 53650130,
+      "longTasks": [
+        {
+          "name": "self",
+          "start": 271,
+          "duration": 65
+        },
+        {
+          "name": "self",
+          "start": 431,
+          "duration": 65
+        }
+      ],
+      "interactionEvents": [
+        {
+          "name": "pointerup",
+          "start": 35969,
+          "duration": 48,
+          "interactionId": 859,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 35969,
+          "duration": 48,
+          "interactionId": 859,
+          "processing": 16
+        },
+        {
+          "name": "pointerdown",
+          "start": 149766,
+          "duration": 408,
+          "interactionId": 866,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 149773,
+          "duration": 400,
+          "interactionId": 866,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 149773,
+          "duration": 400,
+          "interactionId": 866,
+          "processing": 10
+        }
+      ],
+      "resources": [
+        {
+          "path": "/css2",
+          "duration": 22,
+          "transfer": 0,
+          "decoded": 15975
+        },
+        {
+          "path": "/assets/index-BUmRk_Xy.js",
+          "duration": 45,
+          "transfer": 195479,
+          "decoded": 678263
+        },
+        {
+          "path": "/assets/index-0B-CVPWb.css",
+          "duration": 27,
+          "transfer": 18893,
+          "decoded": 90614
+        },
+        {
+          "path": "/assets/react-vendor-BCibNWLg.js",
+          "duration": 39,
+          "transfer": 67376,
+          "decoded": 193846
+        },
+        {
+          "path": "/assets/markdown-BqlYeX_O.js",
+          "duration": 38,
+          "transfer": 65562,
+          "decoded": 185268
+        },
+        {
+          "path": "/css2",
+          "duration": 181,
+          "transfer": 0,
+          "decoded": 0
+        },
+        {
+          "path": "/meta.json",
+          "duration": 8,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/wiki-index.json",
+          "duration": 92,
+          "transfer": 727544,
+          "decoded": 10959215
+        },
+        {
+          "path": "/knowledge-graph.json",
+          "duration": 231,
+          "transfer": 1127644,
+          "decoded": 19483805
+        },
+        {
+          "path": "/favicon.svg",
+          "duration": 5,
+          "transfer": 1082,
+          "decoded": 782
+        },
+        {
+          "path": "/meta.json",
+          "duration": 4,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/search-index.json",
+          "duration": 758,
+          "transfer": 13388901,
+          "decoded": 97668068
+        },
+        {
+          "path": "/assets/search.worker-S7ik8FHD.js",
+          "duration": -12,
+          "transfer": 76100,
+          "decoded": 225130
+        }
+      ]
+    },
+    {
+      "label": "worker",
+      "runEpochMs": 1790049039012,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "paint": [
+        {
+          "name": "first-paint",
+          "start": 304,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 312,
+          "duration": 0
+        }
+      ],
+      "searchWindowMs": [
+        35234,
+        403213
+      ],
+      "searchLongTasks": [
+        {
+          "name": "self",
+          "start": 35676,
+          "duration": 58
+        }
+      ],
+      "searchHeapSamplePeakBytes": 52266270,
+      "longTasks": [
+        {
+          "name": "self",
+          "start": 232,
+          "duration": 52
+        },
+        {
+          "name": "self",
+          "start": 438,
+          "duration": 100
+        },
+        {
+          "name": "self",
+          "start": 623,
+          "duration": 79
+        },
+        {
+          "name": "self",
+          "start": 35676,
+          "duration": 58
+        }
+      ],
+      "interactionEvents": [
+        {
+          "name": "pointerup",
+          "start": 35415,
+          "duration": 40,
+          "interactionId": 1434,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 35415,
+          "duration": 40,
+          "interactionId": 1434,
+          "processing": 18
+        },
+        {
+          "name": "keydown",
+          "start": 35669,
+          "duration": 24,
+          "interactionId": 1441,
+          "processing": 1
+        },
+        {
+          "name": "keypress",
+          "start": 35669,
+          "duration": 24,
+          "interactionId": 1441,
+          "processing": 2
+        },
+        {
+          "name": "keyup",
+          "start": 35682,
+          "duration": 56,
+          "interactionId": 1441,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 35792,
+          "duration": 16,
+          "interactionId": 1448,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 35792,
+          "duration": 16,
+          "interactionId": 1448,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 35862,
+          "duration": 24,
+          "interactionId": 1455,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 35862,
+          "duration": 24,
+          "interactionId": 1455,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 35928,
+          "duration": 16,
+          "interactionId": 1462,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 35928,
+          "duration": 16,
+          "interactionId": 1462,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 35931,
+          "duration": 24,
+          "interactionId": 1462,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 35991,
+          "duration": 16,
+          "interactionId": 1469,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 35991,
+          "duration": 16,
+          "interactionId": 1469,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 36053,
+          "duration": 16,
+          "interactionId": 1476,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 36053,
+          "duration": 16,
+          "interactionId": 1476,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 36112,
+          "duration": 16,
+          "interactionId": 1483,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 36112,
+          "duration": 16,
+          "interactionId": 1483,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 36222,
+          "duration": 16,
+          "interactionId": 1490,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 36222,
+          "duration": 16,
+          "interactionId": 1490,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 36280,
+          "duration": 24,
+          "interactionId": 1497,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 36280,
+          "duration": 24,
+          "interactionId": 1497,
+          "processing": 1
+        }
+      ],
+      "resources": [
+        {
+          "path": "/css2",
+          "duration": 0,
+          "transfer": 0,
+          "decoded": 15975
+        },
+        {
+          "path": "/assets/index-B8IxFTyZ.js",
+          "duration": 60,
+          "transfer": 195488,
+          "decoded": 678263
+        },
+        {
+          "path": "/assets/react-vendor-BCibNWLg.js",
+          "duration": 42,
+          "transfer": 67376,
+          "decoded": 193846
+        },
+        {
+          "path": "/assets/index-0B-CVPWb.css",
+          "duration": 29,
+          "transfer": 18893,
+          "decoded": 90614
+        },
+        {
+          "path": "/assets/markdown-BqlYeX_O.js",
+          "duration": 42,
+          "transfer": 65562,
+          "decoded": 185268
+        },
+        {
+          "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2",
+          "duration": 0,
+          "transfer": 0,
+          "decoded": 48432
+        },
+        {
+          "path": "/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwgknk-4.woff2",
+          "duration": 0,
+          "transfer": 0,
+          "decoded": 31340
+        },
+        {
+          "path": "/meta.json",
+          "duration": 5,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/wiki-index.json",
+          "duration": 107,
+          "transfer": 727544,
+          "decoded": 10959215
+        },
+        {
+          "path": "/knowledge-graph.json",
+          "duration": 275,
+          "transfer": 1127644,
+          "decoded": 19483805
+        },
+        {
+          "path": "/favicon.svg",
+          "duration": 8,
+          "transfer": 1082,
+          "decoded": 782
+        },
+        {
+          "path": "/meta.json",
+          "duration": 10,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/search-index.json",
+          "duration": 717,
+          "transfer": 13388901,
+          "decoded": 97668068
+        },
+        {
+          "path": "/assets/search.worker-PUSP7ulo.js",
+          "duration": -7,
+          "transfer": 76109,
+          "decoded": 225156
+        }
+      ]
+    },
+    {
+      "label": "final",
+      "runEpochMs": 1790050145791,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      "paint": [
+        {
+          "name": "first-paint",
+          "start": 172,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 184,
+          "duration": 0
+        }
+      ],
+      "searchWindowMs": [
+        37939,
+        82696
+      ],
+      "searchLongTasks": [
+        {
+          "name": "self",
+          "start": 38255,
+          "duration": 54
+        }
+      ],
+      "searchHeapSamplePeakBytes": 52160508,
+      "longTasks": [
+        {
+          "name": "self",
+          "start": 257,
+          "duration": 77
+        },
+        {
+          "name": "self",
+          "start": 408,
+          "duration": 133
+        },
+        {
+          "name": "self",
+          "start": 38255,
+          "duration": 54
+        },
+        {
+          "name": "self",
+          "start": 82738,
+          "duration": 57
+        },
+        {
+          "name": "self",
+          "start": 82881,
+          "duration": 62
+        },
+        {
+          "name": "self",
+          "start": 121586,
+          "duration": 441
+        },
+        {
+          "name": "self",
+          "start": 122053,
+          "duration": 58
+        },
+        {
+          "name": "self",
+          "start": 160609,
+          "duration": 149
+        },
+        {
+          "name": "self",
+          "start": 160760,
+          "duration": 50
+        },
+        {
+          "name": "self",
+          "start": 315335,
+          "duration": 63
+        },
+        {
+          "name": "self",
+          "start": 315401,
+          "duration": 74
+        },
+        {
+          "name": "self",
+          "start": 315475,
+          "duration": 54
+        },
+        {
+          "name": "self",
+          "start": 315853,
+          "duration": 77
+        },
+        {
+          "name": "self",
+          "start": 315944,
+          "duration": 110
+        },
+        {
+          "name": "self",
+          "start": 441599,
+          "duration": 61
+        }
+      ],
+      "interactionEvents": [
+        {
+          "name": "pointerup",
+          "start": 38009,
+          "duration": 48,
+          "interactionId": 3823,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 38009,
+          "duration": 48,
+          "interactionId": 3823,
+          "processing": 23
+        },
+        {
+          "name": "keydown",
+          "start": 38248,
+          "duration": 24,
+          "interactionId": 3830,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38248,
+          "duration": 24,
+          "interactionId": 3830,
+          "processing": 3
+        },
+        {
+          "name": "keyup",
+          "start": 38262,
+          "duration": 48,
+          "interactionId": 3830,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38380,
+          "duration": 584,
+          "interactionId": 3837,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38380,
+          "duration": 584,
+          "interactionId": 3837,
+          "processing": 1
+        },
+        {
+          "name": "keydown",
+          "start": 38445,
+          "duration": 520,
+          "interactionId": 3844,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38445,
+          "duration": 520,
+          "interactionId": 3844,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 38448,
+          "duration": 512,
+          "interactionId": 3844,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38508,
+          "duration": 456,
+          "interactionId": 3851,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38508,
+          "duration": 456,
+          "interactionId": 3851,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 38511,
+          "duration": 456,
+          "interactionId": 3851,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38571,
+          "duration": 392,
+          "interactionId": 3858,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38571,
+          "duration": 392,
+          "interactionId": 3858,
+          "processing": 0
+        },
+        {
+          "name": "keyup",
+          "start": 38573,
+          "duration": 392,
+          "interactionId": 3858,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38630,
+          "duration": 336,
+          "interactionId": 3865,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38630,
+          "duration": 336,
+          "interactionId": 3865,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 38632,
+          "duration": 328,
+          "interactionId": 3865,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38728,
+          "duration": 232,
+          "interactionId": 3872,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38728,
+          "duration": 232,
+          "interactionId": 3872,
+          "processing": 2
+        },
+        {
+          "name": "keyup",
+          "start": 38730,
+          "duration": 232,
+          "interactionId": 3872,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38785,
+          "duration": 176,
+          "interactionId": 3879,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38785,
+          "duration": 176,
+          "interactionId": 3879,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 38788,
+          "duration": 176,
+          "interactionId": 3879,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "start": 38846,
+          "duration": 120,
+          "interactionId": 3886,
+          "processing": 0
+        },
+        {
+          "name": "keypress",
+          "start": 38846,
+          "duration": 120,
+          "interactionId": 3886,
+          "processing": 1
+        },
+        {
+          "name": "keyup",
+          "start": 38849,
+          "duration": 112,
+          "interactionId": 3886,
+          "processing": 0
+        },
+        {
+          "name": "pointerdown",
+          "start": 82724,
+          "duration": 16,
+          "interactionId": 3893,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 82738,
+          "duration": 88,
+          "interactionId": 3893,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 82738,
+          "duration": 88,
+          "interactionId": 3893,
+          "processing": 57
+        },
+        {
+          "name": "pointerup",
+          "start": 121537,
+          "duration": 24,
+          "interactionId": 3900,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 121537,
+          "duration": 24,
+          "interactionId": 3900,
+          "processing": 7
+        },
+        {
+          "name": "pointerdown",
+          "start": 160608,
+          "duration": 192,
+          "interactionId": 3907,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 160609,
+          "duration": 184,
+          "interactionId": 3907,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 160609,
+          "duration": 184,
+          "interactionId": 3907,
+          "processing": 148
+        },
+        {
+          "name": "pointerdown",
+          "start": 315333,
+          "duration": 88,
+          "interactionId": 3914,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 315335,
+          "duration": 88,
+          "interactionId": 3914,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 315335,
+          "duration": 88,
+          "interactionId": 3914,
+          "processing": 63
+        },
+        {
+          "name": "pointerdown",
+          "start": 315933,
+          "duration": 32,
+          "interactionId": 3921,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 315943,
+          "duration": 144,
+          "interactionId": 3921,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 315943,
+          "duration": 144,
+          "interactionId": 3921,
+          "processing": 107
+        },
+        {
+          "name": "pointerdown",
+          "start": 362682,
+          "duration": 32,
+          "interactionId": 3928,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 362683,
+          "duration": 32,
+          "interactionId": 3928,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 362683,
+          "duration": 32,
+          "interactionId": 3928,
+          "processing": 2
+        },
+        {
+          "name": "pointerdown",
+          "start": 441598,
+          "duration": 80,
+          "interactionId": 3935,
+          "processing": 0
+        },
+        {
+          "name": "pointerup",
+          "start": 441599,
+          "duration": 80,
+          "interactionId": 3935,
+          "processing": 0
+        },
+        {
+          "name": "click",
+          "start": 441599,
+          "duration": 80,
+          "interactionId": 3935,
+          "processing": 61
+        }
+      ],
+      "resources": [
+        {
+          "path": "/assets/theme-bootstrap-bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d.js",
+          "duration": 24,
+          "transfer": 732,
+          "decoded": 1163
+        },
+        {
+          "path": "/assets/index-0B-CVPWb.css",
+          "duration": 25,
+          "transfer": 18893,
+          "decoded": 90614
+        },
+        {
+          "path": "/assets/react-vendor-BCibNWLg.js",
+          "duration": 31,
+          "transfer": 67376,
+          "decoded": 193846
+        },
+        {
+          "path": "/assets/markdown-oMMa11b2.js",
+          "duration": 30,
+          "transfer": 53275,
+          "decoded": 146433
+        },
+        {
+          "path": "/assets/index-BnaYqwhg.js",
+          "duration": 38,
+          "transfer": 208473,
+          "decoded": 717594
+        },
+        {
+          "path": "/meta.json",
+          "duration": 5,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/wiki-index.json",
+          "duration": 63,
+          "transfer": 727544,
+          "decoded": 10959215
+        },
+        {
+          "path": "/knowledge-graph.json",
+          "duration": 95,
+          "transfer": 1127644,
+          "decoded": 19483805
+        },
+        {
+          "path": "/meta.json",
+          "duration": 4,
+          "transfer": 457,
+          "decoded": 164
+        },
+        {
+          "path": "/knowledge-base/search-index.json",
+          "duration": 657,
+          "transfer": 13388901,
+          "decoded": 97668068
+        },
+        {
+          "path": "/assets/search.worker-PUSP7ulo.js",
+          "duration": -13,
+          "transfer": 76109,
+          "decoded": 225156
+        },
+        {
+          "path": "/knowledge-base/%E9%A1%B9%E7%9B%AE%E6%80%BB%E8%A7%88.md",
+          "duration": 7,
+          "transfer": 3302,
+          "decoded": 10837
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0003.json",
+          "duration": 24,
+          "transfer": 76883,
+          "decoded": 320234
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0007.json",
+          "duration": 23,
+          "transfer": 73340,
+          "decoded": 316344
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0019.json",
+          "duration": 24,
+          "transfer": 72818,
+          "decoded": 301296
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0025.json",
+          "duration": 29,
+          "transfer": 82837,
+          "decoded": 336941
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0031.json",
+          "duration": 25,
+          "transfer": 72041,
+          "decoded": 316108
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0039.json",
+          "duration": 28,
+          "transfer": 79526,
+          "decoded": 307368
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0042.json",
+          "duration": 35,
+          "transfer": 63951,
+          "decoded": 269112
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0043.json",
+          "duration": 35,
+          "transfer": 67822,
+          "decoded": 264270
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0048.json",
+          "duration": 36,
+          "transfer": 54404,
+          "decoded": 214442
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0052.json",
+          "duration": 36,
+          "transfer": 62484,
+          "decoded": 241143
+        },
+        {
+          "path": "/knowledge-base/evidence-excerpts/0058.json",
+          "duration": 37,
+          "transfer": 87596,
+          "decoded": 413100
+        },
+        {
+          "path": "/assets/GraphExplorer-CjDZvVmE.js",
+          "duration": 40,
+          "transfer": 43132,
+          "decoded": 121889
+        },
+        {
+          "path": "/assets/xyflow-BZV40eAE.css",
+          "duration": 36,
+          "transfer": 3281,
+          "decoded": 15851
+        },
+        {
+          "path": "/assets/xyflow-Bq-JiJlN.js",
+          "duration": 41,
+          "transfer": 66429,
+          "decoded": 183468
+        },
+        {
+          "path": "/assets/graph-layout-CsnyUhpS.js",
+          "duration": 40,
+          "transfer": 16936,
+          "decoded": 42978
+        },
+        {
+          "path": "/assets/layout.worker-CXiypZMj.js",
+          "duration": -8,
+          "transfer": 19092,
+          "decoded": 48110
+        },
+        {
+          "path": "/assets/layout.worker-CXiypZMj.js",
+          "duration": -28,
+          "transfer": 19092,
+          "decoded": 48110
+        }
+      ]
+    }
+  ]
+}

@@ -123,6 +123,7 @@ describe("MCP lifecycle and real handlers", () => {
       "search_context",
       "trace_impact",
       "refresh_index",
+      "index_job",
     ]);
     expect(
       harness.response(2).result.tools.every(
@@ -589,13 +590,15 @@ describe("MCP lifecycle and real handlers", () => {
       params: { name: "get_repo_pulse", arguments: {} },
     });
 
-    expect(harness.response(2).result.tools).toHaveLength(11);
+    expect(harness.response(2).result.tools).toHaveLength(12);
     const failure = McpToolErrorResultV1Schema.parse(harness.response(3).result);
     expect(failure.structuredContent.error).toEqual({
       schemaVersion: 1,
       code: "workspace_binding_required",
       details: { reason: "root_missing" },
     });
+    await harness.server.enqueueFrame(JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "index_job", arguments: { action: "cancel" } } }));
+    expect(McpToolErrorResultV1Schema.parse(harness.response(4).result).structuredContent.error).toEqual(failure.structuredContent.error);
   });
 
   it("fails cold Repository reads and refresh closed without bootstrapping a legacy Store", async () => {

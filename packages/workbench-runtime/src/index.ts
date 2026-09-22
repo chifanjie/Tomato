@@ -2,9 +2,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { writeDashboardBody } from "./dashboard-body.js";
 
 import {
   ChangeCheckReadClassificationV1Schema,
+  canonicalizeJson,
   type ChangeCheckReadClassificationV1,
 } from "@understand-code/contracts";
 import {
@@ -2150,6 +2152,7 @@ async function serveDashboardRead(
   stored: StoredSessionV1,
   response: ServerResponse,
   request: WorkbenchDashboardReadRequestV1,
+  acceptEncoding?: string,
 ): Promise<void> {
   const reader = stored.dashboardReader;
   if (reader === undefined) {
@@ -2201,8 +2204,7 @@ async function serveDashboardRead(
       writeDashboardReadFailure(response, "invalid");
       return;
     }
-    response.writeHead(200, dashboardSecurityHeaders(textResult.contentType));
-    response.end(textResult.text);
+    await writeDashboardBody(response, textResult.text, dashboardSecurityHeaders(textResult.contentType), acceptEncoding);
     return;
   }
 
@@ -2212,10 +2214,22 @@ async function serveDashboardRead(
   }
   let body: string | undefined;
   try {
-    body = JSON.stringify((result as Extract<
+    let json = (result as Extract<
       WorkbenchDashboardReadResultV1,
       { readonly json: unknown }
-    >).json);
+    >).json;
+    if (
+      request.kind === "wiki_index" && isRecord(json) && isRecord(json.source) &&
+      json.source.sourceRootIdentity === stored.session.canonicalRoot
+    ) {
+      // Legacy writer indexes store the root path; expose the Snapshot identity only.
+      const canonicalRoot = process.platform === "win32"
+        ? stored.session.canonicalRoot.toLowerCase()
+        : stored.session.canonicalRoot;
+      const rootIdentity = `root-${sha256(Buffer.from(canonicalizeJson({ canonicalRoot }), "utf8")).slice("sha256:".length)}`;
+      json = { ...json, source: { ...json.source, sourceRootIdentity: rootIdentity } };
+    }
+    body = JSON.stringify(json);
   } catch {
     body = undefined;
   }
@@ -2226,8 +2240,7 @@ async function serveDashboardRead(
     writeDashboardReadFailure(response, "invalid");
     return;
   }
-  response.writeHead(200, dashboardSecurityHeaders("application/json; charset=utf-8"));
-  response.end(body);
+  await writeDashboardBody(response, body, dashboardSecurityHeaders("application/json; charset=utf-8"), acceptEncoding);
 }
 
 function writeWorkbenchLaunchHtml(response: ServerResponse): void {
@@ -2418,7 +2431,7 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
         return;
       }
       if (dashboardMapping.status === "matched") {
-        void serveDashboardRead(stored, response, dashboardMapping.request);
+        void serveDashboardRead(stored, response, dashboardMapping.request, request.headers["accept-encoding"]);
         return;
       }
     }

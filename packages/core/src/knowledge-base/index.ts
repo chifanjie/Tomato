@@ -24,3 +24,5 @@ export {
 } from "./markdown.js";
 export { generateKnowledgeBase, materializeKnowledgeBase } from "./generate.js";
 export * from "./source-references.js";
+
+export { REQUIRED_SECTIONS } from "./publication-quality.js";

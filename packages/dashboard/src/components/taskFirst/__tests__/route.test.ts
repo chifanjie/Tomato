@@ -128,3 +128,11 @@ describe("taskFirstRouteFromLocation", () => {
     })?.route).not.toHaveProperty("knowledgeVersion");
   });
 });
+
+it("preserves exact Wiki sections only on the Wiki surface", () => {
+  const route = { view: "tasks" as const, taskId: "task:demo", focus: "page:run", wikiAnchor: "校验与解析" };
+  const url = new URL(taskFirstLocationUrl({ route, surface: "wiki" }, { workbenchCookieMode: true }), "http://localhost");
+  expect(taskFirstLocationStateFromLocation(url)?.route).toMatchObject(route);
+  expect(taskFirstLocationUrl({ route, surface: "graph" })).not.toContain("wikiAnchor");
+  expect(taskFirstLocationUrl({ route, surface: "task" })).not.toContain("wikiAnchor");
+});

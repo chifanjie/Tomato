@@ -157,6 +157,69 @@ describe("repository index strong preflight", () => {
     await expectNoManagedWrite(root);
   });
 
+  it("skips explicitly excluded secrets and links without opening their targets", async () => {
+    const root = await repositoryRoot();
+    await writeFile(path.join(root, "safe.ts"), "export const safe = true;\n");
+    await writeFile(path.join(root, ".env"), Buffer.from([0xff, 0x00]));
+    await symlink("/unavailable/private/secret", path.join(root, "private-link"));
+    await writeFile(path.join(root, ".understandignore"), ".env\nprivate-link\n.understandignore\n");
+    expect((await preflightRepositoryIndex(root)).sourceFileCount).toBe(1);
+    await expectNoManagedWrite(root);
+    await writeFile(path.join(root, ".understandignore"), ".env\nprivate-link\n!private-link\n");
+    await expect(preflightRepositoryIndex(root)).rejects.toThrow(/symlink/u);
+  });
+
+  it("builds proven Python/Rust/Java calls and TS alias imports", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "tsconfig.json"), '{"compilerOptions":{"paths":{"@/*":["src/*"]}}}');
+    await writeFile(path.join(root, "src/main.ts"), 'import { helper } from "@/helper"; export function main() { return helper(); }');
+    await writeFile(path.join(root, "src/helper.ts"), 'export function helper() { return 1; }');
+    await writeFile(path.join(root, "script.py"), 'def helper():\n    return 1\ndef main():\n    return helper()\n');
+    await writeFile(path.join(root, "lib.rs"), 'fn helper() {}\nfn main() { helper(); }');
+    await writeFile(path.join(root, "Main.java"), 'class Main { static void helper() {} static void main() { helper(); } }');
+    const built = await buildRepositoryIndex({ canonicalRoot: root, canonicalInstallationRoot: installationRoot,
+      operationId: "9".repeat(32), snapshot: { schemaVersion: 1, snapshotId: "snapshot:bindings", repositoryId: "repository:fixture",
+        worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40), createdAt: "2026-09-21T00:00:00.000Z" } as any });
+    const calls = built.graph.edges.filter((edge) => edge.type === "calls");
+    expect(calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "function:src/main.ts:main", target: "function:src/helper.ts:helper" }),
+      expect.objectContaining({ source: "function:script.py:main", target: "function:script.py:helper" }),
+      expect.objectContaining({ source: "function:lib.rs:main", target: "function:lib.rs:helper" }),
+    ]));
+    expect(calls).toContainEqual(expect.objectContaining({ source: "function:Main.java:Main.main", target: "function:Main.java:Main.helper" }));
+    expect(built.graph.callResolution?.limitations.some((text) => text.includes("Java") && text.includes("重载"))).toBe(true);
+  });
+
+  it("publishes class-qualified Java calls and imports with explicit unresolved dispatch evidence", async () => {
+    const root = await repositoryRoot();
+    const installationRoot = await repositoryRoot();
+    await mkdir(path.join(root, "app"));
+    await mkdir(path.join(root, "lib"));
+    await writeFile(path.join(root, "app/Main.java"), `package app; import lib.Tools; import static lib.Tools.extra;
+      class Main { private void own() {} void run() { this.own(); Tools.work(); extra(); Worker local = new Worker(); local.work(); } }
+      class Other { static void own() {} static void run() { own(); } }
+      class Virtual { void work() {} void run() { work(); } }`);
+    await writeFile(path.join(root, "app/Worker.java"), 'package app; class Worker { void work() {} }');
+    await writeFile(path.join(root, "lib/Tools.java"), 'package lib; public class Tools { public static void work() {} public static void extra() {} }');
+    const built = await buildRepositoryIndex({ canonicalRoot: root, canonicalInstallationRoot: installationRoot,
+      operationId: "e".repeat(32), snapshot: { schemaVersion: 1, snapshotId: "snapshot:java-binding", repositoryId: "repository:fixture",
+        worktreeId: "worktree:fixture", rootIdentity: "root:fixture", headCommit: "a".repeat(40), createdAt: "2026-09-21T00:00:00.000Z" } as any });
+    const calls = built.graph.edges.filter((edge) => edge.type === "calls");
+    expect(calls).toHaveLength(5);
+    expect(calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "function:app/Main.java:Main.run", target: "function:app/Main.java:Main.own" }),
+      expect.objectContaining({ source: "function:app/Main.java:Other.run", target: "function:app/Main.java:Other.own" }),
+      expect.objectContaining({ source: "function:app/Main.java:Main.run", target: "function:lib/Tools.java:Tools.work" }),
+      expect.objectContaining({ source: "function:app/Main.java:Main.run", target: "function:lib/Tools.java:Tools.extra" }),
+      expect.objectContaining({ source: "function:app/Main.java:Main.run", target: "function:app/Worker.java:Worker.work" }),
+    ]));
+    expect(built.graph.edges).toContainEqual(expect.objectContaining({ type: "imports", source: "file:app/Main.java", target: "file:lib/Tools.java" }));
+    const diagnostics = JSON.parse(built.publication.files.find((file) => file.relativePath === "knowledge-base/.trace/call-resolution.json")!.bytes.toString("utf8"));
+    expect(diagnostics.unresolved).toContainEqual(expect.objectContaining({ caller: "Virtual.run", reason: "java-virtual-dispatch-ambiguous" }));
+  });
+
   it("stages deterministic TS and Go structure with actual local import edges", async () => {
     const root = await repositoryRoot();
     const installationRoot = await repositoryRoot();

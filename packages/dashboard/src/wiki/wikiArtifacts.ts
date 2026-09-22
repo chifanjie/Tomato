@@ -1,16 +1,14 @@
-import type {
-  DocumentationRelation,
-  WikiDocumentCategory,
-  WikiDocumentRole,
-  WikiSearchRecordV2,
-} from "@understand-code/core/knowledge-base";
-import { normalizeLegacySearchArtifactBranding } from "../legacyBranding";
+import type { WikiSearchRecordV2 } from "@understand-code/core/knowledge-base";
 import { dashboardFetchInit, withDashboardAccess } from "../workbench/transport";
+import { parseSearchArtifact } from "./searchArtifactPayload";
+import { buildWikiSearchRuntime, type WikiSearchRuntime } from "./searchIndex";
+import type { WikiRuntimeIndex } from "./wikiIndex";
+import { createSearchWorkerClient, type SearchWorkerClient, type SearchWorkerFactory } from "./searchWorkerClient";
 
 export type SearchLoadStatus = "idle" | "loading" | "ready" | "fallback";
 
 export type SearchArtifactLoadResult =
-  | { status: "ready"; records: WikiSearchRecordV2[]; contentLines?: readonly string[] }
+  | { status: "ready"; records: WikiSearchRecordV2[]; contentLines?: readonly string[]; runtime?: WikiSearchRuntime }
   | { status: "missing" | "invalid" | "forbidden" | "error"; records: [] };
 
 export interface SearchArtifactRequestSnapshot {
@@ -19,66 +17,11 @@ export interface SearchArtifactRequestSnapshot {
 }
 
 export interface SearchArtifactRequestController {
-  open(token: string): Promise<SearchArtifactLoadResult>;
+  open(token: string, wikiIndex?: WikiRuntimeIndex): Promise<SearchArtifactLoadResult>;
   close(): void;
   reset(token?: string): void;
   isCurrent(token: string): boolean;
   snapshot(): SearchArtifactRequestSnapshot;
-}
-
-const ROLES = new Set<WikiDocumentRole>(["featured", "reference", "maintenance"]);
-const CATEGORIES = new Set<WikiDocumentCategory>([
-  "overview",
-  "capability",
-  "flow",
-  "module",
-  "topic",
-  "file",
-  "quality",
-  "coverage",
-  "other",
-]);
-const RELATIONS = new Set<DocumentationRelation>(["direct", "context", "none"]);
-
-function strings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function optionalStrings(item: Record<string, unknown>, fields: readonly string[]): boolean {
-  return fields.every((field) => item[field] === undefined || typeof item[field] === "string");
-}
-
-function searchRecord(value: unknown, contentLines?: readonly string[]): value is WikiSearchRecordV2 {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const item = value as Record<string, unknown>;
-  if (
-    typeof item.id !== "string"
-    || (item.kind !== "page" && item.kind !== "symbol")
-    || typeof item.title !== "string"
-    || typeof item.pageId !== "string"
-    || typeof item.role !== "string"
-    || !ROLES.has(item.role as WikiDocumentRole)
-    || typeof item.category !== "string"
-    || !CATEGORIES.has(item.category as WikiDocumentCategory)
-    || typeof item.relation !== "string"
-    || !RELATIONS.has(item.relation as DocumentationRelation)
-    || !strings(item.terms)
-    || !strings(item.businessTerms)
-    || !optionalStrings(item, ["summary", "content", "anchor", "nodeId", "filePath"])
-  ) return false;
-  if (item.contentLineIds !== undefined && (item.content !== undefined || contentLines === undefined
-    || !Array.isArray(item.contentLineIds) || !item.contentLineIds.every((id) => Number.isInteger(id) && id >= 0 && id < contentLines.length))) return false;
-
-  return item.kind !== "symbol"
-    || (
-      typeof item.anchor === "string"
-      && item.anchor.trim().length > 0
-      && typeof item.nodeId === "string"
-      && item.nodeId.trim().length > 0
-      && item.content === undefined
-      && item.contentLineIds === undefined
-      && item.businessTerms.length === 0
-    );
 }
 
 function searchUrl(token: string): string {
@@ -105,64 +48,91 @@ export async function loadSearchArtifact(
     } catch {
       return { status: "invalid", records: [] };
     }
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { status: "invalid", records: [] };
-    }
-    const payload = value as { version?: unknown; records?: unknown; contentLines?: unknown };
-    if (payload.contentLines !== undefined && !strings(payload.contentLines)) return { status: "invalid", records: [] };
-    const contentLines = payload.contentLines as string[] | undefined;
-    if (
-      payload.version !== 2
-      || !Array.isArray(payload.records)
-      || !payload.records.every((record) => searchRecord(record, contentLines))
-    ) {
-      return { status: "invalid", records: [] };
-    }
-    return {
-      status: "ready",
-      ...normalizeLegacySearchArtifactBranding(payload.records, contentLines),
-    };
+    return parseSearchArtifact(value);
   } catch {
     return { status: "error", records: [] };
   }
 }
 
+// Unsupported Workers may handle a small index inline; never move an unbounded
+// legacy index back onto the main thread just because a Worker failed to start.
+const MAX_INLINE_FALLBACK_BYTES = 256 * 1024;
+
 export function createSearchArtifactRequestController(
   fetcher: typeof fetch = fetch,
+  options: { workerFactory?: SearchWorkerFactory } = {},
 ): SearchArtifactRequestController {
   let activeToken: string | null = null;
+  let activeIndex: WikiRuntimeIndex | undefined;
   let currentResult: SearchArtifactLoadResult | null = null;
   let request: Promise<SearchArtifactLoadResult> | null = null;
+  let worker: SearchWorkerClient | null = null;
+  let abort: AbortController | null = null;
+  let revision = 0;
+
+  function clear(token: string | null, index?: WikiRuntimeIndex) {
+    revision += 1;
+    abort?.abort(); abort = null;
+    worker?.dispose(); worker = null;
+    activeToken = token;
+    activeIndex = index;
+    currentResult = null;
+    request = null;
+  }
+
+  async function loadRuntime(token: string, index: WikiRuntimeIndex): Promise<SearchArtifactLoadResult> {
+    const ownWorker = createSearchWorkerClient(options.workerFactory);
+    const ownAbort = new AbortController();
+    worker = ownWorker;
+    abort = ownAbort;
+    try {
+      const response = await fetcher(searchUrl(token), { ...dashboardFetchInit(token), signal: ownAbort.signal });
+      if (response.status === 404) return { status: "missing", records: [] };
+      if (response.status === 401 || response.status === 403) return { status: "forbidden", records: [] };
+      if (!response.ok) return { status: "error", records: [] };
+      if (!ownWorker && Number(response.headers.get("content-length")) > MAX_INLINE_FALLBACK_BYTES) {
+        await response.body?.cancel();
+        return { status: "error", records: [] };
+      }
+      const bytes = await response.arrayBuffer();
+      if (ownAbort.signal.aborted) return { status: "error", records: [] };
+      if (ownWorker) {
+        const status = await ownWorker.initialize(bytes, [...index.pagesById.keys()]);
+        if (status !== "ready") return { status: "invalid", records: [] };
+        return { status: "ready", records: [], runtime: ownWorker.runtime };
+      }
+      if (bytes.byteLength > MAX_INLINE_FALLBACK_BYTES) return { status: "error", records: [] };
+      const loaded = parseSearchArtifact(JSON.parse(new TextDecoder().decode(bytes)));
+      return loaded.status !== "ready" ? loaded : { ...loaded,
+        runtime: buildWikiSearchRuntime(loaded.records, index, "full", loaded.contentLines) };
+    } catch {
+      return { status: "error", records: [] };
+    }
+  }
 
   return {
-    open(token) {
-      if (activeToken !== token) {
-        activeToken = token;
-        currentResult = null;
-        request = null;
-      }
+    open(token, index) {
+      if (activeToken !== token || activeIndex !== index) clear(token, index);
       if (!request) {
-        const requestedToken = token;
-        request = loadSearchArtifact(token, fetcher).then((result) => {
-          if (activeToken === requestedToken) currentResult = result;
+        const requestedRevision = revision;
+        request = (index ? loadRuntime(token, index) : loadSearchArtifact(token, fetcher)).then((result) => {
+          if (revision === requestedRevision) {
+            currentResult = result.status === "ready" ? result : null;
+            if (result.status !== "ready") {
+              worker?.dispose(); worker = null;
+              request = null;
+            }
+          }
           return result;
         });
       }
       return request;
     },
     close() {
-      // Closing only hides the dialog. Keeping the request alive avoids a duplicate fetch on reopen.
+      // Reopening one snapshot reuses its full index; reset/unmount ends its worker.
     },
-    reset(token) {
-      activeToken = token ?? null;
-      currentResult = null;
-      request = null;
-    },
-    isCurrent(token) {
-      return activeToken === token;
-    },
-    snapshot() {
-      return { token: activeToken, result: currentResult };
-    },
+    reset(token) { clear(token ?? null); },
+    isCurrent(token) { return activeToken === token; },
+    snapshot() { return { token: activeToken, result: currentResult }; },
   };
 }

@@ -21,7 +21,7 @@ Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构�
 
 宿主负责调用工具。首次创建任务会初始化缺失的索引；普通使用者不需要在目标仓库安装本工具的 npm 依赖或手工运行分析脚本。任务页能查看历史、从自然语言主张跳到证据与源码、查看变更差异，再进入图谱或 Wiki 并返回原任务。页面可见时每 10 秒读取任务修订版，也可手动刷新。
 
-Workbench 链接现在默认可在生成后的 **24 小时内首次打开**；打开后浏览器会话的最长有效期和空闲超时均为 **24 小时**。链接仍为一次性，且链接和已打开页面都依赖 MCP 运行进程持续运行。更新后需先构建或安装新版运行时、重启 MCP 服务，再由宿主调用 `open_workbench` 生成新链接；已经过期或使用过的旧链接不会自动续期。
+Workbench 链接默认可在生成后的 **24 小时内首次打开**；打开后浏览器会话的最长有效期和空闲超时均为 **24 小时**。链接仍为一次性，页面依赖创建链接的运行进程持续运行。通过宿主打开时需保持 MCP 运行；离开宿主后可用下面的独立回看命令。更新后需先构建或安装新版运行时、重启对应服务，再生成新链接；已经过期或使用过的旧链接不会自动续期。
 
 接着在同一会话说明需要修改的内容。宿主实际修改源码、重新建立当前快照、执行变更检查与测试，再将真实命令、退出码、快照和结果记录到同一个 Task。源码索引不会自动完成业务理解；业务结论由宿主阅读源码后形成，并保留证据、推断理由和未知边界。确定性 Wiki 诊断稿不能充当正式知识发布。
 
@@ -35,6 +35,47 @@ Workbench 链接现在默认可在生成后的 **24 小时内首次打开**；�
 | 任务后端已就绪 | 创建真实 taskId，并在任务页重开仍能读取 | 核对版本、平台、运行时和具体失败原因 |
 
 `local_durable_v1` 是 macOS/Linux 的本地任务路线；显式选择的生产 Provider 仍遵守其 Linux 和安装校验要求。Windows 未列入本次本地运行时支持范围。CLI、Desktop、IDE 和跨宿主接续分别验收；具体已运行证据和未验收项目见[修复验收记录](docs/testing/2026-09-10-audit-remediation.md)，不要把本节操作说明当成已完成真实 Host 验收的证明。
+
+### 离开宿主后回看任务
+
+已持久化的任务不会随聊天会话结束而消失。安装 Preview 包后可以单独运行：
+
+```sh
+understand-code workbench --root /absolute/path/to/worktree --no-open
+```
+
+打开新打印的本地链接；追加 `--task-id "<TASK_ULID>"` 可直接进入已有任务，请把占位符替换为实际的 26 位任务 ID。省略 `--no-open` 时会尝试自动打开浏览器。**阅读期间保持这条 CLI 运行**，结束时按 Ctrl+C；之后再次执行可获得新链接。它与静态 `understand-code-preview --root` 查看器是不同入口，支持 macOS/Linux 本地任务运行时。
+
+### 从任务形成正式知识库
+
+让宿主在同一个真实 Task 上读取安装包自带的写作指南：
+
+```sh
+understand-code knowledge --root /absolute/path/to/worktree --task-id "<TASK_ULID>" --guide
+```
+
+后续每个阶段都带同一组 `--root` 和 `--task-id`。宿主按指南准备文件任务、领取批次、阅读源码并写入解释，合并后完成主题写作。`--prepare-topics` 同时生成 `.intermediate/featured-plan.json`：宿主必须按主干写作指南逐页写出计划中的总览、模块、流程和业务能力文档，保留计划的 ID、路径、必需章节和真实源码证据，汇总到 `.intermediate/featured-writer-output.json`，再用 `--finalize` 严格校验草稿。需要重新查看计划时可用 `--prepare-featured`，它只重建计划，不覆盖已有主干输出。
+
+草稿位于 `.understand-code/knowledge-drafts/<taskId>/`；重复准备会保护已有文件/主题工作，应继续领取、合并和校验。主干缺失、身份不匹配或证据/正文质量不合格时应按 `--retry` 的错误修正，不能用确定性模板或降低门禁代替写作。安装包自带文件、主题和主干三份指南，不要求另装 slash skill，也不会自动编造业务内容或替宿主执行验证。
+
+完成源码快照检查后，由宿主调用 MCP `refresh_index` 的 `knowledge.action=stage`，保留候选 ID 并在 Workbench 审阅。宿主执行真实验证、记录结果并将任务转为 `verified` 后，再用同一来源快照、候选 ID 和最新任务修订版显式 `publish`。确定性诊断 Wiki 不等于正式写作完成。完整阶段、快照要求和恢复说明见 [CLI 知识写作流程](packages/cli/README.md#task-knowledge-lifecycle)。
+
+不再需要的候选或中断留下的临时写入可显式清理：
+
+```sh
+understand-code knowledge --root /absolute/path/to/worktree --task-id "<TASK_ULID>" --discard-candidate --candidate "<GENERATION_ID>"
+understand-code knowledge --root /absolute/path/to/worktree --task-id "<TASK_ULID>" --cleanup-interrupted
+```
+
+前者只丢弃该任务的指定草稿候选；后者清理绑定仓库中的中断临时写入，保留完整候选。两者均需真实根目录和已有本地任务，不用于删除源码。已发布候选会归档并保留发布重放，不占待发布草稿容量。
+
+### 长任务进度与分析边界
+
+首次 `build_task_brief` 缺少索引时会启动独立后台作业，及时返回 `waiting_for_index`、`jobId` 与建议查询间隔；此时还没有创建 Task。宿主通过 `index_job { action: "status", jobId }` 查询，等 `completed` 后使用**完全相同的原参数和幂等键**再次调用 `build_task_brief`，创建或重放同一个任务。关闭宿主不会停止作业；回到同一仓库后可继续查询，省略 `jobId` 可读取最新作业。取消用 `index_job { action: "cancel", jobId }`；失败或中断后按阶段提示修复，再重试原始创建请求。多个宿主首次请求会复用正在运行的作业，不需要手工 shell 预热。
+
+已有索引的建任务和显式 `refresh_index` 仍同步执行。宿主提供 `progressToken` 时会收到阶段进度；发送取消通知时，工具在可取消检查点停止并保留之前完整发布的快照。阶段不是准确百分比，已进入原子提交的操作会完成提交；后台作业需要通过 `index_job` 取消，取消已经返回的启动请求不会停止它。普通 Codex TOML 模板提供每服务 `tool_timeout_sec = 900` 用于显式长刷新，安装不会修改全局超时。
+
+“能识别语言”不等于“所有调用关系已解析”。TS/JS 导入支持相对路径、仓库清单内的 tsconfig/jsconfig JSONC `paths`、`baseUrl` 和相对 `extends`；workspace 包需导入方显式声明 `workspace:` 依赖且包名唯一，歧义条件导出和未声明外部包不会猜测。Python/Rust 目前仅绑定同文件、唯一顶层函数的直接调用，方法、跨模块和有歧义的绑定不作推断；Java 支持保守且唯一确定的静态调用绑定，虚分派、继承目标和有歧义的重载保持未解析；Ruby/PHP/C/C++/C# 提取定义和调用位置，尚不绑定调用目标。请结合 Graph 的 `callResolution.limitations` 与源码判断，不用缺失边证明“没有影响”。细节见 [语言与关系能力边界](packages/cli/README.md#language-and-relation-boundaries)。
 
 ## 源码技能路线：先看哪一段
 
@@ -150,42 +191,40 @@ Codex 仍走 `packages/host-adapters/plugin-roots/codex` 下的 marketplace 与 
 
 ### Preview CLI（可选）
 
-如果你要在没有聊天宿主的环境里启动本地 Graph/Wiki 查看器或 stdio MCP，可以使用 `packages/preview` 生成的 tarball。它是另一条安装路线，要求 Node.js 22+；查看真实 Git 仓库时还需要 Git。其中 `understand-code-preview --demo` 只打开内置图谱与 Wiki，静态查看器的 `--root` 需要已有发布产物。另一个入口 `understand-code mcp --stdio --root ...` 提供真实任务工作流，首次创建任务可初始化缺失索引。不要把静态查看器限制外推到 MCP 本地任务运行时。
+Preview 包提供 Codex/Claude MCP 持久任务路线，也包含可选的静态 Graph/Wiki 查看器。它要求 Node.js 22+ 和 Git；源码构建还需要 pnpm。当前文档不假设已有公开发布的 tarball：从本仓库 checkout 生成本地安装包，输出目录请使用已存在的外部绝对目录：
 
 ```sh
-npm install -g ./understand-code-preview-0.1.0-preview.2.tgz
-understand-code-preview --demo
+pnpm install --frozen-lockfile
+pnpm --filter @understand-code/preview build
+pnpm --dir packages/preview pack --pack-destination /ABSOLUTE/EXISTING/OUTPUT
 ```
 
-查看一个已经发布 Understand Code 产物的仓库：
+用 `pack` 实际输出的包名替换占位路径。安装后注册你使用的一个宿主，Codex 最小流程是：
 
 ```sh
-understand-code-preview --root /absolute/path/to/worktree
+npm install -g "/absolute/path/to/understand-code-preview-X.Y.Z.tgz"
+understand-code --version
+understand-code-preview --install-host codex
 ```
 
-`--root` 不是通用源码浏览器：它要求传入规范的 Git worktree 根目录、与当前 `HEAD` 匹配的已发布图谱，并且启动快照满足 Preview 的完整性检查。工作树存在 staged、unstaged、untracked、冲突或过期产物时，Preview 会拒绝启动；只想体验图谱与 Wiki 时使用 `--demo`；需要初始化仓库、处理未提交改动和持久任务时使用 MCP 任务路线。
+Claude Code 改用 `understand-code-preview --install-host claude`。该辅助命令从当前安装包定位 marketplace，调用宿主官方注册/安装命令并运行对应的 Doctor；`codex` 或 `claude` CLI 本身须已安装并在 `PATH` 上。它不会自动安装宿主、登录账号或证明当前聊天已连接。每次安装或升级后打开目标 Git 仓库中的新 Host 会话，按本文开头的自然语言任务路线操作。手动注册、升级、恢复、卸载及严格的构建校验见 [Preview 生命周期说明](packages/preview/README.md)。
 
-需要完整的 MCP stdio 入口时：
+Preview 安装提供 MCP tools，不会增加 `/understand-*` slash skill。在 macOS/Linux 且未显式选择生产 Provider 时，Host wrapper 启动本地持久运行时，无需额外开关。首次创建任务可初始化缺失索引；宿主负责调用 `build_task_brief`、证据/搜索工具及 `open_workbench`，修改后执行刷新、`check_change` 与 `record_verification`。这些是 MCP 工具，不是 shell 子命令。旧版 Preview `.1` 的 `provider_unavailable` 不能通过重复注册消除；升级后用新会话验证。
+
+需要直接启动 MCP 时使用：
 
 ```sh
 understand-code mcp --stdio --root /absolute/path/to/worktree
 ```
 
-如果你明确要把同一个 Preview tarball 注册到 Codex（这仍然是 MCP-only Host，不会提供 `/understand-*`），最小流程是：
+只想查看内置示例或已有发布产物时，可选静态查看器：
 
 ```sh
-npm install -g "/absolute/path/to/understand-code-preview-X.Y.Z.tgz"
-npm root -g
-codex plugin marketplace add "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/codex" --json
-codex plugin add understand-code@understand-code-alpha --json
-understand-code doctor --host codex
+understand-code-preview --demo
+understand-code-preview --root /absolute/path/to/worktree
 ```
 
-Claude 使用对应的 `dist/plugin-roots/claude` marketplace 和 `claude plugin marketplace add/install` 命令。每次安装或升级后都启动新 Host 会话；占位路径必须替换成真实绝对路径。完整的 Claude/Codex 注册、升级、恢复和卸载步骤见 [`packages/preview/README.md`](packages/preview/README.md)。
-
-Preview 的 Host 注册、Doctor、升级和卸载命令属于发布/集成流程，完整说明在 [`packages/preview/README.md`](packages/preview/README.md)。它的 Alpha Host 插件主要暴露 repo-scoped MCP（Pulse、Task Brief、Graph、Wiki、Check、Verification 等），安装 Preview 后不会自动出现本手册中的 `/understand-*` slash skills。普通用户只想使用技能时，不需要同时安装 Preview CLI；两条路线混用会让你不知道当前命令来自哪一个版本。
-
-Preview MCP 使用普通命令 `understand-code mcp --stdio --root /absolute/path/to/worktree`；在 macOS/Linux 且未显式选择生产 Provider 时，服务使用本地持久运行时，无需额外开关。安装的 Host wrapper 会启动它。用户在宿主描述需求，模型按仓库状态调用 `build_task_brief`（首次自动初始化）、`get_task_brief`、`search_context`、`get_evidence`、`update_task` 和 `open_workbench`；修改后调用刷新、`check_change` 与 `record_verification`。这些是 MCP 工具调用，不是 shell 子命令。旧版 Preview `.1` 的 `provider_unavailable` 不能通过重复注册消除；升级后用新会话重新验证。完整参数与能力边界见 [CLI 文档](packages/cli/README.md)。
+静态 `--root` 要求规范的 Git worktree 根目录、与当前 `HEAD` 匹配的已发布图谱和满足完整性检查的干净启动快照；存在 staged、unstaged、untracked、冲突或过期产物会拒绝启动。这个限制不适用于上面的 MCP 本地任务路线。已有任务的独立回看使用 `understand-code workbench`，不是静态查看器。完整参数与能力边界见 [CLI 文档](packages/cli/README.md)。
 
 ## 技能版两分钟快速开始
 

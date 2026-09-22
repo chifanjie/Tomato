@@ -698,6 +698,53 @@ export type BuildTaskBriefOutputV1 = z.output<
   typeof BuildTaskBriefOutputV1Schema
 >;
 
+/** A background index has no Task or source Snapshot identity until it commits. */
+export const IndexJobIdV1Schema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+export const IndexJobInputV1Schema = z.strictObject({
+  action: z.enum(["status", "cancel"]),
+  jobId: IndexJobIdV1Schema.optional(),
+});
+export const IndexJobStateV1Schema = z.strictObject({
+  jobId: IndexJobIdV1Schema,
+  status: z.enum(["queued", "running", "completed", "cancelled", "failed", "interrupted"]),
+  phase: PublicToolTextV1Schema,
+  createdAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+  snapshotId: SnapshotIdSchema.optional(),
+  errorCode: z.string().regex(/^[a-z][a-z0-9_]*$/u).max(100).optional(),
+  cancellationRequested: z.boolean().optional(),
+});
+const BackgroundIndexMetaV1Schema = z.strictObject({ durationMs: z.number().nonnegative() });
+export const BuildTaskBriefPendingOutputV1Schema = z.strictObject({
+  isError: z.literal(false),
+  content: z.array(McpTextContentV1Schema).min(1),
+  structuredContent: z.strictObject({
+    schemaVersion: SchemaVersionV1Schema,
+    meta: BackgroundIndexMetaV1Schema,
+    result: z.strictObject({
+      status: z.literal("waiting_for_index"),
+      job: IndexJobStateV1Schema,
+      pollAfterMs: z.number().int().min(100).max(60_000),
+      nextStep: PublicToolTextV1Schema,
+    }),
+  }),
+});
+export const IndexJobOutputV1Schema = z.strictObject({
+  isError: z.literal(false),
+  content: z.array(McpTextContentV1Schema).min(1),
+  structuredContent: z.strictObject({
+    schemaVersion: SchemaVersionV1Schema,
+    meta: BackgroundIndexMetaV1Schema,
+    result: z.strictObject({
+      job: IndexJobStateV1Schema.nullable(),
+      pollAfterMs: z.number().int().min(100).max(60_000).optional(),
+      nextStep: PublicToolTextV1Schema,
+    }),
+  }),
+});
+export type IndexJobStateV1 = z.infer<typeof IndexJobStateV1Schema>;
+export type BuildTaskBriefPendingOutputV1 = z.infer<typeof BuildTaskBriefPendingOutputV1Schema>;
+
 export const TaskBriefSectionV1Schema = z.enum([
   "summary",
   "goals",
@@ -1490,6 +1537,7 @@ export const P0_MCP_TOOL_NAMES_V1 = [
   "record_verification",
   "open_workbench",
   "refresh_index",
+  "index_job",
 ] as const;
 
 export const P0McpToolNameV1Schema = z.enum(P0_MCP_TOOL_NAMES_V1);
@@ -1503,7 +1551,7 @@ export const P0_MCP_TOOL_CONTRACTS_V1 = {
   },
   build_task_brief: {
     input: BuildTaskBriefInputV1Schema,
-    output: BuildTaskBriefOutputV1Schema,
+    output: z.union([BuildTaskBriefOutputV1Schema, BuildTaskBriefPendingOutputV1Schema]),
   },
   get_task_brief: {
     input: GetTaskBriefInputV1Schema,
@@ -1549,6 +1597,10 @@ export const P0_MCP_TOOL_CONTRACTS_V1 = {
   refresh_index: {
     input: RefreshIndexInputV1Schema,
     output: RefreshIndexOutputV1Schema,
+  },
+  index_job: {
+    input: IndexJobInputV1Schema,
+    output: IndexJobOutputV1Schema,
   },
 } as const satisfies Record<
   P0McpToolNameV1,

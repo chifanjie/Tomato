@@ -209,6 +209,32 @@ describe("knowledge base wiki V2 artifact generation", () => {
     }
   }, 15_000);
 
+  it("allows only the exact Task draft boundary and still refuses symlinked task output", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-task-output-"));
+    const external = mkdtempSync(join(tmpdir(), "understand-code-task-external-"));
+    const drafts = join(sourceRoot, ".understand-code/knowledge-drafts");
+    const outputRoot = join(drafts, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      for (const invalid of [drafts, join(drafts, "not-a-task"), join(outputRoot, "nested")]) {
+        const rejected = runGenerator(sourceRoot, invalid, "--prepare-file-docs");
+        expect(rejected.status).not.toBe(0);
+        expect(rejected.stderr).toContain("输出目录不能覆盖源码或图谱目录");
+      }
+      const prepared = runGenerator(sourceRoot, outputRoot, "--prepare-file-docs");
+      expect(prepared.status, prepared.stderr).toBe(0);
+      expect(existsSync(join(outputRoot, ".intermediate/source-binding.json"))).toBe(true);
+      rmSync(outputRoot, { recursive: true });
+      symlinkSync(external, outputRoot);
+      expect(runGenerator(sourceRoot, outputRoot, "--prepare-file-docs").status).not.toBe(0);
+      expect(existsSync(join(external, ".intermediate"))).toBe(false);
+      expect(readFileSync(join(sourceRoot, "src/a.ts"), "utf8")).toBe("export function run() {}\n");
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("writes only an atomic generation report when no source is readable", () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-zero-source-"));
     const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-zero-output-"));

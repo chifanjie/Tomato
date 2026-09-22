@@ -8,6 +8,9 @@ import {
 import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
+  BuildTaskBriefPendingOutputV1Schema,
+  IndexJobInputV1Schema,
+  IndexJobOutputV1Schema,
   CheckChangeOutputV1Schema,
   GetEvidenceInputV1Schema,
   GetEvidenceOutputV1Schema,
@@ -48,6 +51,7 @@ export const PREVIEW_THREE_TOOL_NAMES_V1 = Object.freeze([
   "get_repo_pulse",
   "build_task_brief",
   "get_task_brief",
+  "index_job",
 ] as const satisfies readonly ImplementedToolName[]);
 
 export function implementedToolNamesForSurfaceProfileV1(
@@ -134,10 +138,12 @@ export function normalizeToolJsonSchema<T>(value: T): T {
 }
 
 const descriptions: Readonly<Record<ImplementedToolName, string>> = {
+  index_job:
+    "Query or cooperatively cancel a background repository index job in this server’s bound local worktree. Poll after the returned delay; after completion repeat build_task_brief with identical original arguments to create the Task. Jobs survive Host exit.",
   get_repo_pulse:
     "Read the current repository pulse through its strict redacted public Surface.",
   build_task_brief:
-    "Create or replay a durable local Task Brief, initializing a source index if needed. Analyze returned source evidence in the host before recording conclusions with update_task record_analysis.",
+    "Create or replay a durable local Task Brief. A first local call starts background indexing and returns waiting_for_index with a jobId; poll index_job, then repeat the identical request after completion. Analyze returned source evidence in the host before recording conclusions with update_task record_analysis.",
   get_task_brief:
     "Read a paged section of a persisted Task Brief. Use analysis to recover full persisted conclusions and other analysis Claims, including reasoning, evidence IDs and snapshot scope.",
   update_task:
@@ -151,7 +157,7 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   get_evidence:
     "Read a bounded, paged projection of evidence attached to a managed Task.",
   search_context:
-    "Search the bounded Graph and Wiki context pinned to a managed Task.",
+    "Search the bounded Graph and Wiki context pinned to a managed Task. pathPrefixes must be repository-relative; directory prefixes omit the trailing slash (use src or test, not src/ or test/).",
   trace_impact:
     "Read bounded, paged impact paths from a managed Task and its pinned Graph.",
   refresh_index:
@@ -159,6 +165,7 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
 };
 
 const inputSchemas = {
+  index_job: IndexJobInputV1Schema,
   get_repo_pulse: GetRepoPulseInputV1Schema,
   build_task_brief: BuildTaskBriefInputV1Schema,
   get_task_brief: GetTaskBriefInputV1Schema,
@@ -182,12 +189,14 @@ const inputSchemas = {
 } as const;
 
 const outputSchemas = {
+  index_job: z.union([IndexJobOutputV1Schema.shape.structuredContent, McpToolErrorResultV1Schema.shape.structuredContent]),
   get_repo_pulse: z.union([
     GetRepoPulseOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
   build_task_brief: z.union([
     BuildTaskBriefOutputV1Schema.shape.structuredContent,
+    BuildTaskBriefPendingOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
   get_task_brief: z.union([

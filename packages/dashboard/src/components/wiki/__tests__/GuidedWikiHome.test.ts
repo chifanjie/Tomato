@@ -52,3 +52,11 @@ it("renders the guided route without maintenance metrics", () => {
   }));
   expect(emptyHtml).toMatch(/<button[^>]*disabled=""[^>]*>开始阅读<\/button>/);
 });
+
+it("marks the other stages as missing when only implementation content exists", () => {
+  const pages = buildWikiRuntimeIndex(wikiV2Fixture()).routePages.map((page) => ({ ...page, route: { ...page.route!, stage: "implementation" as const } }));
+  const html = renderToStaticMarkup(createElement(GuidedWikiHome, { projectName: "fixture", routePages: pages, onOpenPage: vi.fn(), onOpenGraph: vi.fn(), onOpenReference: vi.fn(), onOpenStatus: vi.fn() }));
+  expect(html.match(/待补充 · 暂无主干文档/g)).toHaveLength(4);
+  expect(html).toContain("当前还有 4 个阶段待补充");
+  expect(html).toContain("查看知识库状态");
+});

@@ -144,6 +144,7 @@ export default function KnowledgeConsole({
       onOpenPage={openPage}
       onOpenGraph={openGraphHome}
       onOpenReference={openReference}
+      onOpenStatus={openStatus}
     />
   );
 
@@ -159,6 +160,8 @@ export default function KnowledgeConsole({
       onOpenGraph={openGraphForPage}
       excerpts={pageExcerpts.excerpts}
       excerptsLoading={pageExcerpts.loading}
+      excerptsError={pageExcerpts.error}
+      onRetryExcerpts={pageExcerpts.retry}
     />
   ) : undefined;
 

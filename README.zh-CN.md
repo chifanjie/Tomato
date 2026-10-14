@@ -1,4 +1,4 @@
-# Understand Code 中文使用手册
+# Tomato / Understand Code 中文使用手册
 
 Understand Code 把一个代码仓库整理成可追溯的知识图谱、架构视图、业务流程分析产物、Markdown 知识库和面向代码的问答入口。它适合第一次接手陌生项目、评估一组代码改动、梳理业务链路，或把一次性的代码分析变成可以持续更新的项目资料。
 
@@ -168,7 +168,7 @@ pnpm --filter @understand-code/core build
 根目录同时提供 `.claude-plugin/marketplace.json` 和 `.claude-plugin/plugin.json`，因此这个仓库本身就是一个可安装的 Claude Code 插件市场。在 Claude Code 会话里执行：
 
 ```
-/plugin marketplace add Lum1104/Understand-Code
+/plugin marketplace add chifanjie/Tomato
 ```
 
 ```
@@ -747,7 +747,7 @@ pnpm --filter @understand-code/cli build
 - [`packages/cli/README.md`](packages/cli/README.md)：低层 stdio MCP 服务、工具契约和运行时；
 - [`packages/preview/README.md`](packages/preview/README.md)：Preview tarball、Host lifecycle、Doctor 和发布约束。
 
-仓库元数据中的上游标识是 `Lum1104/Understand-Code`。如果你使用的是公司镜像或 fork，请以实际安装源和版本为准；当前手册中的相对链接只保证在源码仓库内有效。
+当前维护仓库是 `chifanjie/Tomato`；上游来源与版权见 [NOTICE](NOTICE.md)。如果你使用的是公司镜像或 fork，请以实际安装源和版本为准；当前手册中的相对链接只保证在源码仓库内有效。
 
 ## 这份手册如何维护
 

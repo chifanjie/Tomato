@@ -2,7 +2,7 @@
 
 把陌生代码仓库整理成可浏览的关系图谱、可阅读的 Wiki，以及能回到源码核对的任务记录。
 
-Tomato 是本仓库的名称，内部包名、CLI 和技能沿用 **Understand Code**。项目基于 Understand Anything 延续开发，保留上游作者和许可，并非整个系统从零独立原创。详见 [来源说明](NOTICE.md)。
+Tomato 是本仓库的名称，内部包名、CLI 和技能沿用 **Understand Code**。项目基于 Understand Anything 延续开发，围绕持久任务、证据工作台、知识检索与宿主集成持续完善。上游作者与许可见 [来源说明](NOTICE.md)。
 
 [中文使用手册](README.zh-CN.md) · [CLI 与 MCP](packages/cli/README.md) · [Preview 安装](packages/preview/README.md) · [来源与许可](NOTICE.md)
 
@@ -39,7 +39,7 @@ flowchart LR
 
 ## 从源码开始
 
-推荐使用 **macOS / Linux、Node.js 22+、pnpm 10、Git** 体验本地持久任务路径。当前为开发中的 Preview，不是经过全平台验证的稳定发行版；Windows 下可以阅读源码，但不代表完整运行时已受支持。
+本地持久任务运行时支持 **macOS / Linux**，需要 **Node.js 22+、pnpm 10、Git**。当前为开发中的 Preview；Windows 尚未纳入完整运行时支持范围。
 
 ```bash
 git clone https://github.com/chifanjie/Tomato.git
@@ -54,13 +54,13 @@ pnpm --filter @understand-code/preview build
 pnpm --dir packages/preview pack --pack-destination /absolute/path/to/output
 ```
 
-再按 [Preview 指南](packages/preview/README.md) 安装生成的 tarball、注册宿主并运行 Doctor。这里没有假定 npm 已发布对应版本，也没有承诺存在正式 Release。
+再按 [Preview 指南](packages/preview/README.md) 安装生成的本地 tarball、注册宿主并运行 Doctor。
 
 在一个可公开的示例 Git 仓库中向宿主描述任务：
 
 > 请解释这个示例项目的请求处理流程，创建持久任务，列出相关源码证据和不确定项，并返回任务 ID 与工作台链接。
 
-只有拿到真实任务和可打开的工作台，才完成这一体验路径。源码技能 `/understand`、`/understand-kb` 与 Preview MCP 是不同入口，技能安装见 [中文手册](README.zh-CN.md)。
+宿主返回任务 ID 与工作台链接后，即可查看任务记录和源码证据。源码技能 `/understand`、`/understand-kb` 与 Preview MCP 是不同入口，技能安装见 [中文手册](README.zh-CN.md)。
 
 ## 值得阅读的工程设计
 
@@ -78,7 +78,7 @@ pnpm --filter @understand-code/dashboard test
 pnpm --filter @understand-code/cli typecheck
 ```
 
-本次公开整理主要更新说明、来源与隐私处理，未把历史记录当作当前环境全套测试通过证明。性能依赖样本、机器和版本，不承诺任意规模仓库的表现。
+完整运行验证尚未覆盖全部平台与宿主组合。性能取决于仓库规模、语言、机器配置和版本，建议使用目标项目评估。
 
 ## 当前边界
 
@@ -86,6 +86,6 @@ pnpm --filter @understand-code/cli typecheck
 - 动态导入、反射、代码生成及部分语言绑定可能无法完整解析。
 - 模型分析由宿主配置决定，使用前应确认目标代码允许交给该宿主。
 - 工作台链接含本地访问令牌，不是可随意分享的线上地址。
-- 非公开样本资料已脱敏或撤下，公开仓库不提供原业务仓库和知识库。
+- 仓库中的示例采用通用场景，业务仓库与私有知识库由使用者自行提供。
 
 维护者：[chifanjie](https://github.com/chifanjie)。反馈问题请附平台、版本、最小样例和期望行为，勿粘贴凭据或私人源码。
